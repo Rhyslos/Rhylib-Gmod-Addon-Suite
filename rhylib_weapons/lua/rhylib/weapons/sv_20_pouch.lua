@@ -188,3 +188,11 @@ concommand.Add("rhylib_infammo", function(ply)
         ply:ChatPrint("Infinite test ammo " .. (on and "on" or "off"))
     end)
 end)
+
+-- Dual mode needs both pistols in the inventory: one gone, back to one.
+Rhylib.Hook.Add("Rhylib.InventoryChanged", "weapons.dualcheck", function(ply)
+    if not IsValid(ply) then return end
+    for _, w in ipairs(ply:GetWeapons()) do
+        if w.IsRhylib and w.FixFireMode then w:FixFireMode() end
+    end
+end)

@@ -1,7 +1,8 @@
 --[[
     Character creator: shown on first join (roster.need), can't be closed
     until a character is saved. Clone number + nickname, with a live
-    preview of the name: CC-1234 Nickname.
+    preview of the name: CC-1234 Nickname, and looks (hair, facial hair)
+    with a preview (cl_15_look.lua).
 ]]
 
 local R = Rhylib.Roster
@@ -25,11 +26,19 @@ local function open()
         surface.DrawRect(0, 0, w, h)
     end
     local frame = vgui.Create("EditablePanel", panel)
-    frame:SetSize(s(520), s(400))
+    frame:SetSize(s(780), s(600))
     frame:Center()
     frame:DockPadding(s(18), s(52), s(18), s(18))
     function frame:Paint(w, h)
         k.Plate(0, 0, w, h, { title = "New recruit", sub = "Create your clone", ticks = "all", header = s(38) })
+    end
+
+    local look = { hair = "hair_reg", fhair = "", hcol = 0, skin = 0 }
+    local lookPrev = R.LookPreview and R.LookPreview(frame, function() return look end)
+    if IsValid(lookPrev) then
+        lookPrev:Dock(RIGHT)
+        lookPrev:SetWide(s(230))
+        lookPrev:DockMargin(s(12), 0, 0, 0)
     end
 
     local intro = k.Label(frame, "Pick your clone number and a nickname. You start as a cadet; basic training makes you a clone trooper, and a battalion gives you a rank.", 13, 400, k.C.textDim)
@@ -50,6 +59,8 @@ local function open()
     nickRow.right:SetWide(s(220))
     local nick = k.TextEntry(nickRow.right, "Nickname")
     nick:Dock(FILL)
+
+    if R.LookControls then R.LookControls(frame, look) end
 
     -- Preview and problems.
     local preview = vgui.Create("DPanel", frame)
@@ -90,6 +101,14 @@ local function open()
         Rhylib.Net.Start("roster.create")
         net.WriteString(n)
         net.WriteString(nk)
+        if R.WriteLook then
+            R.WriteLook(look)
+        else
+            net.WriteString(look.hair)
+            net.WriteString(look.fhair)
+            net.WriteUInt(0, 4)
+            net.WriteUInt(0, 4)
+        end
         net.SendToServer()
     end, { accent = true, enabled = function() local _, _, ok = state() return ok end })
     save:Dock(BOTTOM)

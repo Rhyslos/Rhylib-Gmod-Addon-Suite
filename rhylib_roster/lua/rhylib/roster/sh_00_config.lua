@@ -77,6 +77,45 @@ function R.ValidNumber(num)
 end
 
 -- Nickname: 2 to nickMax characters, no control characters, single spaces.
+-- Looks (shown with the helmet off; rhylib_gear hides them under a helmet).
+-- Option names of the models' "hair" / "fhair" bodygroups ("" = none).
+R.HAIR = {
+    { "", "None" }, { "hair_reg", "Regulation" }, { "hair_short", "Short" }, { "hair_parted", "Parted" },
+    { "hair_slick", "Slicked back" }, { "hair_spike", "Spiked" }, { "hair_mohawk", "Mohawk" }, { "hair_long", "Long" },
+    { "hair_long2", "Long, loose" }, { "hair_tail", "Tail" }, { "hair_gree", "Gree style" }, { "hair_cornwall", "Cornwall" },
+}
+R.FHAIR = {
+    { "", "None" }, { "fhair", "Stubble" }, { "fhair_stache", "Moustache" }, { "fhair_goatee", "Goatee" },
+    { "fhair2", "Short beard" }, { "fhair3", "Chin beard" }, { "fhair_beard", "Full beard" },
+}
+
+-- Hair colour: a tint on the model's hair material ($color2; above 1 lightens).
+R.HAIR_COLOURS = {
+    { 0, "Natural" },
+    { 1, "Black", { 0.45, 0.42, 0.40 } },
+    { 2, "Dark brown", { 0.85, 0.65, 0.50 } },
+    { 3, "Brown", { 1.30, 0.95, 0.65 } },
+    { 4, "Auburn", { 1.70, 0.85, 0.50 } },
+    { 5, "Blond", { 2.60, 2.10, 1.30 } },
+    { 6, "Grey", { 1.80, 1.80, 1.80 } },
+    { 7, "White", { 3.00, 3.00, 3.00 } },
+}
+-- Name of the tinted copy of a hair material (made on every client).
+function R.HairMatName(orig, col)
+    return "rhylib_hair_" .. util.CRC(string.lower(orig or "")) .. "_" .. (col or 0)
+end
+
+-- Model skins (the job models with hair have 5).
+R.SKINS = { { 0, "1" }, { 1, "2" }, { 2, "3" }, { 3, "4" }, { 4, "5" } }
+
+local function inList(list, v)
+    for _, o in ipairs(list) do if o[1] == v then return true end end
+    return false
+end
+function R.ValidLook(hair, fhair, hcol, skin)
+    return inList(R.HAIR, hair) and inList(R.FHAIR, fhair) and inList(R.HAIR_COLOURS, hcol or 0) and inList(R.SKINS, skin or 0)
+end
+
 function R.CleanNick(nick)
     nick = string.gsub(tostring(nick or ""), "%c", "")
     nick = string.Trim((string.gsub(nick, "%s+", " ")))   -- (brackets: gsub's count must not reach Trim)

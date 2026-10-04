@@ -320,10 +320,26 @@ function SWEP:GetFireModeName()
     return self.FireModes[m] or self.FireModes[1] or "semi"
 end
 
--- Is fire mode i usable by the owner (SkillModes)?
+-- How many of this gun the owner carries (rhylib_inventory; without it, 2).
+function SWEP:CarriedCount()
+    local o = self:GetOwner()
+    local Inv = Rhylib.Inventory
+    if not (IsValid(o) and o:IsPlayer() and Inv) then return 2 end
+    local class = self:GetClass()
+    if SERVER then return Inv.Count and Inv.Count(o, class) or 2 end
+    if o ~= LocalPlayer() or not Inv.byUid then return 2 end   -- (others' inventories aren't known here)
+    local n = 0
+    for _, it in pairs(Inv.byUid) do
+        if it.id == class then n = n + (it.count or 1) end
+    end
+    return n
+end
+
+-- Is fire mode i usable by the owner (SkillModes; dual needs two of the gun)?
 function SWEP:ModeAllowed(i)
     local name = self.FireModes[i]
     if not name then return true end
+    if name == "dual" and self:CarriedCount() < 2 then return false end
     if name == "stun" then   -- military police only (rhylib_mp)
         local MP = Rhylib.MP
         return MP and MP.IsMP and MP.IsMP(self:GetOwner()) or false
@@ -1164,7 +1180,7 @@ if CLIENT then
     function SWEP:DoDrawCrosshair(x, y)
         if self:IsLowered() or self:Scoped() then return true end  -- no crosshair on safety or while sprinting
         local o = self:GetOwner()
-        if IsValid(o) and o:GetNW2Int("rhylib_optics", 0) ~= 0 then return true end   -- (rhylib_gear: looking through binoculars)
+        if IsValid(o) and o:GetNW2Int("rhylib_optics", 0) ~= 0 and not o:GetNW2Bool("rhylib_opticsFire", false) then return true end   -- (rhylib_gear: looking through binoculars)
         -- In Rhylib third person, rhylib_thirdperson draws it instead.
         local tp = Rhylib.ThirdPerson
         if not (tp and tp.Active and tp.Active()) then

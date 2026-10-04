@@ -87,13 +87,24 @@ local function syncGrids(ply)
     if Inv.MarkChanged then Inv.MarkChanged(ply) end   -- carry limit
 end
 
--- Items the player may no longer carry (def.carrySkill) are dropped.
+-- Items the player may no longer carry (def.carrySkill, or over the
+-- carry limit) are dropped.
 local function dropForbidden(ply)
     local Inv = Rhylib.Inventory
     if not (Inv and Inv.Get and Inv.MayHold and Inv.Drop) or not ply:Alive() then return end
-    local out = {}
-    for uid, o in pairs(Inv.Get(ply).byUid) do
-        if not Inv.MayHold(ply, o.id) then out[#out + 1] = uid end
+    local out, seen = {}, {}
+    local list = {}
+    for _, o in pairs(Inv.Get(ply).byUid) do list[#list + 1] = o end
+    -- (hotbar copies first, so the extra that goes is the one off the hotbar)
+    table.sort(list, function(a, b) return (a.hb and 0 or 1) < (b.hb and 0 or 1) end)
+    for _, o in ipairs(list) do
+        if not Inv.MayHold(ply, o.id) then
+            out[#out + 1] = o.uid
+        elseif Inv.Limit then
+            -- More of a gun than allowed now (a second DC-17 after losing Dual DC-17).
+            seen[o.id] = (seen[o.id] or 0) + 1
+            if seen[o.id] > Inv.Limit(ply, o.id) then out[#out + 1] = o.uid end
+        end
     end
     for _, uid in ipairs(out) do Inv.Drop(ply, uid) end
 end
@@ -371,4 +382,12 @@ Rhylib.Hook.Add("OnPlayerHitGround", "skills.slam", function(ply, inWater, _, sp
     util.Effect("ThumperDust", fx, true, true)
     ply:EmitSound("physics/concrete/boulder_impact_hard" .. math.random(1, 4) .. ".wav", 80)
     util.ScreenShake(pos, 6, 20, 0.6, r * 2)
+end)
+
+-- A gun with a skill-gated "dual" mode (DC-17: Dual DC-17): carry two.
+Rhylib.Hook.Add("Rhylib.CarryLimit", "skills.dual", function(ply, id, def)
+    -- (training copies inherit SkillModes from the real gun)
+    local swep = def and def.weapon and weapons.GetStored(K.ItemGun(def.weapon))
+    local need = swep and swep.SkillModes and swep.SkillModes.dual
+    if need and K.Has(ply, need) then return 2 end
 end)

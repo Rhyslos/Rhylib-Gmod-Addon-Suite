@@ -74,13 +74,49 @@ end)
 -- Weapons
 --------------------------------------------------------------------------
 
-local function captureWeapon(ply, inst)
+-- Another item of the same gun still carried (an officer's two DC-17s
+-- share one weapon entity), or nil.
+local function twinOf(ply, inst)
+    local st = Inv.states[ply]
+    if not st then return nil end
+    for uid, o in pairs(st.byUid) do
+        if uid ~= inst.uid and o.id == inst.id then return o end
+    end
+end
+
+-- Data for a second copy that isn't the gun in your hands: empty, or in
+-- dual mode the second magazine, taken out of the live gun (take = true).
+local function spareData(wep, take)
+    local live = wep:GetInventoryData() or {}
+    local data = { mag = live.mag, clip = 0, mode = 1, magIssued = live.magIssued }
+    if take and wep.GetFireModeName and wep:GetFireModeName() == "dual" then
+        local single = math.floor(wep:GetMagSize() / (wep.DualMags or 2))
+        local extra = math.min(wep:Clip1() - single, single)
+        if extra > 0 then
+            wep:SetClip1(wep:Clip1() - extra)
+            data.clip = extra
+        end
+    end
+    return data
+end
+
+-- The weapon's state (clip, mode...) into its item. staying: the item stays
+-- with the player (saving); otherwise it's about to leave. With two copies
+-- the one leaving only takes a spare's share (no ammo copied).
+local function captureWeapon(ply, inst, staying, primary)
     local def = Items.defs[inst.id]
     if not def or not def.weapon then return end
     local wep = ply:GetWeapon(def.weapon)
     if IsValid(wep) and wep.GetInventoryData then
         local issued, loadout = inst.data and inst.data.issued, inst.data and inst.data.loadout
-        inst.data = wep:GetInventoryData() or inst.data
+        local twin = twinOf(ply, inst)
+        if twin and not staying then
+            inst.data = spareData(wep, true)
+        elseif twin and primary == false then
+            inst.data = spareData(wep, false)
+        else
+            inst.data = wep:GetInventoryData() or inst.data
+        end
         inst.data.issued, inst.data.loadout = issued, loadout  -- keep the armoury / job marks
     end
 end
@@ -126,11 +162,20 @@ end
 function Inv.CaptureWeapons(ply)
     local st = Inv.states[ply]
     if not st then return end
-    for _, inst in pairs(st.byUid) do captureWeapon(ply, inst) end
+    -- (two copies of one gun: the lowest uid holds the live state)
+    local first = {}
+    for uid, inst in pairs(st.byUid) do
+        if not first[inst.id] or uid < first[inst.id] then first[inst.id] = uid end
+    end
+    for uid, inst in pairs(st.byUid) do captureWeapon(ply, inst, true, first[inst.id] == uid) end
 end
 
 function Inv.GiveAllWeapons(ply)
-    for _, inst in pairs(Inv.Get(ply).byUid) do giveWeapon(ply, inst) end
+    -- Lowest uid first: of two copies, that one's state is the live gun's.
+    local list = {}
+    for _, inst in pairs(Inv.Get(ply).byUid) do list[#list + 1] = inst end
+    table.sort(list, function(a, b) return a.uid < b.uid end)
+    for _, inst in ipairs(list) do giveWeapon(ply, inst) end
 end
 
 --------------------------------------------------------------------------
@@ -243,6 +288,14 @@ end
 local function removeInst(ply, st, uid)
     local inst = st.byUid[uid]
     if not inst then return end
+    -- (one of two copies of a gun leaves: the other takes its hotbar slot)
+    if inst.hb then
+        local twin = twinOf(ply, inst)
+        if twin and not twin.hb then
+            twin.hb = inst.hb
+            update(ply, st, twin)
+        end
+    end
     stripWeapon(ply, inst)
     st.cont[inst.c].items[uid] = nil
     st.byUid[uid] = nil
@@ -369,6 +422,27 @@ function Inv.Has(ply, id)
     return Inv.Count(ply, id) > 0
 end
 
+-- How many of a one-only item (a gun) this player may carry: 1, unless
+-- hook Rhylib.CarryLimit(ply, id, def) says more (rhylib_skills: a second
+-- DC-17 with Dual DC-17).
+function Inv.Limit(ply, id)
+    local def = Items.defs[id]
+    if not Items.Unique(def) then return math.huge end
+    return tonumber(hook.Run("Rhylib.CarryLimit", ply, id, def)) or 1
+end
+
+-- "You already carry one" / "... 2".
+function Inv.LimitText(ply, id)
+    local n = Inv.Limit(ply, id)
+    return n > 1 and ("You already carry " .. n) or "You already carry one"
+end
+
+-- Carrying as many as allowed already?
+function Inv.AtLimit(ply, id)
+    local def = Items.defs[id]
+    return Items.Unique(def) and Inv.Count(ply, id) >= Inv.Limit(ply, id) or false
+end
+
 -- May this player carry this item at all (def.carrySkill, rhylib_skills)?
 function Inv.MayHold(ply, id)
     local def = Items.defs[id]
@@ -392,7 +466,7 @@ function Inv.CanAdd(ply, id)
     local def = Items.defs[id]
     if not def then return false end
     if not Inv.MayHold(ply, id) then return false end
-    if Items.Unique(def) and Inv.Has(ply, id) then return false end
+    if Inv.AtLimit(ply, id) then return false end
     local cap = Items.StackFor(def, ply)
     if cap > 1 then
         for _, o in pairs(st.byUid) do
@@ -409,8 +483,14 @@ function Inv.AddItem(ply, id, count, data)
     count = count or 1
     if not def then return count end
     data = data or {}
-    if Items.Unique(def) and Inv.Has(ply, id) then return count end
-    if not Inv.MayHold(ply, id) then return count end
+    if Inv.AtLimit(ply, id) then return count end
+    -- (one-only items: no more than the limit; the rest doesn't fit)
+    local over = 0
+    if Items.Unique(def) then
+        local room = Inv.Limit(ply, id) - Inv.Count(ply, id)
+        if count > room then over, count = count - room, room end
+    end
+    if not Inv.MayHold(ply, id) then return count + over end
 
     local cap = Items.StackFor(def, ply)
     local stackable = cap > 1 and (not def.fill or (data.fill or 1) >= 1)
@@ -437,7 +517,7 @@ function Inv.AddItem(ply, id, count, data)
         count = count - n
         giveWeapon(ply, inst)
     end
-    return count
+    return count + over
 end
 
 -- Removes `amount` (default all) from one item.
@@ -668,7 +748,12 @@ function Inv.SetHotbar(ply, uid, n)
             update(ply, st, o)
             -- Taken off the hotbar while in your hands: put it away.
             local def = Items.defs[o.id]
-            if def and def.weapon and IsValid(active) and active:GetClass() == def.weapon then Inv.Stow(ply) end
+            -- (not if another copy of this gun is, or is going, on the hotbar)
+            local other = false
+            for _, o2 in pairs(st.byUid) do
+                if o2 ~= o and o2.id == o.id and (o2.hb or o2.uid == uid) then other = true end
+            end
+            if def and def.weapon and not other and IsValid(active) and active:GetClass() == def.weapon then Inv.Stow(ply) end
             if IsValid(active) and active:GetClass() == Inv.HAND and ply:GetNW2Int("rhylib_handUid", 0) == o.uid then Inv.Stow(ply) end
         end
     end
@@ -971,7 +1056,7 @@ Rhylib.Hook.Add("PlayerCanPickupWeapon", "inventory.pickup", function(ply, wep)
         ply.rhylibPickupNoWep, ply.rhylibPickupNoUntil = wep, CurTime() + 0.5
         if (ply.rhylibFullNotice or 0) < CurTime() then
             ply.rhylibFullNotice = CurTime() + 2
-            ply:PrintMessage(HUD_PRINTCENTER, Inv.Has(ply, class) and "You already carry one" or "No room in your inventory")
+            ply:PrintMessage(HUD_PRINTCENTER, Inv.AtLimit(ply, class) and Inv.LimitText(ply, class) or "No room in your inventory")
         end
         return false
     end

@@ -19,7 +19,7 @@
 local R = Rhylib.Roster
 local Data = Rhylib.Data
 
-for _, n in ipairs({ "roster.need", "roster.created", "roster.data", "roster.open" }) do Rhylib.Net.Register(n) end
+for _, n in ipairs({ "roster.need", "roster.created", "roster.data", "roster.open", "roster.lookopen" }) do Rhylib.Net.Register(n) end
 
 local function validSid(id) return isstring(id) and #id <= 20 and string.match(id, "^%d+$") ~= nil end
 Rhylib.Perms.Register("rhylib.roster.admin", "admin", "Manage any battalion's roster, ranks and characters")
@@ -96,6 +96,10 @@ function R.Publish(ply)
     ply:SetNW2Bool("rhylib_char", c ~= nil)
     ply:SetNW2String("rhylib_num", c and c.num or "")
     ply:SetNW2String("rhylib_nick", c and c.nick or "")
+    ply:SetNW2String("rhylib_hair", c and c.hair or "hair_reg")
+    ply:SetNW2String("rhylib_fhair", c and c.fhair or "")
+    ply:SetNW2Int("rhylib_haircol", c and tonumber(c.hcol) or 0)
+    ply:SetNW2Int("rhylib_skin", c and tonumber(c.skin) or 0)
     ply:SetNW2Bool("rhylib_trained", c and c.trained or false)
     ply:SetNW2String("rhylib_bn", c and c.bn or "")
     ply:SetNW2Int("rhylib_rank", c and c.r or 0)
@@ -219,6 +223,8 @@ end
 Rhylib.Net.Receive("roster.create", function(ply)
     local num = string.Trim(net.ReadString())
     local nick = R.CleanNick(net.ReadString())
+    local hair, fhair, hcol, skin = net.ReadString(), net.ReadString(), net.ReadUInt(4), net.ReadUInt(4)
+    if not R.ValidLook(hair, fhair, hcol, skin) then hair, fhair, hcol, skin = "hair_reg", "", 0, 0 end
     local id = sid(ply)
     if id == "" or R.Char(id) then return end   -- one character per player
     local ok, why = R.ValidNumber(num)
@@ -229,7 +235,7 @@ Rhylib.Net.Receive("roster.create", function(ply)
     if nums["n" .. num] and nums["n" .. num] ~= id then return reply(ply, false, "That number is taken") end
     nums["n" .. num] = id
     Data.Set("char_nums", "all", nums)
-    R.SaveChar(id, { num = num, nick = nick, trained = false, bn = "", r = 0, seen = os.time() })
+    R.SaveChar(id, { num = num, nick = nick, trained = false, bn = "", r = 0, seen = os.time(), hair = hair, fhair = fhair, hcol = hcol, skin = skin })
     R.Publish(ply)
     reply(ply, true)
     -- Start as a cadet.
@@ -238,6 +244,16 @@ Rhylib.Net.Receive("roster.create", function(ply)
     ply:Spawn()
     R.ApplyName(ply)
 end, { rate = 1, burst = 3 })
+
+-- Change your looks later (rhylib_look / !look).
+Rhylib.Net.Receive("roster.look", function(ply)
+    local hair, fhair, hcol, skin = net.ReadString(), net.ReadString(), net.ReadUInt(4), net.ReadUInt(4)
+    local c = R.Char(sid(ply))
+    if not c or not R.ValidLook(hair, fhair, hcol, skin) then return end
+    c.hair, c.fhair, c.hcol, c.skin = hair, fhair, hcol, skin
+    R.SaveChar(sid(ply), c)
+    R.Publish(ply)
+end, { rate = 2, burst = 4 })
 
 -- Admin: rhylib_char_reset <name or SteamID64>: the player picks a new character.
 concommand.Add("rhylib_char_reset", function(caller, _, args)
@@ -549,6 +565,11 @@ Rhylib.Hook.Add("PlayerSay", "roster.cmd", function(ply, text)
     local t = string.lower(string.Trim(text))
     if t == "/roster" or t == "!roster" then
         Rhylib.Net.Start("roster.open")
+        net.Send(ply)
+        return ""
+    end
+    if (t == "/look" or t == "!look") and R.Char(sid(ply)) then
+        Rhylib.Net.Start("roster.lookopen")
         net.Send(ply)
         return ""
     end

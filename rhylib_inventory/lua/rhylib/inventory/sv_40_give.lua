@@ -55,8 +55,8 @@ function Inv.GiveTo(ply, target, uid, single)
     local left = Inv.AddItem(target, inst.id, n, table.Copy(inst.data or {}))
     local given = n - left
     if given <= 0 then
-        local dupe = Items.Unique(def) and Inv.Has(target, inst.id)
-        Inv.Note(ply, target:Nick() .. (dupe and " already has one" or " has no room"))
+        local dupe = Inv.AtLimit(target, inst.id)
+        Inv.Note(ply, target:Nick() .. (dupe and (" already carries " .. (Inv.Limit(target, inst.id) > 1 and Inv.Limit(target, inst.id) or "one")) or " has no room"))
         return 0
     end
     if given < inst.count then

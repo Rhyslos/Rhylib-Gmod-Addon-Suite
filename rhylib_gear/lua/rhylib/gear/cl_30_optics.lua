@@ -10,8 +10,15 @@
       and zoom boxes in the tab at the bottom, red markings.
       Clear glass with a faint grey tint; the flashlight key toggles night
       vision (green picture, crawling scanlines and TV static, a light
-      around you). Edges solid black or see-through (rhylib_optics_edges).
+      around you). Solid black outside the window (an active module, like
+      a scope); faint scanlines on the clear glass too.
       No crosshair (the weapon base hides its own while optics are up).
+
+    Weapon mode (mode key rhylib_optics_mode_key, default middle mouse):
+    the optics stay down (night vision too) but the view is 1x, the gun and
+    crosshair come back and you can shoot; in first person the viewer is
+    drawn under the normal HUD, in third person only the night vision
+    shows. Back to looking: zoomed all the way out (no sudden zoom).
 
     Zoom: macrobinoculars x2 to x12, the rangefinder half that (G.ZOOM_RANGE).
 ]]
@@ -19,7 +26,8 @@
 local G = Rhylib.Gear
 local UI = Rhylib.UI
 
-local keyVar = CreateClientConVar("rhylib_optics_key", "l", true, false, "Key that raises or lowers your macrobinoculars / rangefinder")
+local keyVar = CreateClientConVar("rhylib_optics_key", "l", true, false, "Helmet gear key: raises or lowers your macrobinoculars / rangefinder, or switches your helmet lights")
+local modeVar = CreateClientConVar("rhylib_optics_mode_key", "mouse3", true, false, "Key that switches binoculars / rangefinder between looking and weapon mode")
 
 local zoomOf = {}   -- [kind] = current zoom
 local nv = false
@@ -31,6 +39,12 @@ local function kindUp()
     return IsValid(me) and me:GetNW2Int("rhylib_optics", 0) or 0
 end
 
+-- Up and looking through them (not weapon mode).
+local function looking()
+    local me = LocalPlayer()
+    return IsValid(me) and G.Looking(me)
+end
+
 local function range(kind) return G.ZOOM_RANGE[kind] or G.ZOOM_RANGE[1] end
 
 local function zoom(kind)
@@ -40,30 +54,59 @@ local function zoom(kind)
     return math.Clamp(z, r[1], r[2])
 end
 
-local function send(kind)
+local function send(kind, fire)
     Rhylib.Net.Start("gear.optics")
     net.WriteUInt(kind, 2)
+    net.WriteBool(fire == true)
     net.SendToServer()
 end
 
--- Optics key: up (binoculars first) or down.
+local function free()
+    return not vgui.GetKeyboardFocus() and not gui.IsGameUIVisible() and not gui.IsConsoleVisible()
+end
+
+local function keyDown(var)
+    local code = input.GetKeyCode(var:GetString())
+    return code and code > 0 and input.IsButtonDown(code)
+end
+
+-- Helmet gear key: optics up (binoculars first) or down, or the helmet
+-- lights on / off (they can't be worn together). Mode key: looking <-> weapon mode.
+local modeWasDown = false
 Rhylib.Hook.Add("Think", "gear.optics.key", function()
-    local code = input.GetKeyCode(keyVar:GetString())
-    local down = code and code > 0 and input.IsKeyDown(code)
-    if down and not wasDown and not vgui.GetKeyboardFocus() and not gui.IsGameUIVisible() and not gui.IsConsoleVisible() then
-        local me = LocalPlayer()
+    local me = LocalPlayer()
+    local down = keyDown(keyVar)
+    if down and not wasDown and free() then
         if kindUp() ~= 0 then
             send(0)
         elseif G.OpticsAllowed(me, 1) then
             send(1)
         elseif G.OpticsAllowed(me, 2) then
             send(2)
+        elseif G.Active(me, "light") or (G.Worn(me, "light") == nil and not G.Cfg("lightNeeded") and G.HelmetOn(me)) then
+            Rhylib.Net.Start("gear.lights")
+            net.SendToServer()
+        elseif not G.HelmetOn(me) then
+            notification.AddLegacy("Put your helmet on first", NOTIFY_HINT, 3)
         else
-            notification.AddLegacy("You need macrobinoculars or a rangefinder worn", NOTIFY_HINT, 3)
+            notification.AddLegacy("You need macrobinoculars, a rangefinder or helmet lights worn", NOTIFY_HINT, 3)
         end
     end
     wasDown = down
-    if kindUp() == 0 then
+    local mdown = keyDown(modeVar)
+    local kind = kindUp()
+    if mdown and not modeWasDown and kind ~= 0 and free() then
+        local toFire = looking()
+        if not toFire then
+            -- Back to looking: all the way out, so nothing jumps at you.
+            zoomOf[kind] = range(kind)[1]
+            smoothFov = nil
+        end
+        send(kind, toFire)
+        surface.PlaySound("buttons/lightswitch2.wav")
+    end
+    modeWasDown = mdown
+    if kind == 0 then
         nv = false
         smoothFov = nil
     end
@@ -74,7 +117,7 @@ local ZOOM_STEP = 1.2
 Rhylib.Hook.Add("PlayerBindPress", "gear.optics.binds", function(ply, bind, pressed)
     local kind = kindUp()
     if not pressed or kind == 0 then return end
-    if string.find(bind, "invprev", 1, true) or string.find(bind, "invnext", 1, true) then
+    if looking() and (string.find(bind, "invprev", 1, true) or string.find(bind, "invnext", 1, true)) then
         local r = range(kind)
         local z = zoom(kind) * (string.find(bind, "invprev", 1, true) and ZOOM_STEP or 1 / ZOOM_STEP)
         zoomOf[kind] = math.Clamp(z, r[1], r[2])
@@ -89,18 +132,18 @@ end, -60)
 
 -- First person through the viewer, zoomed (before third person and the body camera).
 Rhylib.Hook.Add("CalcView", "gear.optics.view", function(ply, pos, angles, fov)
-    if ply ~= LocalPlayer() or kindUp() == 0 then return end
+    if ply ~= LocalPlayer() or not looking() then return end
     local want = fov / zoom()
     smoothFov = smoothFov and Lerp(math.min(1, FrameTime() * 10), smoothFov, want) or fov
     return { origin = ply:EyePos(), angles = ply:EyeAngles(), fov = smoothFov, drawviewer = false }
 end, -70)
 
 Rhylib.Hook.Add("AdjustMouseSensitivity", "gear.optics.sens", function()
-    if kindUp() ~= 0 then return 1 / zoom() end
+    if looking() then return 1 / zoom() end
 end, -70)
 
 Rhylib.Hook.Add("PreDrawViewModel", "gear.optics.vm", function()
-    if kindUp() ~= 0 then return true end
+    if looking() then return true end
 end, -110)
 
 -- Night vision: a strongly green, brighter picture and a light around you.
@@ -110,8 +153,7 @@ local NV_TAB = {
     ["$pp_colour_mulr"] = 0, ["$pp_colour_mulg"] = 1.2, ["$pp_colour_mulb"] = 0,
 }
 
--- Viewer edges: solid black, or see-through (rhylib_optics_edges).
-local edgesVar = CreateClientConVar("rhylib_optics_edges", "1", true, false, "Binocular viewer edges: 1 = solid black, 0 = see-through")
+
 Rhylib.Hook.Add("RenderScreenspaceEffects", "gear.optics.nv", function()
     if nv and kindUp() ~= 0 then DrawColorModify(NV_TAB) end
 end)
@@ -140,8 +182,7 @@ local WHITE = Color(235, 238, 240)
 local PANEL_CLEAR = Color(205, 214, 212, 235)
 local PANEL_NV = Color(170, 235, 170, 235)
 local PANEL_TEXT = Color(18, 26, 22)
-local OUTSIDE_SOLID = Color(0, 0, 0, 255)
-local OUTSIDE_SEE = Color(4, 6, 9, 175)
+local OUTSIDE = Color(0, 0, 0, 255)   -- (solid: an active module, like a scope)
 
 -- Window outline (clockwise on screen), cached per screen size.
 local shape
@@ -198,6 +239,8 @@ local function tri(x1, y1, x2, y2, x3, y3)
     surface.DrawPoly({ { x = x1, y = y1 }, { x = x2, y = y2 }, { x = x3, y = y3 } })
 end
 
+local COMPASS = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
+
 -- Compass bar over the top middle: a tick every 2.5 degrees (long every 10), the heading at the marker.
 local function drawCompass(sh, h, heading)
     local x0, x1 = sh.tm1 + sh.d, sh.tm2 - sh.d
@@ -211,6 +254,14 @@ local function drawCompass(sh, h, heading)
         local major = math.abs(deg % 10) < 0.01
         local len = major and S(22, h) or S(13, h)
         surface.DrawRect(math.floor(x - 1), yBase - len, math.max(2, S(3, h)), len)
+    end
+    -- N, NE, E ... under their ticks (just inside the window).
+    local font = UI.Font(S(15, h), 800)
+    local first45 = math.ceil((heading - span / 2) / 45) * 45
+    for deg = first45, heading + span / 2, 45 do
+        local x = sh.cx + (deg - heading) * pxPerDeg
+        local name = COMPASS[(math.floor(deg / 45 + 0.5) % 8) + 1]
+        draw.SimpleText(name, font, x, yBase + S(16, h), RED, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
     -- End posts and the marker.
     surface.DrawRect(x0 - S(2, h), yBase - S(30, h), S(4, h), S(30, h))
@@ -239,7 +290,7 @@ local function drawZoomScale(sh, h, frac, kind)
     tri(x - S(4, h), ay + S(2, h), x - S(4, h) - a * 1.6, ay + S(2, h) - a, x - S(4, h) - a * 1.6, ay + S(2, h) + a)
 end
 
--- Boxes in the bottom tab: range / bearing / elevation, then zoom and mode.
+-- Boxes in the bottom tab: elevation / bearing / range, then zoom and mode.
 local function drawReadouts(sh, h, metres, heading, elev, z, kind)
     local panel = nv and PANEL_NV or PANEL_CLEAR
     local yTop = sh.B - sh.tab + S(12, h)
@@ -250,9 +301,9 @@ local function drawReadouts(sh, h, metres, heading, elev, z, kind)
     local lw = sh.tb2 * 1.1
     local lx = sh.cx - sh.tb2 + S(10, h)
     local cells = {
-        { metres and string.format("%04d", math.min(metres, 9999)) or "----", "RNG M" },
-        { string.format("%03d", heading % 360), "BRG" },
         { string.format("%+03d", elev), "ELV" },
+        { string.format("%03d", heading % 360), "BRG" },
+        { metres and string.format("%04d", math.min(metres, 9999)) or "----", "RNG M" },
     }
     local cw = lw / #cells
     for i, c in ipairs(cells) do
@@ -274,9 +325,15 @@ local function drawReadouts(sh, h, metres, heading, elev, z, kind)
     draw.SimpleText(nv and "NV ON" or "NV OFF", mid, rx + rw * 0.5, yTop + rh * 1.5 + S(3, h), PANEL_TEXT, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 end
 
-Rhylib.Hook.Add("HUDPaint", "gear.optics.overlay", function()
+local function keyName(var)
+    local k = string.lower(var:GetString())
+    if k == "mouse3" then return "MIDDLE MOUSE" end
+    return string.upper(k)
+end
+
+-- fire: weapon mode (drawn under the normal HUD, 1x).
+local function drawViewer(fire)
     local kind = kindUp()
-    if kind == 0 then return end
     local me = LocalPlayer()
     local w, h = ScrW(), ScrH()
     local sh = (shape and shape.w == w and shape.h == h) and shape or buildShape(w, h)
@@ -301,7 +358,7 @@ Rhylib.Hook.Add("HUDPaint", "gear.optics.overlay", function()
     -- Outside: the viewer's dark body.
     render.SetStencilPassOperation(STENCIL_KEEP)
     render.SetStencilCompareFunction(STENCIL_NOTEQUAL)
-    surface.SetDrawColor(edgesVar:GetBool() and OUTSIDE_SOLID or OUTSIDE_SEE)
+    surface.SetDrawColor(OUTSIDE)
     surface.DrawRect(0, 0, w, h)
 
     -- Inside: grey glass, or night vision scanlines.
@@ -336,8 +393,13 @@ Rhylib.Hook.Add("HUDPaint", "gear.optics.overlay", function()
             surface.DrawRect(math.random(gx0, gx1), math.random(gy0, gy1), px, px)
         end
     else
+        -- Grey glass with faint scanlines crawling down.
         surface.SetDrawColor(140, 148, 152, 22)
         surface.DrawRect(0, 0, w, h)
+        local step = math.max(3, S(4, h))
+        local off = math.floor(RealTime() * 30) % step
+        surface.SetDrawColor(0, 0, 0, 34)
+        for y = math.floor(sh.T) + off, sh.B, step do surface.DrawRect(0, y, w, math.max(1, math.floor(step / 2))) end
     end
     render.SetStencilEnable(false)
 
@@ -355,9 +417,9 @@ Rhylib.Hook.Add("HUDPaint", "gear.optics.overlay", function()
     local elev = math.floor(-ang.p + 0.5)
     local tr = util.TraceLine({ start = me:EyePos(), endpos = me:EyePos() + me:GetAimVector() * 32768, filter = me, mask = MASK_SHOT })
     local metres = tr.Hit and not tr.HitSky and math.floor(tr.HitPos:Distance(tr.StartPos) * 0.01905 + 0.5) or nil
-    local z = zoom(kind)
+    local z = fire and 1 or zoom(kind)
     local r = range(kind)
-    local frac = math.log(z / r[1]) / math.log(r[2] / r[1])
+    local frac = math.Clamp(math.log(math.max(z, r[1]) / r[1]) / math.log(r[2] / r[1]), 0, 1)
 
     drawCompass(sh, h, (90 - ang.y) % 360)
     drawZoomScale(sh, h, frac, kind)
@@ -367,21 +429,34 @@ Rhylib.Hook.Add("HUDPaint", "gear.optics.overlay", function()
     local mark = UI.Font(S(17, h), 800)
     draw.SimpleText(kind == 1 and "MACROBINOCULARS · GAR ISSUE" or "RANGEFINDER · HELMET MODULE", mark,
         sh.L + S(70, h), sh.T - S(22, h), RED, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-    draw.SimpleText("TARGET RANGE · BEARING · ELEVATION", mark, sh.R - S(70, h), sh.B + S(28, h), RED, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+    draw.SimpleText("ELEVATION · BEARING · TARGET RANGE", mark, sh.R - S(70, h), sh.B + S(28, h), RED, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
 
-    local hint = "Wheel: zoom  ·  " .. string.upper(input.LookupBinding("impulse 100") or "F") .. ": night vision  ·  "
-        .. string.upper(keyVar:GetString()) .. ": lower"
-    draw.SimpleText(hint, UI.Font(S(13, h)), w * 0.5, h - S(36, h), Color(200, 200, 200, 140), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    if not fire then
+        local hint = "Wheel: zoom  ·  " .. string.upper(input.LookupBinding("impulse 100") or "F") .. ": night vision  ·  "
+            .. keyName(modeVar) .. ": weapon mode  ·  " .. keyName(keyVar) .. ": lower"
+        draw.SimpleText(hint, UI.Font(S(13, h)), w * 0.5, h - S(36, h), Color(200, 200, 200, 140), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+end
+
+-- Looking: on top of everything.
+Rhylib.Hook.Add("HUDPaint", "gear.optics.overlay", function()
+    if looking() then drawViewer(false) end
 end, 200)
+
+-- Weapon mode, first person: the viewer under the HUD; rhylib_hud drops the
+-- visor then, so the third-person HUD shows over it (owner: cleanest).
+Rhylib.Hook.Add("HUDPaint", "gear.optics.under", function()
+    local me = LocalPlayer()
+    if kindUp() ~= 0 and not looking() and not me:ShouldDrawLocalPlayer() then drawViewer(true) end
+end, -20)
 
 -- Settings and the controls list (rhylib_menus).
 Rhylib.Hook.Add("InitPostEntity", "gear.optics.setting", function()
     local Menus = Rhylib.Menus
     if not Menus then return end
     if Menus.AddSetting then
-        Menus.AddSetting("Gear", { id = "gear.opticskey", order = 10, title = "Raise or lower binoculars / rangefinder", kind = "key", convar = "rhylib_optics_key" })
-        Menus.AddSetting("Gear", { id = "gear.opticsedges", order = 20, tab = "Interface", title = "Binocular viewer: solid black edges",
-            desc = "Off: the edges are see-through", kind = "toggle", convar = "rhylib_optics_edges" })
+        Menus.AddSetting("Gear", { id = "gear.opticskey", order = 10, title = "Helmet gear: binoculars / rangefinder up or down, helmet lights on or off", kind = "key", convar = "rhylib_optics_key" })
+        Menus.AddSetting("Gear", { id = "gear.opticsmode", order = 11, title = "Binoculars / rangefinder: weapon mode", kind = "key", convar = "rhylib_optics_mode_key" })
     end
     if Menus.AddControl then
         Menus.AddControl("Gear", "Mouse wheel", "Zoom (binoculars / rangefinder up)")
@@ -391,5 +466,5 @@ end)
 
 -- No engine crosshair either (other weapons) while looking through them.
 Rhylib.Hook.Add("HUDShouldDraw", "gear.optics.crosshair", function(name)
-    if name == "CHudCrosshair" and kindUp() ~= 0 then return false end
+    if name == "CHudCrosshair" and looking() then return false end
 end)

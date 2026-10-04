@@ -31,7 +31,8 @@ local UI = Rhylib.UI
 
 local MAIN, BACK, SLOT_BACK, EXT, RACK, BELT, HOLSTER = Items.MAIN, Items.BACK, Items.SLOT_BACK, Items.EXT, Items.RACK, Items.BELT, Items.HOLSTER
 -- Short names inside the gear slots.
-local GEAR_SHORT = { kama = "Kama", pauldron = "Pauldron", binos = "Binos", rangefinder = "Range", light = "Light", holster = "Holster" }
+local GEAR_SHORT = { kama = "Kama", pauldron = "Pauldron", binos = "Binos", rangefinder = "Range", light = "Light", holster = "Holster",
+    visor = "Visor", forearm = "Forearm", comms = "Antenna", belt = "Belt" }
 
 local keyVar = CreateClientConVar("rhylib_inventory_key", "g", true, false, "Key that opens the Rhylib inventory")
 local sizeVar = CreateClientConVar("rhylib_inventory_cellsize", "100", true, false, "Inventory cell size in pixels at 1080p (48-128); everything else scales with it. Reopen the inventory to apply.")
@@ -127,11 +128,26 @@ local function setupModel(mdl)
     local seq = ent:LookupSequence("idle_all_01")
     if seq and seq > 0 then ent:SetSequence(seq) end
 
+    mdl.camHeight = nil   -- (camera worked out for the panel's size in Think)
+end
+
+-- Camera so the model fills about 95% of the panel's height. The FOV is
+-- horizontal, so a tall panel sees more vertically: scale by its aspect.
+local function fitCamera(mdl)
+    local ent = mdl.Entity
+    if not IsValid(ent) then return end
+    local pw, ph = mdl:GetSize()
+    if pw < 2 or ph < 2 then return end
+    local key = pw .. "x" .. ph .. ent:GetModel()
+    if mdl.camKey == key then return end
+    mdl.camKey = key
     local mn, mx = ent:GetRenderBounds()
     local centre = (mn + mx) * 0.5
     local height = mx.z - mn.z
-    local dist = height * 0.5 / math.tan(math.rad(20)) * 1.1
-    mdl:SetFOV(40)
+    local fov = 40
+    local tanV = math.tan(math.rad(fov * 0.5)) * ph / pw
+    local dist = height * 0.5 / (tanV * 0.95)
+    mdl:SetFOV(fov)
     mdl:SetLookAt(centre)
     mdl:SetCamPos(centre + Vector(dist, 0, 0))
 end
@@ -165,13 +181,22 @@ local function createModelPanel(parent)
 
     function mdl:Think()
         local ply = LocalPlayer()
-        if self:GetModel() ~= ply:GetModel() then setupModel(self) end
+        if self:GetModel() ~= ply:GetModel() then setupModel(self) self.camKey = nil self.hairCol = nil end
+        fitCamera(self)
         -- Bodygroups follow the player's (worn gear, rhylib_gear).
         local ent = self.Entity
         if IsValid(ent) then
             for i = 0, ply:GetNumBodyGroups() - 1 do
                 local v = ply:GetBodygroup(i)
                 if ent:GetBodygroup(i) ~= v then ent:SetBodygroup(i, v) end
+            end
+            if ent:GetSkin() ~= ply:GetSkin() then ent:SetSkin(ply:GetSkin()) end
+            -- Hair colour (rhylib_roster looks).
+            local R = Rhylib.Roster
+            local col = ply:GetNW2Bool("rhylib_helmetOff", false) and ply:GetNW2Int("rhylib_haircol", 0) or 0
+            if R and R.ApplyHairColour and self.hairCol ~= col then
+                self.hairCol = col
+                R.ApplyHairColour(ent, col)
             end
         end
     end
@@ -211,11 +236,24 @@ function PANEL:SpanPx(n)
     return n * self.cell + (n - 1) * self.gap
 end
 
+-- A gear slot shows if your model can show something in it, or it holds
+-- something (rhylib_gear; without it, every slot that exists).
+local function gearShown(cid)
+    local c = Inv.cont[cid]
+    if not c then return false end
+    local G = Rhylib.Gear
+    if not (G and G.ModelHas) or next(c.items) then return true end
+    return G.ModelHas(LocalPlayer(), Items.WORN[cid].slot)
+end
+
 function PANEL:LayoutKey()
     local m, b, e, r, bl, ho = Inv.cont[MAIN], Inv.cont[BACK], Inv.cont[EXT], Inv.cont[RACK], Inv.cont[BELT], Inv.cont[HOLSTER]
+    local gear = {}
+    for _, cid in ipairs(Items.GEAR_SLOTS) do gear[#gear + 1] = gearShown(cid) and "1" or "0" end
     return (m and (m.w .. "x" .. m.h) or "-") .. "|" .. (b and (b.w .. "x" .. b.h) or "-")
         .. "|" .. (e and (e.w .. "x" .. e.h) or "-") .. "|" .. (r and (r.w .. "x" .. r.h) or "-")
         .. "|" .. (bl and (bl.w .. "x" .. bl.h) or "-") .. "|" .. (ho and (ho.w .. "x" .. ho.h) or "-")
+        .. "|" .. table.concat(gear) .. "|" .. (LocalPlayer():GetModel() or "")
 end
 
 -- Works out where every region sits and sizes the window.
@@ -226,10 +264,14 @@ function PANEL:Relayout()
     local back = Inv.cont[BACK]
     local top = self.header + label   -- row labels ("Back", "Backpack") sit above this
 
-    -- Columns, left to right: model, Back slot, grids.
-    local modelW = self:SpanPx(3)
+    -- Columns, left to right: gear slots, model, gear slots, Back slot, grids.
+    local hasGear = false
+    for _, cid in ipairs(Items.GEAR_SLOTS) do if Inv.cont[cid] then hasGear = true end end
+    local gearW = hasGear and (self.cell + self.gap * 2) or 0
+    local modelX = pad + gearW
+    local modelW = self:SpanPx(4)
     local slotSize = self:SpanPx(2)
-    local slotX = pad + modelW + pad
+    local slotX = modelX + modelW + gearW + pad
     local gridX = slotX + slotSize + pad
 
     -- Grids: main, then the backpack under it.
@@ -268,25 +310,31 @@ function PANEL:Relayout()
     end
     self.rightX = gridX
 
-    -- Gear slots (rhylib_gear), two a row under the Back slot.
-    local gearY = top + slotSize + label + self.gap * 2
-    self.gearLabelY = gearY - label * 0.5
-    self.gearX = slotX
-    local rows = 0
-    for i, cid in ipairs(Items.GEAR_SLOTS) do
-        if Inv.cont[cid] then
-            local col, row = (i - 1) % 2, math.floor((i - 1) / 2)
-            rows = math.max(rows, row + 1)
-            self.regions[#self.regions + 1] = { cid = cid, slot = true, gear = true, x = slotX + col * self.step, y = gearY + row * self.step,
-                pw = self.cell, ph = self.cell, title = Items.WORN[cid].title, short = GEAR_SHORT[Items.WORN[cid].slot] }
+    -- Gear slots (rhylib_gear) either side of the model: body on the left,
+    -- helmet on the right (spread over the model's height below).
+    local gearRegions = {}
+    local SIDES = { kama = 1, pauldron = 1, holster = 1, forearm = 1, belt = 1, comms = 1, binos = 2, rangefinder = 2, light = 2, visor = 2 }
+    -- Helmet on/off toggle (rhylib_gear), at the top of the helmet side.
+    self.helmetRect = nil
+    local G = Rhylib.Gear
+    if hasGear and G and G.ModelInfo and G.ModelInfo(LocalPlayer()).groups.helmet then
+        self.helmetRect = { helmet = true, side = 2, x = modelX + modelW + self.gap * 2, pw = self.cell, ph = self.cell }
+        gearRegions[#gearRegions + 1] = self.helmetRect
+    end
+    for _, cid in ipairs(Items.GEAR_SLOTS) do
+        if gearShown(cid) then
+            local slot = Items.WORN[cid].slot
+            local side = SIDES[slot] or 1
+            local r = { cid = cid, slot = true, gear = true, side = side, x = side == 1 and pad or (modelX + modelW + self.gap * 2),
+                pw = self.cell, ph = self.cell, title = Items.WORN[cid].title, short = GEAR_SHORT[slot] }
+            self.regions[#self.regions + 1] = r
+            gearRegions[#gearRegions + 1] = r
         end
     end
-    self.gearRows = rows
-    local slotColH = slotSize + (rows > 0 and (label + self:SpanPx(rows) + self.gap * 2) or 0)
+    self.gearRows = 0
 
-    -- Combine munitions button, under the Back slot and the gear.
-    self.combineRect = { x = slotX, y = top + slotColH + self.gap * 3, w = slotSize, h = math.floor(label * 1.4) }
-    slotColH = slotColH + self.gap * 3 + self.combineRect.h
+    -- Combine munitions button, under the Back slot.
+    self.combineRect = { x = slotX, y = top + slotSize + self.gap * 3, w = slotSize, h = math.floor(label * 1.4) }
 
     -- Tallest a column may be: the main grid plus a backpack, and never
     -- off the screen. Anything longer scrolls (mouse wheel).
@@ -304,7 +352,11 @@ function PANEL:Relayout()
     -- An open locker, crate or armoury: to the right of your grids.
     local width = gridX + gridsW + pad
     local ext = Inv.cont[EXT]
-    local contentH = math.max(ownView, self:SpanPx(3), slotColH)
+    local contentH = math.max(ownView, self:SpanPx(6))   -- (the model gets a big view)
+    -- (tall enough for the longest column of gear slots)
+    local perSideN = { 0, 0 }
+    for _, r in ipairs(gearRegions) do perSideN[r.side] = perSideN[r.side] + 1 end
+    contentH = math.max(contentH, math.max(perSideN[1], perSideN[2]) * (self.cell + self.gap * 2) - self.gap * 2)
     if ext then
         local extX = gridX + gridsW + pad * 2
         local extH = self:SpanPx(ext.h)
@@ -320,15 +372,25 @@ function PANEL:Relayout()
     end
     self:ApplyScroll()
 
-    -- The model fills the full height of the content.
-    self.model:SetPos(pad, top)
+    -- The model fills the full height of the content; the gear slots spread down its sides.
+    self.model:SetPos(modelX, top)
     self.model:SetSize(modelW, contentH)
+    local perSide = { 0, 0 }
+    for _, r in ipairs(gearRegions) do perSide[r.side] = perSide[r.side] + 1 end
+    local idx = { 0, 0 }
+    for _, r in ipairs(gearRegions) do
+        idx[r.side] = idx[r.side] + 1
+        local n = perSide[r.side]
+        -- (stacked close together, centred on the model's height)
+        local step = self.cell + self.gap * 2
+        r.y = top + (contentH - (n * step - self.gap * 2)) * 0.5 + (idx[r.side] - 1) * step
+    end
 
-    -- Hotbar row along the bottom, starting under the Back slot.
+    -- Hotbar row along the bottom, centred in the window.
     self.hotbarN = Items.HotbarSize(Inv)
-    self.hotbarX = slotX
     self.hotbarY = top + contentH + label + self.gap * 2
-    width = math.max(width, slotX + self:SpanPx(self.hotbarN) + pad)
+    width = math.max(width, self:SpanPx(self.hotbarN) + pad * 2)
+    self.hotbarX = math.floor((width - self:SpanPx(self.hotbarN)) * 0.5)
 
     self:SetSize(width, self.hotbarY + self.cell + self.footer + pad * 0.5)
     self:Center()  -- stays centred when a backpack grid appears or disappears
@@ -473,13 +535,38 @@ function PANEL:ItemRect(r, inst)
     return r.x + inst.x * self.step, r.y + inst.y * self.step, self:SpanPx(w), self:SpanPx(h)
 end
 
+-- Depot shelves: a heading in the empty row above each group of items
+-- (the server leaves that row free when there's more than one group).
+function PANEL:PaintShelfHeadings(r, c)
+    local top, n = {}, 0
+    for _, inst in pairs(c.items) do
+        local g = Items.GroupOf(Items.defs[inst.id])
+        if top[g] == nil then n = n + 1 end
+        if top[g] == nil or inst.y < top[g] then top[g] = inst.y end
+    end
+    if n < 2 then return end
+    local w = self:SpanPx(r.gw)
+    for g, y in pairs(top) do
+        if y > 0 then
+            local hy = r.y + (y - 1) * self.step
+            surface.SetDrawColor(COL_BG)
+            surface.DrawRect(r.x, hy, w, self.cell)
+            surface.SetDrawColor(COL_EXT_BORDER)
+            surface.DrawRect(r.x, hy + self.cell - math.max(1, math.floor(self.s)), w, math.max(1, math.floor(self.s)))
+            draw.SimpleText(string.upper(Items.GROUP_NAMES[g] or g), self:Font(13, 700), r.x + math.floor(4 * self.s), hy + self.cell * 0.62,
+                UI.Colors.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        end
+    end
+end
+
 function PANEL:PaintRegion(r, dragUid)
     local c = Inv.cont[r.cid]
     if not c then return end
 
     if r.slot and r.gear then
         -- A gear slot: its name while empty, dim if your model can't show it.
-        local can = Items.CanWear(LocalPlayer(), { slot = Items.WORN[r.cid].slot })
+        local G = Rhylib.Gear
+        local can = not (G and G.ModelHas) or G.ModelHas(LocalPlayer(), Items.WORN[r.cid].slot)
         surface.SetDrawColor(COL_SLOT.r, COL_SLOT.g, COL_SLOT.b, can and COL_SLOT.a or COL_SLOT.a * 0.4)
         surface.DrawRect(r.x, r.y, r.pw, r.ph)
         surface.SetDrawColor(COL_BORDER.r, COL_BORDER.g, COL_BORDER.b, can and COL_BORDER.a or COL_BORDER.a * 0.4)
@@ -513,6 +600,7 @@ function PANEL:PaintRegion(r, dragUid)
                 surface.DrawOutlinedRect(cx, cy, self.cell, self.cell)
             end
         end
+        if isExt and Inv.ext and Inv.ext.depot then self:PaintShelfHeadings(r, c) end
         if isExt and Inv.ext then
             label(self, Inv.ext.title, r.x, r.y - self.label * 0.5, TEXT_ALIGN_LEFT, UI.Colors.text)
         elseif r.cid == MAIN then
@@ -531,7 +619,9 @@ function PANEL:PaintRegion(r, dragUid)
     for uid, inst in pairs(c.items) do
         local x, y, pw, ph = self:ItemRect(r, inst)
         local dragged = dragUid == uid and self.drag and (self.drag.fromExt == (r.cid == EXT))
-        self:DrawItemBox(inst, x, y, pw, ph, dragged and 70 or 255, endless)
+        -- (a gear part the model can't show: worn, but greyed and doing nothing)
+        local unseen = r.gear and not Items.CanWear(LocalPlayer(), Items.defs[inst.id])
+        self:DrawItemBox(inst, x, y, pw, ph, (dragged or unseen) and 70 or 255, endless)
     end
     if r.cid == EXT then self:PaintQuick(r, c) end
 end
@@ -646,7 +736,7 @@ function PANEL:Paint(pw, ph)
     self.buttons = {}
     self:PaintHotbar()
     self:PaintCombine()
-    if self.gearRows and self.gearRows > 0 then label(self, "Gear", self.gearX, self.gearLabelY) end
+    self:PaintHelmet()
     self:PaintExtControls()
     self:PaintNote(pw, ph)
 
@@ -672,6 +762,25 @@ function PANEL:Button(x, y, w, h, text, fn, enabled)
     draw.SimpleText(string.upper(text), self:Font(12, 700), x + w * 0.5, y + h * 0.5, enabled == false and UI.Colors.textDim or UI.Colors.text,
         TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     if enabled ~= false then self.buttons[#self.buttons + 1] = { x = x, y = y, w = w, h = h, fn = fn } end
+end
+
+-- Helmet on/off (rhylib_gear): a slot-sized button beside the model.
+function PANEL:PaintHelmet()
+    local r = self.helmetRect
+    if not (r and r.y) then return end
+    local on = not LocalPlayer():GetNW2Bool("rhylib_helmetOff", false)
+    local mx, my = self:CursorPos()
+    local hover = mx >= r.x and mx <= r.x + r.pw and my >= r.y and my <= r.y + r.ph
+    surface.SetDrawColor(hover and COL_BUTTON_HOVER or COL_SLOT)
+    surface.DrawRect(r.x, r.y, r.pw, r.ph)
+    surface.SetDrawColor(on and UI.Colors.accent or COL_BORDER)
+    surface.DrawOutlinedRect(r.x, r.y, r.pw, r.ph)
+    draw.SimpleText("HELMET", self:Font(11, 700), r.x + r.pw * 0.5, r.y + r.ph * 0.38, UI.Colors.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    draw.SimpleText(on and "ON" or "OFF", self:Font(13, 800), r.x + r.pw * 0.5, r.y + r.ph * 0.66, on and UI.Colors.accent or UI.Colors.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    self.buttons[#self.buttons + 1] = { x = r.x, y = r.y, w = r.pw, h = r.ph, fn = function()
+        Rhylib.Net.Start("gear.helmet")
+        net.SendToServer()
+    end }
 end
 
 -- Combine munitions: a button, or a progress bar while it runs.

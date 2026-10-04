@@ -58,6 +58,25 @@ function Items.Get(id)
     return Items.defs[id]
 end
 
+-- Groups for storage shelves (depots lay their stock out under headings).
+-- def.group overrides; back-slot items are "back"; else def.category.
+Items.GROUP_ORDER = { "weapon", "training", "ammo", "medical", "back", "body", "helmet", "gear", "misc" }
+Items.GROUP_NAMES = { weapon = "Weapons", training = "Training", ammo = "Ammunition", medical = "Medical",
+    back = "Back", body = "Body armour & kit", helmet = "Helmet gear", gear = "Equipment", misc = "Other" }
+
+function Items.GroupOf(def)
+    if not def then return "misc" end
+    if def.group then return def.group end
+    if def.slot == "back" then return "back" end
+    return def.category or "misc"
+end
+
+-- Sort key of a group (unknown groups after the known ones).
+function Items.GroupRank(g)
+    for i, k in ipairs(Items.GROUP_ORDER) do if k == g then return i end end
+    return #Items.GROUP_ORDER + 1
+end
+
 -- A weapon item you can only carry one of (guns). Stacking weapon items
 -- (medical kits) can be carried in several stacks.
 function Items.Unique(def)
@@ -295,8 +314,9 @@ end
 --   5  cell rack: only power cells, opened by a skill (rhylib_skills)
 --   6  ammo belt (rhylib_skills)
 --   7  holster: one pistol, while a holster is worn
---   8-13 worn gear slots (kama, pauldron, binoculars, rangefinder, helmet
---      light, holster), one item each with that `slot` (rhylib_gear)
+--   8-17 worn gear slots (kama, pauldron, binoculars, rangefinder, helmet
+--      light, holster, sun visor, forearm, shoulder antenna, belt pouches),
+--      one item each with that `slot` (rhylib_gear)
 --   4  an outside container the player has open (locker, armoury, crate),
 --      see sv_30_storage.lua. Its items have their own uids.
 -- Worn slots (the back slot and the gear slots) hold one item each; a worn
@@ -313,7 +333,7 @@ Items.EXT = 4
 Items.RACK = 5       -- cell rack (rhylib_skills Load bearer): power cells only
 Items.BELT = 6       -- ammo belt (rhylib_skills Ammo belt): no worn items, no 5-long guns
 Items.HOLSTER = 7    -- one pistol (def.holster), while a holster is worn
-Items.CONT_BITS = 4
+Items.CONT_BITS = 5   -- (containers 0-31; gear slots 8-17)
 
 -- Worn slots: [cid] = { slot = def.slot, title }. GEAR_SLOTS in display order.
 Items.WORN = {
@@ -324,8 +344,12 @@ Items.WORN = {
     [11] = { slot = "rangefinder", title = "Rangefinder" },
     [12] = { slot = "light", title = "Helmet light" },
     [13] = { slot = "holster", title = "Holster" },
+    [14] = { slot = "visor", title = "Sun visor" },
+    [15] = { slot = "forearm", title = "Forearm" },
+    [16] = { slot = "comms", title = "Shoulder antenna" },
+    [17] = { slot = "belt", title = "Belt pouches" },
 }
-Items.GEAR_SLOTS = { 8, 9, 10, 11, 12, 13 }
+Items.GEAR_SLOTS = { 8, 9, 15, 17, 13, 16, 10, 11, 12, 14 }
 Items.WORN_BY_SLOT = {}
 for cid, w in pairs(Items.WORN) do Items.WORN_BY_SLOT[w.slot] = cid end
 

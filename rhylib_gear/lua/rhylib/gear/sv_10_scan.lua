@@ -34,7 +34,10 @@ local function groupsOf(model)
     if not IsValid(e) then return nil end
     e:SetModel(model)
     e:Spawn()
-    local list = {}
+    local list = { skins = e:SkinCount() or 1, mats = {} }
+    for _, m in ipairs(e:GetMaterials() or {}) do
+        if string.find(string.lower(m), "hair", 1, true) then list.mats[#list.mats + 1] = m end
+    end
     for _, g in ipairs(e:GetBodyGroups() or {}) do
         local subs = {}
         for i = 0, (g.num or 1) - 1 do subs[#subs + 1] = (g.submodels and g.submodels[i]) or ("#" .. i) end
@@ -70,6 +73,7 @@ function G.Scan()
                 end
             end
             if #groups <= 1 then add("  (no bodygroups)") end
+            add("  skins: " .. tostring(groups.skins) .. (#groups.mats > 0 and ("  hair materials: " .. table.concat(groups.mats, ", ")) or ""))
         end
         add("")
     end

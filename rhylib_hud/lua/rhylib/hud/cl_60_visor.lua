@@ -75,6 +75,8 @@ function HUD.VisorActive()
     if HUD.VisorLayout and HUD.VisorLayout() == "thirdperson" then return false end
     local ply = LocalPlayer()
     if not IsValid(ply) or not ply:Alive() or ply:InVehicle() or ply:ShouldDrawLocalPlayer() then return false end
+    if ply:GetNW2Bool("rhylib_helmetOff", false) then return false end   -- (rhylib_gear: helmet off, no visor)
+    if ply:GetNW2Int("rhylib_optics", 0) ~= 0 and ply:GetNW2Bool("rhylib_opticsFire", false) then return false end   -- (binoculars in weapon mode)
     local wep = ply:GetActiveWeapon()
     return not (IsValid(wep) and wep:GetClass() == "gmod_camera")
 end
@@ -215,6 +217,13 @@ local function drawBars(list, frac, fill, line)
     end
 end
 
+-- Binoculars / rangefinder in weapon mode (rhylib_gear): no visor; the
+-- third-person HUD shows over the binocular view instead (owner).
+function HUD.OpticsWeaponMode()
+    local ply = LocalPlayer()
+    return IsValid(ply) and ply:GetNW2Int("rhylib_optics", 0) ~= 0 and ply:GetNW2Bool("rhylib_opticsFire", false)
+end
+
 -- Drawn before the other HUD parts (priority -10), so they sit on top.
 Rhylib.Hook.Add("HUDPaint", "hud.visor", function()
     if not HUD.VisorActive() then return end
@@ -226,12 +235,13 @@ Rhylib.Hook.Add("HUDPaint", "hud.visor", function()
         cache.be, cache.bc, cache.bv = be, bc, bv
     end
 
+    local shell = cache
     draw.NoTexture()
     surface.SetDrawColor(COL_SHELL)
-    for _, t in ipairs(cache.tris) do surface.DrawPoly(t) end
+    for _, t in ipairs(shell.tris) do surface.DrawPoly(t) end
 
     -- Edges: a dark line with a faint light line on the see-through side.
-    for _, edge in ipairs(cache.edges) do
+    for _, edge in ipairs(shell.edges) do
         for i = 1, #edge - 1 do
             local p, q = edge[i], edge[i + 1]
             surface.SetDrawColor(COL_EDGE_DARK)
@@ -245,12 +255,12 @@ Rhylib.Hook.Add("HUDPaint", "hud.visor", function()
     local ply = LocalPlayer()
     local maxAr = ply.GetMaxArmor and ply:GetMaxArmor() or 100
     if maxAr <= 0 then maxAr = 100 end
-    drawBars(cache.bars[-1], ply:Armor() / maxAr, COL_ARMOR_FILL, COL_ARMOR_LINE)
+    drawBars(shell.bars[-1], ply:Armor() / maxAr, COL_ARMOR_FILL, COL_ARMOR_LINE)
     local simHp, simMax = HUD.SimHealth(ply)
     if simHp then
-        drawBars(cache.bars[1], simHp / simMax, COL_SIM_FILL, COL_SIM_LINE)
+        drawBars(shell.bars[1], simHp / simMax, COL_SIM_FILL, COL_SIM_LINE)
     else
-        drawBars(cache.bars[1], math.max(ply:Health(), 0) / math.max(ply:GetMaxHealth(), 1), COL_HEALTH_FILL, COL_HEALTH_LINE)
+        drawBars(shell.bars[1], math.max(ply:Health(), 0) / math.max(ply:GetMaxHealth(), 1), COL_HEALTH_FILL, COL_HEALTH_LINE)
     end
 end, -10)
 

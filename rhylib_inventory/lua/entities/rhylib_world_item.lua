@@ -67,8 +67,8 @@ if SERVER then
         else
             local def = Rhylib.Items.Get(self.itemId)
             local Inv = Rhylib.Inventory
-            local dupe = Rhylib.Items.Unique(def) and Inv.Has(ply, self.itemId)
-            local text = dupe and "You already carry one" or "No room in your inventory"
+            local dupe = Inv.AtLimit(ply, self.itemId)
+            local text = dupe and Inv.LimitText(ply, self.itemId) or "No room in your inventory"
             if Inv.MayHold and not Inv.MayHold(ply, self.itemId) then text = Inv.HoldReason(self.itemId) end
             ply:PrintMessage(HUD_PRINTCENTER, text)
         end

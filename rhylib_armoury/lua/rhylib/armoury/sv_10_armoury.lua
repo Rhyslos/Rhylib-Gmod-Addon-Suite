@@ -24,6 +24,8 @@ local function Inv() return Rhylib.Inventory end
 
 -- Every Rhylib gun, biggest first so the shelf packs neatly (or the config
 -- list). training: the training copies instead (rhylib_training).
+A.FIRST_WEAPONS = { "rhylib_dc15a", "rhylib_dc15s" }
+
 local function weaponStock(training)
     local list = Config.Get("armoury", training and "trainingWeapons" or "weapons")
     if istable(list) and #list > 0 then return list end
@@ -48,7 +50,16 @@ local function weaponStock(training)
             end
         end
     end
+    -- The standard rifles first (owner), then biggest first.
+    local first = A.FIRST_WEAPONS or {}
+    local function rank(id)
+        local base = string.gsub(id, "_training$", "")
+        for i, f in ipairs(first) do if f == base then return i end end
+        return #first + 1
+    end
     table.sort(out, function(a, b)
+        local ra, rb = rank(a), rank(b)
+        if ra ~= rb then return ra < rb end
         local da, db = Items.defs[a], Items.defs[b]
         if da.w * da.h ~= db.w * db.h then return da.w * da.h > db.w * db.h end
         return da.name < db.name
@@ -64,13 +75,32 @@ local function ammoStock(training)
     return out
 end
 
-local function gearStock()
+-- Gear cabinet stock for one player: the config list, plus what other
+-- modules add for them (rhylib_gear: parts their model shows and they may take).
+local function gearStock(ply)
     local out = {}
     for _, id in ipairs(Config.Get("armoury", "gearStock") or {}) do
         if Rhylib.Items.defs[id] then out[#out + 1] = id end
     end
-    hook.Run("Rhylib.GearStock", out)   -- (rhylib_gear adds its parts)
+    hook.Run("Rhylib.GearStock", out)
+    if IsValid(ply) then hook.Run("Rhylib.GearStockFor", ply, out) end
     return out
+end
+
+-- One depot per distinct stock list, picked when someone opens it.
+local function gearVariant(storage, ply)
+    local stock = gearStock(ply)
+    local key = table.concat(stock, ",")
+    local sub = storage.subs[key]
+    if not sub then
+        -- (takes back any gear part, even one you can't draw any more)
+        local back = {}
+        for _, id in ipairs(gearStock()) do back[id] = true end
+        hook.Run("Rhylib.GearReturnable", back)
+        sub = Inv().NewStorage(storage.ent, { kind = "depot", w = 6, title = "Gear cabinet", stock = stock, returnable = back })
+        storage.subs[key] = sub
+    end
+    return sub
 end
 
 function A.FillCrate(ent, storage)
@@ -268,7 +298,7 @@ function A.Setup(ent)
     elseif kind == "trainingDeposit" then
         return I.CreateStorage(ent, { kind = "grid", w = 6, h = 6, title = "Training deposit", variant = depositVariant })
     elseif kind == "gear" then
-        return I.CreateStorage(ent, { kind = "depot", w = 6, title = "Gear cabinet", stock = gearStock() })
+        return I.CreateStorage(ent, { kind = "grid", w = 1, h = 1, title = "Gear cabinet", variant = gearVariant })
     elseif kind == "spec" then
         storage = I.CreateStorage(ent, { kind = "grid", w = 1, h = 1, title = ent.PrintName, variant = specVariant })
         storage.specKind = ent.SpecKind

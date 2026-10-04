@@ -79,32 +79,56 @@ local function nextUid(storage)
 end
 
 -- Lays the depot's stock out in a grid, one of each, like a shop shelf.
+-- With more than one group (Items.GroupOf), each group starts on a new
+-- row under an empty heading row (the window writes the group's name there).
 local function layoutDepot(storage)
     Items.EnsureReady()
-    local c = { w = storage.w, h = 16, items = {} }
-    local used = 0
+    local MAXH = 31   -- (5-bit height)
+    local c = { w = storage.w, h = MAXH, items = {} }
+    -- Stock in groups, keeping the stock order inside each.
+    local groups, order = {}, {}
     for i, id in ipairs(storage.stock) do
         local def = Items.defs[id]
         if def then
+            local g = Items.GroupOf(def)
+            if not groups[g] then groups[g] = {} order[#order + 1] = g end
+            local list = groups[g]
+            list[#list + 1] = { i = i, id = id, def = def }
+        end
+    end
+    table.sort(order, function(a, b)
+        local ra, rb = Items.GroupRank(a), Items.GroupRank(b)
+        if ra ~= rb then return ra < rb end
+        return a < b
+    end)
+    local headed = #order > 1
+    local used = 0
+    for _, g in ipairs(order) do
+        local start = headed and (used + 1) or used   -- (one row for the heading)
+        if start >= MAXH then break end
+        for _, e in ipairs(groups[g]) do
             -- Lying flat reads best on a shelf; only turn it if it can't fit flat.
             local x, y, rot
-            for yy = 0, c.h - 1 do
-                for xx = 0, c.w - 1 do
-                    if not x and Items.Fits(c.w, c.h, c.items, id, xx, yy, false) then x, y, rot = xx, yy, false end
+            for _, r in ipairs({ false, true }) do
+                for yy = start, MAXH - 1 do
+                    for xx = 0, c.w - 1 do
+                        if not x and Items.Fits(c.w, c.h, c.items, e.id, xx, yy, r) then x, y, rot = xx, yy, r end
+                    end
+                    if x then break end
                 end
+                if x then break end
             end
-            if not x then x, y, rot = Items.FindSpot(c, id) end
             if x then
-                local h = rot and def.w or def.h
-                local inst = { uid = i, id = id, x = x, y = y, rot = rot, c = EXT,
-                    count = Items.Unique(def) and 1 or def.stack, data = def.fill and { fill = 1 } or {} }
-                c.items[i] = inst
+                local h = rot and e.def.w or e.def.h
+                c.items[e.i] = { uid = e.i, id = e.id, x = x, y = y, rot = rot, c = EXT,
+                    count = Items.Unique(e.def) and 1 or e.def.stack, data = e.def.fill and { fill = 1 } or {} }
                 used = math.max(used, y + h)
             end
         end
     end
     storage.items = c.items
     storage.h = math.max(used, 1)
+    storage.headed = headed
 end
 
 -- A storage that isn't registered on the entity (a variant's sub-storage).
@@ -116,6 +140,7 @@ function Inv.NewStorage(ent, opts)
         h = opts.h or 6,
         title = opts.title or "Storage",
         stock = opts.stock,
+        returnable = opts.returnable,
         items = {},
         nextUid = 1,
         viewers = {},
@@ -368,7 +393,8 @@ function Inv.Deposit(ply, uid, x, y, rot, single)
 
     if storage.kind == "depot" then
         -- Handing stocked gear back: it's just removed.
-        local stocked = false
+        -- (storage.returnable: more ids it takes back than it hands out)
+        local stocked = storage.returnable and storage.returnable[inst.id] or false
         for _, id in ipairs(storage.stock) do
             if id == inst.id then stocked = true break end
         end
@@ -426,8 +452,8 @@ function Inv.Take(ply, suid, cid, x, y, rot, single)
     if not so then return end
     local def = Items.defs[so.id]
     if not def then return end
-    if Items.Unique(def) and Inv.Has(ply, so.id) then
-        Inv.Note(ply, "You already carry one")
+    if Inv.AtLimit(ply, so.id) then
+        Inv.Note(ply, Inv.LimitText(ply, so.id))
         return
     end
     if not Inv.MayHold(ply, so.id) then
@@ -473,7 +499,14 @@ function Inv.Take(ply, suid, cid, x, y, rot, single)
         return
     end
 
-    if depot then return end  -- endless: nothing leaves the depot
+    if depot then
+        -- (a gun you may carry two of, e.g. an officer's DC-17s: both at once)
+        if Items.Unique(def) then
+            local more = Inv.Limit(ply, so.id) - Inv.Count(ply, so.id)
+            if more > 0 then Inv.AddItem(ply, so.id, more, table.Copy(data)) end
+        end
+        return   -- endless: nothing leaves the depot
+    end
     if n >= so.count then
         storage.items[suid] = nil
         sendChange(storage, OP_REMOVE, nil, suid)
@@ -500,8 +533,8 @@ function Inv.QuickTake(ply, suid, single)
     if not so then return end
     local def = Items.defs[so.id]
     if not def then return end
-    if Items.Unique(def) and Inv.Has(ply, so.id) then
-        Inv.Note(ply, "You already carry one")
+    if Inv.AtLimit(ply, so.id) then
+        Inv.Note(ply, Inv.LimitText(ply, so.id))
         return
     end
     if not Inv.MayHold(ply, so.id) then
@@ -517,6 +550,7 @@ function Inv.QuickTake(ply, suid, single)
     local depot = storage.kind == "depot"
     local n = single and 1 or so.count
     if depot then n = math.min(n, Items.StackFor(def, ply)) end
+    if depot and Items.Unique(def) then n = math.max(1, Inv.Limit(ply, so.id) - Inv.Count(ply, so.id)) end
     local data = depot and { fill = def.fill and 1 or nil, issued = true } or table.Copy(so.data or {})
     local taken = n - Inv.AddItem(ply, so.id, n, data)
     if taken <= 0 then

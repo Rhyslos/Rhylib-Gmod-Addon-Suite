@@ -52,7 +52,7 @@ function TP.Active()
     local ply = LocalPlayer()
     return enabledVar:GetBool() and allowedVar:GetBool() and IsValid(ply) and ply:Alive()
         and not ply:InVehicle() and ply:GetObserverMode() == OBS_MODE_NONE
-        and ply:GetNW2Int("rhylib_optics", 0) == 0   -- (rhylib_gear: looking through binoculars)
+        and not (ply:GetNW2Int("rhylib_optics", 0) ~= 0 and not ply:GetNW2Bool("rhylib_opticsFire", false))   -- (rhylib_gear: looking through binoculars; weapon mode keeps third person)
 end
 
 local function isAiming(ply)
