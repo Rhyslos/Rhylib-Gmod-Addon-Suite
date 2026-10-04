@@ -123,6 +123,12 @@ Rhylib.Hook.Add("Rhylib.TrainingHit", "training.hit", function(ply, attacker, am
     if L.Ragdoll(ply) then return false end   -- (stunned or knocked down: lying already)
     local hp = (T.hp[ply] or T.Cfg("simHealth")) - amount
     T.lastHit[ply] = CurTime()
+    -- HUD hit feedback (rhylib_hud), yellow.
+    local HUD = Rhylib.HUD
+    if HUD and HUD.SendHit then
+        local from = IsValid(attacker) and attacker ~= ply and not attacker:IsWorld() and attacker:WorldSpaceCenter() or nil
+        HUD.SendHit(ply, amount, 0, from, HUD.DMG_SIM)
+    end
     if hp <= 0 then
         if T.Eliminate(ply, attacker) then return true end
         hp = 1   -- (couldn't lie them down: hold at 1)

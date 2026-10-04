@@ -48,7 +48,7 @@ local slotVar = cv("rhylib_radio_slot", "1", "Radio channel you talk on: 1 squad
 local offVar = cv("rhylib_radio_off", "0", "Radio off")
 local mutedVar = cv("rhylib_radio_muted", "0", "Radio muted")
 local deafVar2 = cv("rhylib_radio_deaf", "0", "Radio deafened")
-local radarVar = cv("rhylib_radio_radar", "1", "Squad compass on the HUD (takes half the chat's room in the visor)")
+local radarVar = cv("rhylib_radio_compass", "0", "Squad compass on the HUD (takes half the chat's room in the visor)")
 function R.RadarOn() return radarVar:GetBool() end
 
 R.dir = R.dir or { squads = {}, channels = {}, sqOf = {}, roleOf = {} }

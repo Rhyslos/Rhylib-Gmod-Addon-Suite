@@ -71,6 +71,28 @@ local traceData = { mask = MASK_SHOT, output = traceResult }
     is the server's job anyway.) Nothing is allocated per frame.
 ]]
 -- left: dual pistols, the shot came from the left gun (nil = ask the gun).
+-- Near misses: someone else's bolt passing within WHIZZ_DIST of your head
+-- whizzes past (once, when it gets there). Worked out once per bolt.
+local whizzVar = CreateClientConVar("rhylib_whizz", "1", true, false, "Near-miss sounds for bolts flying past you")
+local WHIZZ_DIST = 90
+local nextWhizz = 0
+function Bolts.NearMiss(shooter, from, dir, len, speed, tr)
+    local me = LocalPlayer()
+    if not IsValid(me) or shooter == me or not whizzVar:GetBool() or not me:Alive() then return end
+    if tr.Entity == me then return end   -- (a hit, not a miss)
+    local eye = me:EyePos()
+    local t = (eye - from):Dot(dir)
+    if t <= 0 or t >= len then return end
+    local close = from + dir * t
+    if close:DistToSqr(eye) > WHIZZ_DIST * WHIZZ_DIST then return end
+    timer.Simple(t / math.max(speed, 1), function()
+        local now = CurTime()
+        if now < nextWhizz then return end
+        nextWhizz = now + 0.07
+        sound.Play(string.format("weapons/fx/nearmiss/bulletltor%02d.wav", math.random(3, 14)), close, 75, math.random(110, 130), 0.8)
+    end)
+end
+
 function Bolts.Spawn(shooter, origin, dir, speed, colorIndex, left)
     local style = STYLES[colorIndex] or STYLES[1]
     local muzzle = muzzlePos(shooter, origin, left)
@@ -89,6 +111,7 @@ function Bolts.Spawn(shooter, origin, dir, speed, colorIndex, left)
     else
         path:Div(len)
     end
+    if not style.hook and not style.ring then Bolts.NearMiss(shooter, muzzle, path, len, speed, tr) end
     Bolts.visual[#Bolts.visual + 1] = {
         shooter = shooter,
         origin = muzzle,

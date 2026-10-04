@@ -358,7 +358,7 @@ local function buildMap(col)
         end
     end
     local t = Kit.Button(col, function() return R.RadarOn() and "Compass on HUD: on" or "Compass on HUD: off" end, function()
-        RunConsoleCommand("rhylib_radio_radar", R.RadarOn() and "0" or "1")
+        RunConsoleCommand("rhylib_radio_compass", R.RadarOn() and "0" or "1")
     end, { small = true, selected = function() return R.RadarOn() end, tooltip = "In first person it takes half of the chat's room" })
     t:Dock(TOP)
     t:DockMargin(0, S(6), 0, 0)
