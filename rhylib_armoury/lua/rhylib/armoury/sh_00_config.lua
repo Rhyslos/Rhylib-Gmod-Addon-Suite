@@ -17,6 +17,12 @@
                         (one per player); the owner can lock it. Contents
                         belong to the owner's SteamID and are saved.
                         (rhylib_locker)
+      Training deposit  per player and as good as endless (grows as it
+                        fills): "Store all" puts everything you carry in
+                        (not job gear or the backpack you wear, but what's
+                        in it), "Take all" gives it back. Saved under your
+                        SteamID; every deposit on the map shows the same
+                        contents. (rhylib_training_deposit)
 
     Gear from the armoury and ammo cabinet is "issued": dropping it hands
     it back instead of leaving it on the ground.
@@ -54,6 +60,7 @@ A.CLASSES = {
     rhylib_gear_cabinet = true,
     rhylib_training_armoury = true,
     rhylib_training_ammo = true,
+    rhylib_training_deposit = true,
 }
 A.CRATES = { "rhylib_crate_small", "rhylib_crate_medium", "rhylib_crate_large", "rhylib_med_crate" }
 

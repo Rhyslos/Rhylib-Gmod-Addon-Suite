@@ -4,18 +4,26 @@
 
       B1 battle droid (rhylib_b1): 200 health, E-5 blaster with red bolts,
       now and then a grenade at someone who just ducked behind cover.
-      B2 super battle droid (rhylib_b2): tough and slow, wrist blaster, and
-      a wrist rocket lobbed high over cover (purple blast).
-      Training B1 / B2 (rhylib_b1_training, rhylib_b2_training): the same
-      with orange-yellow bolts that only take sim health (rhylib_training).
+      B1 variants (rhylib_b1_<variant>): aat, geonosis, marine, security,
+      snow fight like a B1 (other model); heavy fires long fast bursts;
+      commander has more health and makes droids near it aim better,
+      react faster and pause less between bursts. Killing a commander
+      rattles the droids near it for a few seconds.
+      B2 super battle droid (rhylib_b2): tough and slow, a blaster in each
+      arm firing long fast bursts (no rocket).
+      B2 cannon (rhylib_b2_cannon): slower bursts, and a wrist rocket
+      lobbed high over cover (purple blast).
+      Training B1 / B2 (rhylib_b1_training, rhylib_b2_training): like the
+      B1 and B2 with orange-yellow bolts that only take sim health
+      (rhylib_training).
       Spots players in sight within range (checked a few times a second,
       not every tick), turns, fires short inaccurate bursts, advances when
       far away, chases to where it last saw you, wanders near where it was
       spawned when idle. Walking needs a navmesh (nav_generate); without
       one droids stand and shoot.
 
-    Spawn menu: NPCs tab, "Rhylib Droids" (admins). Droids don't hurt each
-    other. At most maxActive droids exist at once.
+    Spawn menu: NPCs tab, "Rhylib Droids" and "Rhylib Training Droids"
+    (admins). Droids don't hurt each other. At most maxActive droids exist at once.
 ]]
 
 Rhylib.Droids = Rhylib.Droids or {}
@@ -41,7 +49,8 @@ Config.Register("droids", "b2Speed", 115, "B2 walk speed")
 Config.Register("droids", "b2Range", 2800, "How far a B2 sees and shoots")
 Config.Register("droids", "b2Reaction", 0.8, "Seconds before a B2 starts firing at a new target")
 Config.Register("droids", "b2Damage", 14, "B2 wrist blaster damage per bolt")
-Config.Register("droids", "b2RPM", 420, "B2 wrist blaster shots per minute within a burst")
+Config.Register("droids", "b2RPM", 800, "B2 blasters (both arms) shots per minute within a burst")
+Config.Register("droids", "b2cRPM", 420, "B2 cannon: shots per minute within a burst")
 Config.Register("droids", "b2Spread", 1.8, "B2 inaccuracy cone (degrees), more against moving targets")
 Config.Register("droids", "b2RocketDamage", 75, "B2 wrist rocket: damage at the centre")
 Config.Register("droids", "b2RocketRadius", 230, "B2 wrist rocket: blast radius")
@@ -49,6 +58,19 @@ Config.Register("droids", "b2RocketCooldown", 9, "B2 wrist rocket: seconds betwe
 Config.Register("droids", "b2RocketMin", 350, "B2 wrist rocket: closest target it fires at")
 Config.Register("droids", "b2RocketMax", 2600, "B2 wrist rocket: furthest target it fires at")
 Config.Register("droids", "b2RocketSpread", 70, "B2 wrist rocket: miss distance per 1000 units of range")
+
+Config.Register("droids", "heavyHealth", 260, "B1 heavy: health")
+Config.Register("droids", "heavySpeed", 140, "B1 heavy: run speed")
+Config.Register("droids", "heavyRPM", 800, "B1 heavy: shots per minute within a burst")
+Config.Register("droids", "heavySpread", 2.0, "B1 heavy: inaccuracy cone (degrees)")
+
+Config.Register("droids", "cmdHealth", 380, "B1 commander: health")
+Config.Register("droids", "cmdRadius", 800, "B1 commander: droids this close get the boost")
+Config.Register("droids", "cmdSpread", 0.65, "B1 commander boost: aim cone multiplier")
+Config.Register("droids", "cmdReaction", 0.5, "B1 commander boost: reaction time multiplier")
+Config.Register("droids", "cmdPause", 0.6, "B1 commander boost: pause between bursts multiplier")
+Config.Register("droids", "cmdDeathTime", 6, "B1 commander killed: seconds nearby droids are rattled (0 = off)")
+Config.Register("droids", "cmdDeathMult", 1.8, "B1 commander killed: aim cone multiplier while rattled")
 
 Config.Register("droids", "moveSpread", 0.003, "Extra aim cone (degrees) per unit/s the target moves")
 Config.Register("droids", "flashSuppress", 3, "Flash charge: droid aim cone multiplier while dazzled")
@@ -73,14 +95,36 @@ D.KINDS = {
     b1 = { name = "B1 battle droid", model = D.B1_MODEL, health = "b1Health", speed = "b1Speed", range = "b1Range", reaction = "b1Reaction",
         damage = "e5Damage", rpm = "e5RPM", spread = "e5Spread", burst = { 2, 3 }, color = 2, gun = D.E5_MODEL, nades = true },
     b2 = { name = "B2 super battle droid", model = D.B2_MODEL, health = "b2Health", speed = "b2Speed", range = "b2Range", reaction = "b2Reaction",
-        damage = "b2Damage", rpm = "b2RPM", spread = "b2Spread", burst = { 2, 4 }, color = 2, rockets = true, big = true },
+        damage = "b2Damage", rpm = "b2RPM", spread = "b2Spread", burst = { 5, 8 }, color = 2, big = true, dual = true },
 }
-D.KINDS.b1t = table.Copy(D.KINDS.b1)
-D.KINDS.b1t.name, D.KINDS.b1t.model, D.KINDS.b1t.training, D.KINDS.b1t.color = "B1 training droid", D.B1T_MODEL, true, 8
-D.KINDS.b2t = table.Copy(D.KINDS.b2)
-D.KINDS.b2t.name, D.KINDS.b2t.model, D.KINDS.b2t.training, D.KINDS.b2t.color = "B2 training droid", D.B2T_MODEL, true, 8
 
-D.CLASSES = { b1 = "rhylib_b1", b2 = "rhylib_b2", b1t = "rhylib_b1_training", b2t = "rhylib_b2_training" }
+-- B1 variants: a B1 with another model, and a few changes.
+local B1V = "models/aussiwozzi/cgi/b1droids/b1_battledroid_"
+local function variant(base, name, model, changes)
+    local k = table.Copy(D.KINDS[base])
+    k.name, k.model = name, model
+    for key, v in pairs(changes or {}) do k[key] = v end
+    return k
+end
+D.KINDS.b1_aat = variant("b1", "B1 AAT crew droid", B1V .. "aat.mdl")
+D.KINDS.b1_geonosis = variant("b1", "B1 Geonosis droid", B1V .. "geonosis.mdl")
+D.KINDS.b1_marine = variant("b1", "B1 marine droid", B1V .. "marine.mdl")
+D.KINDS.b1_security = variant("b1", "B1 security droid", B1V .. "security.mdl")
+D.KINDS.b1_snow = variant("b1", "B1 snow droid", B1V .. "snow.mdl")
+D.KINDS.b1_heavy = variant("b1", "B1 heavy droid", B1V .. "heavy.mdl",
+    { health = "heavyHealth", speed = "heavySpeed", rpm = "heavyRPM", spread = "heavySpread", burst = { 6, 10 }, nades = false })
+D.KINDS.b1_commander = variant("b1", "B1 commander droid", B1V .. "commander.mdl", { health = "cmdHealth", commander = true })
+D.KINDS.b2_cannon = variant("b2", "B2 cannon droid", "models/aussiwozzi/cgi/b1droids/b2_battledroid_cannon.mdl",
+    { rpm = "b2cRPM", burst = { 2, 4 }, dual = false, rockets = true })
+
+-- Training droids: yellow bolts (color 8), no kill credit.
+D.KINDS.b1t = variant("b1", "B1 training droid", D.B1T_MODEL, { training = true, color = 8 })
+D.KINDS.b2t = variant("b2", "B2 training droid", D.B2T_MODEL, { training = true, color = 8 })
+
+D.CLASSES = { b1 = "rhylib_b1", b2 = "rhylib_b2", b1t = "rhylib_b1_training", b2t = "rhylib_b2_training", b2_cannon = "rhylib_b2_cannon" }
+for _, v in ipairs({ "aat", "commander", "geonosis", "heavy", "marine", "security", "snow" }) do
+    D.CLASSES["b1_" .. v] = "rhylib_b1_" .. v
+end
 
 -- A droid's blaster as rhylib_weapons sees it (BoltColor 2 = red, 8 = training).
 D.guns = D.guns or {}
@@ -100,7 +144,7 @@ for kind, class in pairs(D.CLASSES) do
     list.Set("NPC", class, {
         Name = D.KINDS[kind].name,
         Class = class,
-        Category = "Rhylib Droids",
+        Category = D.KINDS[kind].training and "Rhylib Training Droids" or "Rhylib Droids",
         AdminOnly = true,
     })
     if CLIENT then language.Add(class, D.KINDS[kind].name) end

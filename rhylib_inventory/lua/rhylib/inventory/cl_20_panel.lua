@@ -482,6 +482,63 @@ function PANEL:PaintRegion(r, dragUid)
         local dragged = dragUid == uid and self.drag and (self.drag.fromExt == (r.cid == EXT))
         self:DrawItemBox(inst, x, y, pw, ph, dragged and 70 or 255, endless)
     end
+    if r.cid == EXT then self:PaintQuick(r, c) end
+end
+
+--------------------------------------------------------------------------
+-- Right-click quick take: a short bar on the item, then it's taken.
+-- Several right-clicks queue up (Ctrl: just one).
+--------------------------------------------------------------------------
+
+local QUICK_TIME = 0.35
+local COL_QUICK_BACK = Color(0, 0, 0, 170)
+
+function PANEL:QueueQuick(inst, single)
+    self.quick = self.quick or {}
+    if #self.quick >= 12 then return end
+    self.quick[#self.quick + 1] = { uid = inst.uid, single = single }
+    if #self.quick == 1 then
+        self.quickStart = RealTime()
+        surface.PlaySound("ui/buttonrollover.wav")
+    end
+end
+
+function PANEL:ThinkQuick()
+    local q = self.quick
+    if not q or #q == 0 then return end
+    local c = Inv.cont[EXT]
+    local head = q[1]
+    local inst = c and c.items[head.uid]
+    if not inst or RealTime() - self.quickStart >= QUICK_TIME then
+        if inst then Inv.RequestQuickTake(inst, head.single) end
+        table.remove(q, 1)
+        self.quickStart = RealTime()
+    end
+    if not c then self.quick = nil end
+end
+
+function PANEL:PaintQuick(r, c)
+    local q = self.quick
+    if not q or #q == 0 then return end
+    local s = self.s
+    for i, job in ipairs(q) do
+        local inst = c.items[job.uid]
+        if inst then
+            local x, y, pw, ph = self:ItemRect(r, inst)
+            local bh = math.max(3, math.floor(5 * s))
+            local by = y + ph - bh - math.floor(3 * s)
+            local bx, bw = x + math.floor(4 * s), pw - math.floor(8 * s)
+            surface.SetDrawColor(COL_QUICK_BACK)
+            surface.DrawRect(bx, by, bw, bh)
+            local f = i == 1 and math.Clamp((RealTime() - self.quickStart) / QUICK_TIME, 0, 1) or 0
+            surface.SetDrawColor(UI.Colors.accent)
+            surface.DrawRect(bx, by, bw * f, bh)
+            if i > 1 then
+                surface.SetDrawColor(UI.Colors.accent.r, UI.Colors.accent.g, UI.Colors.accent.b, 90)
+                surface.DrawOutlinedRect(bx, by, bw, bh)
+            end
+        end
+    end
 end
 
 function PANEL:Paint(pw, ph)
@@ -503,7 +560,7 @@ function PANEL:Paint(pw, ph)
 
     draw.SimpleText("INVENTORY", self:Font(16, 700), self.pad, self.header * 0.5, UI.Colors.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
     self:PaintWeight(pw)
-    draw.SimpleText("Drag to move · Ctrl+drag takes one · R rotates · Right-click for options · Drag out to drop",
+    draw.SimpleText("Drag to move · Ctrl+drag takes one · R rotates · Right-click for options (storage: quick take) · Drag out to drop",
         self:Font(12), self.pad, ph - self.footer * 0.5 - self.pad * 0.25, COL_LABEL, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 
     local dragUid = self.drag and self.drag.inst.uid
@@ -594,10 +651,10 @@ function PANEL:PaintNote(pw, ph)
         Color(col.r, col.g, col.b, a), TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
 end
 
--- Lock / unclaim buttons for the owner of an open locker.
+-- Lock / unclaim buttons for the owner of an open locker; Store all / Take all on bulk storages.
 function PANEL:PaintExtControls()
     local ext = Inv.ext
-    if not ext or not ext.canLock then return end
+    if not ext or not (ext.canLock or ext.bulk) then return end
     local r
     for _, reg in ipairs(self.regions) do
         if reg.cid == EXT then r = reg end
@@ -608,6 +665,12 @@ function PANEL:PaintExtControls()
     local bw = math.floor(80 * s)
     local right = r.x + self:SpanPx(r.gw)
     local y = (r.baseY or r.y) - self.label * 0.5 - bh * 0.5
+    -- Bulk storages (training deposit): everything in or out at once.
+    if ext.bulk then
+        self:Button(right - bw, y, bw, bh, "Take all", function() Inv.RequestBulk(1) end)
+        self:Button(right - bw * 2 - self.gap, y, bw, bh, "Store all", function() Inv.RequestBulk(0) end)
+        return
+    end
     self:Button(right - bw, y, bw, bh, ext.locked and "Unlock" or "Lock", function()
         hook.Run("Rhylib.StorageControl", "lock")
     end)
@@ -744,6 +807,7 @@ function PANEL:PaintTooltip()
     if inst.data and inst.data.issued then lines[#lines + 1] = "Issued: if dropped, disappears after 5 minutes" end
     if inst.data and inst.data.hidden and inst.c ~= EXT then lines[#lines + 1] = "Hidden: a search may miss it" end
     if inst.c == EXT and Inv.ext and Inv.ext.depot then lines[#lines + 1] = "Endless supply, drag to take (Ctrl: just one)" end
+    if inst.c == EXT then lines[#lines + 1] = "Right-click: quick take (Ctrl: just one)" end
     if inst.hb then
         lines[#lines + 1] = "On the hotbar (" .. inst.hb .. ")"
     elseif inst.c ~= EXT then
@@ -810,6 +874,8 @@ function PANEL:OnMousePressed(code)
         local single = ctrlDown() and (inst.count > 1 or (fromExt and Inv.ext and Inv.ext.depot))
         self.drag = { inst = inst, rot = inst.rot, offX = offX, offY = offY, fromExt = fromExt, single = single or false }
         self:MouseCapture(true)
+    elseif code == MOUSE_RIGHT and fromExt then
+        self:QueueQuick(inst, ctrlDown())
     elseif code == MOUSE_RIGHT and not fromExt then
         local def = Items.Get(inst.id)
         local menu = DermaMenu()
@@ -923,6 +989,7 @@ function PANEL:Think()
     end
     self.rDown = r
 
+    self:ThinkQuick()
     if not LocalPlayer():Alive() then self:Remove() end
 end
 

@@ -121,6 +121,23 @@ local function specVariant(storage, ply)
     return sub
 end
 
+-- Training deposit: one storage per player (sub-storage by SteamID).
+-- Loaded again on every open, since another deposit may have changed it.
+local function depositVariant(storage, ply)
+    local sid = ply:SteamID64()
+    if not sid then return nil end
+    local sub = storage.subs[sid]
+    if not sub then
+        sub = Inv().NewStorage(storage.ent, {
+            kind = "grid", w = 6, h = 6, title = "Training deposit", bulk = true, grow = true,
+            onChanged = function(s) Rhylib.Data.Set("train_dep", sid, Inv().StorageSerialize(s)) end,
+        })
+        storage.subs[sid] = sub
+    end
+    if not next(sub.viewers) then Inv().StorageLoad(sub, Rhylib.Data.Get("train_dep", sid)) end
+    return sub
+end
+
 local function lockerTitle(ent)
     local name = ent:GetOwnerName()
     return name ~= "" and ("Locker: " .. name) or "Personal locker"
@@ -155,6 +172,8 @@ function A.Setup(ent)
         return I.CreateStorage(ent, { kind = "depot", w = 6, title = "Training armoury", stock = weaponStock(true) })
     elseif kind == "trainingAmmo" then
         return I.CreateStorage(ent, { kind = "depot", w = 6, title = "Training ammo", stock = ammoStock(true) })
+    elseif kind == "trainingDeposit" then
+        return I.CreateStorage(ent, { kind = "grid", w = 6, h = 6, title = "Training deposit", variant = depositVariant })
     elseif kind == "gear" then
         return I.CreateStorage(ent, { kind = "depot", w = 6, title = "Gear cabinet", stock = gearStock() })
     elseif kind == "spec" then

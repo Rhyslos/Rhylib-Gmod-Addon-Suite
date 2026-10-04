@@ -7,6 +7,7 @@
 local D = Rhylib.Droids
 
 D.active = D.active or {}   -- [droid] = true
+D.commanders = D.commanders or {}   -- [commander droid] = true
 
 function D.Count()
     local n = 0
@@ -55,6 +56,42 @@ function D.SuppressMult(droid)
         end
     end
     return m
+end
+
+-- Near a living commander other than itself (checked at most twice a second).
+function D.Boosted(droid)
+    local now = CurTime()
+    if (droid.rhylibBoostAt or 0) > now then return droid.rhylibBoost end
+    droid.rhylibBoostAt = now + 0.5
+    local boost = false
+    if next(D.commanders) then
+        local r = D.Cfg("cmdRadius")
+        local pos = droid:GetPos()
+        for c in pairs(D.commanders) do
+            if not IsValid(c) then
+                D.commanders[c] = nil
+            elseif c ~= droid and c:Health() > 0 and c:GetPos():DistToSqr(pos) < r * r then
+                boost = true
+                break
+            end
+        end
+    end
+    droid.rhylibBoost = boost
+    return boost
+end
+
+-- A commander was destroyed: droids it was boosting aim worse for a while.
+function D.Rattle(cmd)
+    local secs = D.Cfg("cmdDeathTime")
+    if secs <= 0 then return end
+    local r = D.Cfg("cmdRadius")
+    local pos = cmd:GetPos()
+    for d in pairs(D.active) do
+        if IsValid(d) and d ~= cmd and d:GetPos():DistToSqr(pos) < r * r then
+            D.Suppress(d, secs, D.Cfg("cmdDeathMult"))
+            d.rhylibBoostAt = 0
+        end
+    end
 end
 
 -- Droids don't shoot each other to pieces.

@@ -40,7 +40,7 @@ Items.finalized = false
 
 Items.UID_BITS = 16
 Items.NET_BITS = 10       -- up to 1023 item types
-Items.POS_BITS = 4        -- containers up to 16 x 16
+Items.POS_BITS = 5        -- containers up to 32 x 32 (the training deposit grows to 31 rows)
 Items.COUNT_BITS = 8
 
 function Items.Register(id, def)

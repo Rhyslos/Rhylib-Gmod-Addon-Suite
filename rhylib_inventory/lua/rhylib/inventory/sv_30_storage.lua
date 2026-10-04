@@ -18,6 +18,9 @@
         Inv.OpenStorage(ply, ent)
 
     noDeposit = true: items can only be taken out (property lockers).
+    bulk = true: "Store all" / "Take all" buttons (training deposit).
+    grow = true: the grid gets taller as it fills (up to GROW_MAX rows),
+        so it's as good as endless.
     variant = function(storage, ply) return sub end   -- optional: a different
         storage per player (role armouries). Make subs with Inv.NewStorage
         and keep them in storage.subs[key]; they share the entity.
@@ -32,6 +35,9 @@
       inv.take    (request) storage item -> your container at x, y
       inv.extmove (request) move within a grid storage
       inv.close   (request) you closed the window
+      inv.quick   (request) right-click quick take: storage item -> anywhere it fits
+      inv.bulk    (request) store all / take all (bulk storages)
+      inv.took    (to one player) something came in or went out: play the sound
 ]]
 
 local Inv = Rhylib.Inventory
@@ -42,11 +48,13 @@ local EXT = Items.EXT
 local SLOT_BACK = Items.SLOT_BACK
 local OP_REMOVE, OP_SET = 0, 1
 local MAX_DIST = 160
+local GROW_MIN, GROW_MAX = 6, 31   -- (rows; 31 is the most inv.ext can send)
 Inv.STORAGE_DIST = MAX_DIST  -- also used by rhylib_armoury (claiming lockers)
 
 Inv.storages = Inv.storages or {}  -- [entity] = storage
 
 Rhylib.Net.Register("inv.ext")
+Rhylib.Net.Register("inv.took")
 local extBatch = Rhylib.Net.CreateBatch("inv.extupd", function(ch)
     net.WriteUInt(ch.op, 1)
     if ch.op == OP_SET then
@@ -113,8 +121,11 @@ function Inv.NewStorage(ent, opts)
         controls = opts.controls,
         variant = opts.variant,
         noDeposit = opts.noDeposit,
+        bulk = opts.bulk,
+        grow = opts.grow,
         subs = {},
     }
+    if storage.grow then storage.h = math.max(storage.h, GROW_MIN) end
     if storage.kind == "depot" then layoutDepot(storage) end
     return storage
 end
@@ -166,15 +177,33 @@ function Inv.StorageSerialize(storage)
     return out
 end
 
+-- A growing storage: as tall as its items need, plus two empty rows.
+local function fitHeight(storage)
+    if not storage.grow then return false end
+    local used = 0
+    for _, o in pairs(storage.items) do
+        local def = Items.defs[o.id]
+        local h = def and (o.rot and def.w or def.h) or 1
+        used = math.max(used, o.y + h)
+    end
+    local h = math.Clamp(used + 2, GROW_MIN, GROW_MAX)
+    if h == storage.h then return false end
+    storage.h = h
+    return true
+end
+
 function Inv.StorageLoad(storage, rows)
     storage.items = {}
-    if not istable(rows) then return end
-    Items.EnsureReady()
-    for _, row in ipairs(rows) do
-        if Items.defs[row[1]] then
-            Inv.StorageAdd(storage, row[1], row[5] or 1, istable(row[6]) and row[6] or {}, row[2], row[3], row[4] == 1)
+    if storage.grow then storage.h = GROW_MAX end
+    if istable(rows) then
+        Items.EnsureReady()
+        for _, row in ipairs(rows) do
+            if Items.defs[row[1]] then
+                Inv.StorageAdd(storage, row[1], row[5] or 1, istable(row[6]) and row[6] or {}, row[2], row[3], row[4] == 1)
+            end
         end
     end
+    fitHeight(storage)
 end
 
 --------------------------------------------------------------------------
@@ -192,14 +221,21 @@ end
 -- ply: who changed it. A saved storage (a locker) saves straight away,
 -- and so does that player's inventory, so both land in the same database
 -- write and a crash can't duplicate or lose the item that moved.
+local sendOpen
 local function changedStorage(storage, ply)
+    -- (grown or shrunk: everyone looking gets the new size)
+    if fitHeight(storage) then
+        for p in pairs(storage.viewers) do
+            if IsValid(p) then sendOpen(p, storage) end
+        end
+    end
     if storage.onChanged then
         storage.onChanged(storage)
         if IsValid(ply) and Inv.Save then Inv.Save(ply) end
     end
 end
 
-local function sendOpen(ply, storage)
+function sendOpen(ply, storage)
     local ctl = storage.controls and storage.controls(storage, ply) or {}
     local list = {}
     for _, o in pairs(storage.items) do list[#list + 1] = o end
@@ -211,6 +247,7 @@ local function sendOpen(ply, storage)
     net.WriteUInt(storage.h, 5)
     net.WriteBool(ctl.canLock or false)
     net.WriteBool(ctl.locked or false)
+    net.WriteBool(storage.bulk or false)
     net.WriteUInt(#list, 8)
     for _, o in ipairs(list) do Items.WriteInstance(o) end
     Rhylib.Profiler.AddNet("inv.ext", net.BytesWritten() or 0)
@@ -423,6 +460,152 @@ function Inv.Take(ply, suid, cid, x, y, rot, single)
     changedStorage(storage, ply)
 end
 
+local function tookSound(ply)
+    Rhylib.Net.Start("inv.took")
+    net.Send(ply)
+end
+
+-- Right-click quick take: storage item -> wherever it fits in your
+-- inventory (stacks first). single: just one.
+function Inv.QuickTake(ply, suid, single)
+    if Inv.Locked and Inv.Locked(ply) then return end
+    local st, storage = openStorage(ply)
+    if not st then return end
+    local so = storage.items[suid]
+    if not so then return end
+    local def = Items.defs[so.id]
+    if not def then return end
+    if Items.Unique(def) and Inv.Has(ply, so.id) then
+        Inv.Note(ply, "You already carry one")
+        return
+    end
+    if not Inv.MayHold(ply, so.id) then
+        Inv.Note(ply, Inv.HoldReason(so.id))
+        return
+    end
+    local depot = storage.kind == "depot"
+    local n = single and 1 or so.count
+    if depot then n = math.min(n, Items.StackFor(def, ply)) end
+    local data = depot and { fill = def.fill and 1 or nil, issued = true } or table.Copy(so.data or {})
+    local taken = n - Inv.AddItem(ply, so.id, n, data)
+    if taken <= 0 then
+        Inv.Note(ply, "No room for that")
+        return
+    end
+    tookSound(ply)
+    if depot then return end   -- endless
+    if taken >= so.count then
+        storage.items[suid] = nil
+        sendChange(storage, OP_REMOVE, nil, suid)
+    else
+        so.count = so.count - taken
+        sendChange(storage, OP_SET, so)
+    end
+    changedStorage(storage, ply)
+end
+
+local BULK_FROM = { Items.MAIN, Items.BACK, Items.RACK, Items.BELT }
+
+-- Store all: everything you carry goes in, except job gear and the
+-- backpack you wear (its contents do go in).
+local function storeAll(ply, st, storage)
+    local list = {}
+    for _, cid in ipairs(BULK_FROM) do
+        local c = st.cont[cid]
+        if c then
+            for _, inst in pairs(c.items) do
+                if not (inst.data and inst.data.loadout) and Items.CanLeave(st, inst) then list[#list + 1] = inst end
+            end
+        end
+    end
+    if #list == 0 then
+        Inv.Note(ply, "Nothing to store (job gear stays with you)")
+        return
+    end
+    -- Big things first: they pack better.
+    table.sort(list, function(a, b)
+        local da, db = Items.defs[a.id], Items.defs[b.id]
+        return (da and da.w * da.h or 1) > (db and db.w * db.h or 1)
+    end)
+    if storage.grow then storage.h = GROW_MAX end
+    local stored, full = 0, false
+    for _, inst in ipairs(list) do
+        local def = Items.defs[inst.id]
+        if def then
+            I.captureWeapon(ply, inst)
+            local data = table.Copy(inst.data or {})
+            data.hidden = nil
+            local left = inst.count
+            -- Top up matching full stacks first.
+            if def.stack > 1 and Items.IsFull(inst) then
+                for _, o in pairs(storage.items) do
+                    if left <= 0 then break end
+                    if o.id == inst.id and o.count < def.stack and Items.IsFull(o) and Items.SameIssued(o, inst) then
+                        local add = math.min(def.stack - o.count, left)
+                        o.count = o.count + add
+                        left = left - add
+                    end
+                end
+            end
+            if left > 0 then left = Inv.StorageAdd(storage, inst.id, left, data) end
+            local moved = inst.count - left
+            if moved > 0 then
+                stored = stored + 1
+                if moved >= inst.count then I.removeInst(ply, st, inst.uid) else
+                    inst.count = left
+                    I.update(ply, st, inst)
+                end
+            end
+            if left > 0 then full = true end
+        end
+    end
+    if full then Inv.Note(ply, "The deposit is full: some things stayed with you") end
+    return stored > 0
+end
+
+-- Take all: everything back that fits; the rest stays stored.
+local function takeAll(ply, st, storage)
+    local list = {}
+    for _, o in pairs(storage.items) do list[#list + 1] = o end
+    if #list == 0 then
+        Inv.Note(ply, "Nothing stored here")
+        return
+    end
+    table.sort(list, function(a, b)
+        if a.y ~= b.y then return a.y < b.y end
+        return a.x < b.x
+    end)
+    local took, left = false, false
+    for _, so in ipairs(list) do
+        local n = so.count - Inv.AddItem(ply, so.id, so.count, table.Copy(so.data or {}))
+        if n > 0 then
+            took = true
+            if n >= so.count then storage.items[so.uid] = nil else so.count = so.count - n end
+        end
+        if storage.items[so.uid] then left = true end
+    end
+    if left then Inv.Note(ply, "Not everything fit: the rest is still stored") end
+    return took
+end
+
+-- action 0: store all, 1: take all.
+function Inv.Bulk(ply, action)
+    if Inv.Locked and Inv.Locked(ply) then return end
+    local st, storage = openStorage(ply)
+    if not st or not storage.bulk or storage.kind ~= "grid" then return end
+    local did
+    if action == 0 then did = storeAll(ply, st, storage) else did = takeAll(ply, st, storage) end
+    fitHeight(storage)
+    -- Many changes at once: send the whole storage again.
+    for p in pairs(storage.viewers) do
+        if IsValid(p) then sendOpen(p, storage) end
+    end
+    if did then
+        tookSound(ply)
+        changedStorage(storage, ply)
+    end
+end
+
 -- Rearranging inside a grid storage.
 function Inv.StorageMove(ply, suid, x, y, rot, single)
     local st, storage = openStorage(ply)
@@ -482,6 +665,15 @@ Rhylib.Net.Receive("inv.extmove", function(ply)
     local single = net.ReadBool()
     Inv.StorageMove(ply, suid, x, y, rot, single)
 end, { rate = 20, burst = 10 })
+
+Rhylib.Net.Receive("inv.quick", function(ply)
+    local suid = net.ReadUInt(Items.UID_BITS)
+    Inv.QuickTake(ply, suid, net.ReadBool())
+end, { rate = 10, burst = 6 })
+
+Rhylib.Net.Receive("inv.bulk", function(ply)
+    Inv.Bulk(ply, net.ReadUInt(1))
+end, { rate = 2, burst = 2 })
 
 Rhylib.Net.Receive("inv.close", function(ply)
     Inv.CloseStorage(ply, true)

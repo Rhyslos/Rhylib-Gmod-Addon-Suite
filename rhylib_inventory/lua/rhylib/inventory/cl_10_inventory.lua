@@ -4,7 +4,7 @@
 
     Same shape as the server: Inv.cont[cid] = { w, h, items }, Inv.byUid.
     An open outside container (locker, armoury, crate) is Inv.cont[EXT]
-    with its own uids, plus Inv.ext = { title, depot, canLock, locked }.
+    with its own uids, plus Inv.ext = { title, depot, canLock, locked, bulk }.
 ]]
 
 Rhylib.Inventory = Rhylib.Inventory or {}
@@ -88,6 +88,7 @@ net.Receive(Rhylib.Net.Name("inv.ext"), function()
     local w, h = net.ReadUInt(5), net.ReadUInt(5)
     ext.canLock = net.ReadBool()
     ext.locked = net.ReadBool()
+    ext.bulk = net.ReadBool()
     local c = { w = w, h = h, items = {} }
     for _ = 1, net.ReadUInt(8) do
         local inst = Items.ReadInstance()
@@ -95,6 +96,8 @@ net.Receive(Rhylib.Net.Name("inv.ext"), function()
     end
     Inv.cont[EXT] = c
     Inv.ext = ext
+    -- (another storage: quick takes queued for the old one are dropped)
+    if IsValid(Inv.panel) then Inv.panel.quick = nil end
     if not IsValid(Inv.panel) then Inv.Toggle() end
 end)
 
@@ -134,6 +137,26 @@ function Inv.RequestTake(inst, cid, x, y, rot, single)
     net.WriteBool(single or false)
     net.SendToServer()
 end
+
+-- Right-click quick take: the server puts it wherever it fits.
+function Inv.RequestQuickTake(inst, single)
+    Rhylib.Net.Start("inv.quick")
+    net.WriteUInt(inst.uid, Items.UID_BITS)
+    net.WriteBool(single or false)
+    net.SendToServer()
+end
+
+-- Bulk storages: 0 = store all, 1 = take all.
+function Inv.RequestBulk(action)
+    Rhylib.Net.Start("inv.bulk")
+    net.WriteUInt(action, 1)
+    net.SendToServer()
+end
+
+-- Something came into (or went out of) your inventory from a storage.
+net.Receive(Rhylib.Net.Name("inv.took"), function()
+    surface.PlaySound("items/ammo_pickup.wav")
+end)
 
 function Inv.RequestExtMove(inst, x, y, rot, single)
     Rhylib.Net.Start("inv.extmove")

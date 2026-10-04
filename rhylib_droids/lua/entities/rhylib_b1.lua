@@ -1,13 +1,16 @@
 --[[
     B1 battle droid: a NextBot with an E-5. See rhylib/droids/sh_00_config.lua.
     Also the base of the other droids (ENT.DroidKind picks a row of D.KINDS:
-    rhylib_b2, rhylib_b1_training, rhylib_b2_training).
+    rhylib_b2, rhylib_b2_cannon, rhylib_b1_<variant>, rhylib_b1_training,
+    rhylib_b2_training).
 
     Behaviour (one coroutine): look for a target a few times a second;
     with one, turn to it, wait the reaction time, then fire short bursts
     with pauses, advancing now and then if far. B1s may throw a grenade
-    where a target just ducked out of sight; B2s lob a wrist rocket high
-    over cover now and then. When it loses sight it goes to where it last
+    where a target just ducked out of sight; B2 cannons lob a wrist rocket
+    high over cover now and then. B2s fire from both arms in turn. Near a
+    commander (not itself) a droid aims better, reacts faster and pauses
+    less (D.Boosted). When it loses sight it goes to where it last
     saw the target, then wanders near home.
 ]]
 
@@ -82,6 +85,7 @@ function ENT:Initialize()
         return
     end
     D.active[self] = true
+    if k.commander then D.commanders[self] = true end
 
     self:SetHealth(D.Cfg(k.health))
     self:SetMaxHealth(D.Cfg(k.health))
@@ -104,6 +108,7 @@ if SERVER then
 
     function ENT:OnRemove()
         D.active[self] = nil
+        D.commanders[self] = nil
     end
 
     --------------------------------------------------------------------------
@@ -141,7 +146,11 @@ if SERVER then
             end
         end
         if best then
-            if self.target ~= best then self.reactUntil = now + D.Cfg(k.reaction) * math.Rand(0.8, 1.3) end
+            if self.target ~= best then
+                local react = D.Cfg(k.reaction) * math.Rand(0.8, 1.3)
+                if D.Boosted(self) then react = react * D.Cfg("cmdReaction") end
+                self.reactUntil = now + react
+            end
             self.target = best
             self.lastSeen = best:GetPos()
             self.lastSeenAt = now
@@ -164,6 +173,11 @@ if SERVER then
     function ENT:OnKilled(dmg)
         -- Training droids give nothing (kill feed, skills, credits).
         if not self.Training then hook.Run("OnNPCKilled", self, dmg:GetAttacker(), dmg:GetInflictor()) end
+        -- A commander down: the droids it led are rattled for a while.
+        if self:Kind().commander then
+            D.commanders[self] = nil
+            D.Rattle(self)
+        end
         local ed = EffectData()
         ed:SetOrigin(self:WorldSpaceCenter())
         ed:SetMagnitude(self:Kind().big and 4 or 2)
@@ -178,8 +192,14 @@ if SERVER then
     -- Shooting
     --------------------------------------------------------------------------
 
+    -- (dual: both arms in turn)
     function ENT:Muzzle()
-        local b = self:LookupBone("ValveBiped.Bip01_R_Hand")
+        local hand = "ValveBiped.Bip01_R_Hand"
+        if self:Kind().dual then
+            self.leftArm = not self.leftArm
+            if self.leftArm then hand = "ValveBiped.Bip01_L_Hand" end
+        end
+        local b = self:LookupBone(hand)
         local pos = b and self:GetBonePosition(b)
         if not pos then return self:Eye() end
         return pos + self:GetForward() * (self:Kind().gun and 18 or 10) + Vector(0, 0, 2)
@@ -194,7 +214,9 @@ if SERVER then
         local dir = aim - origin
         dir:Normalize()
         -- Inaccuracy: base cone, worse against moving targets.
-        local cone = math.rad((D.Cfg(k.spread) + t:GetVelocity():Length2D() * D.Cfg("moveSpread")) * D.SuppressMult(self))
+        local mult = D.SuppressMult(self)
+        if D.Boosted(self) then mult = mult * D.Cfg("cmdSpread") end
+        local cone = math.rad((D.Cfg(k.spread) + t:GetVelocity():Length2D() * D.Cfg("moveSpread")) * mult)
         local a = math.Rand(0, math.pi * 2)
         local r = math.tan(cone * math.sqrt(math.Rand(0, 1)))
         local ang = dir:Angle()
@@ -243,7 +265,7 @@ if SERVER then
         self.nextNade = CurTime() + D.Cfg("b1NadeCooldown") * math.Rand(0.8, 1.3)
     end
 
-    -- B2: a wrist rocket lobbed high, landing near pos.
+    -- B2 cannon: a wrist rocket lobbed high, landing near pos.
     function ENT:FireRocket(pos, mover)
         local from = self:GetPos() + Vector(0, 0, 80) + self:GetForward() * 10
         local dist = from:Distance(pos)
@@ -345,7 +367,7 @@ if SERVER then
             self:Face(t:GetPos(), 0.15)
             if CurTime() >= (self.reactUntil or 0) then
                 local d = t:GetPos():Distance(self:GetPos())
-                -- B2: now and then a rocket instead of a burst.
+                -- B2 cannon: now and then a rocket instead of a burst.
                 if k.rockets and CurTime() >= self.nextRocket and d > D.Cfg("b2RocketMin") and d < D.Cfg("b2RocketMax") and math.random() < 0.5 then
                     self:FireRocket(t:GetPos(), t)
                     self:Face(t:GetPos(), 0.6)
@@ -360,7 +382,9 @@ if SERVER then
                     end
                 end
                 bursts = bursts + 1
-                self:Face(IsValid(t) and t:GetPos() or self:GetPos(), math.Rand(0.6, 1.3))
+                local pause = math.Rand(0.6, 1.3)
+                if D.Boosted(self) then pause = pause * D.Cfg("cmdPause") end
+                self:Face(IsValid(t) and t:GetPos() or self:GetPos(), pause)
                 -- Far away: walk a bit closer every few bursts.
                 if IsValid(t) and bursts % 3 == 0 and t:GetPos():DistToSqr(self:GetPos()) > ADVANCE_DIST * ADVANCE_DIST then
                     local toward = self:GetPos() + (t:GetPos() - self:GetPos()):GetNormalized() * 400
