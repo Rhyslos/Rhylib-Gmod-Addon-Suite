@@ -1,8 +1,10 @@
 --[[
-    Chemistry bench (med bay). Chemist medics (skill Chemistry) press E to
-    turn medical supplies into stims, burn gel, painkillers, splints,
-    blood packs and medkits (config medical chemRecipes). Logic:
-    rhylib_medical sv_40_medbay.lua. Saved per map with
+    Chemistry bench (med bay), also the blood analyser. Press E: the
+    interaction wheel offers Crafting (Chemists: supplies into field items
+    and medicines, config medical chemRecipes) and Blood analyser (medics:
+    analyse carried blood samples, up to 4 at once). Without rhylib_menus
+    E opens the crafting menu, which has the analyser at the top. Logic:
+    sv_40_medbay.lua and sv_50_illness.lua. Saved per map with
     rhylib_medical_save.
 ]]
 
@@ -14,6 +16,11 @@ ENT.PrintName = "Chemistry bench"
 ENT.Category = "Rhylib Medical"
 ENT.Spawnable = true
 ENT.AdminOnly = true
+ENT.RhylibWheel = true   -- (E opens the interaction wheel on it)
+
+function ENT:SetupDataTables()
+    self:NetworkVar("Int", 0, "Busy")   -- (blood samples being analysed)
+end
 
 local FALLBACK = "models/props_c17/FurnitureTable001a.mdl"
 
@@ -52,6 +59,7 @@ if CLIENT then
     function ENT:Draw()
         self:DrawModel()
         local Med = Rhylib.Medical
-        if Med and Med.DrawEntLabel then Med.DrawEntLabel(self, "Chemistry bench", "Chemists · Press E") end
+        local busy = self:GetBusy()
+        if Med and Med.DrawEntLabel then Med.DrawEntLabel(self, "Chemistry bench", busy > 0 and ("Analysing " .. busy .. " · Press E") or "Crafting · blood analyser · Press E") end
     end
 end

@@ -16,6 +16,9 @@
         end)
     (Return nothing from the hook, so every addon's hook runs.)
 
+    Entities with ENT.RhylibWheel = true (the chemistry bench) open their
+    own wheel at once on E: hook Rhylib.WheelEntityOptions(ent, me, add).
+
     Menus.WheelProgress(text, secs) shows a short progress bar under the
     crosshair (for timed actions the server finishes, like cuffing).
 ]]
@@ -47,6 +50,7 @@ function W.FindTarget(me)
     local L = Rhylib.Lying
     if IsValid(e) and L and L.Owner and L.Owner(e) then e = L.Owner(e) end
     if IsValid(e) and e:IsPlayer() and e ~= me and e:Alive() then return e end
+    if IsValid(e) and e.RhylibWheel then return e end
 end
 
 local function canOpen(me)
@@ -71,7 +75,11 @@ local function gather(target, me)
         opts = opts or {}
         list[#list + 1] = { label = label, run = run, sub = opts.sub, disabled = opts.disabled, order = opts.order or 50, n = #list }
     end
-    hook.Run("Rhylib.WheelOptions", target, me, add)
+    if target:IsPlayer() then
+        hook.Run("Rhylib.WheelOptions", target, me, add)
+    else
+        hook.Run("Rhylib.WheelEntityOptions", target, me, add)
+    end
     table.sort(list, function(a, b)
         if a.order ~= b.order then return a.order < b.order end
         return a.n < b.n
@@ -116,7 +124,7 @@ Rhylib.Hook.Add("PlayerBindPress", "menus.wheel", function(ply, bind, pressed, c
     if not t then return end
     W.code = code
     -- Downed: at once (instead of medical's E menu). Standing: after a hold.
-    if isDown(t) then
+    if not t:IsPlayer() or isDown(t) then
         if W.Open(t) then return true end
         return
     end
@@ -189,7 +197,7 @@ Rhylib.Hook.Add("HUDPaint", "menus.wheel", function()
     draw.RoundedBox(dz, cx - dz, cy - dz, dz * 2, dz * 2, COL_DEAD)
     draw.SimpleText(pick and "" or "Cancel", UI.Font(14), cx, cy + 9 * s, UI.Colors.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     if IsValid(W.target) then
-        draw.SimpleText(W.target:Nick(), UI.Font(15, 700), cx, cy - 9 * s, UI.Colors.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText(W.target:IsPlayer() and W.target:Nick() or (W.target.PrintName or ""), UI.Font(15, 700), cx, cy - 9 * s, UI.Colors.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
 
     local w, h = 210 * s, 58 * s

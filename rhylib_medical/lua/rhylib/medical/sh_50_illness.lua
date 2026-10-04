@@ -6,12 +6,16 @@
       1. Draw blood: the patient lies on a med sofa; a medic with a blood
          sample kit uses "Draw blood" on the interaction wheel. The labelled
          blood sample goes into the medic's inventory.
-      2. Analyser (rhylib_med_analyser): press E, analyse a sample. The
-         result: infected or not, and the load (0-100) with an error band
-         (Chemists: narrower band, faster).
-      3. Test strip: right-click the sample, "Test on a strip". The colour
-         says the kind: blue viral (antiviral), green bacterial
-         (antibiotics), purple poison (antidote), clear = nothing.
+      2. Test strip: right-click the sample, "Apply to a test strip". The
+         strip develops over stripMin-stripMax s (worse = sooner). control
+         channel = the test works; the test channel's colour says the kind: blue viral
+         (antiviral), green bacterial (antibiotics), purple poison
+         (antidote), test channel dark = nothing. Medics see that someone is ill
+         (injury panel), not what it is.
+      3. Analyser (the chemistry bench, "Blood analyser" on the wheel or
+         at the top of its menu): needs the sample and its developed
+         strip. Gives the dose in units with an error band (Chemists:
+         narrower band, faster). Samples and strips spoil after sampleLife.
       4. Dose: "Give medicine" on the wheel, pick the medicine and the units.
          Right dose = load / 5 units, within doseTolerance (15%).
          Too little: the load drops by what was given and keeps growing.
@@ -44,6 +48,7 @@ Med.ILL_BY_ID = { viral = 1, bacterial = 2, poison = 3 }
 Med.BLOOD_KIT = "rhylib_blood_kit"
 Med.SAMPLE = "rhylib_blood_sample"
 Med.STRIP = "rhylib_test_strip"
+Med.CASSETTE = "rhylib_test_cassette"   -- (a strip with a sample on it, developing)
 
 Config.Register("medical", "loadRate", { 0.5, 0.75, 1.5 }, "Illness: load gained per minute untreated (viral, bacterial, poison)")
 Config.Register("medical", "illDrain", 2, "Illness: health lost per 30 s at the worst stage (less at lower stages)")
@@ -54,7 +59,9 @@ Config.Register("medical", "scanBand", 9, "Analyser error band (± load); Chemis
 Config.Register("medical", "scanBandChemist", 4, "Analyser error band for Chemists")
 Config.Register("medical", "doseTime", 2, "Seconds to give a dose")
 Config.Register("medical", "doseTolerance", 0.15, "How far off the right dose may be and still cure (share of it, at least 1 unit)")
-Config.Register("medical", "analyserModel", "models/props_lab/reciever_cart.mdl", "Analyser model")
+Config.Register("medical", "stripMax", 120, "Test strip: seconds a light infection takes to show (a negative test also needs this long)")
+Config.Register("medical", "stripMin", 30, "Test strip: seconds a severe infection takes to show")
+Config.Register("medical", "sampleLife", 1800, "Seconds before a blood sample or used strip spoils and is thrown away")
 
 function Med.IllState(ply)
     local v = ply:GetNW2Int("rhylib_ill", 0)
@@ -84,8 +91,12 @@ local function registerItems()
         name = "Blood sample", desc = "Put it in an analyser, then test it on a strip (right-click)",
         w = 1, h = 1, stack = 1, weight = 0.05, category = "medical", model = "models/healthvial.mdl", note = true,
     })
+    Items.Register(Med.CASSETTE, {
+        name = "Test strip (used)", desc = "Right-click: look at the result. Keep it with its blood sample for the analyser",
+        w = 1, h = 1, stack = 1, weight = 0.02, category = "medical", model = "models/props_lab/clipboard.mdl", note = true,
+    })
     Items.Register(Med.STRIP, {
-        name = "Test strip", desc = "Blue = viral · green = bacterial · purple = poison · clear = nothing",
+        name = "Test strip", desc = "Right-click a blood sample to use one. Control lights = the test works; the test channel lights when infected (blue viral · green bacterial · purple poison)",
         w = 1, h = 1, stack = 10, weight = 0.02, category = "medical", model = "models/props_lab/clipboard.mdl",
     })
     -- Medicines are counted in units (a stack is 20).

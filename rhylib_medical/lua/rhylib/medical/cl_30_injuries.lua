@@ -86,6 +86,13 @@ local function partColour(p, rough)
     return Color(Lerp(f, COL_FINE.r, base.r), Lerp(f, COL_FINE.g, base.g), Lerp(f, COL_FINE.b, base.b))
 end
 
+-- Illness by stage (cl_50_illness.lua Med.IllSigns), drawn on the head.
+local ILL_TAGS = {
+    { key = "ill1", text = "UNWELL", col = Color(170, 200, 120) },
+    { key = "ill2", text = "ILL", col = Color(190, 210, 90) },
+    { key = "ill3", text = "SEVERELY ILL", col = Color(214, 225, 60) },
+}
+
 local function tagsFor(p, rough)
     local out = {}
     if rough then
@@ -227,8 +234,13 @@ function PANEL:Paint(w, h)
                 surface.DrawLine(a.x, a.y, b.x, b.y)
             end
         end
-        -- Tags
+        -- Tags (an illness shows on the head as an affliction; what it is
+        -- takes a blood test)
         local tags = tagsFor(p, rough)
+        if limb == "head" and (medic or me) and Med.IllSigns then
+            local _, stage = Med.IllSigns(ply)
+            if stage then tags[#tags + 1] = ILL_TAGS[stage] end
+        end
         local at = TAG_AT[limb]
         local tx, ty = self:ToScreen(at[1], at[2])
         for i, tag in ipairs(tags) do
@@ -253,6 +265,12 @@ function PANEL:Paint(w, h)
         -- (torso only: an illness lowers the cap too, and medics find that with a blood test)
         local cap = Med.StaminaCap(ply) / math.max(Med.IllStaminaMult and Med.IllStaminaMult(ply) or 1, 0.01)
         if cap < 0.99 then lines[#lines + 1] = { string.format("Hurt torso: stamina capped at %d%%", cap * 100), COL_HURT } end
+        -- Illness: you feel it, a medic sees the signs; the cause needs a blood test.
+        local sign, stage
+        if Med.IllSigns then sign, stage = Med.IllSigns(ply) end
+        if sign then
+            lines[#lines + 1] = { me and "You feel unwell" or "Ill, cause unknown: draw blood and analyse it", ILL_TAGS[stage].col }
+        end
     end
     if #lines == 0 then
         if not medic and not me then

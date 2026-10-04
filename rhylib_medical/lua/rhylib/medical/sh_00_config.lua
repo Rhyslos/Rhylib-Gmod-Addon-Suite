@@ -174,9 +174,9 @@ Med.ITEMS = {
 
 -- Medicines: items with no effect yet (ideas for later treatments).
 Med.MEDICINES = {
-    { "rhylib_antiviral", "Antiviral", "Viral infections (blue strip). Units; dose = load / 5" },
-    { "rhylib_antidote", "Antidote", "Poisoning (purple strip). Units; dose = load / 5" },
-    { "rhylib_antibiotics", "Antibiotics", "Bacterial infections (green strip). Units; dose = load / 5" },
+    { "rhylib_antiviral", "Antiviral", "Viral infections (blue strip). In units: the analyser gives the dose" },
+    { "rhylib_antidote", "Antidote", "Poisoning (purple strip). In units: the analyser gives the dose" },
+    { "rhylib_antibiotics", "Antibiotics", "Bacterial infections (green strip). In units: the analyser gives the dose" },
 }
 
 local function registerMedicines()

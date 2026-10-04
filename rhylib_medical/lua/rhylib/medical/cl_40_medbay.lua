@@ -43,11 +43,20 @@ end
 local openM
 Rhylib.Net.Receive("chem.open", function()
     local bench = net.ReadEntity()
+    local canCraft = net.ReadBool()
     if not IsValid(bench) then return end
     if IsValid(openM) then openM:Remove() end
     local Kit = Rhylib.Menus and Rhylib.Menus.Kit
     local m = Kit and Kit.Menu() or DermaMenu()
     openM = m
+    -- The bench is the blood analyser too (cl_50_illness.lua).
+    m:AddOption("Blood analyser...", function() if IsValid(bench) and Med.OpenAnalyser then Med.OpenAnalyser(bench) end end)
+    m:AddSpacer()
+    if not canCraft then
+        m:AddOption("Crafting needs the Chemistry skill (Medic > Chemist)", function() end)
+        m:Open(ScrW() * 0.5 + S(24), ScrH() * 0.5)
+        return
+    end
     local have = carried(Med.SUPPLIES)
     local batch = Med.Skill(LocalPlayer(), "batch_brewing")
     m:AddOption("Medical supplies: " .. have .. (batch and "  ·  batches make twice as much" or ""), function() end)

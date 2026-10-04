@@ -154,17 +154,24 @@ local function near(ply, bench)
     return IsValid(bench) and ply:GetPos():DistToSqr(bench:GetPos()) <= BENCH_RANGE * BENCH_RANGE
 end
 
+-- The bench menu: the blood analyser (medics) and crafting (Chemists).
 function Med.BenchUse(bench, ply)
     if not ply:Alive() or ply.rhylibDown then return end
-    if not Med.Skill(ply, "chem_bench") then
-        return Med.Note(ply, Med.IsMedic(ply) and "You need the Chemistry skill (Medic > Chemist)" or "Only a Chemist medic knows how to use this")
-    end
+    if not Med.IsMedic(ply) then return Med.Note(ply, "Only medics know how to use this") end
     if not inventory() then return Med.Note(ply, "The bench needs rhylib_inventory") end
-    if crafting[ply] then return Med.Note(ply, "Already mixing something") end
     Rhylib.Net.Start("chem.open")
     net.WriteEntity(bench)
+    net.WriteBool(Med.Skill(ply, "chem_bench"))
     net.Send(ply)
 end
+
+-- Crafting from the interaction wheel on the bench.
+Rhylib.Net.Receive("chem.use", function(ply)
+    local bench = net.ReadEntity()
+    if not (IsValid(bench) and bench:GetClass() == "rhylib_chem_bench") then return end
+    if ply:GetPos():DistToSqr(bench:GetPos()) > 200 * 200 then return end
+    Med.BenchUse(bench, ply)
+end, { rate = 3, burst = 3 })
 
 -- Take n of id from the inventory, unissued stacks first. Returns
 -- false (taking nothing) if short, else true and whether any was issued.
@@ -388,7 +395,7 @@ Rhylib.Hook.Add("Rhylib.PlayerDowned", "medical.sofa", sofaQuiet)
 -- Placements (bacta tanks and benches stay on the map)
 --------------------------------------------------------------------------
 
-local CLASSES = { "rhylib_bacta_tank", "rhylib_chem_bench", "rhylib_med_sofa", "rhylib_med_analyser" }
+local CLASSES = { "rhylib_bacta_tank", "rhylib_chem_bench", "rhylib_med_sofa" }
 -- (rhylib_admin's cleanup leaves these alone)
 Rhylib.PLACEMENT_CLASSES = Rhylib.PLACEMENT_CLASSES or {}
 for _, c in ipairs(CLASSES) do Rhylib.PLACEMENT_CLASSES[c] = true end

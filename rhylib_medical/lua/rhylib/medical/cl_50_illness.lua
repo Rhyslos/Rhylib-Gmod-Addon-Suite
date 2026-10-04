@@ -21,6 +21,20 @@ end
 
 local function chemist(ply) return Med.Skill(ply, "chem_bench") end
 
+-- Medics can tell someone is ill (not what it is: that takes a blood test).
+function Med.LooksIll(ply)
+    local kind, stage = Med.IllState(ply)
+    return kind > 0 and stage > 0
+end
+
+local SIGNS = { "Looks a little off", "Looks sick: coughing, pale", "Looks very ill" }
+function Med.IllSigns(ply)
+    local kind, stage = Med.IllState(ply)
+    if kind == 0 or stage == 0 then return nil end
+    return SIGNS[stage], stage
+end
+
+
 local function progress(text, secs)
     local M = Rhylib.Menus
     if M and M.WheelProgress then M.WheelProgress(text, secs) end
@@ -87,7 +101,7 @@ end
 
 local function analysed(o)
     local n = o.data and o.data.note or ""
-    return not string.find(n, "not analysed", 1, true)
+    return string.find(n, "dose ~", 1, true) ~= nil or string.find(n, "no infection", 1, true) ~= nil
 end
 
 local function openAnalyser(ent)
@@ -105,7 +119,7 @@ local function openAnalyser(ent)
     f:SetKeyboardInputEnabled(false)
     f:DockPadding(S(12), S(48), S(12), S(12))
     function f:Paint(w, h)
-        Kit.Plate(0, 0, w, h, { title = "Blood analyser", ticks = "all", header = S(34) })
+        Kit.Plate(0, 0, w, h, { title = "Blood analyser", sub = "Chemistry bench", ticks = "all", header = S(34) })
     end
     local sc = Kit.Scroll(f)
     sc:Dock(FILL)
@@ -158,28 +172,188 @@ local function openAnalyser(ent)
     end
 end
 
+Med.OpenAnalyser = openAnalyser
+
 net.Receive(Rhylib.Net.Name("ill.open"), function()
     local ent = net.ReadEntity()
     if IsValid(ent) then openAnalyser(ent) end
 end)
 
---------------------------------------------------------------------------
--- Test strip: right-click a sample in the inventory
---------------------------------------------------------------------------
-
-Rhylib.Hook.Add("Rhylib.ItemMenu", "medical.strip", function(inst, menu)
-    if inst.id ~= Med.SAMPLE then return end
-    local note = inst.data and inst.data.note or ""
-    if string.find(note, "strip:", 1, true) then return end
-    if carried(Med.STRIP) < 1 then
-        menu:AddOption("Test on a strip (you have none)", function() end)
+-- The bench on the interaction wheel: analyser or crafting.
+Rhylib.Hook.Add("Rhylib.WheelEntityOptions", "medical.bench", function(ent, me, add)
+    if ent:GetClass() ~= "rhylib_chem_bench" then return end
+    if not Med.IsMedic(me) then
+        add("Chemistry bench", nil, { disabled = "Medics only" })
         return
     end
-    menu:AddOption("Test on a strip", function()
-        Rhylib.Net.Start("ill.strip")
-        net.WriteUInt(inst.uid, Rhylib.Items.UID_BITS)
-        net.SendToServer()
-    end)
+    add("Blood analyser", function(e) openAnalyser(e) end, { order = 10, sub = "Analyse your blood samples" })
+    if Med.Skill(me, "chem_bench") then
+        add("Crafting", function(e)
+            Rhylib.Net.Start("chem.use")
+            net.WriteEntity(e)
+            net.SendToServer()
+        end, { order = 11, sub = "Supplies into kits and medicine" })
+    else
+        add("Crafting", nil, { order = 11, disabled = "Needs the Chemistry skill" })
+    end
+end)
+
+--------------------------------------------------------------------------
+-- Test strip: right-click a sample to put it on a strip; the used strip
+-- shows an assay readout that develops (control channel: the test works; a
+-- lit test channel: infected, and its colour says what with). Right-click
+-- samples and used strips to throw them away.
+--------------------------------------------------------------------------
+
+local function send(name, uid)
+    Rhylib.Net.Start(name)
+    net.WriteUInt(uid, Rhylib.Items.UID_BITS)
+    net.SendToServer()
+end
+
+Rhylib.Hook.Add("Rhylib.ItemMenu", "medical.strip", function(inst, menu)
+    if inst.id == Med.SAMPLE then
+        local note = inst.data and inst.data.note or ""
+        if string.find(note, "no strip yet", 1, true) then
+            if carried(Med.STRIP) < 1 then
+                menu:AddOption("Apply to a test strip (you have none)", function() end)
+            else
+                menu:AddOption("Apply to a test strip", function() send("ill.strip", inst.uid) end)
+            end
+        end
+        menu:AddOption("Throw away", function() send("ill.discard", inst.uid) end)
+    elseif inst.id == Med.CASSETTE then
+        menu:AddOption("Look at the result", function() send("ill.look", inst.uid) end)
+        menu:AddOption("Throw away", function() send("ill.discard", inst.uid) end)
+    end
+end)
+
+-- The test as an assay readout in the house style: a control channel that
+-- lights on every test and a test channel that lights in the kind's colour.
+local casWin
+local SEGS = 16
+local COL_TRACK, COL_OFF = Color(8, 9, 9, 255), Color(30, 33, 31, 255)
+
+-- A segmented channel; a = 0-1 how lit, col its colour.
+local function channel(Kit, x, y, w, h, col, a)
+    local C = Kit.C
+    Kit.SetCol(COL_TRACK)
+    surface.DrawRect(x, y, w, h)
+    Kit.SetCol(C.edgeDark)
+    surface.DrawOutlinedRect(x, y, w, h)
+    local gap = Kit.S(2)
+    local sw = (w - 4 - gap * (SEGS - 1)) / SEGS
+    for i = 0, SEGS - 1 do
+        local sx = math.floor(x + 2 + i * (sw + gap))
+        local nx = math.floor(x + 2 + (i + 1) * (sw + gap)) - gap
+        Kit.SetCol(COL_OFF)
+        surface.DrawRect(sx, y + 2, nx - sx, h - 4)
+        if a > 0 then
+            Kit.SetCol(col, 255 * a)
+            surface.DrawRect(sx, y + 2, nx - sx, h - 4)
+        end
+    end
+end
+
+local function mmss(t)
+    t = math.max(0, math.floor(t))
+    return string.format("%d:%02d", math.floor(t / 60), t % 60)
+end
+
+local function openCassette(info)
+    local Kit = K()
+    if not Kit then return end
+    if IsValid(casWin) then casWin:Remove() end
+    local S = Kit.S
+    local C = Kit.C
+    local f = vgui.Create("EditablePanel")
+    casWin = f
+    Rhylib.Menus.prompts[f] = true
+    f.OnRemove = function(self) Rhylib.Menus.prompts[self] = nil end
+    f:SetSize(S(560), S(312))
+    f:Center()
+    f:MakePopup()
+    f:SetKeyboardInputEnabled(false)
+    local got = RealTime()
+    local k = Med.ILL[info.kind]
+    function f:Paint(w, h)
+        local top = Kit.Plate(0, 0, w, h, { title = "Test strip", sub = info.who, ticks = "all", header = S(34) })
+        local elapsed = info.elapsed + (RealTime() - got)
+        local done = elapsed >= info.dev
+
+        -- Readout panel (left)
+        local px, py, pw, ph = S(14), top + S(14), S(320), S(188)
+        Kit.SetCol(C.row)
+        surface.DrawRect(px, py, pw, ph)
+        Kit.SetCol(C.edgeDark)
+        surface.DrawOutlinedRect(px, py, pw, ph)
+        Kit.SetCol(C.edgeLight)
+        surface.DrawLine(px + 1, py + 1, px + pw - 1, py + 1)
+        Kit.Caps("Assay", px + S(12), py + S(16), C.label)
+        draw.SimpleText(done and "DEVELOPED" or "DEVELOPING", Kit.Font(12, 700), px + pw - S(12), py + S(16),
+            done and C.text or C.accent, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+
+        local lx, tx, tw, th = px + S(12), px + S(92), pw - S(104), S(18)
+        -- Control: lights after a few seconds on every test.
+        local cA = math.Clamp((elapsed - 5) / 5, 0, 1)
+        Kit.Caps("Control", lx, py + S(52), C.textDim)
+        channel(Kit, tx, py + S(43), tw, th, C.text, cA * 0.85)
+        -- Test: lights over the second half of the time, brighter for a heavier infection.
+        local tA = 0
+        if k then
+            tA = math.Clamp((elapsed - info.dev * 0.45) / (info.dev * 0.55), 0, 1) * (0.45 + 0.55 * info.load / 100)
+        end
+        Kit.Caps("Test", lx, py + S(88), C.textDim)
+        channel(Kit, tx, py + S(79), tw, th, k and k.col or C.text, tA)
+
+        -- Sample flow and time
+        local fy = py + S(124)
+        Kit.Caps("Flow", lx, fy + S(4), C.textDim)
+        local soak = math.Clamp(elapsed / 6, 0, 1)
+        Kit.SetCol(COL_TRACK)
+        surface.DrawRect(tx, fy, tw, S(8))
+        Kit.SetCol(C.accent, 200)
+        surface.DrawRect(tx, fy, tw * soak, S(8))
+        Kit.Caps("Time", lx, fy + S(32), C.textDim)
+        local tf = math.Clamp(elapsed / info.max, 0, 1)
+        Kit.SetCol(COL_TRACK)
+        surface.DrawRect(tx, fy + S(28), tw, S(8))
+        Kit.SetCol(done and C.text or C.accent, 200)
+        surface.DrawRect(tx, fy + S(28), done and tw or tw * tf, S(8))
+        draw.SimpleText(mmss(elapsed) .. " / up to " .. mmss(info.max), Kit.Font(12), tx + tw, fy + S(44),
+            C.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_TOP)
+
+        -- Key (right)
+        local kx, ky = px + pw + S(18), py
+        Kit.Caps("Reading the strip", kx, ky + S(16), C.label)
+        draw.SimpleText("Control lit: the test works", Kit.Font(13), kx, ky + S(36), C.textDim)
+        draw.SimpleText("Test lit: infected", Kit.Font(13), kx, ky + S(55), C.textDim)
+        draw.SimpleText("Test dark: clean", Kit.Font(13), kx, ky + S(74), C.textDim)
+        Kit.Caps("Test colour", kx, ky + S(108), C.label)
+        for i = 1, 3 do
+            local kk = Med.ILL[i]
+            local ry = ky + S(122) + (i - 1) * S(20)
+            Kit.SetCol(kk.col)
+            surface.DrawRect(kx, ry + S(3), S(12), S(12))
+            Kit.SetCol(C.edgeDark)
+            surface.DrawOutlinedRect(kx, ry + S(3), S(12), S(12))
+            draw.SimpleText(kk.colour .. " · " .. kk.id, Kit.Font(13), kx + S(20), ry, C.textDim)
+        end
+
+        -- Next steps
+        local ny = py + ph + S(16)
+        Kit.SetCol(C.edgeLight)
+        surface.DrawRect(px, ny, w - px * 2, 1)
+        draw.SimpleText("While it develops: write the patient's record on your datapad.", Kit.Font(13), px, ny + S(12), C.textDim)
+        draw.SimpleText("Then bring this strip and the sample to the analyser for the dose.", Kit.Font(13), px, ny + S(32), C.textDim)
+    end
+end
+
+net.Receive(Rhylib.Net.Name("ill.cass"), function()
+    local info = { uid = net.ReadUInt(Rhylib.Items.UID_BITS), who = net.ReadString(), elapsed = net.ReadUInt(16),
+        dev = net.ReadUInt(10), kind = net.ReadUInt(2), load = net.ReadUInt(7) }
+    info.max = Med.Cfg("stripMax") or 120
+    openCassette(info)
 end)
 
 --------------------------------------------------------------------------
@@ -198,6 +372,17 @@ local function openDose(t)
     f:MakePopup()
     f:DockPadding(S(12), S(48), S(12), S(12))
     local pick, units = nil, 1
+    -- Your newest analysed sample from this patient fills in the dose; the
+    -- medicine is your call (the strip's colour).
+    local info
+    local who = IsValid(t) and t:Nick() or ""
+    for _, o in ipairs(samples()) do
+        local note = o.data and o.data.note or ""
+        if string.sub(note, 1, math.min(#who, 20)) == string.sub(who, 1, math.min(#who, 20)) then
+            local n = tonumber(string.match(note, "dose ~(%d+)"))
+            if n then units = math.Clamp(n, 1, 40) info = note end
+        end
+    end
     function f:Paint(w, h)
         Kit.Plate(0, 0, w, h, { title = "Give medicine", sub = IsValid(t) and t:Nick() or nil, ticks = "all", header = S(34) })
     end
@@ -218,7 +403,7 @@ local function openDose(t)
             b:DockMargin(0, 0, S(6), 0)
         end
     end
-    local lab = Kit.Label(f, "Units (the right dose is the load ÷ 5)", 13, nil, Kit.C.textDim)
+    local lab = Kit.Label(f, info and ("From your sample: " .. info) or "Units: analyse a blood sample first to know the dose", 13, nil, Kit.C.textDim)
     lab:Dock(TOP)
     lab:DockMargin(0, S(12), 0, S(4))
     local sl = Kit.Slider(f, 1, 40, 0, function() return units end, function(v) units = math.Clamp(math.floor(tonumber(v) or 1), 1, 40) end)
@@ -249,7 +434,8 @@ end
 
 Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.illness", function(t, me, add)
     if Med.IsMedic(me) and not Med.IsDown(me) then
-        if not Med.OnSofa(t) then
+        -- (test dummies are bots that can't lie down: standing is fine for them)
+        if not (Med.OnSofa(t) or t:IsBot()) then
             add("Draw blood", nil, { order = 16, disabled = "Lay them on a med sofa" })
         elseif carried(Med.BLOOD_KIT) < 1 then
             add("Draw blood", nil, { order = 16, disabled = "No blood sample kit" })
@@ -259,7 +445,7 @@ Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.illness", function(t, me, add)
                 net.WriteEntity(x)
                 net.SendToServer()
                 progress("Drawing blood", Med.Cfg("drawTime") * (chemist(me) and 0.67 or 1))
-            end, { order = 16, sub = "Sample for the analyser" })
+            end, { order = 16, sub = Med.LooksIll(t) and "They look unwell" or "Sample for the analyser" })
         end
         local any = false
         for _, m in ipairs(Med.MEDICINES) do

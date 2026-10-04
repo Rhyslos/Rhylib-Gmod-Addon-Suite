@@ -21,6 +21,7 @@ local function cfg(k) return Med.Cfg(k) end
 local function Inv() return Rhylib.Inventory end
 
 Rhylib.Net.Register("ill.open")
+Rhylib.Net.Register("ill.cass")
 Rhylib.Net.Register("ill.stop")
 
 Med.ill = Med.ill or {}   -- [ply] = { kind, load }
@@ -53,6 +54,7 @@ local function publish(ply)
 end
 
 local function save(ply)
+    if ply:IsBot() then return end   -- (bots share ids; a test dummy's illness must not come back on the next one)
     local s = Med.ill[ply]
     if s then
         Data.Set("med_ill", sid(ply), { k = s.kind, l = math.Round(s.load, 1) })
@@ -83,6 +85,10 @@ function Med.Illness(ply)
 end
 
 Rhylib.Hook.Add("PlayerInitialSpawn", "medical.illness", function(ply)
+    if ply:IsBot() then
+        Data.Delete("med_ill", sid(ply))   -- (clears rows saved for bots before this fix)
+        return
+    end
     local d = Data.Get("med_ill", sid(ply))
     if istable(d) and Med.ILL[tonumber(d.k) or 0] then
         Med.ill[ply] = { kind = tonumber(d.k), load = math.Clamp(tonumber(d.l) or 40, 1, 100) }
@@ -203,13 +209,31 @@ local function takeOne(ply, id)
     return false
 end
 
-local function sampleNote(d)
-    local who = tostring(d.who or "?")
+local function shortName(who)
+    who = tostring(who or "?")
     if utf8.len(who) and utf8.len(who) > 22 then who = string.sub(who, 1, (utf8.offset(who, 23) or 23) - 1) .. "…" end
-    local parts = { who }
-    parts[#parts + 1] = d.reading or "not analysed"
-    if d.colour then parts[#parts + 1] = "strip: " .. d.colour end
+    return who
+end
+
+local function sampleNote(d)
+    local parts = { shortName(d.who) }
+    parts[#parts + 1] = d.reading or (d.tested and "strip running" or "no strip yet")
     return table.concat(parts, " · ")
+end
+
+-- Seconds a strip takes: a worse infection shows sooner.
+local function devTime(kind, load)
+    local hi, lo = cfg("stripMax"), cfg("stripMin")
+    if (kind or 0) == 0 or (load or 0) <= 0 then return hi end
+    return math.Round(hi - (hi - lo) * math.Clamp(load / 100, 0, 1))
+end
+
+local function cassetteReady(d)
+    return d and d.start and os.time() >= d.start + (d.dev or 0)
+end
+
+local function cassetteNote(d)
+    return shortName(d.who) .. " · " .. (cassetteReady(d) and "result ready" or "developing")
 end
 
 local function updateSample(ply, inst)
@@ -225,17 +249,18 @@ end
 Rhylib.Net.Receive("ill.draw", function(ply)
     local t = net.ReadEntity()
     if not (able(ply) and Med.IsMedic(ply) and IsValid(t) and t:IsPlayer() and t ~= ply) then return end
-    if not Med.OnSofa(t) then return stop(ply, "They need to lie on a med sofa") end
+    if not (Med.OnSofa(t) or t.rhylibDummy) then return stop(ply, "They need to lie on a med sofa") end   -- (test dummies: standing is fine)
     if not near(ply, t, 150) then return stop(ply) end
     if (Inv() and Inv().Count(ply, Med.BLOOD_KIT) or 0) < 1 then return stop(ply, "You need a blood sample kit") end
     local secs = cfg("drawTime") * (chemist(ply) and 0.67 or 1)
     timed(ply, "draw", secs, function()
-        if not (able(ply) and IsValid(t) and Med.OnSofa(t) and near(ply, t, 170)) then return false, "Cancelled" end
+        if not (able(ply) and IsValid(t) and (Med.OnSofa(t) or t.rhylibDummy) and near(ply, t, 170)) then return false, "Cancelled" end
         return true
     end, function()
         if not takeOne(ply, Med.BLOOD_KIT) then return stop(ply, "You need a blood sample kit") end
         local s = Med.ill[t]
-        local data = { sid = sid(t), who = t:Nick(), kind = s and s.kind or 0, load = s and math.floor(s.load) or 0 }
+        local data = { sid = sid(t), who = t:Nick(), kind = s and s.kind or 0, load = s and math.floor(s.load) or 0,
+            key = string.format("%08x", math.random(0, 0x7fffffff)), at = os.time() }
         data.note = sampleNote(data)
         local left = Inv().AddItem(ply, Med.SAMPLE, 1, data)
         if left > 0 then Inv().AddOrDrop(ply, Med.SAMPLE, left, data) end
@@ -257,9 +282,13 @@ end
 
 Rhylib.Net.Receive("ill.scan", function(ply)
     local ent, uid = net.ReadEntity(), net.ReadUInt(Rhylib.Items.UID_BITS)
-    if not (able(ply) and Med.IsMedic(ply) and IsValid(ent) and ent:GetClass() == "rhylib_med_analyser" and near(ply, ent, 160)) then return end
+    if not (able(ply) and Med.IsMedic(ply) and IsValid(ent) and ent:GetClass() == "rhylib_chem_bench" and near(ply, ent, 160)) then return end
     local inst = carriedItem(ply, uid, Med.SAMPLE)
     if not inst or inst.data.reading then return end
+    -- The analyser reads the sample together with its developed strip.
+    local cas = Med.FindCassette(ply, inst.data.key)
+    if not cas then return stop(ply, "Apply the sample to a test strip first, and keep the strip on you", uid) end
+    if not cassetteReady(cas.data) then return stop(ply, "Its test strip is still developing", uid) end
     ply.rhylibScans = ply.rhylibScans or {}
     if ply.rhylibScans[uid] then return end   -- (already running)
     if ent:GetBusy() >= 4 then return stop(ply, "The analyser is full (4 samples)", uid) end
@@ -284,9 +313,10 @@ Rhylib.Net.Receive("ill.scan", function(ply)
         if load <= 0 or (tonumber(o.data.kind) or 0) == 0 then
             o.data.reading = "no infection"
         else
-            local band = chemist(ply) and cfg("scanBandChemist") or cfg("scanBand")
-            local shown = math.Clamp(math.Round(load + math.Rand(-band, band) * 0.7), 1, 100)
-            o.data.reading = "infected, load " .. shown .. " ± " .. band
+            -- Shown as the dose it needs (load / 5 units), give or take a band.
+            local band = math.max(1, math.Round((chemist(ply) and cfg("scanBandChemist") or cfg("scanBand")) / 5))
+            local shown = math.max(1, math.Round(load / 5 + math.Rand(-band, band) * 0.7))
+            o.data.reading = "infected, dose ~" .. shown .. " units (± " .. band .. ")"
         end
         updateSample(ply, o)
         ent:EmitSound("buttons/button24.wav", 60, 110)
@@ -295,23 +325,90 @@ Rhylib.Net.Receive("ill.scan", function(ply)
 end, { rate = 4, burst = 4 })
 
 --------------------------------------------------------------------------
--- 3. Test strip (right-click the sample)
+-- 3. Test strip (right-click the sample): a used strip item that develops
+--    over stripMin-stripMax seconds (worse = sooner). control channel = it works,
+--    a lit test channel = infected (colour = kind). The analyser needs the
+--    developed strip with its sample.
 --------------------------------------------------------------------------
+
+function Med.FindCassette(ply, key)
+    if not key then return nil end
+    for _, o in pairs(Inv().Get(ply).byUid) do
+        if o.id == Med.CASSETTE and o.data and o.data.key == key then return o end
+    end
+end
+
+local function sendCassette(ply, inst)
+    local d = inst.data
+    Rhylib.Net.Start("ill.cass")
+    net.WriteUInt(inst.uid, Rhylib.Items.UID_BITS)
+    net.WriteString(shortName(d.who))
+    net.WriteUInt(math.Clamp(os.time() - (d.start or os.time()), 0, 65535), 16)
+    net.WriteUInt(math.Clamp(d.dev or 120, 1, 1023), 10)
+    net.WriteUInt(tonumber(d.kind) or 0, 2)
+    net.WriteUInt(math.Clamp(math.floor(tonumber(d.load) or 0), 0, 100), 7)
+    net.Send(ply)
+end
 
 Rhylib.Net.Receive("ill.strip", function(ply)
     local uid = net.ReadUInt(Rhylib.Items.UID_BITS)
     if not able(ply) then return end
     local inst = carriedItem(ply, uid, Med.SAMPLE)
-    if not inst or inst.data.colour then return end
+    if not inst or inst.data.tested then return end
     if not takeOne(ply, Med.STRIP) then return Med.Note(ply, "You need a test strip") end
     inst = carriedItem(ply, uid, Med.SAMPLE)
     if not inst then return end
-    local k = Med.ILL[tonumber(inst.data.kind) or 0]
-    inst.data.colour = k and k.colour or "clear"
+    local d = inst.data
+    d.key = d.key or string.format("%08x", math.random(0, 0x7fffffff))
+    d.tested = true
     updateSample(ply, inst)
+    local cd = { key = d.key, who = d.who, kind = d.kind, load = d.load, start = os.time(), dev = devTime(d.kind, d.load), at = os.time() }
+    cd.note = cassetteNote(cd)
+    Inv().AddOrDrop(ply, Med.CASSETTE, 1, cd)
     ply:EmitSound("items/medshot4.wav", 55, 140)
-    Med.Note(ply, "The strip turns " .. string.lower(inst.data.colour))
+    local cas = Med.FindCassette(ply, d.key)
+    if cas then sendCassette(ply, cas) end
+    -- Its note says "result ready" once it has developed.
+    local key = d.key
+    timer.Simple(cd.dev + 0.5, function()
+        if not IsValid(ply) then return end
+        local c = Med.FindCassette(ply, key)
+        if c then
+            c.data.note = cassetteNote(c.data)
+            Inv().Internal.update(ply, Inv().Get(ply), c)
+        end
+    end)
 end, { rate = 4, burst = 4 })
+
+-- Look at a used strip again.
+Rhylib.Net.Receive("ill.look", function(ply)
+    local inst = carriedItem(ply, net.ReadUInt(Rhylib.Items.UID_BITS), Med.CASSETTE)
+    if inst then sendCassette(ply, inst) end
+end, { rate = 4, burst = 4 })
+
+-- Throw away a sample or a used strip.
+Rhylib.Net.Receive("ill.discard", function(ply)
+    local uid = net.ReadUInt(Rhylib.Items.UID_BITS)
+    local inst = carriedItem(ply, uid, Med.SAMPLE) or carriedItem(ply, uid, Med.CASSETTE)
+    if inst then Inv().Remove(ply, uid) end
+end, { rate = 6, burst = 6 })
+
+-- Old samples and strips spoil (checked with the symptoms, every 30 s).
+function Med.SpoilSamples()
+    local life = cfg("sampleLife")
+    local now = os.time()
+    local I = Inv()
+    if not (I and I.Get) then return end
+    for _, ply in ipairs(player.GetHumans()) do
+        local old = {}
+        for uid, o in pairs(I.Get(ply).byUid) do
+            if (o.id == Med.SAMPLE or o.id == Med.CASSETTE) and o.data and o.data.at and now - o.data.at > life then old[#old + 1] = uid end
+        end
+        for _, uid in ipairs(old) do I.Remove(ply, uid) end
+        if #old > 0 then Med.Note(ply, #old == 1 and "An old blood test spoiled" or (#old .. " old blood tests spoiled")) end
+    end
+end
+timer.Create("Rhylib.Medical.Spoil", 30, 0, function() Med.SpoilSamples() end)
 
 --------------------------------------------------------------------------
 -- 4. Dosing
