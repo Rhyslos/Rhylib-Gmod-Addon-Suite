@@ -117,7 +117,33 @@ function PANEL:ShowPage(id)
     if not ok then Rhylib.Error("menus", "page %s: %s", id, tostring(err)) end
 end
 
+-- HUD preview: while the mouse is on a setting marked `preview` (HUD
+-- shape sliders), the game isn't dimmed or blurred, and while dragging it
+-- the menu fades so the HUD behind it shows.
+function Menus.PreviewHover()
+    local p = vgui.GetHoveredPanel()
+    for _ = 1, 8 do
+        if not IsValid(p) then return false end
+        if p.rhylibPreview then return true end
+        p = p:GetParent()
+    end
+    return false
+end
+
+function PANEL:Think()
+    local hover = Menus.PreviewHover()
+    self.previewing = hover
+    local want = (hover and input.IsMouseDown(MOUSE_LEFT)) and 60 or 255
+    for _, pnl in ipairs({ self.side, self.page }) do
+        if IsValid(pnl) then
+            local a = pnl:GetAlpha()
+            if a ~= want then pnl:SetAlpha(math.Approach(a, want, FrameTime() * 1200)) end
+        end
+    end
+end
+
 function PANEL:Paint(w, h)
+    if self.previewing then return end
     -- Dim and blur the game behind.
     Derma_DrawBackgroundBlur(self, self.opened)
     K.SetCol(C.dim)

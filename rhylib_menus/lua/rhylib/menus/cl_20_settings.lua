@@ -10,6 +10,7 @@
             convar = "rhylib_hud_hotbar_fade",
             -- choice: options = { { "value", "Label" }, ... }, get/set optional
             -- slider: min, max, decimals
+            -- preview = true: hovering/dragging it shows the HUD undimmed
         })
 ]]
 
@@ -136,6 +137,7 @@ local function fill(sp, tab)
             h:DockMargin(0, K.S(6), K.S(10), K.S(6))
             for _, st in ipairs(list) do
                 local row = K.Row(sp, st.title, st.desc)
+                row.rhylibPreview = st.preview   -- (HUD shape: the pause menu stops dimming, cl_10_pause.lua)
                 row:Dock(TOP)
                 row:DockMargin(0, 0, K.S(10), K.S(4))
                 if st.kind == "choice" then row.right:SetWide(K.S(st.wide or 460)) end

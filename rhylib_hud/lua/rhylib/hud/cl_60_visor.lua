@@ -34,11 +34,12 @@ local COL_SIM_LINE = Color(250, 215, 90, 170)
 local COL_EMPTY_ALPHA = 45
 
 -- Shape, as shares of the screen (0..1). Mirrored left/right.
--- Brow (top band): client convars so it can be tuned in Settings; slimmer
--- than the first version (0.022 / 0.07).
-local browEdgeVar = CreateClientConVar("rhylib_visor_brow_edge", "0.012", true, false, "Visor brow depth at the screen sides (share of the height)")
-local browCentreVar = CreateClientConVar("rhylib_visor_brow_centre", "0.045", true, false, "Visor brow depth in the middle (share of the height)")
-local browCurveVar = CreateClientConVar("rhylib_visor_brow_curve", "1", true, false, "Visor brow curve: below 1 flatter and wider, above 1 a sharper dip in the middle")
+-- Brow (top band): each player can tune it in Settings (owner-picked
+-- defaults 0.015 / 0.045; convar names changed once so an earlier default
+-- doesn't stick).
+local browEdgeVar = CreateClientConVar("rhylib_visorbrow_edge", "0.015", true, false, "Visor brow depth at the screen sides (share of the height)")
+local browCentreVar = CreateClientConVar("rhylib_visorbrow_centre", "0.045", true, false, "Visor brow depth in the middle (share of the height)")
+local browCurveVar = CreateClientConVar("rhylib_visorbrow_curve", "1", true, false, "Visor brow curve: below 1 flatter and wider, above 1 a sharper dip in the middle")
 local CHEEK_TOP = 0.75       -- where the cheek meets the screen side
 local CHIN_HALF = 0.1        -- half the chin opening width (0.1 = 20% of the screen)
 local CURVE_STEPS = 32
@@ -354,9 +355,9 @@ Rhylib.Hook.Add("InitPostEntity", "hud.visor.setting", function()
     local Menus = Rhylib.Menus
     if not (Menus and Menus.AddSetting) then return end
     Menus.AddSetting("HUD", { id = "hud.browedge", order = 40, title = "Visor brow: depth at the sides",
-        desc = "Share of the screen height (default 0.012)", kind = "slider", convar = "rhylib_visor_brow_edge", min = 0, max = 0.06, decimals = 3 })
+        desc = "Share of the screen height (default 0.015)", kind = "slider", convar = "rhylib_visorbrow_edge", min = 0, max = 0.06, decimals = 3, preview = true })
     Menus.AddSetting("HUD", { id = "hud.browcentre", order = 41, title = "Visor brow: depth in the middle",
-        desc = "Share of the screen height (default 0.045)", kind = "slider", convar = "rhylib_visor_brow_centre", min = 0, max = 0.1, decimals = 3 })
+        desc = "Share of the screen height (default 0.045)", kind = "slider", convar = "rhylib_visorbrow_centre", min = 0, max = 0.12, decimals = 3, preview = true })
     Menus.AddSetting("HUD", { id = "hud.browcurve", order = 42, title = "Visor brow: curve",
-        desc = "Below 1 flatter and wider, above 1 a sharper dip (default 1)", kind = "slider", convar = "rhylib_visor_brow_curve", min = 0.3, max = 4, decimals = 2 })
+        desc = "Below 1 flatter and wider, above 1 a sharper dip (default 1)", kind = "slider", convar = "rhylib_visorbrow_curve", min = 0.3, max = 4, decimals = 2, preview = true })
 end)
