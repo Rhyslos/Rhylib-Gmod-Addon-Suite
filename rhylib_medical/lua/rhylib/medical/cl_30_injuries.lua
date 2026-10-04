@@ -250,7 +250,9 @@ function PANEL:Paint(w, h)
         elseif Med.NoSprint(ply) then lines[#lines + 1] = { "Hurt leg: can't sprint", COL_HURT } end
         if not Med.CanAim(ply) then lines[#lines + 1] = { "Hurt arm: can't aim, shaky", COL_HURT }
         elseif Med.SpreadPenalty(ply, 1) > 0.05 then lines[#lines + 1] = { "Aim a little shaky", COL_LABEL } end
-        if Med.StaminaCap(ply) < 0.99 then lines[#lines + 1] = { string.format("Hurt torso: stamina capped at %d%%", Med.StaminaCap(ply) * 100), COL_HURT } end
+        -- (torso only: an illness lowers the cap too, and medics find that with a blood test)
+        local cap = Med.StaminaCap(ply) / math.max(Med.IllStaminaMult and Med.IllStaminaMult(ply) or 1, 0.01)
+        if cap < 0.99 then lines[#lines + 1] = { string.format("Hurt torso: stamina capped at %d%%", cap * 100), COL_HURT } end
     end
     if #lines == 0 then
         if not medic and not me then

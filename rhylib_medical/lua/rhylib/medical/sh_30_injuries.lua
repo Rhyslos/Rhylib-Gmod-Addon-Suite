@@ -133,9 +133,10 @@ end
 
 -- Share of max stamina you can have (torso injuries lower it).
 function Med.StaminaCap(ply)
-    if Med.Painkilled(ply) then return 1 end
+    local ill = Med.IllStaminaMult and Med.IllStaminaMult(ply) or 1   -- (illness, sh_50_illness.lua)
+    if Med.Painkilled(ply) then return ill end
     local p = Med.Part(ply, "torso")
-    return 1 - math.Clamp(p.dmg / 100, 0, 1) * cfg("torsoStaminaCap")
+    return (1 - math.Clamp(p.dmg / 100, 0, 1) * cfg("torsoStaminaCap")) * ill
 end
 
 -- Anything wrong at all (for the HUD).

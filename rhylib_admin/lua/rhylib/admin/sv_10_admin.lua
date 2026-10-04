@@ -283,7 +283,8 @@ end
 Admin.handlers = Admin.handlers or {}
 
 local function parseArg(kind, word)
-    if kind == "number" or kind == "minutes" or kind == "scale" or kind == "mult" then
+    if kind == "illload" and (word == nil or word == "") then return 40 end   -- (left out: moderate)
+    if kind == "number" or kind == "minutes" or kind == "scale" or kind == "mult" or kind == "illload" then
         local n = tonumber(word)
         if not n or n ~= n or n == math.huge or n == -math.huge then return nil, "Expected a number, got \"" .. tostring(word) .. "\"" end
         return n

@@ -116,6 +116,10 @@ local function choices(kind)
     elseif kind == "callmins" then
         return { { "d", "Preset's own timer" }, { "0", "No timer" }, { "5", "5 minutes" }, { "10", "10 minutes" },
             { "15", "15 minutes" }, { "20", "20 minutes" }, { "30", "30 minutes" }, { "?", "Other..." } }
+    elseif kind == "illness" then
+        return { { "viral", "Viral" }, { "bacterial", "Bacterial" }, { "poison", "Poison" } }
+    elseif kind == "illload" then
+        return { { "20", "Light (20)" }, { "45", "Moderate (45)" }, { "75", "Severe (75)" }, { "?", "Other..." } }
     elseif kind == "mult" then
         return { { "0.5", "Half" }, { "1", "Normal" }, { "1.5", "x1.5" }, { "2", "Double" }, { "3", "Triple" }, { "?", "Other..." } }
     end

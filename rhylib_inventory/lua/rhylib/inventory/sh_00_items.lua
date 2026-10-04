@@ -368,6 +368,12 @@ function Items.WriteInstance(inst)
     if def and def.fill then
         net.WriteUInt(math.Round(math.Clamp(inst.data and inst.data.fill or 1, 0, 1) * 255), 8)
     end
+    -- def.note: a short text the item carries (blood samples: patient, reading)
+    if def and def.note then
+        local note = tostring(inst.data and inst.data.note or "")
+        if #note > 120 then note = string.sub(note, 1, (utf8.offset(note, 100) or 101) - 1) end   -- (whole characters)
+        net.WriteString(note)
+    end
 end
 
 function Items.ReadInstance()
@@ -382,6 +388,7 @@ function Items.ReadInstance()
     local hb = net.ReadUInt(3)
     data.hidden = net.ReadBool() or nil
     if def and def.fill then data.fill = net.ReadUInt(8) / 255 end
+    if def and def.note then data.note = net.ReadString() end
     return { uid = uid, c = c, id = def and def.id, x = x, y = y, rot = rot, count = count, data = data, hb = hb > 0 and hb or nil }
 end
 

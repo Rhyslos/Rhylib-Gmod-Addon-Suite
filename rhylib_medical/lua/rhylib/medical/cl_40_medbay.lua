@@ -50,13 +50,14 @@ Rhylib.Net.Receive("chem.open", function()
     openM = m
     local have = carried(Med.SUPPLIES)
     local batch = Med.Skill(LocalPlayer(), "batch_brewing")
-    m:AddOption("Medical supplies: " .. have .. (batch and "  ·  makes 2 of each" or ""), function() end)
+    m:AddOption("Medical supplies: " .. have .. (batch and "  ·  batches make twice as much" or ""), function() end)
     m:AddSpacer()
     for i, r in ipairs(Med.Cfg("chemRecipes") or {}) do
         local def = Rhylib.Items and Rhylib.Items.Get(r[1])
         if def then
             local cost = tonumber(r[2]) or 1
-            local o = m:AddOption(def.name .. "  ·  " .. cost .. " suppl" .. (cost == 1 and "y" or "ies"), function()
+            local amount = tonumber(r[3]) or 1
+            local o = m:AddOption(def.name .. (amount > 1 and (" ×" .. amount) or "") .. "  ·  " .. cost .. " suppl" .. (cost == 1 and "y" or "ies"), function()
                 if not IsValid(bench) then return end
                 Rhylib.Net.Start("chem.make")
                 net.WriteEntity(bench)

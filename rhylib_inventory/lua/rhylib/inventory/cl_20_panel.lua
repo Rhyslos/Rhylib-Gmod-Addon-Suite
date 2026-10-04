@@ -814,6 +814,8 @@ function PANEL:PaintTooltip()
     if inst.data and inst.data.issued then lines[#lines + 1] = "Issued: if dropped, disappears after 5 minutes" end
     if inst.data and inst.data.hidden and inst.c ~= EXT then lines[#lines + 1] = "Hidden: a search may miss it" end
     if inst.c == EXT and Inv.ext and Inv.ext.depot then lines[#lines + 1] = "Endless supply, drag to take (Ctrl: just one)" end
+    if inst.data and inst.data.note and inst.data.note ~= "" then lines[#lines + 1] = inst.data.note end
+    hook.Run("Rhylib.ItemTooltip", inst, lines)   -- (other addons add lines; return nothing)
     if inst.c == EXT and Inv.ext and Inv.ext.bulkOnly then
         lines[#lines + 1] = "Comes back with Take all"
     elseif inst.c == EXT then
@@ -941,6 +943,7 @@ function PANEL:OnMousePressed(code)
                 end
             end
         end
+        hook.Run("Rhylib.ItemMenu", inst, menu)   -- (other addons add options; return nothing)
         menu:AddOption("Drop", function() Inv.RequestDrop(inst) end)
         menu:Open()
     end

@@ -72,6 +72,10 @@ Admin.COMMANDS = {
 
     { id = "revive", name = "Revive", cat = "Powers", mass = true, target = "self", args = {}, desc = "Gets a downed player up; a dead one respawns where they fell" },
     { id = "heal", name = "Heal fully", cat = "Powers", mass = true, target = "self", args = {}, desc = "Full health and armour, injuries gone, revived if down" },
+    { id = "infect", name = "Infect (illness)", cat = "Powers", mass = true, target = "self",
+      args = { { "kind", "Kind", "illness" }, { "load", "Strength 1-100", "illload", opt = true } },
+      desc = "Gives them an illness for medics to find and treat (rhylib_medical)" },
+    { id = "cure", name = "Cure illness", cat = "Powers", mass = true, target = "self", args = {}, desc = "Takes an illness away" },
     { id = "buddha", name = "Buddha", cat = "Powers", target = "self", args = {}, desc = "Takes damage but never drops below 1 health" },
     { id = "money", name = "Give money", cat = "Powers", target = "self", args = { { "amount", "Amount (negative takes)", "number" } }, aliases = { "addmoney" } },
     { id = "setmoney", name = "Set money", cat = "Powers", perm = "money", target = "self", args = { { "amount", "Amount", "number" } } },
@@ -114,7 +118,7 @@ Admin.SECTIONS = {
     player = {
         { "Info & messages", { "info", "warnings", "tell", "warn", "unwarn" } },
         { "Move", { "goto", "bring", "return", "teleport", "spectate" } },
-        { "Health", { "heal", "revive", "hp", "armor", "respawn" } },
+        { "Health", { "heal", "revive", "hp", "armor", "respawn", "infect", "cure" } },
         { "Restrain", { "freeze", "unfreeze", "free", "jail", "unjail" } },
         { "Chat & voice", { "mute", "unmute", "gag", "ungag" } },
         { "Powers", { "god", "buddha", "noclip", "cloak", "notarget", "give" } },

@@ -22,8 +22,8 @@
       revive kit      medics only.
     Every treatment takes a moment; the patient sees "being treated" and
     doesn't bleed while it runs.
-    Medicines (antiviral, antidote, antibiotics, ...) are items with no
-    effect yet.
+    Medicines (antiviral, antidote, antibiotics) cure illnesses, dosed
+    in units (sh_50_illness.lua).
     Field items (H menu, drag onto a part; anyone): splint (a broken bone
     holds until the med bay), burn gel, painkillers. Medics:
     blood pack (E menu on a downed player, more bleed-out time). Medical
@@ -110,7 +110,9 @@ Config.Register("medical", "craftTime", 3, "Chemistry bench: seconds per batch")
 Config.Register("medical", "chemRecipes", {
     { "rhylib_burngel", 1 }, { "rhylib_painkiller", 1 },
     { "rhylib_splint", 1 }, { "rhylib_bloodpack", 2 }, { "rhylib_medkit", 2 },
-}, "Chemistry bench recipes: { item, medical supplies it takes }")
+    { "rhylib_blood_kit", 1, 2 }, { "rhylib_test_strip", 1, 3 },
+    { "rhylib_antiviral", 2, 10 }, { "rhylib_antibiotics", 2, 10 }, { "rhylib_antidote", 2, 10 },
+}, "Chemistry bench recipes: { item, medical supplies it takes, how many it makes (default 1) }")
 
 function Med.Cfg(key)
     return Config.Get("medical", key)
@@ -172,9 +174,9 @@ Med.ITEMS = {
 
 -- Medicines: items with no effect yet (ideas for later treatments).
 Med.MEDICINES = {
-    { "rhylib_antiviral", "Antiviral", "Treats viral infections (no effect yet)" },
-    { "rhylib_antidote", "Antidote", "Counters poisons and toxins (no effect yet)" },
-    { "rhylib_antibiotics", "Antibiotics", "Treats infected wounds (no effect yet)" },
+    { "rhylib_antiviral", "Antiviral", "Viral infections (blue strip). Units; dose = load / 5" },
+    { "rhylib_antidote", "Antidote", "Poisoning (purple strip). Units; dose = load / 5" },
+    { "rhylib_antibiotics", "Antibiotics", "Bacterial infections (green strip). Units; dose = load / 5" },
 }
 
 local function registerMedicines()

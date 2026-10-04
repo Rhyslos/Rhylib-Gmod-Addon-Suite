@@ -705,12 +705,32 @@ H.heal = function(caller, t)
     local Med = med()
     if Med and Med.IsDown(t) then Med.Revive(t, t:GetMaxHealth(), caller) end
     if Med and Med.ClearInjuries then Med.ClearInjuries(t) end
+    if Med and Med.Cure then Med.Cure(t) end
     t:SetHealth(math.max(t:Health(), t:GetMaxHealth()))
     local A = Rhylib.Armor
     local arm = A and A.SpawnArmor and A.SpawnArmor(t) or 100
     if t:Armor() < arm then t:SetArmor(arm) end
     t:Extinguish()
     return name(caller) .. " healed " .. you(caller, t)
+end
+
+-- Illness (rhylib_medical): infect with a kind and a load, or cure.
+H.infect = function(caller, t, a)
+    local kind, load = a and a.kind, a and a.load
+    local Med = med()
+    if not (Med and Med.Infect) then return nil, "Needs rhylib_medical" end
+    local k = Med.ILL_BY_ID[string.lower(tostring(kind or ""))]
+    if not k then return nil, "Kind: viral, bacterial or poison" end
+    load = math.Clamp(math.floor(tonumber(load) or 40), 1, 100)
+    Med.Infect(t, k, load)
+    return name(caller) .. " infected " .. you(caller, t) .. " (" .. Med.ILL[k].id .. ", " .. load .. ")"
+end
+
+H.cure = function(caller, t)
+    local Med = med()
+    if not (Med and Med.Cure) then return nil, "Needs rhylib_medical" end
+    Med.Cure(t)
+    return name(caller) .. " cured " .. you(caller, t)
 end
 
 H.buddha = function(caller, t)

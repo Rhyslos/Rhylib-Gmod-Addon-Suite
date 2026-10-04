@@ -59,6 +59,7 @@ local ALL = {
     { id = "medcrate", name = "Medical crate", cat = "Medical", class = "rhylib_med_crate", save = ARMOURY },
     { id = "tank", name = "Bacta tank", cat = "Medical", class = "rhylib_bacta_tank", save = MED },
     { id = "bench", name = "Chemistry bench", cat = "Medical", class = "rhylib_chem_bench", save = MED },
+    { id = "analyser", name = "Blood analyser", cat = "Medical", class = "rhylib_med_analyser", save = MED },
     { id = "sofa", name = "Med sofa", cat = "Medical", class = "rhylib_med_sofa", save = MED },
     { id = "holo", name = "Medical holotable", cat = "Medical", class = "rhylib_med_holotable", save = PAD },
     { id = "computer", name = "Battalion computer", cat = "Base", class = "rhylib_bn_computer", save = PAD },

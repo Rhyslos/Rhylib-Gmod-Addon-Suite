@@ -199,7 +199,8 @@ Rhylib.Net.Receive("chem.make", function(ply)
     if Inv.Count(ply, Med.SUPPLIES) < cost then
         return Med.Note(ply, "Needs " .. cost .. " medical suppl" .. (cost == 1 and "y" or "ies"))
     end
-    local c = { bench = bench, item = r[1], cost = cost, name = def.name, endT = CurTime() + cfg("craftTime") }
+    local c = { bench = bench, item = r[1], cost = cost, name = def.name, endT = CurTime() + cfg("craftTime"),
+        amount = math.Clamp(math.floor(tonumber(r[3]) or 1), 1, 50) }   -- (r[3]: how many one batch makes)
     crafting[ply] = c
     setCraft(ply, c)
     bench:EmitSound("ambient/levels/canals/toxic_slime_gurgle" .. math.random(2, 4) .. ".wav", 60)
@@ -228,7 +229,7 @@ timer.Create("Rhylib.Medical.Craft", 0.2, 0, function()
             if not ok then
                 stopCraft(ply, "Not enough medical supplies")
             else
-                local n = Med.Skill(ply, "batch_brewing") and 2 or 1
+                local n = (Med.Skill(ply, "batch_brewing") and 2 or 1) * (c.amount or 1)
                 -- Made from issued supplies: issued too (hands back like other issued gear).
                 Inv.AddOrDrop(ply, c.item, n, issued and { issued = true } or nil)
                 stopCraft(ply, "Made " .. c.name .. (n > 1 and (" x" .. n) or ""))
@@ -387,7 +388,7 @@ Rhylib.Hook.Add("Rhylib.PlayerDowned", "medical.sofa", sofaQuiet)
 -- Placements (bacta tanks and benches stay on the map)
 --------------------------------------------------------------------------
 
-local CLASSES = { "rhylib_bacta_tank", "rhylib_chem_bench", "rhylib_med_sofa" }
+local CLASSES = { "rhylib_bacta_tank", "rhylib_chem_bench", "rhylib_med_sofa", "rhylib_med_analyser" }
 -- (rhylib_admin's cleanup leaves these alone)
 Rhylib.PLACEMENT_CLASSES = Rhylib.PLACEMENT_CLASSES or {}
 for _, c in ipairs(CLASSES) do Rhylib.PLACEMENT_CLASSES[c] = true end
