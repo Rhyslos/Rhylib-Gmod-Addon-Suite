@@ -218,7 +218,7 @@ local function drawF4(entries, active, alpha, s, ai)
     local C = HUD.Colors
     local W, H = ScrW(), ScrH()
     local X0 = math.floor(W * (1 - (HUD.VISOR_BAR_TO or 0.3)))
-    local X1 = math.floor(W * (1 - (HUD.VISOR_BAR_FROM or 0.012)))
+    local X1 = math.floor(W * (1 - (HUD.VISOR_BAR_FROM or 0.005)))
     local _, my = HUD.Margins("ammo")
     local YB = H - my
     -- Tile tops: one level line, as low as the left end needs.
@@ -337,7 +337,7 @@ local function drawF5(entries, active, alpha, s, ai)
     -- Exactly as wide as the health bars: from where they end toward the
     -- chin to where they start at the screen side.
     local left = math.floor(W * (1 - (HUD.VISOR_BAR_TO or 0.3)))
-    local right = math.floor(W * (1 - (HUD.VISOR_BAR_FROM or 0.012)))
+    local right = math.floor(W * (1 - (HUD.VISOR_BAR_FROM or 0.005)))
     local gap = math.floor(8 * s)
     local tw = math.floor((right - left - gap * 3) / 4)
     local xs = {}

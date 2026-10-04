@@ -24,19 +24,15 @@ local UI = Rhylib.UI
 
 local geo = { key = "" }
 
--- Where the chat's right edge is at full width (the squares stay put when
--- the compass takes half of the chat's room).
-local function chatRight(W, HUD)
-    local mx = HUD.Margins("ammo")
-    return mx + math.floor(W * 0.25)
-end
 
--- Visor: how wide the chat may be while the compass is on.
+-- Visor: how wide the chat may be (up to the compass, or the squares when
+-- the compass is off).
 function R.CompassChatWidth()
     local HUD = Rhylib.HUD
     if not (HUD and HUD.Margins and HUD.VisorCheekY) then return nil end
     local g = R.VisorGeo and R.VisorGeo()
-    return g and g.chatW
+    if not g then return nil end
+    return R.RadarOn() and g.chatW or g.chatWNoCompass
 end
 
 local function buildVisor(HUD)
@@ -50,9 +46,11 @@ local function buildVisor(HUD)
     local barB = ((HUD.VISOR_BAR_OFFSET or 0.005) + (HUD.VISOR_BAR_THICK or 0.009)) * H + math.floor(7 * s)
     local function armourBottom(x) return HUD.VisorCheekY(x, -1) + barB end
 
-    -- Squares.
-    local x0 = chatRight(W, HUD) + math.floor(12 * s)
-    local x1 = x0 + math.floor(40 * s)
+    -- Squares: their right edge lines up with where the voice meter starts
+    -- (the end of the armour bars), so the chat gets the room before them.
+    local meterStart = math.floor(W * (HUD.VISOR_BAR_TO or 0.3)) + math.floor(14 * s)
+    local x1 = meterStart - math.floor(14 * s)
+    local x0 = x1 - math.floor(40 * s)
     local h, gap = math.floor(30 * s), math.floor(5 * s)
     local rows = {}
     for i = 1, 3 do
@@ -79,7 +77,8 @@ local function buildVisor(HUD)
     r = math.max(r, 0)
     local cx0 = cx1 - 2 * r
     geo.radar = { x = cx1 - r, y = YB - r, r = r }
-    geo.chatW = math.max(math.floor(W * 0.08), cx0 - math.floor(10 * s) - mx)
+    geo.chatW = math.max(math.floor(W * 0.08), cx0 - math.floor(10 * s) - mx)          -- (compass on)
+    geo.chatWNoCompass = math.max(math.floor(W * 0.08), x0 - math.floor(12 * s) - mx)   -- (compass off)
 
     -- Meter bars: under the stamina strip (same strip as rhylib_hud's).
     local strip = HUD.VisorStrip(-1, (HUD.VISOR_BAR_TO or 0.3) + 0.006, 0.4, HUD.VISOR_BAR_OFFSET or 0.005, HUD.VISOR_BAR_THICK or 0.009, 28)
@@ -112,9 +111,8 @@ local function buildVisor(HUD)
     -- Both meters start at the same distance from their screen edge, where
     -- the armour / health bars end (and clear of the squares on the left),
     -- so they mirror each other and stay under the stamina strip.
-    local start = math.max(x1, math.floor(W * (HUD.VISOR_BAR_TO or 0.3))) + math.floor(14 * s)
-    geo.bars = bars(start)
-    geo.barsR = bars(start)
+    geo.bars = bars(meterStart)
+    geo.barsR = bars(meterStart)
     geo.bw = bw
     return geo
 end

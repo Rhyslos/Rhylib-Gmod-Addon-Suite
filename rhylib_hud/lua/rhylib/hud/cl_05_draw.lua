@@ -188,8 +188,9 @@ end
 -- the lower-right cheek and the hotbar low in the chin opening.
 function HUD.Margins(kind)
     if HUD.VisorActive and HUD.VisorActive() then
-        if kind == "ammo" then return math.floor(ScrW() * 0.012), math.floor(ScrH() * 0.022) end
-        if kind == "hotbar" then return 0, math.floor(ScrH() * 0.03) end
+        -- (low: the visor parts sit close to the bottom edge, like the stamina strips)
+        if kind == "ammo" then return math.floor(ScrW() * 0.005), math.floor(ScrH() * 0.008) end
+        if kind == "hotbar" then return 0, math.floor(ScrH() * 0.012) end
     end
     if kind == "hotbar" then return 0, math.floor(10 * HUD.Scale()) end
     local m = math.floor(24 * HUD.Scale())

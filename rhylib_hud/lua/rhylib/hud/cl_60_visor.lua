@@ -34,8 +34,11 @@ local COL_SIM_LINE = Color(250, 215, 90, 170)
 local COL_EMPTY_ALPHA = 45
 
 -- Shape, as shares of the screen (0..1). Mirrored left/right.
-local BROW_EDGE = 0.022      -- brow depth at the screen sides
-local BROW_CENTRE = 0.07     -- brow depth in the middle
+-- Brow (top band): client convars so it can be tuned in Settings; slimmer
+-- than the first version (0.022 / 0.07).
+local browEdgeVar = CreateClientConVar("rhylib_visor_brow_edge", "0.012", true, false, "Visor brow depth at the screen sides (share of the height)")
+local browCentreVar = CreateClientConVar("rhylib_visor_brow_centre", "0.045", true, false, "Visor brow depth in the middle (share of the height)")
+local browCurveVar = CreateClientConVar("rhylib_visor_brow_curve", "1", true, false, "Visor brow curve: below 1 flatter and wider, above 1 a sharper dip in the middle")
 local CHEEK_TOP = 0.75       -- where the cheek meets the screen side
 local CHIN_HALF = 0.1        -- half the chin opening width (0.1 = 20% of the screen)
 local CURVE_STEPS = 32
@@ -43,7 +46,7 @@ local CURVE_STEPS = 32
 -- Armour / health bars along the cheek edges (shares of the screen).
 local BAR_OFFSET = 0.005     -- below the helmet edge
 local BAR_THICK = 0.009      -- bar thickness
-local BAR_FROM = 0.012       -- starts this far from the screen side (share of the width)
+local BAR_FROM = 0.005       -- starts this far from the screen side (share of the width; was 0.012)
 local BAR_TO = 0.3           -- ends here (the chin opening starts at 0.4)
 local BAR_GAP = 0.006        -- gap between the four bars (share of the width)
 local BAR_STEPS = 10         -- pieces per bar (sets how smoothly a bar fills)
@@ -103,11 +106,14 @@ local function build(W, H)
     cache = { w = W, h = H, tris = {}, edges = {}, bars = {} }
 
     -- Brow: a smooth sag, deepest in the middle.
+    local browEdge = math.Clamp(browEdgeVar:GetFloat(), 0, 0.1)
+    local browCentre = math.Clamp(browCentreVar:GetFloat(), 0, 0.15)
+    local curve = math.Clamp(browCurveVar:GetFloat(), 0.3, 4)
     local brow = {}
     for i = 0, CURVE_STEPS do
         local f = i / CURVE_STEPS
-        local sag = math.sin(f * math.pi)
-        brow[#brow + 1] = { f * W, (BROW_EDGE + (BROW_CENTRE - BROW_EDGE) * sag) * H }
+        local sag = math.sin(f * math.pi) ^ curve
+        brow[#brow + 1] = { f * W, (browEdge + (browCentre - browEdge) * sag) * H }
     end
     local browShape = { { 0, 0 } }
     for _, p in ipairs(brow) do browShape[#browShape + 1] = p end
@@ -169,7 +175,7 @@ local function build(W, H)
     end
 
     -- Edge bleed: whatever touches a screen edge is pushed BLEED px past
-    -- it (the shapes inside the screen don't change), so the visor sway
+    -- it (the shapes inside the screen don't change), so a moving HUD
     -- (rhylib_core cl_66_motion.lua) never opens a gap at the edges.
     local bleed = math.ceil(BLEED * H / 1080)
     local function push(x, y)
@@ -208,11 +214,16 @@ local function drawBars(list, frac, fill, line)
     end
 end
 
--- Drawn before the other HUD parts (priority -95, also before the visor sway), so they sit on top.
+-- Drawn before the other HUD parts (priority -10), so they sit on top.
 Rhylib.Hook.Add("HUDPaint", "hud.visor", function()
     if not HUD.VisorActive() then return end
     local W, H = ScrW(), ScrH()
-    if cache.w ~= W or cache.h ~= H then build(W, H) end
+    -- (rebuilt when the screen size or the brow settings change)
+    local be, bc, bv = browEdgeVar:GetFloat(), browCentreVar:GetFloat(), browCurveVar:GetFloat()
+    if cache.w ~= W or cache.h ~= H or cache.be ~= be or cache.bc ~= bc or cache.bv ~= bv then
+        build(W, H)
+        cache.be, cache.bc, cache.bv = be, bc, bv
+    end
 
     draw.NoTexture()
     surface.SetDrawColor(COL_SHELL)
@@ -240,7 +251,7 @@ Rhylib.Hook.Add("HUDPaint", "hud.visor", function()
     else
         drawBars(cache.bars[1], math.max(ply:Health(), 0) / math.max(ply:GetMaxHealth(), 1), COL_HEALTH_FILL, COL_HEALTH_LINE)
     end
-end, -95)   -- (before the visor sway pushes at -90: the frame never moves, only what is on it)
+end, -10)
 
 --------------------------------------------------------------------------
 -- Helpers for other HUD parts that sit on the cheeks (stamina, hotbar).
@@ -337,3 +348,15 @@ HUD.VISOR_BAR_FROM = BAR_FROM
 HUD.VISOR_BAR_TO = BAR_TO
 HUD.VISOR_BAR_OFFSET = BAR_OFFSET
 HUD.VISOR_BAR_THICK = BAR_THICK
+
+-- Brow sliders (Settings > Interface), for finding the right shape.
+Rhylib.Hook.Add("InitPostEntity", "hud.visor.setting", function()
+    local Menus = Rhylib.Menus
+    if not (Menus and Menus.AddSetting) then return end
+    Menus.AddSetting("HUD", { id = "hud.browedge", order = 40, title = "Visor brow: depth at the sides",
+        desc = "Share of the screen height (default 0.012)", kind = "slider", convar = "rhylib_visor_brow_edge", min = 0, max = 0.06, decimals = 3 })
+    Menus.AddSetting("HUD", { id = "hud.browcentre", order = 41, title = "Visor brow: depth in the middle",
+        desc = "Share of the screen height (default 0.045)", kind = "slider", convar = "rhylib_visor_brow_centre", min = 0, max = 0.1, decimals = 3 })
+    Menus.AddSetting("HUD", { id = "hud.browcurve", order = 42, title = "Visor brow: curve",
+        desc = "Below 1 flatter and wider, above 1 a sharper dip (default 1)", kind = "slider", convar = "rhylib_visor_brow_curve", min = 0.3, max = 4, decimals = 2 })
+end)
