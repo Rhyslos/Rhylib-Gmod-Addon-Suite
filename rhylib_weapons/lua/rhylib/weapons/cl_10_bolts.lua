@@ -31,13 +31,13 @@ local matBeam = Material("trails/laser")
 local matGlow = Material("sprites/light_glow02_add")
 local matRing = Material("effects/select_ring")
 
-local function muzzlePos(shooter, fallback)
+local function muzzlePos(shooter, fallback, left)
     if not IsValid(shooter) then return fallback end
 
     local firstPerson = shooter == LocalPlayer() and not shooter:ShouldDrawLocalPlayer()
     local active = shooter.GetActiveWeapon and shooter:GetActiveWeapon()
     if IsValid(active) and active.GetPropMuzzle then
-        local p = active:GetPropMuzzle(firstPerson)
+        local p = active:GetPropMuzzle(firstPerson, left)
         if p then return p end
     end
 
@@ -65,9 +65,10 @@ local traceData = { mask = MASK_SHOT, output = traceResult }
     player who steps into its path later doesn't stop the visual; damage
     is the server's job anyway.) Nothing is allocated per frame.
 ]]
-function Bolts.Spawn(shooter, origin, dir, speed, colorIndex)
+-- left: dual pistols, the shot came from the left gun (nil = ask the gun).
+function Bolts.Spawn(shooter, origin, dir, speed, colorIndex, left)
     local style = STYLES[colorIndex] or STYLES[1]
-    local muzzle = muzzlePos(shooter, origin)
+    local muzzle = muzzlePos(shooter, origin, left)
     local range = speed * style.life
     traceData.start = origin
     traceData.endpos = origin + dir * range
@@ -113,12 +114,13 @@ Rhylib.Net.ReceiveBatch("wep.shot", function()
         dir = net.ReadNormal(),
         speed = net.ReadUInt(14),
         color = net.ReadUInt(4),
+        left = net.ReadBool(),
     }
 end, function(s)
     local shooter = Entity(s.shooter)
     -- Your own shots were already drawn by prediction (except in singleplayer).
     if shooter == LocalPlayer() and not game.SinglePlayer() then return end
-    Bolts.Spawn(shooter, s.origin, s.dir, s.speed, s.color)
+    Bolts.Spawn(shooter, s.origin, s.dir, s.speed, s.color, s.left)
 end)
 
 local function impact(b)

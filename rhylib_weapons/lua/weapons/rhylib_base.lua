@@ -249,7 +249,8 @@ end
 -- Two-gun viewmodel on (dual) or back to the normal one.
 function SWEP:ApplyDualViewModel(dual)
     local o = self:GetOwner()
-    if not (IsValid(o) and o:IsPlayer() and o:GetActiveWeapon() == self) or not self:HasDualCarrier() then return end
+    -- (only with the normal carrier too: that's what turns the hands on)
+    if not (IsValid(o) and o:IsPlayer() and o:GetActiveWeapon() == self) or not self:HasDualCarrier() or not self.rhylibCarrier then return end
     local vm = o:GetViewModel()
     if not IsValid(vm) then return end
     local want = dual and self.DualCarrierVM or self.ViewModel
@@ -588,6 +589,7 @@ function SWEP:FireShot()
     local stun = self:GetFireModeName() == "stun"
     self:EmitSound(stun and "weapons/stunstick/spark2.wav" or self.FireSound, 80, util.SharedRandom("rhylib.pitch", 96, 104), 1, CHAN_WEAPON)
     -- Dual pistols take turns (left on odd rounds left).
+    if CLIENT and IsFirstTimePredicted() then self.rhylibLeftShot = self:Clip1() % 2 == 1 end
     if self:DualViewModelOn() and self:Clip1() % 2 == 1 then
         self:SendWeaponAnim(ACT_VM_SECONDARYATTACK)
     elseif self.FireAct ~= false then
@@ -1230,8 +1232,15 @@ if CLIENT then
         return ent
     end
 
+    -- Dual pistols: was the last shot from the left gun? Your own shots are
+    -- noted when fired; others' come with the shot message (wep.shot).
+    function SWEP:IsLeftShot()
+        if self.rhylibLeftShot ~= nil then return self.rhylibLeftShot end
+        return self:Clip1() % 2 == 1
+    end
+
     -- Where bolts should appear to leave the gun. Used by cl_10_bolts.lua.
-    function SWEP:GetPropMuzzle(firstPerson)
+    function SWEP:GetPropMuzzle(firstPerson, left)
         if not self.PropModel then return nil end
         if firstPerson and self.PropFirstPerson == false then return nil end   -- (the viewmodel's attachment)
         if firstPerson and self:Scoped() then
@@ -1240,6 +1249,12 @@ if CLIENT then
                 local a = o:EyeAngles()
                 return o:EyePos() + a:Forward() * 12 - a:Up() * 3
             end
+        end
+        -- Dual pistols: the left one fires on odd rounds left (as the anims).
+        if left == nil then left = self:GetFireModeName() == "dual" and self:IsLeftShot() end
+        if left then
+            local p = firstPerson and self.propMuzzleVML or self.propMuzzleWML
+            if p then return p end
         end
         return firstPerson and self.propMuzzleVM or self.propMuzzleWM
     end
@@ -1336,19 +1351,30 @@ if CLIENT then
         end
     end)
 
-    -- CarrierInvisible: the carrier drawn with a see-through material (its
-    -- own mesh hidden, the hands are a separate entity and still draw).
-    local INVIS = "!rhylib_vm_invisible"
-    local madeInvis = false
-    local function invisMat()
-        if not madeInvis then
-            madeInvis = true
-            CreateMaterial("rhylib_vm_invisible", "UnlitGeneric", {
-                ["$basetexture"] = "vgui/white", ["$alpha"] = "0", ["$translucent"] = "1",
-            })
-        end
-        return INVIS
+    -- Hidden viewmodel (CarrierInvisible, the dual carrier): drawn with
+    -- render blend 0. The hands are a separate entity drawn after the
+    -- PostDrawViewModel hooks, so this hook puts the blend back before them
+    -- (and before the props). Same hook id as in the grenade base.
+    local function blendOff(vm)
+        render.SetBlend(0)
+        vm.rhylibBlendOff = true
     end
+
+    Rhylib.Hook.Add("PostDrawViewModel", "weapons.blendreset", function(vm)
+        if IsValid(vm) and vm.rhylibBlendOff then
+            render.SetBlend(1)
+            vm.rhylibBlendOff = nil
+        end
+    end, -1000)
+    -- (Safety: a viewmodel that wasn't drawn after all.)
+    Rhylib.Hook.Add("PreDrawHUD", "weapons.blendsafety", function()
+        local lp = LocalPlayer()
+        local vm = IsValid(lp) and lp:GetViewModel()
+        if IsValid(vm) and vm.rhylibBlendOff then
+            render.SetBlend(1)
+            vm.rhylibBlendOff = nil
+        end
+    end)
 
     -- CarrierBoneMods: applied every frame (the server overwrites client bone
     -- changes), undone for other weapons. The indices touched are kept on the vm.
@@ -1379,10 +1405,6 @@ if CLIENT then
     Rhylib.Hook.Add("PreDrawViewModel", "weapons.invisreset", function(vm, ply, wep)
         if not IsValid(vm) then return end
         local carrier = IsValid(wep) and wep.UsesCarrier and wep:UsesCarrier()
-        if vm.rhylibInvis and not (carrier and wep.CarrierInvisible) then
-            vm:SetMaterial("")
-            vm.rhylibInvis = nil
-        end
         if vm.rhylibBoneMods and not (carrier and wep.CarrierBoneMods) then boneMods(nil, vm, false) end
     end)
 
@@ -1430,25 +1452,26 @@ if CLIENT then
         ent:SetAngles(ang)
         ent:SetupBones()
         ent:DrawModel()
+        self.propMuzzleVML = ent:LocalToWorld(self.PropMuzzle)
     end
 
     -- First person. Carrier: it draws (gun bone shrunk) and the prop goes
     -- on that bone in PostDrawViewModel. Otherwise the placeholder isn't
     -- drawn and the prop floats in its place. Both inside the viewmodel
     -- pass (viewmodel FOV, bob, sway, aim offset).
-    -- Two-gun viewmodel: every bone named like its guns is hidden, and a
-    -- prop is drawn on the left and the right gun bone.
+    -- Two-gun viewmodel: hidden whole (render blend), and a prop is drawn
+    -- on its left and right gun bone. (Shrinking its gun bones also shrank
+    -- the left hand, which hangs off them.)
     local function dualBones(vm, wep)
         local key = vm:GetModel()
         if vm.rhylibDualKey == key then return vm.rhylibDualBones end
-        local info = { hide = {} }
+        local info = {}
         for i = 0, (vm:GetBoneCount() or 0) - 1 do
             local n = string.lower(vm:GetBoneName(i) or "")
             local gunPart = string.find(n, "elite", 1, true) or string.find(n, "weapon", 1, true) and not string.find(n, "hand", 1, true)
                 and not string.find(n, "arm", 1, true) and not string.find(n, "finger", 1, true) and not string.find(n, "wrist", 1, true)
                 and not string.find(n, "bip", 1, true)
             if gunPart then
-                info.hide[#info.hide + 1] = i
                 -- The gun itself: the shortest name with left / right in it.
                 if string.find(n, "left", 1, true) and (not info.left or #n < info.leftLen) then info.left, info.leftLen = i, #n end
                 if string.find(n, "right", 1, true) and (not info.right or #n < info.rightLen) then info.right, info.rightLen = i, #n end
@@ -1461,21 +1484,6 @@ if CLIENT then
         return info
     end
 
-    local function dualShrink(vm, on, wep)
-        if not on then
-            -- Exactly the bones shrunk before (the model may have changed since).
-            local n = vm:GetBoneCount() or 0
-            for _, i in ipairs(vm.rhylibDualShrunk or {}) do
-                if i < n then vm:ManipulateBoneScale(i, ONE) end
-            end
-            vm.rhylibDualShrunk = nil
-            return
-        end
-        local info = dualBones(vm, wep)
-        for _, i in ipairs(info.hide) do vm:ManipulateBoneScale(i, SHRINK) end
-        vm.rhylibDualShrunk = info.hide
-    end
-
     -- Bone list of the current viewmodel (for tuning the dual carrier).
     concommand.Add("rhylib_vm_bones", function()
         local vm = LocalPlayer():GetViewModel()
@@ -1484,27 +1492,20 @@ if CLIENT then
         for i = 0, (vm:GetBoneCount() or 0) - 1 do print(i, vm:GetBoneName(i)) end
     end)
 
-    Rhylib.Hook.Add("PreDrawViewModel", "weapons.dualreset", function(vm, ply, wep)
-        if IsValid(vm) and vm.rhylibDualShrunk and not (IsValid(wep) and wep.DualViewModelOn and wep:DualViewModelOn()) then
-            dualShrink(vm, false)
-        end
-    end)
-
     function SWEP:PreDrawViewModel(vm)
         if self:Scoped() then return true end   -- looking through the scope: no gun, no hands
         if not self.PropModel or self.PropFirstPerson == false then return end
         if self:DualViewModelOn() then
+            -- The two-gun model is only guns (the hands are their own
+            -- entity), so all of it is hidden and props go on its gun bones.
             if vm.rhylibShrunk then unshrink(vm) end
-            dualShrink(vm, true, self)
+            blendOff(vm)
             return
         end
         if self:UsesCarrier() then
             shrink(self, vm)
             if self.CarrierHideBones then extraShrink(self, vm, true) end
-            if self.CarrierInvisible and vm:GetMaterial() ~= INVIS then
-                vm:SetMaterial(invisMat())
-                vm.rhylibInvis = true
-            end
+            if self.CarrierInvisible then blendOff(vm) end
             if self.CarrierBoneMods then boneMods(self, vm, true) end
             self:HoldReloadFrame(vm)
             return
@@ -1526,7 +1527,8 @@ if CLIENT then
                         ent:SetAngles(ang)
                         ent:SetupBones()
                         ent:DrawModel()
-                        if side == "right" then self.propMuzzleVM = ent:LocalToWorld(self.PropMuzzle) end
+                        if side == "right" then self.propMuzzleVM = ent:LocalToWorld(self.PropMuzzle)
+                        else self.propMuzzleVML = ent:LocalToWorld(self.PropMuzzle) end
                     end
                 end
             end
@@ -2052,6 +2054,7 @@ if CLIENT then
                 le:SetAngles(la)
                 le:SetupBones()
                 le:DrawModel()
+                self.propMuzzleWML = le:LocalToWorld(self.PropMuzzle)
             end
         end
     end

@@ -242,8 +242,8 @@ Rhylib.Hook.Add("PlayerDisconnected", "medical.craft", function(ply) crafting[pl
 
 --------------------------------------------------------------------------
 -- Med sofa: lie down (looks only). The lying body (rhylib_core Lying)
--- is laid face up along the sofa just above its surface, settles for a
--- few seconds and is frozen. E or Jump gets up.
+-- is laid face up along the sofa just above its surface, its limbs settle
+-- for a moment and it is frozen. E or Jump gets up.
 --------------------------------------------------------------------------
 
 local function sofaUp(ply, quiet)
@@ -295,28 +295,61 @@ function Med.SofaUse(sofa, ply)
     L.Begin(ply)
     local rag = L.Ragdoll(ply)
     if not IsValid(rag) then return end
-    -- The standing pose turned flat (front up, head along the sofa), a
-    -- little above the surface, then let go: it settles onto the sofa for
-    -- a few seconds and the Lying code freezes it (rag.rhylibFreezeAt).
+    -- The standing pose turned flat (front up, head along the sofa), lifted
+    -- so its lowest point is just above the surface. The pelvis and spine
+    -- are frozen there; arms, legs and head settle (heavily slowed) for a
+    -- moment, then the Lying code freezes the rest (rag.rhylibFreezeAt).
     local from = Angle(0, ply:EyeAngles().y, 0)
     local to = Vector(0, 0, 1):AngleEx(axis)
     local origin = ply:GetPos()
     local half = (alongX and (maxs.x - mins.x) or (maxs.y - mins.y)) * 0.5
-    local base = top - axis * math.min(half - 6, 36) + Vector(0, 0, cfg("sofaDrop"))
+    local base = top - axis * math.min(half - 6, 36)
+    local place, lowest = {}, math.huge
     for i = 0, rag:GetPhysicsObjectCount() - 1 do
         local phys = rag:GetPhysicsObjectNum(i)
         if IsValid(phys) then
             local lp, la = WorldToLocal(phys:GetPos(), phys:GetAngles(), origin, from)
             local wp, wa = LocalToWorld(lp, la, base, to)
-            phys:EnableMotion(true)
-            phys:SetPos(wp)
-            phys:SetAngles(wa)
-            phys:SetVelocity(Vector(0, 0, 0))
-            phys:AddAngleVelocity(-phys:GetAngleVelocity())
+            place[#place + 1] = { phys = phys, pos = wp, ang = wa, bone = string.lower(rag:GetBoneName(rag:TranslatePhysBoneToBone(i)) or "") }
+            -- Lowest corner of this part's collision box once placed.
+            local bmin, bmax = phys:GetAABB()
+            if bmin then
+                for _, c in ipairs({ bmin, bmax, Vector(bmin.x, bmin.y, bmax.z), Vector(bmin.x, bmax.y, bmin.z), Vector(bmax.x, bmin.y, bmin.z),
+                    Vector(bmax.x, bmax.y, bmin.z), Vector(bmax.x, bmin.y, bmax.z), Vector(bmin.x, bmax.y, bmax.z) }) do
+                    lowest = math.min(lowest, LocalToWorld(c, angle_zero, wp, wa).z)
+                end
+            else
+                lowest = math.min(lowest, wp.z - 6)
+            end
+        end
+    end
+    local lift = Vector(0, 0, (lowest < math.huge) and (top.z + cfg("sofaDrop") - lowest) or 8)
+    local damp = cfg("sofaDamping")
+    for _, pl in ipairs(place) do
+        local phys = pl.phys
+        local core = string.find(pl.bone, "pelvis", 1, true) or string.find(pl.bone, "spine", 1, true)
+        phys:EnableMotion(true)
+        phys:SetPos(pl.pos + lift)
+        phys:SetAngles(pl.ang)
+        phys:SetVelocity(Vector(0, 0, 0))
+        phys:AddAngleVelocity(-phys:GetAngleVelocity())
+        if core then
+            phys:EnableMotion(false)
+        else
+            local ld, ad = phys:GetDamping()
+            pl.ld, pl.ad = ld, ad
+            phys:SetDamping(damp, damp)
             phys:Wake()
         end
     end
-    rag.rhylibFrozen = false
+    -- Normal damping back once it's frozen (another system may move it later).
+    timer.Simple(cfg("sofaSettle") + 0.2, function()
+        if not IsValid(rag) then return end
+        for _, pl in ipairs(place) do
+            if pl.ld and IsValid(pl.phys) then pl.phys:SetDamping(pl.ld, pl.ad) end
+        end
+    end)
+    rag.rhylibFrozen = nil   -- (part frozen: neither state, so setFrozen always runs)
     rag.rhylibFreezeAt = CurTime() + cfg("sofaSettle")
     ply.rhylibSofa = sofa
     ply.rhylibSofaIn = CurTime()

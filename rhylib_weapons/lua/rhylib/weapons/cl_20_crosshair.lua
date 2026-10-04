@@ -36,6 +36,9 @@ local colHead = Color(255, 90, 80)
 local colMark = Color(0, 0, 0)
 
 local smoothVar = CreateClientConVar("rhylib_crosshair_smooth", "1", true, false, "Anti-aliased crosshair lines (0 = plain polygons)", 0, 1)
+local thickVar = CreateClientConVar("rhylib_crosshair_thickness", "1", true, false, "Crosshair line thickness (multiplier)", 0.5, 3)
+local opacityVar = CreateClientConVar("rhylib_crosshair_opacity", "1", true, false, "Crosshair opacity", 0.1, 1)
+local colLineNow, colOutlineNow = Color(244, 244, 240), Color(0, 0, 0, 128)
 
 --[[
     Smooth strokes: every stroke is a quad textured with a soft profile
@@ -167,11 +170,16 @@ function X.Draw(wep, x, y)
     local o1, o2, o3 = W.Spread.Offsets(wep, t)
     offsets[1], offsets[2], offsets[3] = degToPx(o1, fov), degToPx(o2, fov), degToPx(o3, fov)
 
+    -- Thickness and opacity from the player's settings.
+    local thick = math.Clamp(thickVar:GetFloat(), 0.5, 3)
+    local op = math.Clamp(opacityVar:GetFloat(), 0.1, 1)
+    colLineNow.a = 255 * op
+    colOutlineNow.a = colOutline.a * op
     beginStrokes()
-    surface.SetDrawColor(colOutline)
-    drawShape(x, y, r, offsets, s, OUTLINE * s)
-    surface.SetDrawColor(colLine)
-    drawShape(x, y, r, offsets, s, LINE * s)
+    surface.SetDrawColor(colOutlineNow)
+    drawShape(x, y, r, offsets, s, (LINE * thick + (OUTLINE - LINE)) * s)
+    surface.SetDrawColor(colLineNow)
+    drawShape(x, y, r, offsets, s, LINE * thick * s)
 
     -- Hit marker: four diagonal ticks around the ring, fading out. Head
     -- hits are red; dropping someone shows a larger, longer red X.
@@ -215,5 +223,9 @@ Rhylib.Hook.Add("InitPostEntity", "weapons.hitsound.setting", function()
     if Menus and Menus.AddSetting then
         Menus.AddSetting("Weapons", { id = "wep.hitsound", order = 10, title = "Hit sounds",
             desc = "A click when your bolt hits someone", kind = "toggle", convar = "rhylib_hitsound" })
+        Menus.AddSetting("Weapons", { id = "wep.xhthick", order = 20, title = "Crosshair thickness",
+            desc = "Line thickness (1 = normal)", kind = "slider", convar = "rhylib_crosshair_thickness", min = 0.5, max = 3, decimals = 1 })
+        Menus.AddSetting("Weapons", { id = "wep.xhopacity", order = 30, title = "Crosshair opacity",
+            desc = "1 = solid", kind = "slider", convar = "rhylib_crosshair_opacity", min = 0.1, max = 1, decimals = 2 })
     end
 end)

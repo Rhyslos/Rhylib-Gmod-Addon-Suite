@@ -330,56 +330,46 @@ if CLIENT then
         e:DrawModel()
     end
 
-    -- c_grenade's own grenade (bones named like grenade / .pin / lever) is
-    -- shrunk away every frame (the server overwrites client bone changes)
-    -- and restored for other weapons.
-    local SHRINK, ONE = Vector(0.01, 0.01, 0.01), Vector(1, 1, 1)
+    -- c_grenade's own grenade bones (grenade / .pin / lever): the prop is
+    -- drawn on the grenade bone.
     local nadeBones = {}
     local function bonesOf(vm)
         local mdl = vm:GetModel() or ""
         if not nadeBones[mdl] then
-            local list, body = {}, nil
+            local body
             for i = 0, (vm:GetBoneCount() or 0) - 1 do
                 local n = string.lower(vm:GetBoneName(i) or "")
-                if string.find(n, "grenade", 1, true) or string.find(n, "[%._]pin$") or string.find(n, "lever", 1, true) or string.find(n, "spoon", 1, true) then
-                    list[#list + 1] = i
-                    if not body and string.find(n, "grenade", 1, true) then body = i end
-                end
+                if string.find(n, "grenade", 1, true) then body = i break end
             end
-            nadeBones[mdl] = { list = list, body = body }
+            nadeBones[mdl] = { body = body }
         end
         return nadeBones[mdl]
     end
 
     -- c_grenade is only the HL2 grenade (the arms are the separate hands
-    -- entity), so the whole viewmodel is drawn with an invisible material.
-    local INVIS = "!rhylib_nade_invisible"
-    local madeInvis = false
-    local function invisible()
-        if not madeInvis then
-            madeInvis = true
-            CreateMaterial("rhylib_nade_invisible", "UnlitGeneric", {
-                ["$basetexture"] = "vgui/white", ["$alpha"] = "0", ["$translucent"] = "1",
-            })
+    -- entity), so the viewmodel is drawn fully see-through (render blend 0).
+    -- The blend goes back to 1 in a PostDrawViewModel hook, which runs
+    -- before the hands and the prop are drawn. (Same hook id as in
+    -- rhylib_base, so only one copy runs.)
+    Rhylib.Hook.Add("PostDrawViewModel", "weapons.blendreset", function(vm)
+        if IsValid(vm) and vm.rhylibBlendOff then
+            render.SetBlend(1)
+            vm.rhylibBlendOff = nil
         end
-        return INVIS
-    end
-
-    Rhylib.Hook.Add("PreDrawViewModel", "grenade.vmreset", function(vm, ply, wep)
-        if not IsValid(vm) or not vm.rhylibNadeHidden then return end
-        if IsValid(wep) and wep.Base == "rhylib_grenade_base" then return end
-        for _, i in ipairs(vm.rhylibNadeHidden) do
-            if i < (vm:GetBoneCount() or 0) then vm:ManipulateBoneScale(i, ONE) end
+    end, -1000)
+    -- (Safety: a viewmodel that wasn't drawn after all.)
+    Rhylib.Hook.Add("PreDrawHUD", "weapons.blendsafety", function()
+        local lp = LocalPlayer()
+        local vm = IsValid(lp) and lp:GetViewModel()
+        if IsValid(vm) and vm.rhylibBlendOff then
+            render.SetBlend(1)
+            vm.rhylibBlendOff = nil
         end
-        vm:SetMaterial("")
-        vm.rhylibNadeHidden = nil
     end)
 
     function SWEP:PreDrawViewModel(vm)
-        local b = bonesOf(vm)
-        for _, i in ipairs(b.list) do vm:ManipulateBoneScale(i, SHRINK) end
-        if vm:GetMaterial() ~= INVIS then vm:SetMaterial(invisible()) end
-        vm.rhylibNadeHidden = b.list
+        render.SetBlend(0)
+        vm.rhylibBlendOff = true
     end
 
     function SWEP:PostDrawViewModel(vm)

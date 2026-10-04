@@ -38,6 +38,7 @@ local function writeShot(s)
     net.WriteNormal(s.dir)
     net.WriteUInt(s.speed, 14)
     net.WriteUInt(s.color, 4)
+    net.WriteBool(s.left)
 end
 
 -- Hit confirm to the shooter: 0 body, 1 head, 2 down/kill.
@@ -179,7 +180,7 @@ end
 local groups, groupKeys, groupPool = {}, {}, {}
 local floor = math.floor
 
-local function sendShot(owner, color, origin, dir, speed)
+local function sendShot(owner, color, origin, dir, speed, left)
     local cx, cy, cz = floor(origin.x / SHOT_CELL), floor(origin.y / SHOT_CELL), floor(origin.z / SHOT_CELL)
     local key = (cx + 128) * 65536 + (cy + 128) * 256 + (cz + 128)
     local g = groups[key]
@@ -195,6 +196,7 @@ local function sendShot(owner, color, origin, dir, speed)
         dir = dir,
         speed = math.min(speed, 16383),
         color = color,
+        left = left and true or false,
     }
 end
 
@@ -275,7 +277,9 @@ function Bolts.Fire(owner, weapon, origin, dir, damage, opts)
         onExpire = opts and opts.onExpire,
     }
 
-    sendShot(owner, opts and opts.color or weapon.BoltColor or 1, origin, dir, speed)
+    -- (dual pistols: which gun, as the fire anim; others can't see the clip)
+    local left = weapon.GetFireModeName and weapon:GetFireModeName() == "dual" and weapon:Clip1() % 2 == 1
+    sendShot(owner, opts and opts.color or weapon.BoltColor or 1, origin, dir, speed, left)
 
     local isPly = owner:IsPlayer()
     -- The first leg covers what the shooter saw: the bolt's flight during

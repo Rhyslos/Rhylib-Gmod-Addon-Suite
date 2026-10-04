@@ -79,7 +79,9 @@ function Admin.MapPicker(done)
     local sp = K.Scroll(f)
     sp:Dock(FILL)
     local grid = vgui.Create("DIconLayout", sp)
-    grid:Dock(FILL)
+    -- TOP, not FILL: in a scroll panel FILL takes the canvas's height, which
+    -- comes from its children, so the grid stayed a few pixels tall.
+    grid:Dock(TOP)
     grid:SetSpaceX(S(8))
     grid:SetSpaceY(S(8))
 

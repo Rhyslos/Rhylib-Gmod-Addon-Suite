@@ -14,7 +14,7 @@
     (droid poppers without Droid popper), Spring legs jump power,
     Reinforced max health.
     Damage taken (EntityTakeDamage 95, before armour): Hard landings,
-    Blast hardened, Aerial stability, Juggernaut, Under fire.
+    Blast hardened, Aerial stability, Combat drop, Juggernaut, Under fire.
     Death from above: OnPlayerHitGround.
 ]]
 
@@ -26,7 +26,7 @@ Rhylib.Net.Register("skills.note")
 local function key(ply) return "s" .. (ply:SteamID64() or "0") end
 
 -- Renamed skills (old saves keep working).
-local RENAMED = { burst_fire = "rapid_fire" }
+local RENAMED = { burst_fire = "rapid_fire", thruster_dodge = "combat_drop" }
 
 local function setString(set)
     local ids = {}
@@ -272,6 +272,7 @@ Rhylib.Hook.Add("EntityTakeDamage", "skills.resist", function(ent, dmg)
             and ent:GetMoveType() == MOVETYPE_WALK then
             m = m * K.Cfg("airMult")
         end
+        if set.combat_drop and (ent.rhylibDropUntil or 0) > CurTime() then m = m * K.Cfg("combatDropMult") end
         if set.juggernaut then m = m * K.Cfg("juggernautMult") end
         if set.under_fire then
             local Med = Rhylib.Medical
@@ -312,6 +313,35 @@ function K.HoldingLine(ply)
     end
     return false
 end
+
+-- Combat drop: landing after combatDropAir seconds of jetpack flight (in
+-- the air the whole time, thrusting at some point) gives combatDropTime
+-- seconds of less damage. Only players with the skill are tracked.
+Rhylib.Hook.Add("PlayerTick", "skills.combatdrop", function(ply)
+    if not K.Has(ply, "combat_drop") then
+        ply.rhylibAirFrom = nil
+        return
+    end
+    local J = Rhylib.Jetpack
+    if ply:OnGround() or ply:GetMoveType() ~= MOVETYPE_WALK or ply:WaterLevel() >= 2 or not (J and J.Has and J.Has(ply))
+        or IsValid(ply:GetDTEntity(31)) then   -- (on a grapple rope)
+        ply.rhylibAirFrom, ply.rhylibAirJet = nil, nil
+        return
+    end
+    if not ply.rhylibAirFrom then ply.rhylibAirFrom = CurTime() end
+    if ply:GetDTBool(J.DT_THRUST) then ply.rhylibAirJet = true end
+end)
+
+Rhylib.Hook.Add("OnPlayerHitGround", "skills.combatdrop", function(ply, inWater)
+    local from, jet = ply.rhylibAirFrom, ply.rhylibAirJet
+    ply.rhylibAirFrom, ply.rhylibAirJet = nil, nil
+    if inWater or not from or not jet or not K.Has(ply, "combat_drop") then return end
+    if CurTime() - from < K.Cfg("combatDropAir") then return end
+    local t = K.Cfg("combatDropTime")
+    ply.rhylibDropUntil = CurTime() + t
+    ply:EmitSound("npc/roller/mine/rmine_blades_in2.wav", 70, 90)
+    K.Note(ply, "Combat drop: " .. math.Round((1 - K.Cfg("combatDropMult")) * 100) .. "% less damage for " .. t .. " s")
+end)
 
 -- Death from above: a hard landing slams droids (NPCs and NextBots) nearby.
 Rhylib.Hook.Add("OnPlayerHitGround", "skills.slam", function(ply, inWater, _, speed)

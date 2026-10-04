@@ -56,11 +56,12 @@ reg("fallMult", 0.5, "Hard landings: fall damage multiplier")
 reg("tankMult", 1.4, "Extended tanks: fuel time and refill speed multiplier")
 reg("springJump", 1.2, "Spring legs: jump power multiplier")
 reg("afterburnerMult", 1.25, "Afterburner: jetpack climb, steering and top speed multiplier")
-reg("dodgeSpeed", 450, "Thruster dodge: dash speed (units/s)")
-reg("dodgeCooldown", 2, "Thruster dodge: seconds between dashes")
-reg("dodgeFuel", 0.15, "Thruster dodge: share of a full tank per dash")
-reg("dodgeStamina", 20, "Thruster dodge: stamina per dash without a jetpack")
+reg("combatDropAir", 7, "Combat drop: seconds of jetpack flight needed before a landing counts")
+reg("combatDropTime", 5, "Combat drop: seconds of reduced damage after landing")
+reg("combatDropMult", 0.5, "Combat drop: damage multiplier while it lasts")
 reg("sidestepSpeed", 340, "Sidestep: dash speed (units/s)")
+reg("sidestepTime", 0.12, "Sidestep: seconds at full dash speed, then it slows to sidestepCarry")
+reg("sidestepCarry", 60, "Sidestep: sideways speed kept after the burst (units/s)")
 reg("sidestepCooldown", 2.5, "Sidestep: seconds between dashes")
 reg("sidestepStamina", 25, "Sidestep: stamina per dash")
 reg("lightMagBonus", 20, "Light mags: extra rounds in a small magazine")
@@ -305,18 +306,31 @@ function K.JetCfg(ply, key, v)
     return v
 end
 
--- Dashes: Thruster dodge (Airborne) and Sidestep (Officer). Sprint +
--- left / right / back + Jump (a forward sprint-jump stays a jump), or
--- Alt + any direction. Sidestep only from the ground. Predicted;
--- cooldown in DTFloat 25.
-local DT_DODGE = 25
+-- Sidestep (Officer): Sprint + left / right / back + Jump (a forward
+-- sprint-jump stays a jump), or Alt + any direction, from the ground. A
+-- short burst (sidestepTime), then the sideways speed drops to
+-- sidestepCarry so the step stays short. Predicted; cooldown in DTFloat
+-- 25, end of the burst in DTFloat 24.
+local DT_DODGE, DT_STEP = 25, 24
 Rhylib.Hook.Add("SetupMove", "skills.dodge", function(ply, mv)
+    local now = CurTime()
+    -- End of the burst: slow down.
+    local stepEnd = ply:GetDTFloat(DT_STEP)
+    if stepEnd > 0 and now >= stepEnd then
+        ply:SetDTFloat(DT_STEP, 0)
+        local vel = mv:GetVelocity()
+        local h = math.sqrt(vel.x * vel.x + vel.y * vel.y)
+        local carry = cfg("sidestepCarry")
+        if h > carry then
+            vel.x, vel.y = vel.x * carry / h, vel.y * carry / h
+            mv:SetVelocity(vel)
+        end
+    end
+
     local alt = mv:KeyPressed(IN_WALK)
     if not (alt or (mv:KeyPressed(IN_JUMP) and mv:KeyDown(IN_SPEED))) then return end
     if not alt and mv:GetSideSpeed() == 0 and mv:GetForwardSpeed() >= 0 then return end
-    local thruster = K.Has(ply, "thruster_dodge")
-    if not thruster and not K.Has(ply, "sidestep") then return end
-    if not thruster and not ply:OnGround() then return end
+    if not K.Has(ply, "sidestep") or not ply:OnGround() then return end
     if not ply:Alive() or ply:GetMoveType() ~= MOVETYPE_WALK or ply:WaterLevel() >= 2 then return end
     local Med = Rhylib.Medical
     if Med and Med.IsDown and (Med.IsDown(ply) or (Med.Dragging and Med.Dragging(ply))) then return end
@@ -324,38 +338,28 @@ Rhylib.Hook.Add("SetupMove", "skills.dodge", function(ply, mv)
     if IsValid(ply:GetDTEntity(31)) then return end   -- (on a grapple rope)
     local MP = Rhylib.MP
     if MP and MP.IsCuffed and (MP.IsCuffed(ply) or MP.IsStunned(ply) or MP.EscortedBy(ply)) then return end
-    local now = CurTime()
     if ply:GetDTFloat(DT_DODGE) > now then return end
     local f, s = mv:GetForwardSpeed(), mv:GetSideSpeed()
     if f * f + s * s < 1 then return end
 
-    local J = Rhylib.Jetpack
-    local speed, cooldown = cfg("dodgeSpeed"), cfg("dodgeCooldown")
-    if thruster and J and J.Has and J.Has(ply) then
-        local fuel = ply:GetDTFloat(J.DT_FUEL)
-        if ply:GetDTBool(J.DT_LOCKED) or fuel < cfg("dodgeFuel") then return end
-        ply:SetDTFloat(J.DT_FUEL, fuel - cfg("dodgeFuel"))
-    else
-        local cost = thruster and cfg("dodgeStamina") or cfg("sidestepStamina")
-        if not thruster then speed, cooldown = cfg("sidestepSpeed"), cfg("sidestepCooldown") end
-        local St = Rhylib.Stamina
-        if St and St.Get then
-            if St.Get(ply) < cost then return end
-            if SERVER then St.Drain(ply, cost) end
-        end
+    local cost = cfg("sidestepStamina")
+    local St = Rhylib.Stamina
+    if St and St.Get then
+        if St.Get(ply) < cost then return end
+        if SERVER then St.Drain(ply, cost) end
     end
 
+    local speed = cfg("sidestepSpeed")
     local yaw = Angle(0, mv:GetMoveAngles().y, 0)
     local dir = yaw:Forward() * f + yaw:Right() * s
     dir.z = 0
     dir:Normalize()
     local vel = mv:GetVelocity()
     vel.x, vel.y = dir.x * speed, dir.y * speed
-    if ply:OnGround() then
-        vel.z = math.max(vel.z, 160)   -- a hop (over 140 leaves the ground), so friction doesn't eat it
-        ply:SetGroundEntity(NULL)
-    end
+    vel.z = math.max(vel.z, 160)   -- a hop (over 140 leaves the ground), so friction doesn't eat it
+    ply:SetGroundEntity(NULL)
     mv:SetVelocity(vel)
-    ply:SetDTFloat(DT_DODGE, now + cooldown)
+    ply:SetDTFloat(DT_DODGE, now + cfg("sidestepCooldown"))
+    ply:SetDTFloat(DT_STEP, now + cfg("sidestepTime"))
     if SERVER then ply:EmitSound("ambient/machines/thumper_dust.wav", 60, 140, 0.5) end
 end, -150)
