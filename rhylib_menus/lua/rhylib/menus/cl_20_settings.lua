@@ -11,6 +11,8 @@
             -- choice: options = { { "value", "Label" }, ... }, get/set optional
             -- slider: min, max, decimals
             -- preview = true: hovering/dragging it shows the HUD undimmed
+            -- showIf = function() return bool end: hidden unless true
+            --   (call Menus.RefillSettings() after it changes)
         })
 ]]
 
@@ -140,7 +142,7 @@ local function fill(sp, tab)
     for _, section in ipairs(Menus.sectionOrder) do
         local list = {}
         for _, st in ipairs(Menus.settings[section]) do
-            if (not st.convar or ConVarExists(st.convar)) and Menus.SettingTab(section, st) == tab then list[#list + 1] = st end
+            if (not st.convar or ConVarExists(st.convar)) and (not st.showIf or st.showIf()) and Menus.SettingTab(section, st) == tab then list[#list + 1] = st end
         end
         table.sort(list, function(a, b) return (a.order or 50) < (b.order or 50) end)
         if #list > 0 then

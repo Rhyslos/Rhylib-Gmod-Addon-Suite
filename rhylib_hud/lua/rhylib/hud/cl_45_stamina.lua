@@ -35,7 +35,10 @@ end
 local function drawVisor(frac, col, a, alpha)
     local from = (HUD.VISOR_BAR_TO or 0.3) + STRIP_GAP
     local off = HUD.VISOR_BAR_OFFSET or 0.005
+    -- (a texture left bound by an earlier draw made the strip dark grey;
+    -- clear it the same way the radio squares do)
     draw.NoTexture()
+    surface.SetTexture(0)
     for _, side in ipairs({ -1, 1 }) do
         local strip = HUD.VisorStrip(side, from, STRIP_END, off, HUD.VISOR_BAR_THICK or 0.009, STRIP_STEPS)
         -- Track, then the filled part at the chin end.
@@ -45,6 +48,8 @@ local function drawVisor(frac, col, a, alpha)
         -- so it shrinks smoothly instead of a piece at a time.
         local filled = math.Clamp(frac, 0, 1) * STRIP_STEPS
         local n = math.floor(filled)
+        draw.NoTexture()
+        surface.SetTexture(0)
         surface.SetDrawColor(col.r, col.g, col.b, a)
         for i = STRIP_STEPS - n + 1, STRIP_STEPS do surface.DrawPoly(strip.quads[i]) end
         local part = filled - n
@@ -144,4 +149,4 @@ Rhylib.Hook.Add("HUDPaint", "hud.stamina", function()
         surface.DrawRect(x - 2, y - 2, 2, barH + 4)
         surface.DrawRect(x + w, y - 2, 2, barH + 4)
     end
-end, -94)   -- (with the visor frame, before the visor sway pushes at -90: the frame never moves)
+end, -9)   -- (right after the visor shell, like the armour bars)

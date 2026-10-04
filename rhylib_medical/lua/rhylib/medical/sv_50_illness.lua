@@ -22,6 +22,7 @@ local function Inv() return Rhylib.Inventory end
 
 Rhylib.Net.Register("ill.open")
 Rhylib.Net.Register("ill.cass")
+Rhylib.Net.Register("ill.beep")
 Rhylib.Net.Register("ill.stop")
 
 Med.ill = Med.ill or {}   -- [ply] = { kind, load }
@@ -338,6 +339,15 @@ function Med.FindCassette(ply, key)
     end
 end
 
+-- The strip beeps for its medic: when it starts and when the result is in
+-- (with a note naming whose it is), window open or not.
+local function beep(ply, done, who)
+    Rhylib.Net.Start("ill.beep")
+    net.WriteBool(done)
+    net.WriteString(who or "")
+    net.Send(ply)
+end
+
 local function sendCassette(ply, inst)
     local d = inst.data
     Rhylib.Net.Start("ill.cass")
@@ -368,7 +378,8 @@ Rhylib.Net.Receive("ill.strip", function(ply)
     ply:EmitSound("items/medshot4.wav", 55, 140)
     local cas = Med.FindCassette(ply, d.key)
     if cas then sendCassette(ply, cas) end
-    -- Its note says "result ready" once it has developed.
+    beep(ply, false)
+    -- Once developed: its note says "result ready" and it beeps.
     local key = d.key
     timer.Simple(cd.dev + 0.5, function()
         if not IsValid(ply) then return end
@@ -376,6 +387,7 @@ Rhylib.Net.Receive("ill.strip", function(ply)
         if c then
             c.data.note = cassetteNote(c.data)
             Inv().Internal.update(ply, Inv().Get(ply), c)
+            beep(ply, true, shortName(c.data.who))
         end
     end)
 end, { rate = 4, burst = 4 })

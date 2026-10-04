@@ -14,6 +14,9 @@
       4. Footsteps (on; rhylib_footstepfeel, rhylib_footstepfeel_scale): your own footsteps
          a bit louder and a stronger, smooth gun sway and roll with each
          step (eased in and out, no jolts).
+      6. Idle sway (rhylib_idlesway, on; uses the gun sway strength): standing
+         still, the gun drifts slowly with your breathing; faster and bigger
+         when out of stamina, less while aiming or crouched.
     Off unless turned on:
       5. Camera bob (rhylib_camerabob, rhylib_camerabob_scale): up/down
          only, a small dip on each footstep, only while sprinting; no roll,
@@ -33,6 +36,7 @@ local cvLand = cv("rhylib_landdip", "1", "Gun dips when you land")
 -- (new names: footstep feel is on by default now, saved "off" from before shouldn't stick)
 local cvSteps = cv("rhylib_footstepfeel", "1", "Louder own footsteps and a stronger, smooth gun sway with each step")
 local cvStepsScale = cv("rhylib_footstepfeel_scale", "1", "Footstep effect strength (0-2)")
+local cvIdle = cv("rhylib_idlesway", "1", "The gun drifts slowly with your breathing while you stand still")
 local cvCam = cv("rhylib_camerabob", "0", "Camera dips a little on each step while sprinting (up/down only)")
 local cvCamScale = cv("rhylib_camerabob_scale", "1", "Camera bob strength (0-2)")
 
@@ -41,6 +45,8 @@ L.motion = M
 
 -- Walk cycle: phase advances with speed on the ground; amt eases to 0-1.5.
 M.phase, M.amt = 0, 0
+-- Breathing (idle sway): phase, how still you are (0-1), how tired (0-1).
+M.breath, M.idle, M.tired = 0, 0, 0
 -- Springs (value, velocity) for the landing dip and camera step dip.
 local land = { 0, 0 }
 local camDip = { 0, 0 }
@@ -94,6 +100,13 @@ Rhylib.Hook.Add("Think", "core.motion", function()
     local want4 = cvSteps:GetBool() and math.Clamp(cvStepsScale:GetFloat(), 0, 2) * M.amt or 0
     M.steps = (M.steps or 0) + (want4 - (M.steps or 0)) * (1 - math.exp(-ft * 4))
 
+    -- Idle sway: eases in as you stop; breathing speeds up when tired.
+    M.idle = M.idle + ((1 - math.min(M.amt, 1)) - M.idle) * (1 - math.exp(-ft * 2))
+    local Stam = Rhylib.Stamina
+    local tired = (Stam and Stam.Frac) and math.Clamp(1 - Stam.Frac(ply), 0, 1) or 0
+    M.tired = M.tired + (tired - M.tired) * (1 - math.exp(-ft * 1.5))
+    M.breath = M.breath + ft * (1.4 + M.tired * 2.2)
+
     spring(land, ft, 140, 14)
     spring(camDip, ft, 160, 16)
 end)
@@ -110,14 +123,20 @@ Rhylib.Hook.Add("PlayerFootstep", "core.motion", function(ply, pos, foot, snd, v
     if k > 0 then ply:EmitSound(snd, 0, math.random(92, 100), math.min(volume * 0.6 * k, 1), CHAN_STATIC) end
 end)
 
--- 1, 3, 4: the gun. Built on the gamemode's (and weapon's) own placement.
+-- 1, 3, 4, 6: the gun. Built on the gamemode's (and weapon's) own placement.
 Rhylib.Hook.Add("CalcViewModelView", "core.motion", function(wep, vm, oldPos, oldAng, pos, ang)
     local ply = LocalPlayer()
     if not firstPerson(ply) then return end
     -- (half the first version's sway: it mixes with footstep feel now)
     local gun = cvGun:GetBool() and M.amt * 0.5 * math.Clamp(cvGunScale:GetFloat(), 0, 2) or 0
     local st = M.steps or 0
-    if gun < 0.01 and st < 0.01 and math.abs(land[1]) < 0.01 then return end
+    local idle = 0
+    if cvIdle:GetBool() then
+        local aim = IsValid(wep) and wep.aimFrac or 0
+        idle = M.idle * math.Clamp(cvGunScale:GetFloat(), 0, 2) * (1 + M.tired * 1.5)
+            * (1 - 0.7 * aim) * (ply:Crouching() and 0.7 or 1)
+    end
+    if gun < 0.01 and st < 0.01 and idle < 0.01 and math.abs(land[1]) < 0.01 then return end
     local p, a = GAMEMODE:CalcViewModelView(wep, vm, oldPos, oldAng, pos, ang)
     p, a = p or pos, a or ang
     local s = math.sin(M.phase)
@@ -128,8 +147,15 @@ Rhylib.Hook.Add("CalcViewModelView", "core.motion", function(wep, vm, oldPos, ol
     local s2 = s * s
     local side = s * (0.45 * gun + 0.6 * st)
     local dip = -math.abs(s) * 0.55 * gun - s2 * 0.6 * st + land[1] * 0.9
+    -- Idle: up/down with each breath, a slow figure-eight side to side.
+    local b = M.breath
+    local bs, bh = math.sin(b), math.sin(b * 0.5)
+    side = side + bh * 0.15 * idle
+    dip = dip + bs * 0.12 * idle
     p = p + right * side + up * dip
-    a = Angle(a.p + math.abs(s) * 0.5 * gun + s2 * 0.8 * st - land[1] * 1.2, a.y + s * 0.4 * gun, a.r + s * 2 * st)
+    a = Angle(a.p + math.abs(s) * 0.5 * gun + s2 * 0.8 * st - land[1] * 1.2 - math.sin(b + 0.6) * 0.35 * idle,
+        a.y + s * 0.4 * gun + math.sin(b * 0.5 + 0.3) * 0.25 * idle,
+        a.r + s * 2 * st + bh * 0.4 * idle)
     return p, a
 end, -50)
 
@@ -153,6 +179,7 @@ Rhylib.Hook.Add("InitPostEntity", "core.motion.setting", function()
     end
     add("core.gunbob", 71, "Gun sway", "The gun and hands sway with your steps (the view stays still)", "toggle", "rhylib_gunbob")
     add("core.gunbobscale", 72, "Gun sway strength", "1 = normal", "slider", "rhylib_gunbob_scale", { min = 0, max = 2, decimals = 1 })
+    add("core.idlesway", 72.5, "Idle sway", "Standing still, the gun drifts slowly with your breathing (more when out of stamina)", "toggle", "rhylib_idlesway")
     add("core.landdip", 73, "Landing dip", "The gun dips when you land", "toggle", "rhylib_landdip")
     add("core.steps", 74, "Footstep feel", "Louder own footsteps and a stronger, smooth gun sway with each step", "toggle", "rhylib_footstepfeel")
     add("core.stepsscale", 75, "Footstep feel strength", "1 = normal", "slider", "rhylib_footstepfeel_scale", { min = 0, max = 2, decimals = 1 })

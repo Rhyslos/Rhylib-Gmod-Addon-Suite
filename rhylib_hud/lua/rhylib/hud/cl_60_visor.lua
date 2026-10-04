@@ -350,14 +350,24 @@ HUD.VISOR_BAR_TO = BAR_TO
 HUD.VISOR_BAR_OFFSET = BAR_OFFSET
 HUD.VISOR_BAR_THICK = BAR_THICK
 
--- Brow sliders (Settings > Interface), for finding the right shape.
+-- Brow sliders (Settings > Interface), for finding the right shape. Hidden
+-- behind a toggle: hovering them undims the pause menu, which flashes.
+HUD.browSliders = HUD.browSliders or false
+local function browShown() return HUD.browSliders end
 Rhylib.Hook.Add("InitPostEntity", "hud.visor.setting", function()
     local Menus = Rhylib.Menus
     if not (Menus and Menus.AddSetting) then return end
+    Menus.AddSetting("HUD", { id = "hud.browtoggle", order = 39, title = "Adjust the visor brow",
+        desc = "Shows the brow sliders (the menu goes see-through while you use them)", kind = "toggle",
+        get = function() return HUD.browSliders and "1" or "0" end,
+        set = function(v)
+            HUD.browSliders = tobool(v)
+            timer.Simple(0, function() if Menus.RefillSettings then Menus.RefillSettings() end end)
+        end })
     Menus.AddSetting("HUD", { id = "hud.browedge", order = 40, title = "Visor brow: depth at the sides",
-        desc = "Share of the screen height (default 0.015)", kind = "slider", convar = "rhylib_visorbrow_edge", min = 0, max = 0.06, decimals = 3, preview = true })
+        desc = "Share of the screen height (default 0.015)", kind = "slider", convar = "rhylib_visorbrow_edge", min = 0, max = 0.06, decimals = 3, preview = true, showIf = browShown })
     Menus.AddSetting("HUD", { id = "hud.browcentre", order = 41, title = "Visor brow: depth in the middle",
-        desc = "Share of the screen height (default 0.045)", kind = "slider", convar = "rhylib_visorbrow_centre", min = 0, max = 0.12, decimals = 3, preview = true })
+        desc = "Share of the screen height (default 0.045)", kind = "slider", convar = "rhylib_visorbrow_centre", min = 0, max = 0.12, decimals = 3, preview = true, showIf = browShown })
     Menus.AddSetting("HUD", { id = "hud.browcurve", order = 42, title = "Visor brow: curve",
-        desc = "Below 1 flatter and wider, above 1 a sharper dip (default 1)", kind = "slider", convar = "rhylib_visorbrow_curve", min = 0.3, max = 4, decimals = 2, preview = true })
+        desc = "Below 1 flatter and wider, above 1 a sharper dip (default 1)", kind = "slider", convar = "rhylib_visorbrow_curve", min = 0.3, max = 4, decimals = 2, preview = true, showIf = browShown })
 end)

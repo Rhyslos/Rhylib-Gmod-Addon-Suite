@@ -201,7 +201,8 @@ end)
 --------------------------------------------------------------------------
 -- Test strip: right-click a sample to put it on a strip; the used strip
 -- shows an assay readout that develops (control channel: the test works; a
--- lit test channel: infected, and its colour says what with). Right-click
+-- lit test channel: infected, and its colour says what with; it lights at
+-- once when developed, with a beep). Right-click
 -- samples and used strips to throw them away.
 --------------------------------------------------------------------------
 
@@ -298,11 +299,9 @@ local function openCassette(info)
         local cA = math.Clamp((elapsed - 5) / 5, 0, 1)
         Kit.Caps("Control", lx, py + S(52), C.textDim)
         channel(Kit, tx, py + S(43), tw, th, C.text, cA * 0.85)
-        -- Test: lights over the second half of the time, brighter for a heavier infection.
+        -- Test: lights all at once when it has developed (brighter for a heavier infection).
         local tA = 0
-        if k then
-            tA = math.Clamp((elapsed - info.dev * 0.45) / (info.dev * 0.55), 0, 1) * (0.45 + 0.55 * info.load / 100)
-        end
+        if k and done then tA = 0.45 + 0.55 * info.load / 100 end
         Kit.Caps("Test", lx, py + S(88), C.textDim)
         channel(Kit, tx, py + S(79), tw, th, k and k.col or C.text, tA)
 
@@ -348,6 +347,14 @@ local function openCassette(info)
         draw.SimpleText("Then bring this strip and the sample to the analyser for the dose.", Kit.Font(13), px, ny + S(32), C.textDim)
     end
 end
+
+-- Beep at the start and when the result is in (window open or not).
+net.Receive(Rhylib.Net.Name("ill.beep"), function()
+    local done, who = net.ReadBool(), net.ReadString()
+    local me = LocalPlayer()
+    if IsValid(me) then me:EmitSound("buttons/blip1.wav", 75, done and 125 or 100, 0.7, CHAN_STATIC) end
+    if done and Med.ShowNote then Med.ShowNote("Test strip ready" .. (who ~= "" and (": " .. who) or "")) end
+end)
 
 net.Receive(Rhylib.Net.Name("ill.cass"), function()
     local info = { uid = net.ReadUInt(Rhylib.Items.UID_BITS), who = net.ReadString(), elapsed = net.ReadUInt(16),
