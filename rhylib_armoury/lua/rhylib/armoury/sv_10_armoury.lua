@@ -121,22 +121,114 @@ local function specVariant(storage, ply)
     return sub
 end
 
--- Training deposit: one storage per player (sub-storage by SteamID).
--- Loaded again on every open, since another deposit may have changed it.
+--------------------------------------------------------------------------
+-- Training deposit: one storage per player (sub-storage by SteamID),
+-- loaded again on every open (another deposit may have changed it).
+-- Data "train_dep"/sid = { rows, left = seconds of online time left }.
+-- A.deposits[sid] = seconds left, for online players with gear stored.
+--------------------------------------------------------------------------
+
+A.deposits = A.deposits or {}
+
+local function depositRead(sid)
+    local d = Rhylib.Data.Get("train_dep", sid)
+    if istable(d) and d.rows then return d.rows, d.left end
+end
+
+local function depositTitle(sid)
+    local left = A.deposits[sid]
+    if not left then return "Training deposit" end
+    local m = math.ceil(left / 60)
+    return string.format("Training deposit · %s left", m >= 60 and string.format("%dh %02dm", math.floor(m / 60), m % 60) or (m .. " min"))
+end
+
+-- (the window shows the time left: sent again when it changes)
+local function retitle(sid, storage)
+    local t = depositTitle(sid)
+    if storage.title == t then return end
+    storage.title = t
+    if IsValid(storage.ent) then Inv().RefreshStorage(storage.ent) end
+end
+
+local function depositSave(sid, storage)
+    if next(storage.items) == nil then
+        Rhylib.Data.Delete("train_dep", sid)
+        A.deposits[sid] = nil
+        retitle(sid, storage)
+        return
+    end
+    -- (a new trip starts the clock)
+    A.deposits[sid] = A.deposits[sid] or Config.Get("armoury", "depositTime")
+    Rhylib.Data.Set("train_dep", sid, { rows = Inv().StorageSerialize(storage), left = A.deposits[sid] })
+    retitle(sid, storage)
+end
+
 local function depositVariant(storage, ply)
     local sid = ply:SteamID64()
     if not sid then return nil end
     local sub = storage.subs[sid]
     if not sub then
         sub = Inv().NewStorage(storage.ent, {
-            kind = "grid", w = 6, h = 6, title = "Training deposit", bulk = true, grow = true,
-            onChanged = function(s) Rhylib.Data.Set("train_dep", sid, Inv().StorageSerialize(s)) end,
+            kind = "grid", w = 6, h = 6, title = "Training deposit", bulkOnly = true, grow = true,
+            onChanged = function(s) depositSave(sid, s) end,
         })
         storage.subs[sid] = sub
     end
-    if not next(sub.viewers) then Inv().StorageLoad(sub, Rhylib.Data.Get("train_dep", sid)) end
+    if not next(sub.viewers) then Inv().StorageLoad(sub, (depositRead(sid))) end
+    sub.title = depositTitle(sid)
     return sub
 end
+
+-- Time's up: what's left is deleted (in every deposit that has it loaded).
+local function depositExpire(sid, ply)
+    Rhylib.Data.Delete("train_dep", sid)
+    A.deposits[sid] = nil
+    for _, ent in ipairs(ents.FindByClass("rhylib_training_deposit")) do
+        local storage = Inv().GetStorage(ent)
+        local sub = storage and storage.subs[sid]
+        if sub then
+            Inv().StorageLoad(sub, nil)
+            sub.title = depositTitle(sid)
+            Inv().RefreshStorage(ent)
+        end
+    end
+    if IsValid(ply) then ply:ChatPrint("Your training deposit ran out of time and was cleared") end
+end
+
+Rhylib.Hook.Add("PlayerInitialSpawn", "armoury.deposit", function(ply)
+    local sid = ply:SteamID64()
+    if not sid then return end
+    local rows, left = depositRead(sid)
+    if rows then A.deposits[sid] = left or Config.Get("armoury", "depositTime") end
+end)
+
+Rhylib.Hook.Add("PlayerDisconnected", "armoury.deposit", function(ply)
+    local sid = ply:SteamID64()
+    if sid then A.deposits[sid] = nil end   -- (left is saved once a minute)
+end)
+
+-- Online time counts down once a minute.
+timer.Create("Rhylib.Armoury.Deposit", 60, 0, function()
+    for _, ply in ipairs(player.GetHumans()) do
+        local sid = ply:SteamID64()
+        local left = sid and A.deposits[sid]
+        if left then
+            left = left - 60
+            if left <= 0 then
+                depositExpire(sid, ply)
+            else
+                A.deposits[sid] = left
+                local d = Rhylib.Data.Get("train_dep", sid)
+                if istable(d) and d.rows then
+                    d.left = left
+                    Rhylib.Data.Set("train_dep", sid, d)
+                else
+                    A.deposits[sid] = nil
+                end
+            end
+        end
+    end
+end)
 
 local function lockerTitle(ent)
     local name = ent:GetOwnerName()

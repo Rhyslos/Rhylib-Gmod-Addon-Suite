@@ -667,8 +667,15 @@ function PANEL:PaintExtControls()
     local y = (r.baseY or r.y) - self.label * 0.5 - bh * 0.5
     -- Bulk storages (training deposit): everything in or out at once.
     if ext.bulk then
-        self:Button(right - bw, y, bw, bh, "Take all", function() Inv.RequestBulk(1) end)
-        self:Button(right - bw * 2 - self.gap, y, bw, bh, "Store all", function() Inv.RequestBulk(0) end)
+        local c = Inv.cont[EXT]
+        local has = (c and next(c.items) ~= nil) and true or false
+        self:Button(right - bw, y, bw, bh, "Take all", function() Inv.RequestBulk(1) end, has)
+        -- (one trip at a time: storing again only once it's empty)
+        self:Button(right - bw * 2 - self.gap, y, bw, bh, "Store all", function() Inv.RequestBulk(0) end, not (ext.bulkOnly and has))
+        self:Button(right - bw * 3 - self.gap * 2, y, bw, bh, "Empty", function()
+            Derma_Query("Delete everything in here? This can't be undone.", "Empty",
+                "Delete all", function() Inv.RequestBulk(2) end, "Cancel")
+        end, has)
         return
     end
     self:Button(right - bw, y, bw, bh, ext.locked and "Unlock" or "Lock", function()
@@ -807,7 +814,11 @@ function PANEL:PaintTooltip()
     if inst.data and inst.data.issued then lines[#lines + 1] = "Issued: if dropped, disappears after 5 minutes" end
     if inst.data and inst.data.hidden and inst.c ~= EXT then lines[#lines + 1] = "Hidden: a search may miss it" end
     if inst.c == EXT and Inv.ext and Inv.ext.depot then lines[#lines + 1] = "Endless supply, drag to take (Ctrl: just one)" end
-    if inst.c == EXT then lines[#lines + 1] = "Right-click: quick take (Ctrl: just one)" end
+    if inst.c == EXT and Inv.ext and Inv.ext.bulkOnly then
+        lines[#lines + 1] = "Comes back with Take all"
+    elseif inst.c == EXT then
+        lines[#lines + 1] = "Right-click: quick take (Ctrl: just one)"
+    end
     if inst.hb then
         lines[#lines + 1] = "On the hotbar (" .. inst.hb .. ")"
     elseif inst.c ~= EXT then
@@ -867,6 +878,11 @@ function PANEL:OnMousePressed(code)
     local inst, r, cx, cy = self:ItemAtCursor()
     if not inst then return end
     local fromExt = r.cid == EXT
+    -- (bulk-only storages: just the buttons)
+    if fromExt and Inv.ext and Inv.ext.bulkOnly then
+        Inv.note, Inv.noteTime = "Use Take all", RealTime()
+        return
+    end
 
     if code == MOUSE_LEFT then
         local offX, offY = 0, 0

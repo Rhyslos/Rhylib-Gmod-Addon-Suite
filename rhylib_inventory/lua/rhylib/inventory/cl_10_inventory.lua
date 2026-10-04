@@ -4,7 +4,7 @@
 
     Same shape as the server: Inv.cont[cid] = { w, h, items }, Inv.byUid.
     An open outside container (locker, armoury, crate) is Inv.cont[EXT]
-    with its own uids, plus Inv.ext = { title, depot, canLock, locked, bulk }.
+    with its own uids, plus Inv.ext = { title, depot, canLock, locked, bulk, bulkOnly }.
 ]]
 
 Rhylib.Inventory = Rhylib.Inventory or {}
@@ -88,7 +88,9 @@ net.Receive(Rhylib.Net.Name("inv.ext"), function()
     local w, h = net.ReadUInt(5), net.ReadUInt(5)
     ext.canLock = net.ReadBool()
     ext.locked = net.ReadBool()
-    ext.bulk = net.ReadBool()
+    local bulk = net.ReadUInt(2)
+    ext.bulk = bulk > 0
+    ext.bulkOnly = bulk == 2
     local c = { w = w, h = h, items = {} }
     for _ = 1, net.ReadUInt(8) do
         local inst = Items.ReadInstance()
@@ -146,10 +148,10 @@ function Inv.RequestQuickTake(inst, single)
     net.SendToServer()
 end
 
--- Bulk storages: 0 = store all, 1 = take all.
+-- Bulk storages: 0 = store all, 1 = take all, 2 = empty.
 function Inv.RequestBulk(action)
     Rhylib.Net.Start("inv.bulk")
-    net.WriteUInt(action, 1)
+    net.WriteUInt(action, 2)
     net.SendToServer()
 end
 
