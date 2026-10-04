@@ -86,6 +86,8 @@ end
 -- Returns true if they're out now.
 function T.Eliminate(ply, by)
     if T.out[ply] then return false end
+    -- Knocked by a blast meanwhile: up first, then out properly.
+    if L.SoftKnocked and L.SoftKnocked(ply) then L.Unknock(ply) end
     if not L.Knock(ply, 0) then return false end
     local now = CurTime()
     T.out[ply] = { at = now }

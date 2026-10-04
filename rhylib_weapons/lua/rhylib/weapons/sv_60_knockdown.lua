@@ -1,7 +1,8 @@
 --[[
     Explosion knockdowns: a blast of knockMin damage or more (before
-    armour) throws the player down for knockTime seconds (rhylib_core
-    Lying.Knock), away from the blast. With knockDropChance they lose the
+    armour) throws the player down for a random knockTimeMin-knockTimeMax
+    seconds (rhylib_core Lying.Knock, soft: a client ragdoll, no damage
+    meanwhile), away from the blast. With knockDropChance they lose the
     gun in their hands: it lands on the ground as an item (not job gear).
 ]]
 
@@ -35,8 +36,8 @@ Rhylib.Hook.Add("PostEntityTakeDamage", "weapons.knock", function(ent, dmg, took
     local p = pending[ent]
     if not p then return end
     pending[ent] = nil
-    if cfg("knockTime") <= 0 then return end   -- (0 = knockdowns off)
-    if not took or not ent:Alive() or ent.rhylibDown then return end
+    if cfg("knockTimeMax") <= 0 then return end   -- (0 = knockdowns off)
+    if not took or not ent:Alive() or ent.rhylibDown or ent.rhylibGoingDown then return end   -- (going down: medical's body)
     local L = Rhylib.Lying
     if not (L and L.Knock) or L.Knocked(ent) or L.Ragdoll(ent) then return end
     -- Thrown away from the blast, harder for bigger hits.
@@ -47,7 +48,9 @@ Rhylib.Hook.Add("PostEntityTakeDamage", "weapons.knock", function(ent, dmg, took
     -- The gun goes before the body does (the dropped item spawns at the eyes).
     local drop = math.random() < cfg("knockDropChance")
     if drop then dropGun(ent) end
-    if L.Knock(ent, cfg("knockTime"), push) and drop then
+    local lo = math.max(cfg("knockTimeMin"), 0.5)
+    local secs = math.Rand(lo, math.max(cfg("knockTimeMax"), lo))
+    if L.Knock(ent, secs, push, true) and drop then
         ent:ChatPrint("You dropped your weapon")
     end
 end, -500)

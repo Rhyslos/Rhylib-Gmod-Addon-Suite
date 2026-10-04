@@ -347,6 +347,7 @@ if SERVER then
 
     local function valid(t)
         return IsValid(t) and t:Alive() and not t.rhylibDown and not t:GetNW2Bool("rhylib_simOut", false)
+            and t:GetNW2Float("rhylib_knockEnd", 0) == 0
     end
 
     function ENT:Engage()

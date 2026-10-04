@@ -58,11 +58,22 @@ local LIMBS = {
 local traceResult = {}
 local traceData = { mask = MASK_SHOT, output = traceResult }
 
+-- (soft-knocked players are hidden and can't be hurt: bolts fly through)
 local function trace(from, to, filter)
     traceData.start = from
     traceData.endpos = to
     traceData.filter = filter
-    return util.TraceLine(traceData)
+    local tr = util.TraceLine(traceData)
+    local skip
+    for _ = 1, 4 do
+        if not (IsValid(tr.Entity) and tr.Entity:IsPlayer() and tr.Entity:GetNW2Bool("rhylib_knockSoft", false)) then break end
+        skip = skip or { filter }
+        skip[#skip + 1] = tr.Entity
+        traceData.filter = skip
+        tr = util.TraceLine(traceData)
+    end
+    traceData.filter = nil
+    return tr
 end
 
 --[[

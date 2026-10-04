@@ -28,7 +28,8 @@ function D.Targets()
     for _, p in ipairs(player.GetAll()) do
         if p:Alive() and p:GetMoveType() ~= MOVETYPE_NOCLIP and p:GetObserverMode() == OBS_MODE_NONE
             and not p.rhylibDown and not p:IsFlagSet(FL_NOTARGET)
-            and not p:GetNW2Bool("rhylib_simOut", false) then   -- (eliminated in training)
+            and not p:GetNW2Bool("rhylib_simOut", false)   -- (eliminated in training)
+            and p:GetNW2Float("rhylib_knockEnd", 0) == 0 then   -- (knocked down: can't be hurt)
             targets[#targets + 1] = p
         end
     end

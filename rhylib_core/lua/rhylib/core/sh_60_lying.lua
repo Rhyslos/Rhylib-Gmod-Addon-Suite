@@ -93,6 +93,7 @@ local function showPlayer(ply, show)
     ply:DrawShadow(show)
     ply:DrawWorldModel(show)
 end
+L.ShowPlayer = showPlayer   -- (knockdowns, sh_61_knock.lua)
 
 -- Ground under a point (the player stands there; props count).
 local function ground(p, filter)

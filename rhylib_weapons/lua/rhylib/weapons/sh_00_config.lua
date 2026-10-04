@@ -12,7 +12,8 @@ Config.Register("weapons", "boltLife", 1.2, "Seconds before a bolt that hit noth
 Config.Register("weapons", "headMult", 2, "Damage multiplier for head hits")
 Config.Register("weapons", "limbMult", 0.75, "Damage multiplier for arm and leg hits")
 Config.Register("weapons", "knockMin", 30, "Explosions: damage (before armour) that knocks a player down")
-Config.Register("weapons", "knockTime", 2, "Explosions: seconds a knocked-down player lies there")
+Config.Register("weapons", "knockTimeMin", 2, "Explosions: shortest time a knocked-down player lies there (seconds)")
+Config.Register("weapons", "knockTimeMax", 8, "Explosions: longest time (random in between for each knockdown; 0 = knockdowns off)")
 Config.Register("weapons", "knockPush", 260, "Explosions: how hard the body is thrown (units/s, more for bigger hits)")
 Config.Register("weapons", "knockDropChance", 0.1, "Explosions: chance a knocked-down player drops the gun in their hands (0-1)")
 
