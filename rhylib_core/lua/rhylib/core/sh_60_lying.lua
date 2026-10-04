@@ -189,6 +189,7 @@ function L.End(ply, noMove)
     else
         -- Died lying: the ragdoll is the corpse until they respawn.
         ply:SetNW2Bool("rhylib_ragCorpse", true)
+        ply:SetNW2Entity("rhylib_corpse", rag)   -- (first-person death camera, cl_65_bodycam.lua)
         rag:SetNW2Entity("rhylib_ragOwner", NULL)
         rag.rhylibOwner = nil
         if IsValid(L.corpse[ply]) then L.corpse[ply]:Remove() end
@@ -251,6 +252,7 @@ Rhylib.Hook.Add("PlayerSpawn", "core.lying", function(ply)
     if IsValid(L.corpse[ply]) then L.corpse[ply]:Remove() end
     L.corpse[ply] = nil
     ply:SetNW2Bool("rhylib_ragCorpse", false)
+    ply:SetNW2Entity("rhylib_corpse", NULL)
     showPlayer(ply, true)
 end, -100)
 

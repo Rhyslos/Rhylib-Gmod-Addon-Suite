@@ -144,4 +144,4 @@ Rhylib.Hook.Add("HUDPaint", "hud.stamina", function()
         surface.DrawRect(x - 2, y - 2, 2, barH + 4)
         surface.DrawRect(x + w, y - 2, 2, barH + 4)
     end
-end)
+end, -94)   -- (with the visor frame, before the visor sway pushes at -90: the frame never moves)

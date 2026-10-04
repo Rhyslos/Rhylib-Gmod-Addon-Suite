@@ -18,6 +18,8 @@ timer.Create("Rhylib.Lying", 0.25, 0, function()
                 rag.RenderOverride = function(self, flags)
                     local me = LocalPlayer()
                     if owner == me and IsValid(me) and not me:ShouldDrawLocalPlayer() and L.Ragdoll(me) == self then return end
+                    -- (your own corpse while the death camera sits in it, cl_65_bodycam.lua)
+                    if L.BodyCamOn and L.BodyCamOn() and IsValid(me) and me:GetNW2Entity("rhylib_corpse") == self then return end
                     self:DrawModel(flags)
                 end
             end

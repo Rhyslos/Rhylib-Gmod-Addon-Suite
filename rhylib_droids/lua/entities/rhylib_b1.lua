@@ -194,7 +194,7 @@ if SERVER then
         local dir = aim - origin
         dir:Normalize()
         -- Inaccuracy: base cone, worse against moving targets.
-        local cone = math.rad((D.Cfg(k.spread) + t:GetVelocity():Length2D() * 0.006) * D.SuppressMult(self))
+        local cone = math.rad((D.Cfg(k.spread) + t:GetVelocity():Length2D() * D.Cfg("moveSpread")) * D.SuppressMult(self))
         local a = math.Rand(0, math.pi * 2)
         local r = math.tan(cone * math.sqrt(math.Rand(0, 1)))
         local ang = dir:Angle()

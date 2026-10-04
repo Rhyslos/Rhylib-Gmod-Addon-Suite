@@ -97,6 +97,7 @@ local function bezier(t, p0, p1, p2, p3)
 end
 
 local cache = { w = 0, h = 0 }
+local BLEED = 16   -- px at 1080p the shell reaches past the screen edges
 
 local function build(W, H)
     cache = { w = W, h = H, tris = {}, edges = {}, bars = {} }
@@ -166,6 +167,22 @@ local function build(W, H)
         end
         cache.bars[side] = list
     end
+
+    -- Edge bleed: whatever touches a screen edge is pushed BLEED px past
+    -- it (the shapes inside the screen don't change), so the visor sway
+    -- (rhylib_core cl_66_motion.lua) never opens a gap at the edges.
+    local bleed = math.ceil(BLEED * H / 1080)
+    local function push(x, y)
+        if x <= 0.5 then x = -bleed elseif x >= W - 0.5 then x = W + bleed end
+        if y <= 0.5 then y = -bleed elseif y >= H - 0.5 then y = H + bleed end
+        return x, y
+    end
+    for _, t in ipairs(cache.tris) do
+        for _, v in ipairs(t) do v.x, v.y = push(v.x, v.y) end
+    end
+    for _, edge in ipairs(cache.edges) do
+        for _, p in ipairs(edge) do p[1], p[2] = push(p[1], p[2]) end
+    end
 end
 
 -- Four bars for a 0..1 value, each bar 25%, filling from the screen side.
@@ -191,7 +208,7 @@ local function drawBars(list, frac, fill, line)
     end
 end
 
--- Drawn before the other HUD parts (priority -10), so they sit on top.
+-- Drawn before the other HUD parts (priority -95, also before the visor sway), so they sit on top.
 Rhylib.Hook.Add("HUDPaint", "hud.visor", function()
     if not HUD.VisorActive() then return end
     local W, H = ScrW(), ScrH()
@@ -223,7 +240,7 @@ Rhylib.Hook.Add("HUDPaint", "hud.visor", function()
     else
         drawBars(cache.bars[1], math.max(ply:Health(), 0) / math.max(ply:GetMaxHealth(), 1), COL_HEALTH_FILL, COL_HEALTH_LINE)
     end
-end, -10)
+end, -95)   -- (before the visor sway pushes at -90: the frame never moves, only what is on it)
 
 --------------------------------------------------------------------------
 -- Helpers for other HUD parts that sit on the cheeks (stamina, hotbar).

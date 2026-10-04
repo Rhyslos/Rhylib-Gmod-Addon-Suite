@@ -4,6 +4,7 @@
 
         Rhylib.Menus.AddSetting("HUD", {
             id = "hud.fade", order = 20,
+            tab = "Interface",              -- optional (see Menus.SettingTab)
             title = "Hotbar fades", desc = "Dim the hotbar when you're not switching weapons",
             kind = "toggle",                -- toggle, choice, slider or key
             convar = "rhylib_hud_hotbar_fade",
@@ -98,31 +99,79 @@ local function control(row, st)
     end
 end
 
+--[[
+    Tabs. A setting goes in its own `tab` if it names one; keys go in
+    Keybinds; a few sounds in Audio; camera and motion settings in Camera
+    & motion; everything else in Interface. Within a tab the settings stay
+    under their section headings.
+]]
+Menus.SETTING_TABS = { "Interface", "Camera & motion", "Audio", "Keybinds" }
+local AUDIO = { ["wep.hitsound"] = true, ["hud.dmgvolume"] = true, ["hud.dmgring"] = true, ["hud.whizz"] = true }
+local CAMERA_SECTIONS = { ["Third person"] = true }
+local CAMERA = { ["hud.dmgshake"] = true }
+
+function Menus.SettingTab(section, st)
+    if st.tab then return st.tab end
+    if st.kind == "key" then return "Keybinds" end
+    if AUDIO[st.id] then return "Audio" end
+    if CAMERA[st.id] or CAMERA_SECTIONS[section] or string.sub(st.id or "", 1, 5) == "core." then return "Camera & motion" end
+    return "Interface"
+end
+
+Menus.settingsTab = Menus.settingsTab or "Interface"
+
+local function fill(sp, tab)
+    sp:Clear()
+    local any = false
+    for _, section in ipairs(Menus.sectionOrder) do
+        local list = {}
+        for _, st in ipairs(Menus.settings[section]) do
+            if (not st.convar or ConVarExists(st.convar)) and Menus.SettingTab(section, st) == tab then list[#list + 1] = st end
+        end
+        table.sort(list, function(a, b) return (a.order or 50) < (b.order or 50) end)
+        if #list > 0 then
+            any = true
+            local h = K.Heading(sp, section)
+            h:Dock(TOP)
+            h:DockMargin(0, K.S(6), K.S(10), K.S(6))
+            for _, st in ipairs(list) do
+                local row = K.Row(sp, st.title, st.desc)
+                row:Dock(TOP)
+                row:DockMargin(0, 0, K.S(10), K.S(4))
+                if st.kind == "choice" then row.right:SetWide(K.S(st.wide or 460)) end
+                control(row, st)
+            end
+        end
+    end
+    if not any then
+        local l = K.Label(sp, "Nothing here yet.", 14, nil, C.textDim)
+        l:Dock(TOP)
+    end
+end
+
 Menus.AddPage("settings", {
     title = "Settings",
     order = 10,
     build = function(page)
+        -- Tab row.
+        local bar = vgui.Create("DPanel", page)
+        bar:Dock(TOP)
+        bar:SetTall(K.S(34))
+        bar:DockMargin(0, 0, K.S(10), K.S(8))
+        bar.Paint = nil
         local sp = K.Scroll(page)
         sp:Dock(FILL)
-        for _, section in ipairs(Menus.sectionOrder) do
-            local list = {}
-            for _, st in ipairs(Menus.settings[section]) do
-                if not st.convar or ConVarExists(st.convar) then list[#list + 1] = st end
-            end
-            table.sort(list, function(a, b) return (a.order or 50) < (b.order or 50) end)
-            if #list > 0 then
-                local h = K.Heading(sp, section)
-                h:Dock(TOP)
-                h:DockMargin(0, K.S(6), K.S(10), K.S(6))
-                for _, st in ipairs(list) do
-                    local row = K.Row(sp, st.title, st.desc)
-                    row:Dock(TOP)
-                    row:DockMargin(0, 0, K.S(10), K.S(4))
-                    if st.kind == "choice" then row.right:SetWide(K.S(st.wide or 460)) end
-                    control(row, st)
-                end
-            end
+        for _, tab in ipairs(Menus.SETTING_TABS) do
+            local b = K.Button(bar, tab, function()
+                Menus.settingsTab = tab
+                fill(sp, tab)
+            end, { selected = function() return Menus.settingsTab == tab end })
+            b:Dock(LEFT)
+            surface.SetFont(K.Font(13, 700))
+            b:SetWide(math.max(K.S(120), surface.GetTextSize(string.upper(tab)) + K.S(36)))
+            b:DockMargin(0, 0, K.S(6), 0)
         end
+        fill(sp, Menus.settingsTab)
     end,
 })
 

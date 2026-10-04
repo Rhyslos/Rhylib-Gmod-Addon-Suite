@@ -4,7 +4,7 @@
     can show a direction marker, a flash and play a hit sound.
 
       hud.dmg   amount 8 bits (health lost), armour 8 bits (armour lost),
-                flags 3 bits (SIM, BLAST, NODIR), source position (when
+                flags 4 bits (SIM, BLAST, NODIR, HEAD), source position (when
                 there's a direction)
 
     Real damage: what armour took is read from rhylib_weapons' record of
@@ -15,12 +15,12 @@
 
 local HUD = Rhylib.HUD
 
-HUD.DMG_SIM, HUD.DMG_BLAST, HUD.DMG_NODIR = 1, 2, 4
+HUD.DMG_SIM, HUD.DMG_BLAST, HUD.DMG_NODIR, HUD.DMG_HEAD = 1, 2, 4, 8
 
 local batch = Rhylib.Net.CreateBatch("hud.dmg", function(h)
     net.WriteUInt(math.Clamp(math.ceil(h.amount), 0, 255), 8)
     net.WriteUInt(math.Clamp(math.ceil(h.armour), 0, 255), 8)
-    net.WriteUInt(h.flags, 3)
+    net.WriteUInt(h.flags, 4)
     if bit.band(h.flags, HUD.DMG_NODIR) == 0 then net.WriteVector(h.from) end
 end)
 
@@ -60,6 +60,10 @@ Rhylib.Hook.Add("PostEntityTakeDamage", "hud.dmg", function(ent, dmg, took)
     cost[ent] = nil
     if not took then return end
     local flags = bit.band(dmg:GetDamageType(), DMG_BLAST) ~= 0 and HUD.DMG_BLAST or 0
+    -- (bolts set rhylibHitGroup for the length of the hit)
+    if (ent.rhylibHitGroup or ent:LastHitGroup()) == HITGROUP_HEAD and bit.band(dmg:GetDamageType(), DMG_BULLET) ~= 0 then
+        flags = bit.bor(flags, HUD.DMG_HEAD)
+    end
     local from = (bit.band(dmg:GetDamageType(), DMG_FALL) == 0) and source(dmg, ent) or nil
     HUD.SendHit(ent, dmg:GetDamage(), armour, from, flags)
 end, 0)   -- (after armour's -1000 put the armour back)

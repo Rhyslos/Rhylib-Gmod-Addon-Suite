@@ -40,7 +40,7 @@ Rhylib.Hook.Add("HUDPaint", "training.bar", function()
     surface.DrawRect(x, y, w * math.Clamp(hp / max, 0, 1), h)
     local label = out and "ELIMINATED (SIMULATION)" or ("SIMULATION  " .. hp)
     draw.SimpleTextOutlined(label, Rhylib.UI.Font(14, 700), ScrW() * 0.5, y - S(4), COL_TEXT, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, color_black)
-end)
+end, 950)   -- (outside the visor sway: it sits under the crosshair)
 
 --------------------------------------------------------------------------
 -- Respawn list

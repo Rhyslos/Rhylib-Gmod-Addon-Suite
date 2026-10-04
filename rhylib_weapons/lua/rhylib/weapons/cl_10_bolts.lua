@@ -17,9 +17,10 @@ Bolts.visual = Bolts.visual or {}
 -- Looks, by the weapon's BoltColor: colour, trail length, beam width,
 -- glow size and how long the visual can live.
 local STYLES = {
-    [1] = { color = Color(90, 150, 255), length = 70, width = 5, glow = 14, life = 1.2 },   -- Republic blue
-    [2] = { color = Color(255, 70, 60), length = 70, width = 5, glow = 14, life = 1.2 },    -- CIS red
-    [3] = { color = Color(80, 255, 120), length = 70, width = 5, glow = 14, life = 1.2 },   -- green
+    -- (core: a thin white-hot centre line, so it reads as a bolt, not a glowing bullet)
+    [1] = { color = Color(90, 150, 255), length = 90, width = 6.5, glow = 17, life = 1.2, core = true },   -- Republic blue
+    [2] = { color = Color(255, 70, 60), length = 90, width = 6.5, glow = 17, life = 1.2, core = true },    -- CIS red
+    [3] = { color = Color(80, 255, 120), length = 90, width = 6.5, glow = 17, life = 1.2, core = true },   -- green
     [4] = { color = Color(255, 170, 80), length = 140, width = 9, glow = 40, life = 6, rocket = true },  -- rocket
     [5] = { color = Color(14, 14, 14), length = 0, width = 1.8, glow = 0, life = 0.6, hook = true },    -- grapple hook
     [6] = { color = Color(120, 200, 255), length = 0, width = 0, glow = 22, life = 1.2, ring = 26 },     -- stun ring
@@ -30,6 +31,7 @@ local STYLES = {
 -- BoltColor numbers for other addons.
 Bolts.COLOR_TRAINING, Bolts.COLOR_TRAINING_ENEMY, Bolts.COLOR_TRAINING_ROCKET = 7, 8, 9
 local COL_HOOK = Color(58, 60, 62)
+local COL_CORE = Color(255, 255, 255, 220)
 local HOOK_MINS, HOOK_MAXS = Vector(-6.75, -1.5, -1.5), Vector(2.25, 1.5, 1.5)
 
 local matBeam = Material("trails/laser")
@@ -231,6 +233,7 @@ Rhylib.Hook.Add("PostDrawTranslucentRenderables", "weapons.bolts", function(dept
             local len = math.min(st.length, b.travelled + 1)
             tail:SetUnpacked(head.x - d.x * len, head.y - d.y * len, head.z - d.z * len)
             render.DrawBeam(tail, head, st.width, 0, 1, st.color)
+            if st.core then render.DrawBeam(tail, head, st.width * 0.3, 0, 1, COL_CORE) end
         end
     end
     render.SetMaterial(matGlow)

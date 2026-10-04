@@ -9,6 +9,7 @@
       - a short camera shake (view only, never the aim)
       - a hit sound: flesh, armour clang, or a sim beep; blasts ring the ears
       - low health: a slow red pulse at the edges and a heartbeat
+      - head hits crack the visor (first person, fades after a few seconds)
 
     Near misses (bolts passing close) are in rhylib_weapons cl_10_bolts.lua.
     Client convars (Settings > HUD): rhylib_dmg_markers, rhylib_dmg_flash,
@@ -17,7 +18,7 @@
 ]]
 
 local HUD = Rhylib.HUD
-local DMG_SIM, DMG_BLAST, DMG_NODIR = 1, 2, 4
+local DMG_SIM, DMG_BLAST, DMG_NODIR, DMG_HEAD = 1, 2, 4, 8
 
 local cvMarkers = CreateClientConVar("rhylib_dmg_markers", "1", true, false, "Damage direction markers around the crosshair")
 local cvFlash = CreateClientConVar("rhylib_dmg_flash", "1", true, false, "Screen edge flash when hit")
@@ -25,6 +26,7 @@ local cvShake = CreateClientConVar("rhylib_dmg_shake", "1", true, false, "Short 
 local cvLow = CreateClientConVar("rhylib_dmg_lowhp", "1", true, false, "Red pulse and heartbeat at low health")
 local cvVol = CreateClientConVar("rhylib_dmg_volume", "1", true, false, "Volume of hit sounds, beeps and the heartbeat (0-1)")
 local cvRing = CreateClientConVar("rhylib_dmg_ring", "1", true, false, "Ear ringing after big explosions")
+local cvCracks = CreateClientConVar("rhylib_dmg_cracks", "1", true, false, "Visor cracks from head hits (first person)")
 
 local function vol(v) return v * math.Clamp(cvVol:GetFloat(), 0, 1) end
 
@@ -62,7 +64,7 @@ end
 local nextSound = 0
 
 Rhylib.Net.ReceiveBatch("hud.dmg", function()
-    local h = { amount = net.ReadUInt(8), armour = net.ReadUInt(8), flags = net.ReadUInt(3) }
+    local h = { amount = net.ReadUInt(8), armour = net.ReadUInt(8), flags = net.ReadUInt(4) }
     if bit.band(h.flags, DMG_NODIR) == 0 then h.from = net.ReadVector() end
     return h
 end, function(h)
@@ -87,6 +89,9 @@ end, function(h)
         m.t, m.from, m.col = CurTime(), h.from, col
         m.size = math.Clamp(math.max(m.size * 0.6, 0) + total / 25, 0.35, 1.6)
     end
+
+    -- Head hit (real damage): a crack in the visor.
+    if bit.band(h.flags, DMG_HEAD) ~= 0 and not sim then HUD.AddCrack(h.from) end
 
     -- Edge flash: the hit side most, a little everywhere.
     if not sim then
@@ -146,7 +151,101 @@ end
 
 local lowA = { 0, 0, 0, 0 }
 local COL_LOW = Color(170, 10, 10)
-local nextBeat = 0
+
+-- The heartbeat file loops by itself: one sound, started and stopped
+-- (respawning, healing or turning it off stops it).
+local beat
+local function heartbeat(on, level)
+    local ply = LocalPlayer()
+    if on then
+        if not beat then beat = CreateSound(ply, "player/heartbeat1.wav") end
+        if not beat:IsPlaying() then beat:PlayEx(0, 100) end
+        beat:ChangeVolume(vol(level), 0.2)
+        beat:ChangePitch(100 + 25 * level, 0.2)
+    elseif beat and beat:IsPlaying() then
+        beat:Stop()
+    end
+end
+
+--------------------------------------------------------------------------
+-- Visor cracks (head hits, first person): a hole with jagged cracks
+-- running out from it, made once per hit, fading after CRACK_LIFE.
+--------------------------------------------------------------------------
+
+local CRACK_LIFE, MAX_CRACKS = 9, 6
+local cracks = {}
+local COL_CRACK = Color(225, 235, 240)
+local COL_CRACK_DARK = Color(0, 0, 0)
+
+function HUD.AddCrack(from)
+    local W, H = ScrW(), ScrH()
+    -- Somewhere on the visor, toward the side the shot came from.
+    local x, y = math.Rand(0.25, 0.75), math.Rand(0.2, 0.55)
+    if from then
+        local ply = LocalPlayer()
+        local a = math.NormalizeAngle(ply:EyeAngles().y - (from - ply:EyePos()):Angle().y)
+        x = math.Clamp(0.5 + a / 180 * 0.6 + math.Rand(-0.08, 0.08), 0.15, 0.85)
+    end
+    x, y = x * W, y * H
+    local s = H / 1080
+    local lines = {}
+    for _ = 1, math.random(6, 9) do
+        -- One crack: a few kinked pieces outward, sometimes a branch.
+        local ang = math.Rand(0, math.pi * 2)
+        local len = math.Rand(40, 150) * s
+        local px, py = x, y
+        local n = math.random(3, 5)
+        for i = 1, n do
+            ang = ang + math.Rand(-0.45, 0.45)
+            local step = len / n
+            local nx, ny = px + math.cos(ang) * step, py + math.sin(ang) * step
+            lines[#lines + 1] = { px, py, nx, ny, 1 - (i - 1) / n }
+            if i == 2 and math.random() < 0.5 then
+                local b = ang + (math.random() < 0.5 and 0.7 or -0.7)
+                lines[#lines + 1] = { nx, ny, nx + math.cos(b) * step * 0.8, ny + math.sin(b) * step * 0.8, 0.5 }
+            end
+            px, py = nx, ny
+        end
+    end
+    -- A ring around the hole.
+    local ring = {}
+    local r = math.Rand(10, 16) * s
+    for i = 0, 10 do
+        local a = i / 10 * math.pi * 2
+        local rr = r * math.Rand(0.8, 1.2)
+        ring[#ring + 1] = { x + math.cos(a) * rr, y + math.sin(a) * rr }
+    end
+    if #cracks >= MAX_CRACKS then table.remove(cracks, 1) end
+    cracks[#cracks + 1] = { t = CurTime(), x = x, y = y, r = r, lines = lines, ring = ring }
+end
+
+local function drawCracks(now)
+    draw.NoTexture()
+    for i = #cracks, 1, -1 do
+        local c = cracks[i]
+        local age = now - c.t
+        if age > CRACK_LIFE then
+            table.remove(cracks, i)
+        else
+            local a = age < CRACK_LIFE - 2 and 1 or (CRACK_LIFE - age) / 2
+            -- Dark hole with a frosted rim.
+            surface.SetDrawColor(COL_CRACK_DARK.r, COL_CRACK_DARK.g, COL_CRACK_DARK.b, 170 * a)
+            surface.DrawRect(c.x - c.r * 0.35, c.y - c.r * 0.35, c.r * 0.7, c.r * 0.7)
+            for j = 1, #c.ring - 1 do
+                local p, q = c.ring[j], c.ring[j + 1]
+                surface.SetDrawColor(COL_CRACK.r, COL_CRACK.g, COL_CRACK.b, 200 * a)
+                surface.DrawLine(p[1], p[2], q[1], q[2])
+            end
+            for _, l in ipairs(c.lines) do
+                local la = a * (0.35 + 0.65 * l[5])
+                surface.SetDrawColor(0, 0, 0, 120 * la)
+                surface.DrawLine(l[1] + 1, l[2] + 1, l[3] + 1, l[4] + 1)
+                surface.SetDrawColor(COL_CRACK.r, COL_CRACK.g, COL_CRACK.b, 210 * la)
+                surface.DrawLine(l[1], l[2], l[3], l[4])
+            end
+        end
+    end
+end
 local poly = {}
 for i = 1, 4 do poly[i] = { x = 0, y = 0 } end
 
@@ -174,27 +273,36 @@ local function arc(cx, cy, r, thick, ang, width, col, alpha)
 end
 
 Rhylib.Hook.Add("HUDPaint", "hud.damage", function()
-    if HUD.Hidden() then return end
+    if HUD.Hidden() then
+        heartbeat(false)
+        cracks = {}   -- (dead: a fresh visor on respawn)
+        return
+    end
     local ply = LocalPlayer()
     local W, H = ScrW(), ScrH()
     local now = CurTime()
     local ft = FrameTime()
 
+    -- Visor cracks (first person only).
+    if #cracks > 0 then
+        if cvCracks:GetBool() and not ply:ShouldDrawLocalPlayer() then drawCracks(now) end
+    end
+
     -- Low health pulse and heartbeat.
+    local lowNow = false
     if cvLow:GetBool() then
         local frac = math.max(ply:Health(), 0) / math.max(ply:GetMaxHealth(), 1)
         if frac < 0.3 and not ply:GetNW2Bool("rhylib_down", false) then   -- (not while downed: that has its own screen)
-            local beat = 0.6 + frac * 2
-            local p = 0.5 + 0.5 * math.sin(now * math.pi * 2 / beat)
+            lowNow = true
+            local period = 0.6 + frac * 2
+            local p = 0.5 + 0.5 * math.sin(now * math.pi * 2 / period)
             local a = (0.18 + 0.22 * (1 - frac / 0.3)) * (0.6 + 0.4 * p)
             lowA[1], lowA[2], lowA[3], lowA[4] = a, a, a, a
             edges(lowA, COL_LOW, W, H)
-            if now >= nextBeat and cvVol:GetFloat() > 0 then
-                nextBeat = now + beat
-                ply:EmitSound("player/heartbeat1.wav", 0, 100, vol(0.35 + 0.35 * (1 - frac / 0.3)), CHAN_STATIC)
-            end
+            heartbeat(cvVol:GetFloat() > 0, 0.35 + 0.35 * (1 - frac / 0.3))
         end
     end
+    if not lowNow then heartbeat(false) end
 
     -- Hit flash, fading fast.
     local any = flash[1] + flash[2] + flash[3] + flash[4] > 0.01
@@ -219,7 +327,7 @@ Rhylib.Hook.Add("HUDPaint", "hud.damage", function()
             arc(cx, cy, r, math.floor((4 + 6 * m.size) * s), relAngle(m.from), 34 + 10 * m.size, m.col, alpha)
         end
     end
-end)
+end, 950)   -- (after the visor sway pops: markers belong to the crosshair, rhylib_core cl_66_motion.lua)
 
 -- In the settings menu (rhylib_menus).
 Rhylib.Hook.Add("InitPostEntity", "hud.damage.setting", function()
@@ -237,6 +345,8 @@ Rhylib.Hook.Add("InitPostEntity", "hud.damage.setting", function()
         desc = "Hit sounds, beeps and the heartbeat (0 = off)", kind = "slider", convar = "rhylib_dmg_volume", min = 0, max = 1, decimals = 2 })
     Menus.AddSetting("HUD", { id = "hud.dmgring", order = 66, title = "Ear ringing after explosions",
         desc = "Turn off if ringing sounds bother you (e.g. tinnitus)", kind = "toggle", convar = "rhylib_dmg_ring" })
+    Menus.AddSetting("HUD", { id = "hud.dmgcracks", order = 67, title = "Visor cracks",
+        desc = "Head hits crack your visor for a few seconds (first person)", kind = "toggle", convar = "rhylib_dmg_cracks" })
     Menus.AddSetting("HUD", { id = "hud.whizz", order = 64, title = "Near-miss sounds",
         desc = "Bolts that fly past you whizz", kind = "toggle", convar = "rhylib_whizz" })
 end)

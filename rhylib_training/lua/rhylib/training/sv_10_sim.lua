@@ -117,7 +117,7 @@ function T.Eliminate(ply, by)
     return true
 end
 
-Rhylib.Hook.Add("Rhylib.TrainingHit", "training.hit", function(ply, attacker, amount)
+Rhylib.Hook.Add("Rhylib.TrainingHit", "training.hit", function(ply, attacker, amount, inflictor, group)
     if not ply:IsPlayer() or not ply:Alive() or ply.rhylibDown or T.out[ply] then return false end
     if (ply.rhylibSimImmune or 0) > CurTime() then return false end
     if L.Ragdoll(ply) then return false end   -- (stunned or knocked down: lying already)
@@ -127,7 +127,7 @@ Rhylib.Hook.Add("Rhylib.TrainingHit", "training.hit", function(ply, attacker, am
     local HUD = Rhylib.HUD
     if HUD and HUD.SendHit then
         local from = IsValid(attacker) and attacker ~= ply and not attacker:IsWorld() and attacker:WorldSpaceCenter() or nil
-        HUD.SendHit(ply, amount, 0, from, HUD.DMG_SIM)
+        HUD.SendHit(ply, amount, 0, from, bit.bor(HUD.DMG_SIM, group == HITGROUP_HEAD and HUD.DMG_HEAD or 0))
     end
     if hp <= 0 then
         if T.Eliminate(ply, attacker) then return true end

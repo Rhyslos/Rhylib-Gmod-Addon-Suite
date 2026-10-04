@@ -29,7 +29,7 @@ Config.Register("droids", "b1Range", 3000, "How far a B1 sees and shoots")
 Config.Register("droids", "b1Reaction", 0.6, "Seconds before a B1 starts firing at a new target")
 Config.Register("droids", "e5Damage", 12, "E-5 damage per bolt")
 Config.Register("droids", "e5RPM", 300, "E-5 shots per minute within a burst")
-Config.Register("droids", "e5Spread", 2.5, "E-5 inaccuracy cone (degrees), more against moving targets")
+Config.Register("droids", "e5Spread", 1.2, "E-5 inaccuracy cone (degrees), more against moving targets")
 
 Config.Register("droids", "b1NadeChance", 0.5, "B1: chance to throw a grenade at a target that just went behind cover")
 Config.Register("droids", "b1NadeCooldown", 20, "B1: seconds between one droid's grenades")
@@ -42,7 +42,7 @@ Config.Register("droids", "b2Range", 2800, "How far a B2 sees and shoots")
 Config.Register("droids", "b2Reaction", 0.8, "Seconds before a B2 starts firing at a new target")
 Config.Register("droids", "b2Damage", 14, "B2 wrist blaster damage per bolt")
 Config.Register("droids", "b2RPM", 420, "B2 wrist blaster shots per minute within a burst")
-Config.Register("droids", "b2Spread", 3.5, "B2 inaccuracy cone (degrees), more against moving targets")
+Config.Register("droids", "b2Spread", 1.8, "B2 inaccuracy cone (degrees), more against moving targets")
 Config.Register("droids", "b2RocketDamage", 75, "B2 wrist rocket: damage at the centre")
 Config.Register("droids", "b2RocketRadius", 230, "B2 wrist rocket: blast radius")
 Config.Register("droids", "b2RocketCooldown", 9, "B2 wrist rocket: seconds between one droid's rockets")
@@ -50,6 +50,7 @@ Config.Register("droids", "b2RocketMin", 350, "B2 wrist rocket: closest target i
 Config.Register("droids", "b2RocketMax", 2600, "B2 wrist rocket: furthest target it fires at")
 Config.Register("droids", "b2RocketSpread", 70, "B2 wrist rocket: miss distance per 1000 units of range")
 
+Config.Register("droids", "moveSpread", 0.003, "Extra aim cone (degrees) per unit/s the target moves")
 Config.Register("droids", "flashSuppress", 3, "Flash charge: droid aim cone multiplier while dazzled")
 Config.Register("droids", "flashTime", 5, "Flash charge: seconds droids stay dazzled")
 
@@ -70,9 +71,9 @@ D.B2T_MODEL = "models/aussiwozzi/cgi/b1droids/b2_battledroid_training.mdl"
 ]]
 D.KINDS = {
     b1 = { name = "B1 battle droid", model = D.B1_MODEL, health = "b1Health", speed = "b1Speed", range = "b1Range", reaction = "b1Reaction",
-        damage = "e5Damage", rpm = "e5RPM", spread = "e5Spread", burst = { 3, 5 }, color = 2, gun = D.E5_MODEL, nades = true },
+        damage = "e5Damage", rpm = "e5RPM", spread = "e5Spread", burst = { 2, 3 }, color = 2, gun = D.E5_MODEL, nades = true },
     b2 = { name = "B2 super battle droid", model = D.B2_MODEL, health = "b2Health", speed = "b2Speed", range = "b2Range", reaction = "b2Reaction",
-        damage = "b2Damage", rpm = "b2RPM", spread = "b2Spread", burst = { 4, 7 }, color = 2, rockets = true, big = true },
+        damage = "b2Damage", rpm = "b2RPM", spread = "b2Spread", burst = { 2, 4 }, color = 2, rockets = true, big = true },
 }
 D.KINDS.b1t = table.Copy(D.KINDS.b1)
 D.KINDS.b1t.name, D.KINDS.b1t.model, D.KINDS.b1t.training, D.KINDS.b1t.color = "B1 training droid", D.B1T_MODEL, true, 8
