@@ -195,6 +195,7 @@ function SWEP:PlaceBreach()
     g.kind = "breach"
     g.fuse = Config.Get("weapons", "breachFuse")
     g.thrower = o
+    g.training = self.Training   -- (training grenades: sim health only)
     g.stuckTo = IsValid(e) and e or nil
     g:SetOwner(o)
     g:SetColor(Color(255, 150, 60))
@@ -234,6 +235,7 @@ function SWEP:Throw(force, lift)
     g.kind = self:IsImpact() and (self.GrenadeKind == "emp" and "emp_impact" or "impact") or self.GrenadeKind
     g.fuse = self.FuseTime
     g.thrower = o
+    g.training = self.Training   -- (training grenades: sim health only)
     g:SetOwner(o)
     local tint = self:IsImpact() and (self.ImpactColor or Color(255, 190, 150)) or self.PropColor
     if tint then g:SetColor(tint) end

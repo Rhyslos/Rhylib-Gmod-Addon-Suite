@@ -26,6 +26,7 @@ local MED = "rhylib_medical_save"
 local MP = "rhylib_mp_save"
 local PAD = "rhylib_datapad_save"
 local TRAIN = "rhylib_training_save"
+local SPAWNS = "rhylib_spawns_save"
 
 local ALL = {
     { id = "b1", name = "B1 battle droid", cat = "Droids", class = "rhylib_b1", count = true },
@@ -40,6 +41,8 @@ local ALL = {
     { id = "b1_snow", name = "B1 snow droid", cat = "Droids", class = "rhylib_b1_snow", count = true },
     { id = "b1t", name = "B1 training droid", cat = "Training", class = "rhylib_b1_training", count = true },
     { id = "b2t", name = "B2 training droid", cat = "Training", class = "rhylib_b2_training", count = true },
+    { id = "spawn", name = "Spawn point (set battalion with E)", cat = "Spawns", class = "rhylib_spawn_point", named = true, save = SPAWNS },
+    { id = "eventspawn", name = "Event spawn (open it with E)", cat = "Spawns", class = "rhylib_event_spawn", named = true, save = SPAWNS },
     { id = "beacon", name = "Training respawn beacon", cat = "Training", class = "rhylib_training_beacon", named = true, save = TRAIN },
     { id = "tarmoury", name = "Training armoury", cat = "Training", class = "rhylib_training_armoury", save = ARMOURY },
     { id = "tammo", name = "Training ammo cabinet", cat = "Training", class = "rhylib_training_ammo", save = ARMOURY },

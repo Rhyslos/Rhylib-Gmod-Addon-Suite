@@ -31,13 +31,14 @@ end
 
 -- Reach of the search tool in hand: the baton, or another tool that answers
 -- Rhylib.MPSearchTool with true (baton reach) or its own reach (the datapad).
+-- (no tool: an MP can still search by hand from the interaction wheel)
 local function toolRange(ply)
     local w = ply:GetActiveWeapon()
-    if not IsValid(w) then return nil end
+    if not IsValid(w) then return MP.Cfg("searchRange") end
     if w:GetClass() == "rhylib_stunbaton" then return MP.Cfg("searchRange") end
     local r = hook.Run("Rhylib.MPSearchTool", ply, w)
     if r == true then return MP.Cfg("searchRange") end
-    return tonumber(r)
+    return tonumber(r) or MP.Cfg("searchRange")
 end
 
 local function canSearch(mp, target)
@@ -197,3 +198,61 @@ Rhylib.Hook.Add("PlayerDisconnected", "mp.search", function(ply)
         if t == ply then MP.searching[m] = nil end
     end
 end)
+
+--------------------------------------------------------------------------
+-- Interaction wheel (rhylib_menus): cuff (timed), uncuff, escort
+--------------------------------------------------------------------------
+
+Rhylib.Net.Register("mp.wheelx")
+
+local function cuffable(t)
+    if not IsValid(t) or not t:Alive() or MP.IsCuffed(t) then return false end
+    return MP.IsStunned(t) or t.rhylibDown and true or false
+end
+
+local function near(mp, t, slack)
+    if not (IsValid(mp) and IsValid(t) and mp:Alive() and t:Alive()) then return false end
+    local r = MP.Cfg("cuffRange") + (slack or 30)
+    if mp:GetPos():DistToSqr(t:GetPos()) > r * r then return false end
+    local rag = Rhylib.Lying and Rhylib.Lying.Ragdoll and Rhylib.Lying.Ragdoll(t)
+    local tr = util.TraceLine({ start = mp:EyePos(), endpos = t:WorldSpaceCenter(), filter = rag and { mp, t, rag } or { mp, t }, mask = MASK_SOLID })
+    return not tr.Hit
+end
+
+local function stopCuff(mp, tell)
+    timer.Remove("Rhylib.MP.WheelCuff." .. mp:EntIndex())
+    if tell and IsValid(mp) then
+        Rhylib.Net.Start("mp.wheelx")
+        net.Send(mp)
+    end
+end
+
+-- op 0 cuff (cuffTime, stay close and still), 1 uncuff, 2 escort / let go
+Rhylib.Net.Receive("mp.wheel", function(mp)
+    local op, t = net.ReadUInt(2), net.ReadEntity()
+    if not MP.IsMP(mp) or MP.IsCuffed(mp) or mp.rhylibDown or not IsValid(t) or not t:IsPlayer() then return end
+    if op == 0 then
+        if not mp:HasWeapon("rhylib_handcuffs") or not cuffable(t) or not near(mp, t) then return stopCuff(mp, true) end
+        local from, ends = mp:GetPos(), CurTime() + MP.Cfg("cuffTime")
+        local name = "Rhylib.MP.WheelCuff." .. mp:EntIndex()
+        timer.Create(name, 0.1, 0, function()
+            if not IsValid(mp) then return timer.Remove(name) end
+            if not IsValid(t) or not cuffable(t) or not near(mp, t, 50) or mp:GetPos():DistToSqr(from) > 40 * 40
+                or not MP.IsMP(mp) or mp.rhylibDown or MP.IsCuffed(mp) or not mp:HasWeapon("rhylib_handcuffs") then
+                return stopCuff(mp, true)
+            end
+            if CurTime() >= ends then
+                stopCuff(mp, false)
+                MP.Cuff(t, mp)
+            end
+        end)
+    elseif op == 1 then
+        if MP.IsCuffed(t) and near(mp, t) then MP.Uncuff(t, mp) end
+    elseif op == 2 then
+        if MP.EscortedBy(t) == mp then
+            MP.SetEscort(t, nil)
+        elseif MP.IsCuffed(t) and near(mp, t) then
+            MP.SetEscort(t, mp)
+        end
+    end
+end, { rate = 4, burst = 4 })

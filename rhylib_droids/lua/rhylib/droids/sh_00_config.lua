@@ -41,6 +41,9 @@ Config.Register("droids", "e5Spread", 1.2, "E-5 inaccuracy cone (degrees), more 
 
 Config.Register("droids", "b1NadeChance", 0.5, "B1: chance to throw a grenade at a target that just went behind cover")
 Config.Register("droids", "b1NadeCooldown", 20, "B1: seconds between one droid's grenades")
+Config.Register("droids", "b1NadeFightChance", 0.2, "B1: chance after each burst to throw a grenade at a target it can see (doubled at a group)")
+Config.Register("droids", "b1NadeMin", 300, "B1: closest target it throws a grenade at")
+Config.Register("droids", "b1NadeMax", 900, "B1: furthest target it throws a grenade at")
 Config.Register("droids", "b1NadeDamage", 90, "B1 grenade: damage at the centre")
 Config.Register("droids", "b1NadeRadius", 260, "B1 grenade: blast radius")
 

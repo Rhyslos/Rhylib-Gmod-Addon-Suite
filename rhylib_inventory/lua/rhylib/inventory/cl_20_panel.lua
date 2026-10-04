@@ -1046,3 +1046,18 @@ Rhylib.Hook.Add("Think", "inventory.key", function()
     end
     keyWasDown = down
 end)
+
+-- Interaction wheel (rhylib_menus): give opens the inventory; right-click
+-- an item there to hand it over.
+Rhylib.Hook.Add("Rhylib.WheelOptions", "inventory.wheel", function(t, me, add)
+    local Med = Rhylib.Medical
+    if Med and Med.IsDown and Med.IsDown(t) then
+        add("Give an item", nil, { order = 40, disabled = "Not while they're down" })
+        return
+    end
+    add("Give an item", function(x)
+        Inv.giveTo, Inv.giveToAt = x, RealTime()   -- (Inv.GiveTarget prefers them for a while)
+        if not IsValid(Inv.panel) then Inv.Toggle() end
+        Inv.note, Inv.noteTime = "Right-click an item: Give to " .. x:Nick(), RealTime()
+    end, { order = 40, sub = "Opens your inventory" })
+end)

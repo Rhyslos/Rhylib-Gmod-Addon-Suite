@@ -81,7 +81,11 @@ local function control(row, st)
                 timer.Simple(0.2, function() Menus.keyTrapping = false end)
                 if code ~= KEY_ESCAPE then
                     local name = input.GetKeyName(code)
-                    if name then set(string.lower(name)) end
+                    if name then
+                        set(string.lower(name))
+                        -- (conflict warnings, cl_25_controls.lua)
+                        timer.Simple(0.1, function() if Menus.RefillSettings then Menus.RefillSettings() end end)
+                    end
                 end
             end
         end
@@ -94,7 +98,9 @@ local function control(row, st)
             K.SetCol(C.edgeDark)
             surface.DrawOutlinedRect(0, 0, w, h)
             local label = self.trapping and "PRESS A KEY" or string.upper(get())
-            draw.SimpleText(label, K.Font(13, 700), w * 0.5, h * 0.5, self.trapping and C.accent or C.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            if label == "" then label = "NOT SET" end
+            local clash = Menus.keyConflicts and Menus.keyConflicts[st.convar]
+            draw.SimpleText(label, K.Font(13, 700), w * 0.5, h * 0.5, self.trapping and C.accent or (clash and C.bad or C.text), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
             return true
         end
     end
@@ -102,28 +108,35 @@ end
 
 --[[
     Tabs. A setting goes in its own `tab` if it names one; keys go in
-    Keybinds; a few sounds in Audio; camera and motion settings in Camera
+    Controls (with every fixed control listed, cl_25_controls.lua); a few sounds in Audio; camera and motion settings in Camera
     & motion; everything else in Interface. Within a tab the settings stay
     under their section headings.
 ]]
-Menus.SETTING_TABS = { "Interface", "Camera & motion", "Audio", "Keybinds" }
+Menus.SETTING_TABS = { "Interface", "Camera & motion", "Audio", "Controls" }
 local AUDIO = { ["wep.hitsound"] = true, ["hud.dmgvolume"] = true, ["hud.dmgring"] = true, ["hud.whizz"] = true }
 local CAMERA_SECTIONS = { ["Third person"] = true }
 local CAMERA = { ["hud.dmgshake"] = true }
 
 function Menus.SettingTab(section, st)
     if st.tab then return st.tab end
-    if st.kind == "key" then return "Keybinds" end
+    if st.kind == "key" then return "Controls" end
     if AUDIO[st.id] then return "Audio" end
     if CAMERA[st.id] or CAMERA_SECTIONS[section] or string.sub(st.id or "", 1, 5) == "core." then return "Camera & motion" end
     return "Interface"
 end
 
 Menus.settingsTab = Menus.settingsTab or "Interface"
+if Menus.settingsTab == "Keybinds" then Menus.settingsTab = "Controls" end
 
 local function fill(sp, tab)
     sp:Clear()
+    Menus.RefillSettings = function() if IsValid(sp) then fill(sp, tab) end end
     local any = false
+    local controls = tab == "Controls" and Menus.ControlsTop
+    if controls then
+        Menus.ControlsTop(sp)
+        any = true
+    end
     for _, section in ipairs(Menus.sectionOrder) do
         local list = {}
         for _, st in ipairs(Menus.settings[section]) do
@@ -145,6 +158,7 @@ local function fill(sp, tab)
             end
         end
     end
+    if controls and Menus.ControlsBottom then Menus.ControlsBottom(sp) end
     if not any then
         local l = K.Label(sp, "Nothing here yet.", 14, nil, C.textDim)
         l:Dock(TOP)

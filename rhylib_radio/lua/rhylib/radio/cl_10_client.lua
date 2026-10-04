@@ -509,3 +509,12 @@ local function addSettings()
 end
 Rhylib.Hook.Add("InitPostEntity", "radio.settings", addSettings)
 addSettings()
+
+-- Interaction wheel (rhylib_menus): hail them on the radio.
+Rhylib.Hook.Add("Rhylib.WheelOptions", "radio.wheel", function(t, me, add)
+    if R.State(me).off then
+        add("Hail", nil, { order = 45, disabled = "Your radio is off" })
+    else
+        add("Hail", function(x) R.HailPlayer(x) end, { order = 45, sub = "Call them on the radio" })
+    end
+end)

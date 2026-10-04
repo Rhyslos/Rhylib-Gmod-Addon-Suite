@@ -169,10 +169,7 @@ function PANEL:AddRow(sp, p, col, alt)
         end
         if Menus.IsStaff and Menus.IsStaff() and Menus.AdminMod and Menus.AdminMod() then
             m:AddSpacer()
-            for _, a in ipairs({ { "Go to", "goto" }, { "Bring", "bring" }, { "Return", "return" }, { "Spectate", "spectate" },
-                { "Freeze", "freeze" }, { "Unfreeze", "unfreeze" }, { "Slay", "slay" }, { "Kick", "kick" } }) do
-                m:AddOption(a[1], function() Menus.RunPlayerAction(a[2], p) end)
-            end
+            Menus.AddStaffOptions(m, p)
         end
         m:Open()
     end
@@ -267,4 +264,34 @@ end)
 -- The screen size changed: build a new one next time.
 Rhylib.Hook.Add("OnScreenSizeChanged", "menus.scoreboard", function()
     if IsValid(Menus.scoreboard) then Menus.scoreboard:Remove() end
+end)
+
+-- Staff actions on a player (scoreboard row, interaction wheel). With
+-- rhylib_admin also Heal and Revive.
+function Menus.AddStaffOptions(m, p)
+    local A = Rhylib.Admin
+    local rhylib = A and A.Run and A.TargetWord
+    local list = { { "Go to", "goto" }, { "Bring", "bring" }, { "Return", "return" }, { "Spectate", "spectate" },
+        { "Freeze", "freeze" }, { "Unfreeze", "unfreeze" }, { "Slay", "slay" }, { "Kick", "kick" } }
+    if rhylib then
+        table.insert(list, 1, { "Revive", "revive" })
+        table.insert(list, 1, { "Heal", "heal" })
+    end
+    for _, a in ipairs(list) do
+        m:AddOption(a[1], function()
+            if not IsValid(p) then return end
+            -- (rhylib_admin runs its own commands; other mods go through RunPlayerAction)
+            if rhylib then A.Run(a[2], { A.TargetWord(p) }) else Menus.RunPlayerAction(a[2], p) end
+        end)
+    end
+end
+
+-- Interaction wheel: staff get their actions too.
+Rhylib.Hook.Add("Rhylib.WheelOptions", "menus.staff", function(t, me, add)
+    if not (Menus.IsStaff and Menus.IsStaff() and Menus.AdminMod and Menus.AdminMod()) then return end
+    add("Staff", function(x)
+        local m = Menus.Kit.Menu()
+        Menus.AddStaffOptions(m, x)
+        m:Open()
+    end, { order = 90, sub = "Heal, revive, bring..." })
 end)

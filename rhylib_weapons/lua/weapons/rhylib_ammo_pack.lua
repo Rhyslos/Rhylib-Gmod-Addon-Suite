@@ -199,3 +199,33 @@ if CLIENT then
             TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, Color(0, 0, 0, 160))
     end
 end
+
+-- Interaction wheel (rhylib_menus): resupply the player you hold E on.
+if SERVER then
+    Rhylib.Net.Receive("wheel.supply", function(ply)
+        local t = net.ReadEntity()
+        local wep = ply:GetWeapon("rhylib_ammo_pack")
+        if not (IsValid(wep) and IsValid(t) and t:IsPlayer() and t:Alive() and ply:Alive()) or ply.rhylibDown then return end
+        if util.TraceLine({ start = ply:EyePos(), endpos = t:WorldSpaceCenter(), mask = MASK_SOLID_BRUSHONLY }).Hit then return end
+        if CurTime() < wep:GetNextPrimaryFire() then return end
+        local r = wep.Range + 40
+        if ply:GetPos():DistToSqr(t:GetPos()) > r * r then return end
+        wep:Supply(t)
+    end, { rate = 2, burst = 2 })
+end
+
+if CLIENT then
+    Rhylib.Hook.Add("Rhylib.WheelOptions", "weapons.ammopack", function(t, me, add)
+        local wep = me:GetWeapon("rhylib_ammo_pack")
+        if not IsValid(wep) then return end
+        if not wep:SkillOK() then
+            add("Resupply", nil, { order = 35, disabled = "Needs the Ammo pack skill" })
+            return
+        end
+        add("Resupply", function(x)
+            Rhylib.Net.Start("wheel.supply")
+            net.WriteEntity(x)
+            net.SendToServer()
+        end, { order = 35, sub = "Ammo pack: top up their mags" })
+    end)
+end

@@ -260,10 +260,13 @@ function Inv.RequestHold(uid)
     net.SendToServer()
 end
 
--- The player you're looking at, close enough to give to (or nil).
+-- The player you're looking at, close enough to give to (or nil). Picked
+-- from the interaction wheel: that player for 60 s while in range.
 function Inv.GiveTarget()
     local ply = LocalPlayer()
     local r = Rhylib.Config.Get("inventory", "giveRange") or 130
+    local w = Inv.giveTo
+    if IsValid(w) and w:Alive() and RealTime() - (Inv.giveToAt or 0) < 60 and w:GetPos():DistToSqr(ply:GetPos()) < r * r then return w end
     local tr = util.TraceHull({
         start = ply:EyePos(), endpos = ply:EyePos() + ply:GetAimVector() * r,
         filter = ply, mins = Vector(-6, -6, -6), maxs = Vector(6, 6, 6), mask = MASK_SHOT_HULL,

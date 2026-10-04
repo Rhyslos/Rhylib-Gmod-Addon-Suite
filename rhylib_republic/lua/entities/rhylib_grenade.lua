@@ -213,7 +213,12 @@ if SERVER then
         ed:SetScale(1)
         util.Effect("Explosion", ed, true, true)
         local r = Config.Get("weapons", "breachRadius")
-        util.BlastDamage(self, attacker, pos, r, Config.Get("weapons", "breachDamage"))
+        local W = Rhylib.Weapons
+        if self.training and W and W.TrainingBlast then
+            W.TrainingBlast(pos, r, Config.Get("weapons", "breachDamage"), attacker, self)
+        else
+            util.BlastDamage(self, attacker, pos, r, Config.Get("weapons", "breachDamage"))
+        end
         util.ScreenShake(pos, 8, 120, 0.6, r * 3)
         local hold = Config.Get("weapons", "breachHold")
         local doors = {}
@@ -260,6 +265,7 @@ if SERVER then
         ed:SetOrigin(pos)
         ed:SetRadius(self.EmpRadius)
         ed:SetFlags(0)
+        ed:SetColor(self.training and 2 or 0)   -- (training: orange)
         util.Effect("rhylib_emp", ed, true, true)
         sound.Play("ambient/energy/whiteflash.wav", pos, 85, 110)
         sound.Play("ambient/energy/zap" .. math.random(1, 9) .. ".wav", pos, 80, 100)
@@ -276,6 +282,7 @@ if SERVER then
                         local zap = EffectData()
                         zap:SetOrigin(c)
                         zap:SetFlags(1)
+                        zap:SetColor(self.training and 2 or 0)
                         util.Effect("rhylib_emp", zap, true, true)
                         MP.Stun(p, attacker)
                     end
@@ -285,7 +292,8 @@ if SERVER then
 
         local D = Rhylib.Droids
         for droid in pairs(D and D.active or {}) do
-            if IsValid(droid) and droid:Health() > 0 then
+            -- (a training EMP only takes out training droids)
+            if IsValid(droid) and droid:Health() > 0 and (droid.Training or not self.training) then
                 local c = droid:WorldSpaceCenter()
                 if c:DistToSqr(pos) <= r2 then
                     local tr = util.TraceLine({ start = pos, endpos = c, mask = MASK_SOLID_BRUSHONLY })
@@ -294,6 +302,7 @@ if SERVER then
                         zap:SetOrigin(c)
                         zap:SetEntity(droid)
                         zap:SetFlags(1)
+                        zap:SetColor(self.training and 2 or 0)
                         util.Effect("rhylib_emp", zap, true, true)
                         local dmg = DamageInfo()
                         dmg:SetDamage(droid:Health() + 100)

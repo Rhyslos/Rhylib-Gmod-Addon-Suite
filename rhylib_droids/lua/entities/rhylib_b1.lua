@@ -265,6 +265,27 @@ if SERVER then
         self.nextNade = CurTime() + D.Cfg("b1NadeCooldown") * math.Rand(0.8, 1.3)
     end
 
+    -- A grenade at a target it can see, by chance (after a burst).
+    function ENT:NadeAt(t)
+        local k = self:Kind()
+        if not k.nades or CurTime() < self.nextNade then return false end
+        local pos = t:GetPos()
+        local d = pos:Distance(self:GetPos())
+        if d < D.Cfg("b1NadeMin") or d > D.Cfg("b1NadeMax") then return false end
+        local chance = D.Cfg("b1NadeFightChance")
+        for _, p in ipairs(D.Targets()) do
+            if p ~= t and p:GetPos():DistToSqr(pos) < 250 * 250 then
+                chance = chance * 2
+                break
+            end
+        end
+        if math.random() >= chance then return false end
+        self:Face(pos, 0.25)
+        if not IsValid(t) then return false end
+        self:ThrowNade(t:GetPos() + t:GetVelocity() * 0.4)
+        return true
+    end
+
     -- B2 cannon: a wrist rocket lobbed high, landing near pos.
     function ENT:FireRocket(pos, mover)
         local from = self:GetPos() + Vector(0, 0, 80) + self:GetForward() * 10
@@ -300,7 +321,7 @@ if SERVER then
         if not pos or CurTime() - (self.lastSeenAt or 0) > 4 then return end
         local d = pos:Distance(self:GetPos())
         local now = CurTime()
-        if k.nades and now >= self.nextNade and d > 250 and d < 900 then
+        if k.nades and now >= self.nextNade and d > 250 and d < D.Cfg("b1NadeMax") then
             if math.random() < D.Cfg("b1NadeChance") then
                 self:Face(pos, 0.3)
                 self:ThrowNade(pos)
@@ -383,6 +404,9 @@ if SERVER then
                     end
                 end
                 bursts = bursts + 1
+                -- B1: now and then a grenade at a target in the open
+                -- (more likely at a group).
+                if IsValid(t) then self:NadeAt(t) end
                 local pause = math.Rand(0.6, 1.3)
                 if D.Boosted(self) then pause = pause * D.Cfg("cmdPause") end
                 self:Face(IsValid(t) and t:GetPos() or self:GetPos(), pause)

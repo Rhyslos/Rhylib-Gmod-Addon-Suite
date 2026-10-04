@@ -68,7 +68,7 @@ A.CLASSES = {
 }
 A.CRATES = { "rhylib_crate_small", "rhylib_crate_medium", "rhylib_crate_large", "rhylib_med_crate" }
 
-A.TRAINING_AMMO_STOCK = { "mag_small_t", "mag_medium_t", "mag_large_t", "cell", "rocket_t" }
+A.TRAINING_AMMO_STOCK = { "mag_small_t", "mag_medium_t", "mag_large_t", "cell", "rocket_t", "rhylib_thermal_training", "rhylib_droidpopper_training" }
 A.AMMO_STOCK = { "mag_small", "mag_medium", "mag_large", "cell", "rocket", "grapple", "rhylib_thermal", "rhylib_droidpopper", "rhylib_ammo_pack" }
 
 local Config = Rhylib.Config

@@ -105,3 +105,38 @@ function MP.ShowSearch(target, cuffed, rows)
         end
     end
 end
+
+--------------------------------------------------------------------------
+-- Interaction wheel (rhylib_menus)
+--------------------------------------------------------------------------
+
+local function wheelOp(op, t)
+    Rhylib.Net.Start("mp.wheel")
+    net.WriteUInt(op, 2)
+    net.WriteEntity(t)
+    net.SendToServer()
+end
+
+Rhylib.Hook.Add("Rhylib.WheelOptions", "mp.wheel", function(t, me, add)
+    if not MP.IsMP(me) then return end
+    add("Search", function(x) MP.OpenSearch(x) end, { order = 30, sub = "Look through their gear" })
+    if MP.IsCuffed(t) then
+        add("Uncuff", function(x) wheelOp(1, x) end, { order = 32 })
+        add(MP.EscortedBy(t) == me and "Let go" or "Escort", function(x) wheelOp(2, x) end, { order = 33 })
+    elseif not me:HasWeapon("rhylib_handcuffs") then
+        add("Cuff", nil, { order = 31, disabled = "No handcuffs" })
+    elseif not (MP.IsStunned(t) or (Rhylib.Medical and Rhylib.Medical.IsDown and Rhylib.Medical.IsDown(t))) then
+        add("Cuff", nil, { order = 31, disabled = "Stun them first" })
+    else
+        add("Cuff", function(x)
+            wheelOp(0, x)
+            local Menus = Rhylib.Menus
+            if Menus and Menus.WheelProgress then Menus.WheelProgress("Cuffing " .. x:Nick(), MP.Cfg("cuffTime")) end
+        end, { order = 31, sub = "Stay close" })
+    end
+end)
+
+net.Receive(Rhylib.Net.Name("mp.wheelx"), function()
+    local Menus = Rhylib.Menus
+    if Menus and Menus.WheelProgressStop then Menus.WheelProgressStop() end
+end)

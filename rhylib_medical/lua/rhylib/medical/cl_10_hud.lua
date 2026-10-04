@@ -307,6 +307,42 @@ local function openMenu(ply, t)
     m:Open(ScrW() * 0.5 + S(24), ScrH() * 0.5)
 end
 
+-- Interaction wheel (rhylib_menus): the same actions, plus the injury menu.
+Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.wheel", function(t, me, add)
+    if Med.IsDown(me) then return end
+    local cfgRange = Med.Cfg("viewRange") or 120
+    if Med.IsDown(t) then
+        local stab = Med.StabilisedBy(t)
+        if stab then
+            add("Stabilise", nil, { order = 10, disabled = "Already stabilised by " .. stab:Nick() })
+        else
+            add("Stabilise", function(x) send(Med.A_STAB, x) end, { order = 10, sub = "Pauses the bleed-out" })
+        end
+        if Med.IsMedic(me) then
+            local kits = false
+            if me:HasWeapon(Med.REVIVE_KIT) then
+                add("Revive", function(x) send(Med.A_REVIVE, x) end, { order = 11, sub = "Revive kit" })
+                kits = true
+            end
+            if me:HasWeapon(Med.FIRST_AID) then
+                add("Revive", function(x) send(Med.A_FA_REVIVE, x) end, { order = 12, sub = "First aid kit (slow, uses charge)" })
+                kits = true
+            end
+            if Med.Skill(me, "hands_on") then
+                add("Revive", function(x) send(Med.A_HAND_REVIVE, x) end, { order = 13, sub = "Hands-on (very slow)" })
+                kits = true
+            end
+            if not kits then add("Revive", nil, { order = 11, disabled = "No revive or first aid kit" }) end
+            if carried(Med.BLOOD_PACK) > 0 then
+                add("Blood pack", function(x) send(Med.A_BLOOD, x) end, { order = 14, sub = "+" .. Med.Cfg("bloodPackAdd") .. " s bleed-out" })
+            end
+        end
+    end
+    if Med.OpenInjuries and t:GetPos():DistToSqr(me:GetPos()) < cfgRange * cfgRange * 2 then
+        add("Injuries", function(x) Med.OpenInjuries(x) end, { order = 20, sub = "Check and treat" })
+    end
+end)
+
 Rhylib.Hook.Add("PlayerBindPress", "medical.menu", function(ply, bind, pressed)
     if not pressed or not string.find(bind, "+use", 1, true) then return end
     if Med.IsDown(ply) or Med.Action(ply) ~= 0 or Med.Dragging(ply) then return end
