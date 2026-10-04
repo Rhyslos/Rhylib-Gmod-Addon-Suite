@@ -1,40 +1,71 @@
 --[[
     Toolgun (rhylib_toolgun addon): LMB place, RMB remove, R the list.
-    See rhylib/toolgun/sh_00_config.lua. Looks: the BTX-42 pistol on the
-    HL2 pistol's hands (its own pistol hidden). Offsets are first guesses.
+    See rhylib/toolgun/sh_00_config.lua.
+
+    Built on the Rhylib weapon base (rhylib_weapons), so it's held like the
+    DC-17 (same Battlefront carrier viewmodel and hands) and can be tuned
+    with rhylib_vm_editor / rhylib_wm_editor like any Rhylib gun; paste the
+    copied lines below. It fires nothing, has no ammo, no aiming and isn't
+    an inventory item or in the armoury. Needs rhylib_weapons.
 ]]
 
 AddCSLuaFile()
 
-SWEP.Base = "weapon_base"
+SWEP.Base = "rhylib_base"
 SWEP.PrintName = "Toolgun"
 SWEP.Category = "Rhylib"
 SWEP.Spawnable = true
 SWEP.AdminOnly = true
+SWEP.NoArmoury = true
+SWEP.ToolGun = true          -- (R opens the list instead of the reload wheel)
 SWEP.Slot = 5
 SWEP.DrawAmmo = false
-SWEP.DrawCrosshair = true
+
+-- Placeholder viewmodel, used only if the carrier model is missing.
 SWEP.ViewModel = "models/weapons/c_pistol.mdl"
 SWEP.WorldModel = "models/jajoff/sps/cgiweapons/tc13j/btx42_pistol.mdl"
-SWEP.UseHands = true
+SWEP.UseHands = false
+-- First person: the DC-17's carrier (Reworked Assets) holding the BTX-42.
+-- Owner-tuned (rhylib_vm_editor / rhylib_wm_editor).
+SWEP.CarrierVM = "models/bf2017/c_scoutblaster.mdl"
+SWEP.CarrierBone = "v_scoutblaster_reference001"
+SWEP.CarrierBoneMove = Vector(0, -0.3, 0)
+SWEP.PropBonePos = Vector(-1.6, 14.5, 0.3)
+SWEP.PropBoneAng = Angle(0, 90, -2)
+SWEP.PropBoneScale = 1
+SWEP.VMOffset = Vector(0, 0, 0)
+SWEP.CarrierFOV = 54
 SWEP.HoldType = "pistol"
+
+SWEP.PropModel = "models/jajoff/sps/cgiweapons/tc13j/btx42_pistol.mdl"
+SWEP.PropScale = 1
+SWEP.PropVMPos = Vector(16, 6, -6)     -- forward, right, up (without the carrier)
+SWEP.PropVMAng = Angle(0, 0, 0)
+SWEP.PropWMPos = Vector(-10, 3, 1)      -- third person, from the right hand
+SWEP.PropWMAng = Angle(-10, -2, 180)
+SWEP.PropMuzzle = Vector(10, 0, 2)
+
 SWEP.Primary = { ClipSize = -1, DefaultClip = -1, Automatic = false, Ammo = "none" }
 SWEP.Secondary = { ClipSize = -1, DefaultClip = -1, Automatic = false, Ammo = "none" }
+SWEP.Mags = {}
+SWEP.FireModes = { "semi" }
+SWEP.Grapple = false
+SWEP.NoAim = true
+SWEP.UsesCell = false
+SWEP.StartMags = 0
+SWEP.StartCells = 0
+SWEP.InvW = false            -- (not an inventory item)
+SWEP.AutoReload = false
+SWEP.Recoil = { up = 0, side = 0, bias = 0, recover = 1, aimMult = 1 }
+SWEP.Spread = {
+    hip = 0.5, aim = 0.5, kickMain = 0, kickSide = 0,
+    bloomPerShot = 0, bloomMax = 0, aimKickMult = 0, aimOffsetMult = 0,
+}
+SWEP.AimPos = Vector(0, 0, 0)
+SWEP.AimFov = 1
 
--- The pistol prop on the right hand (forward, right, up; pitch, yaw, roll).
-SWEP.PropVMPos = Vector(4, 1.4, -2.4)
-SWEP.PropVMAng = Angle(-6, 0, 180)
-SWEP.PropWMPos = Vector(4, 1, -2)
-SWEP.PropWMAng = Angle(-10, 0, 180)
-
-function SWEP:Initialize()
-    self:SetHoldType(self.HoldType)
-end
-
-function SWEP:Deploy()
-    self:SendWeaponAnim(ACT_VM_DRAW)
-    return true
-end
+-- No magazine (the HUD then shows no ammo).
+function SWEP:GetMag() return nil end
 
 -- Clicks are worked out on the client (what's chosen lives there) and
 -- sent to the server, which checks everything again.
@@ -65,64 +96,6 @@ function SWEP:ToolClick(which)
 end
 
 if CLIENT then
-    local function place(pos, ang, off, rot)
-        local p = pos + ang:Forward() * off.x + ang:Right() * off.y + ang:Up() * off.z
-        local a = Angle(ang.p, ang.y, ang.r)
-        a:RotateAroundAxis(a:Up(), rot.y)
-        a:RotateAroundAxis(a:Right(), rot.p)
-        a:RotateAroundAxis(a:Forward(), rot.r)
-        return p, a
-    end
-
-    function SWEP:Prop()
-        if not IsValid(self.prop) then
-            self.prop = ClientsideModel(self.WorldModel, RENDERGROUP_OPAQUE)
-            if IsValid(self.prop) then self.prop:SetNoDraw(true) end
-        end
-        return IsValid(self.prop) and self.prop or nil
-    end
-
-    function SWEP:DrawPropOn(ent, bone, off, rot)
-        local b = ent:LookupBone(bone)
-        local m = b and ent:GetBoneMatrix(b)
-        local e = m and self:Prop()
-        if not e then return end
-        local p, a = place(m:GetTranslation(), m:GetAngles(), off, rot)
-        e:SetPos(p)
-        e:SetAngles(a)
-        e:SetupBones()
-        e:DrawModel()
-    end
-
-    -- The HL2 pistol is hidden (render blend 0, put back by the hook below
-    -- before the hands draw); the prop goes on the hand.
-    function SWEP:PreDrawViewModel(vm)
-        render.SetBlend(0)
-        vm.rhylibBlendOff = true
-    end
-
-    -- (same id as rhylib_weapons' copy, so only one runs)
-    Rhylib.Hook.Add("PostDrawViewModel", "weapons.blendreset", function(vm)
-        if IsValid(vm) and vm.rhylibBlendOff then
-            render.SetBlend(1)
-            vm.rhylibBlendOff = nil
-        end
-    end, -1000)
-
-    function SWEP:PostDrawViewModel(vm)
-        self:DrawPropOn(vm, "ValveBiped.Bip01_R_Hand", self.PropVMPos, self.PropVMAng)
-    end
-
-    function SWEP:DrawWorldModel()
-        local o = self:GetOwner()
-        if not IsValid(o) then self:DrawModel() return end
-        self:DrawPropOn(o, "ValveBiped.Bip01_R_Hand", self.PropWMPos, self.PropWMAng)
-    end
-
-    function SWEP:OnRemove()
-        if IsValid(self.prop) then self.prop:Remove() end
-    end
-
     function SWEP:DrawHUD()
         local Tool = Rhylib.Tool
         if Tool and Tool.DrawHUD then Tool.DrawHUD(self) end

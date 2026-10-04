@@ -34,11 +34,11 @@ SWEP.HoldType = "shotgun"
 SWEP.Slot = 3
 
 SWEP.PropModel = "models/jajoff/sps/cgiweapons/tc13j/z6.mdl"
-SWEP.PropScale = 1.05
+SWEP.PropScale = 0.8
 SWEP.PropVMPos = Vector(20, 8, -10)    -- forward, right, up (first person)
 SWEP.PropVMAng = Angle(0, 0, 0)        -- pitch, yaw, roll
-SWEP.PropWMPos = Vector(-4, 2.1, 1)      -- forward, right, up from the right hand
-SWEP.PropWMAng = Angle(-14, 4, 175)
+SWEP.PropWMPos = Vector(-3.4, 3.4, 1.2)      -- forward, right, up from the right hand
+SWEP.PropWMAng = Angle(-8, 4, 175)
 SWEP.PropMuzzle = Vector(36, 0, 0)     -- muzzle in the prop's own coordinates
 
 SWEP.Primary = {

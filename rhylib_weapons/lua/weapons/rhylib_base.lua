@@ -1781,8 +1781,37 @@ if CLIENT then
         return f, label, field, rows
     end
 
+    -- Grenades (rhylib_grenade_base, not Rhylib guns): their first-person
+    -- prop sits on the viewmodel's grenade bone (PropVMPos / PropVMAng /
+    -- PropVMScale).
+    local function grenadeEditor(w)
+        w.PropVMPos = Vector(w.PropVMPos:Unpack())
+        w.PropVMAng = Angle(w.PropVMAng:Unpack())
+        w.PropVMScale = w.PropVMScale or 1
+        local f, label, field = editorFrame("First person: " .. w:GetClass(), 360, w)
+        editor = f
+        local R = 30
+        label("Grenade from the viewmodel's grenade bone")
+        field("Forward", 0.1, -R, R, function() return w.PropVMPos.x end, function(v) w.PropVMPos.x = v end)
+        field("Right", 0.1, -R, R, function() return w.PropVMPos.y end, function(v) w.PropVMPos.y = v end)
+        field("Up", 0.1, -R, R, function() return w.PropVMPos.z end, function(v) w.PropVMPos.z = v end)
+        field("Pitch", 1, -180, 180, function() return w.PropVMAng.p end, function(v) w.PropVMAng.p = v end)
+        field("Yaw", 1, -180, 180, function() return w.PropVMAng.y end, function(v) w.PropVMAng.y = v end)
+        field("Roll", 1, -180, 180, function() return w.PropVMAng.r end, function(v) w.PropVMAng.r = v end)
+        field("Size", 0.05, 0.1, 3, function() return w.PropVMScale end, function(v) w.PropVMScale = v end)
+        f.copyButton(function()
+            return string.format("SWEP.PropVMScale = %g\nSWEP.PropVMPos = Vector(%g, %g, %g)\nSWEP.PropVMAng = Angle(%g, %g, %g)",
+                w.PropVMScale, w.PropVMPos.x, w.PropVMPos.y, w.PropVMPos.z, w.PropVMAng.p, w.PropVMAng.y, w.PropVMAng.r)
+        end)
+    end
+
     concommand.Add("rhylib_vm_editor", function()
         if IsValid(editor) then editor:Remove() return end
+        local g = LocalPlayer():GetActiveWeapon()
+        if IsValid(g) and not g.IsRhylib and g.PropModel and g.PropVMPos and g.PropVMAng then
+            grenadeEditor(g)
+            return
+        end
         local w = held()
         if not w then return end
         local carrier = w:UsesCarrier()
@@ -1889,9 +1918,122 @@ if CLIENT then
         end
     end)
 
+    -- Orbit camera for the third-person editors: the view circles your right
+    -- hand while the editor is open (preset buttons, drag to turn, wheel to
+    -- zoom). Yaw is from your body's facing: 0 = in front of you.
+    local orbit = { on = false, yaw = 30, pitch = 10, dist = 45 }
+
+    local function orbitCentre(ply)
+        ply:SetupBones()
+        local b = ply:LookupBone("ValveBiped.Bip01_R_Hand")
+        local m = b and ply:GetBoneMatrix(b)
+        return m and m:GetTranslation() or (ply:GetPos() + Vector(0, 0, 45))
+    end
+
+    Rhylib.Hook.Add("CalcView", "weapons.editorcam", function(ply, pos, angles, fov)
+        if not orbit.on then return end
+        if not IsValid(orbit.frame) or ply ~= LocalPlayer() or not ply:Alive() then
+            orbit.on = false
+            return
+        end
+        local centre = orbitCentre(ply)
+        local dir = Angle(orbit.pitch, ply:GetRenderAngles().y + orbit.yaw, 0):Forward()
+        local origin = centre + dir * orbit.dist
+        return { origin = origin, angles = (centre - origin):Angle(), fov = 60, znear = 1, drawviewer = true }
+    end, -60)   -- (before the body camera and third person)
+
+    -- (no gun sway or first-person bits while orbiting)
+    Rhylib.Hook.Add("ShouldDrawLocalPlayer", "weapons.editorcam", function()
+        if orbit.on and IsValid(orbit.frame) then return true end
+    end, -60)
+
+    local function addOrbit(f, label, startOff)
+        orbit.frame = f
+        orbit.on = not startOff
+        label("Camera (circles your right hand)")
+        local list = f.list
+        local row = list:Add("DPanel")
+        row:SetTall(24)
+        row:Dock(TOP)
+        row:DockMargin(4, 1, 4, 1)
+        row:SetPaintBackground(false)
+        local presets = { { "Front", 0, 5 }, { "Back", 180, 5 }, { "Left", 90, 5 }, { "Right", -90, 5 }, { "Top", 0, -85 }, { "Below", 0, 60 } }
+        for _, p in ipairs(presets) do
+            local b = vgui.Create("DButton", row)
+            b:SetText(p[1])
+            b:SetWide(50)
+            b:Dock(LEFT)
+            b:DockMargin(0, 0, 2, 0)
+            b.DoClick = function()
+                orbit.on = true
+                orbit.yaw, orbit.pitch = p[2], p[3]
+            end
+        end
+        local pad = list:Add("DPanel")
+        pad:SetTall(90)
+        pad:Dock(TOP)
+        pad:DockMargin(4, 4, 4, 1)
+        pad:SetCursor("sizeall")
+        function pad:Paint(w, h)
+            surface.SetDrawColor(20, 24, 30, 220)
+            surface.DrawRect(0, 0, w, h)
+            surface.SetDrawColor(80, 100, 130, 255)
+            surface.DrawOutlinedRect(0, 0, w, h)
+            draw.SimpleText("Drag here to turn · wheel to zoom", "DermaDefault", w * 0.5, h * 0.42, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            draw.SimpleText(string.format("yaw %d · pitch %d · %d units", orbit.yaw, orbit.pitch, orbit.dist), "DermaDefault", w * 0.5, h * 0.66,
+                Color(170, 180, 190), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
+        function pad:OnMousePressed(code)
+            if code ~= MOUSE_LEFT then return end
+            self.drag = { gui.MouseX(), gui.MouseY() }
+            self:MouseCapture(true)
+        end
+        function pad:OnMouseReleased()
+            self.drag = nil
+            self:MouseCapture(false)
+        end
+        function pad:Think()
+            if not self.drag then return end
+            local x, y = gui.MouseX(), gui.MouseY()
+            orbit.yaw = math.NormalizeAngle(orbit.yaw - (x - self.drag[1]) * 0.5)
+            orbit.pitch = math.Clamp(orbit.pitch + (y - self.drag[2]) * 0.4, -89, 89)
+            self.drag = { x, y }
+            orbit.on = true
+        end
+        function pad:OnMouseWheeled(d)
+            orbit.dist = math.Clamp(orbit.dist - d * 5, 15, 200)
+            orbit.on = true
+            return true
+        end
+        -- Zoom: distance from the hand (the wheel on the pad moves it too).
+        local zoom = list:Add("DNumSlider")
+        zoom:Dock(TOP)
+        zoom:DockMargin(4, 4, 4, 1)
+        zoom:SetText("Zoom (distance)")
+        zoom:SetMinMax(15, 200)
+        zoom:SetDecimals(0)
+        zoom:SetValue(orbit.dist)
+        function zoom:OnValueChanged(v)
+            orbit.dist = math.Clamp(v, 15, 200)
+            orbit.on = true
+        end
+        function zoom:Think()
+            if not self:IsEditing() and math.abs(self:GetValue() - orbit.dist) > 0.5 then self:SetValue(orbit.dist) end
+        end
+        local off = list:Add("DCheckBoxLabel")
+        off:SetText("Orbit camera on")
+        off:Dock(TOP)
+        off:DockMargin(4, 4, 4, 2)
+        off:SetValue(orbit.on)
+        function off:OnChange(v) orbit.on = v end
+        function off:Think()
+            if self:GetChecked() ~= orbit.on then self:SetChecked(orbit.on) end
+        end
+    end
+
     -- rhylib_wm_editor: the third-person gun (PropWMPos / PropWMAng /
-    -- PropScale, from the right hand). Only your own view changes; look at
-    -- yourself in third person while tuning.
+    -- PropScale, from the right hand). Only your own view changes; the
+    -- orbit camera shows it from any side.
     local wmEditor
     concommand.Add("rhylib_wm_editor", function()
         if IsValid(wmEditor) then wmEditor:Remove() return end
@@ -1901,7 +2043,7 @@ if CLIENT then
         w.PropScale = w.PropScale or 1
         w.PropWMPos = Vector(w.PropWMPos:Unpack())
         w.PropWMAng = Angle(w.PropWMAng:Unpack())
-        local f, label, field = editorFrame("Third person: " .. w:GetClass(), 360, w)
+        local f, label, field = editorFrame("Third person: " .. w:GetClass(), 560, w)
         wmEditor = f
         local R = 30
         label("Gun from the right hand")
@@ -1916,6 +2058,7 @@ if CLIENT then
             return string.format("SWEP.PropScale = %g\nSWEP.PropWMPos = Vector(%g, %g, %g)\nSWEP.PropWMAng = Angle(%g, %g, %g)",
                 w.PropScale, w.PropWMPos.x, w.PropWMPos.y, w.PropWMPos.z, w.PropWMAng.p, w.PropWMAng.y, w.PropWMAng.r)
         end)
+        addOrbit(f, label)
     end)
 
     -- rhylib_extra_editor: extra props (a riot shield) in first and third
@@ -1937,6 +2080,7 @@ if CLIENT then
         w.WorldBoneMods = w.WorldBoneMods and table.Copy(w.WorldBoneMods) or nil
         local f, label, field = editorFrame("Extras: " .. w:GetClass(), 700, w)
         extraEditor = f
+        addOrbit(f, label, true)   -- (off at first: this editor does first person too)
         local R, B = 60, 120
         local function posAng(t, posKey, angKey, what)
             t[posKey] = Vector((t[posKey] or Vector()):Unpack())

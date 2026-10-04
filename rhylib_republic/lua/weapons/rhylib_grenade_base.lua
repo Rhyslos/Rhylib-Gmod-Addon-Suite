@@ -64,8 +64,8 @@ SWEP.PropColor = nil         -- tint of the grenade model
 
 SWEP.PropModel = "models/jajoff/sps/cgiweapons/tc13j/thermalgrenade.mdl"
 SWEP.PropScale = 0.75                  -- third person size
-SWEP.PropVMScale = 1                   -- first person size
-SWEP.PropVMPos = Vector(0, 0, 0)       -- first person: from the viewmodel's grenade bone
+SWEP.PropVMScale = 1                   -- first person size (owner-tuned)
+SWEP.PropVMPos = Vector(-10.6, -5.1, -5.6)   -- first person: from the viewmodel's grenade bone
 SWEP.PropVMAng = Angle(0, 0, 0)
 SWEP.PropWMPos = Vector(-5, -1, -5)    -- third person: forward, right, up from the right hand
 SWEP.PropWMAng = Angle(0, 0, 0)

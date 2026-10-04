@@ -37,8 +37,8 @@ SWEP.PropModel = "models/jajoff/sps/cgiweapons/tc13j/dc15s.mdl"
 SWEP.PropScale = 1
 SWEP.PropVMPos = Vector(18, 7, -8)     -- forward, right, up (first person)
 SWEP.PropVMAng = Angle(0, 0, 0)        -- pitch, yaw, roll
-SWEP.PropWMPos = Vector(5, 1, -3)      -- forward, right, up from the right hand
-SWEP.PropWMAng = Angle(-10, 0, 180)
+SWEP.PropWMPos = Vector(-7, 2.5, 0)      -- forward, right, up from the right hand
+SWEP.PropWMAng = Angle(-12, 0, 180)
 SWEP.PropMuzzle = Vector(20, 0, 2)     -- muzzle in the prop's own coordinates
 
 SWEP.Primary = {

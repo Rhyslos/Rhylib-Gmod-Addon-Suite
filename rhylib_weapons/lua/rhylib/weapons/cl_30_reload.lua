@@ -31,7 +31,7 @@ local function activeRhylibWeapon()
     local ply = LocalPlayer()
     if not IsValid(ply) or not ply:Alive() then return nil end
     local wep = ply:GetActiveWeapon()
-    if IsValid(wep) and wep.IsRhylib then return wep end
+    if IsValid(wep) and wep.IsRhylib and not wep.ToolGun then return wep end   -- (the toolgun's R opens its list)
     return nil
 end
 

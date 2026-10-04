@@ -44,8 +44,8 @@ SWEP.PropModel = "models/jajoff/sps/cgiweapons/tc13j/dp23.mdl"
 SWEP.PropScale = 0.9
 SWEP.PropVMPos = Vector(18, 7, -8)     -- floating fallback: forward, right, up
 SWEP.PropVMAng = Angle(0, 0, 0)
-SWEP.PropWMPos = Vector(-6, 2.2, 0)    -- forward, right, up from the right hand
-SWEP.PropWMAng = Angle(-13, 0, 180)
+SWEP.PropWMPos = Vector(-6.7, 2.2, 0)    -- forward, right, up from the right hand
+SWEP.PropWMAng = Angle(-12, 0, 180)
 SWEP.PropMuzzle = Vector(24, 0, 2)     -- muzzle in the prop's own coordinates
 
 SWEP.Primary = {
