@@ -1,10 +1,14 @@
 --[[
     B1 battle droid: a NextBot with an E-5. See rhylib/droids/sh_00_config.lua.
+    Also the base of the other droids (ENT.DroidKind picks a row of D.KINDS:
+    rhylib_b2, rhylib_b1_training, rhylib_b2_training).
 
     Behaviour (one coroutine): look for a target a few times a second;
     with one, turn to it, wait the reaction time, then fire short bursts
-    with pauses, advancing now and then if far. When it loses sight it goes
-    to where it last saw the target, then wanders near home.
+    with pauses, advancing now and then if far. B1s may throw a grenade
+    where a target just ducked out of sight; B2s lob a wrist rocket high
+    over cover now and then. When it loses sight it goes to where it last
+    saw the target, then wanders near home.
 ]]
 
 AddCSLuaFile()
@@ -13,9 +17,10 @@ ENT.Base = "base_nextbot"
 ENT.Type = "nextbot"
 ENT.PrintName = "B1 battle droid"
 ENT.Category = "Rhylib Droids"
-ENT.Spawnable = false   -- spawned from the NPCs tab (list "NPC")
+ENT.Spawnable = false   -- spawned from the NPCs tab (list "NPC") or the toolgun
 ENT.AdminOnly = true
 ENT.IsRhylibDroid = true
+ENT.DroidKind = "b1"
 
 -- Animations: the first activity the model has, from player-model sets
 -- (ACT_HL2MP_*) to NPC sets. Worked out once per model (anims[model]).
@@ -24,6 +29,7 @@ local CHOICES = {
     walk = { ACT_HL2MP_WALK_AR2, ACT_HL2MP_WALK_SMG1, ACT_WALK_AIM_RIFLE, ACT_WALK_RIFLE, ACT_WALK },
     run = { ACT_HL2MP_RUN_AR2, ACT_HL2MP_RUN_SMG1, ACT_RUN_AIM_RIFLE, ACT_RUN_RIFLE, ACT_RUN },
     shoot = { ACT_HL2MP_GESTURE_RANGE_ATTACK_AR2, ACT_HL2MP_GESTURE_RANGE_ATTACK_SMG1, ACT_GESTURE_RANGE_ATTACK_SMG1, ACT_GESTURE_RANGE_ATTACK_AR2 },
+    throw = { ACT_HL2MP_GESTURE_RANGE_ATTACK_GRENADE, ACT_GESTURE_RANGE_ATTACK_THROW },
 }
 local anims = {}
 
@@ -58,9 +64,16 @@ end
 local EYE = Vector(0, 0, 62)
 local ADVANCE_DIST = 1400     -- further than this: move closer between bursts
 
+function ENT:Kind()
+    return Rhylib.Droids.KINDS[self.DroidKind] or Rhylib.Droids.KINDS.b1
+end
+
 function ENT:Initialize()
     local D = Rhylib.Droids
-    self:SetModel(D.B1_MODEL)
+    local k = self:Kind()
+    -- (a model that isn't installed: the B1's)
+    self:SetModel(util.IsValidModel(k.model) and k.model or D.B1_MODEL)
+    self.Training = k.training
     if CLIENT then return end
 
     -- Over the cap: don't add another.
@@ -70,16 +83,18 @@ function ENT:Initialize()
     end
     D.active[self] = true
 
-    self:SetHealth(D.Cfg("b1Health"))
-    self:SetMaxHealth(D.Cfg("b1Health"))
-    self:SetCollisionBounds(Vector(-13, -13, 0), Vector(13, 13, 72))
-    self.loco:SetDesiredSpeed(D.Cfg("b1Speed"))
+    self:SetHealth(D.Cfg(k.health))
+    self:SetMaxHealth(D.Cfg(k.health))
+    self:SetCollisionBounds(k.big and Vector(-16, -16, 0) or Vector(-13, -13, 0), k.big and Vector(16, 16, 84) or Vector(13, 13, 72))
+    self.loco:SetDesiredSpeed(D.Cfg(k.speed))
     self.loco:SetAcceleration(500)
     self.loco:SetDeceleration(800)
     self.loco:SetStepHeight(18)
     self.loco:SetJumpHeight(40)
     self.home = self:GetPos()
     self.nextLook = 0
+    self.nextNade = CurTime() + math.Rand(3, 8)
+    self.nextRocket = CurTime() + math.Rand(2, 5)
     self.anims = resolveAnims(self)
     self:StartActivity(self.anims.idle)
 end
@@ -98,8 +113,12 @@ if SERVER then
     local tr = {}
     local trData = { mask = MASK_SHOT, output = tr }
 
+    function ENT:Eye()
+        return self:GetPos() + (self:Kind().big and Vector(0, 0, 74) or EYE)
+    end
+
     function ENT:CanSee(t)
-        trData.start = self:GetPos() + EYE
+        trData.start = self:Eye()
         trData.endpos = t:EyePos()
         trData.filter = self
         util.TraceLine(trData)
@@ -111,7 +130,8 @@ if SERVER then
         local now = CurTime()
         if now < self.nextLook then return self.target end
         self.nextLook = now + 0.3 + math.Rand(0, 0.1)   -- spread droids over ticks
-        local range = D.Cfg("b1Range")
+        local k = self:Kind()
+        local range = D.Cfg(k.range)
         local pos = self:GetPos()
         local best, bestD
         for _, p in ipairs(D.Targets()) do
@@ -121,7 +141,7 @@ if SERVER then
             end
         end
         if best then
-            if self.target ~= best then self.reactUntil = now + D.Cfg("b1Reaction") * math.Rand(0.8, 1.3) end
+            if self.target ~= best then self.reactUntil = now + D.Cfg(k.reaction) * math.Rand(0.8, 1.3) end
             self.target = best
             self.lastSeen = best:GetPos()
             self.lastSeenAt = now
@@ -142,14 +162,15 @@ if SERVER then
     end
 
     function ENT:OnKilled(dmg)
-        hook.Run("OnNPCKilled", self, dmg:GetAttacker(), dmg:GetInflictor())
+        -- Training droids give nothing (kill feed, skills, credits).
+        if not self.Training then hook.Run("OnNPCKilled", self, dmg:GetAttacker(), dmg:GetInflictor()) end
         local ed = EffectData()
         ed:SetOrigin(self:WorldSpaceCenter())
-        ed:SetMagnitude(2)
+        ed:SetMagnitude(self:Kind().big and 4 or 2)
         ed:SetScale(1)
         ed:SetRadius(4)
         util.Effect("Sparks", ed)
-        self:EmitSound("npc/turret_floor/die.wav", 75, math.random(95, 110))
+        self:EmitSound("npc/turret_floor/die.wav", 75, self:Kind().big and math.random(75, 85) or math.random(95, 110))
         self:BecomeRagdoll(dmg)   -- a client-side ragdoll (ai_serverragdolls 0)
     end
 
@@ -160,27 +181,114 @@ if SERVER then
     function ENT:Muzzle()
         local b = self:LookupBone("ValveBiped.Bip01_R_Hand")
         local pos = b and self:GetBonePosition(b)
-        if not pos then return self:GetPos() + EYE end
-        return pos + self:GetForward() * 18 + Vector(0, 0, 2)
+        if not pos then return self:Eye() end
+        return pos + self:GetForward() * (self:Kind().gun and 18 or 10) + Vector(0, 0, 2)
     end
 
     function ENT:FireAt(t)
         local Bolts = Rhylib.Weapons and Rhylib.Weapons.Bolts
         if not Bolts then return end
+        local k = self:Kind()
         local origin = self:Muzzle()
         local aim = t:WorldSpaceCenter() + Vector(0, 0, 8)   -- chest
         local dir = aim - origin
         dir:Normalize()
         -- Inaccuracy: base cone, worse against moving targets.
-        local cone = math.rad((D.Cfg("e5Spread") + t:GetVelocity():Length2D() * 0.006) * D.SuppressMult(self))
+        local cone = math.rad((D.Cfg(k.spread) + t:GetVelocity():Length2D() * 0.006) * D.SuppressMult(self))
         local a = math.Rand(0, math.pi * 2)
         local r = math.tan(cone * math.sqrt(math.Rand(0, 1)))
         local ang = dir:Angle()
         dir = dir + ang:Right() * math.cos(a) * r + ang:Up() * math.sin(a) * r
         dir:Normalize()
-        Bolts.Fire(self, D.E5(), origin, dir, D.Cfg("e5Damage"))
-        self:EmitSound(D.E5_SOUND, 80, math.random(108, 118), 0.8, CHAN_WEAPON)
+        local gun = D.Gun(self.DroidKind)
+        Bolts.Fire(self, gun, origin, dir, gun.Damage)
+        self:EmitSound(D.E5_SOUND, 80, k.big and math.random(90, 98) or math.random(108, 118), 0.8, CHAN_WEAPON)
         if self.anims.shoot then self:RestartGesture(self.anims.shoot, true, true) end
+    end
+
+    -- Launch velocity to land at `to` after `t` seconds (gravity g).
+    local function lob(from, to, t, g)
+        local v = (to - from) / t
+        v.z = v.z + 0.5 * g * t
+        return v
+    end
+
+    -- B1: a grenade at where the target was (they just went into cover).
+    function ENT:ThrowNade(pos)
+        local from = self:GetPos() + Vector(0, 0, 60) + self:GetForward() * 12
+        local dist = from:Distance(pos)
+        local g = math.abs(physenv.GetGravity().z)
+        local t = math.Clamp(dist / 450, 0.7, 1.6)
+        local n = ents.Create("rhylib_grenade")
+        if not IsValid(n) then return end
+        n:SetPos(from)
+        n.kind = "fuse"
+        n.fuse = 2.4
+        n.thrower = self
+        n.training = self.Training
+        n.Damage = D.Cfg("b1NadeDamage")
+        n.Radius = D.Cfg("b1NadeRadius")
+        n:SetOwner(self)
+        n:SetColor(self.Training and Color(255, 170, 60) or Color(255, 90, 80))
+        n:Spawn()
+        local phys = n:GetPhysicsObject()
+        if IsValid(phys) then
+            local miss = VectorRand() * dist * 0.06
+            miss.z = 0
+            phys:SetVelocity(lob(from, pos + miss, t, g) * 1.05)   -- (a little extra for air drag)
+            phys:AddAngleVelocity(VectorRand() * 400)
+        end
+        self:EmitSound("weapons/slam/throw.wav", 70, 90)
+        if self.anims.throw then self:RestartGesture(self.anims.throw, true, true) end
+        self.nextNade = CurTime() + D.Cfg("b1NadeCooldown") * math.Rand(0.8, 1.3)
+    end
+
+    -- B2: a wrist rocket lobbed high, landing near pos.
+    function ENT:FireRocket(pos, mover)
+        local from = self:GetPos() + Vector(0, 0, 80) + self:GetForward() * 10
+        local dist = from:Distance(pos)
+        local g = math.abs(physenv.GetGravity().z)
+        -- Lead a moving target a little; miss more at range.
+        if IsValid(mover) then pos = pos + mover:GetVelocity() * 0.4 end
+        local miss = VectorRand() * D.Cfg("b2RocketSpread") * dist / 1000
+        miss.z = 0
+        pos = pos + miss
+        -- High arc (apex = g t^2 / 8), flatter under a low ceiling.
+        local t = math.Clamp(dist / 650, 1.2, 3.0)
+        local apex = g * t * t / 8
+        local up = util.TraceLine({ start = from, endpos = from + Vector(0, 0, apex + 40), mask = MASK_SOLID_BRUSHONLY })
+        if up.Hit then t = math.Clamp(math.sqrt(math.max(up.HitPos.z - from.z - 40, 0) * 8 / g), 0.4, t) end
+        local r = ents.Create("rhylib_b2_rocket")
+        if not IsValid(r) then return end
+        r:SetPos(from)
+        r.vel = lob(from, pos, t, g)
+        r.owner = self
+        r.training = self.Training
+        r:SetOwner(self)
+        r:Spawn()
+        self:EmitSound("weapons/stinger_fire1.wav", 80, 115)
+        if self.anims.shoot then self:RestartGesture(self.anims.shoot, true, true) end
+        self.nextRocket = CurTime() + D.Cfg("b2RocketCooldown") * math.Rand(0.8, 1.3)
+    end
+
+    -- Something to throw at a target out of sight (where it was last seen).
+    function ENT:LobAtLastSeen()
+        local k = self:Kind()
+        local pos = self.lastSeen
+        if not pos or CurTime() - (self.lastSeenAt or 0) > 4 then return end
+        local d = pos:Distance(self:GetPos())
+        local now = CurTime()
+        if k.nades and now >= self.nextNade and d > 250 and d < 900 then
+            if math.random() < D.Cfg("b1NadeChance") then
+                self:Face(pos, 0.3)
+                self:ThrowNade(pos)
+            else
+                self.nextNade = now + 5
+            end
+        elseif k.rockets and now >= self.nextRocket and d > D.Cfg("b2RocketMin") and d < D.Cfg("b2RocketMax") then
+            self:Face(pos, 0.3)
+            self:FireRocket(pos)
+        end
     end
 
     --------------------------------------------------------------------------
@@ -215,26 +323,41 @@ if SERVER then
         end
     end
 
+    local function valid(t)
+        return IsValid(t) and t:Alive() and not t.rhylibDown and not t:GetNW2Bool("rhylib_simOut", false)
+    end
+
     function ENT:Engage()
+        local k = self:Kind()
         local t = self.target
         local bursts = 0
-        while IsValid(t) and t:Alive() and not t.rhylibDown do
+        while valid(t) do
             self:Look()
             if self.target ~= t then
                 t = self.target
                 if not IsValid(t) then break end
             end
-            if CurTime() - (self.lastSeenAt or 0) > 1.5 then break end  -- lost sight
+            if CurTime() - (self.lastSeenAt or 0) > 1.5 then   -- lost sight
+                self:LobAtLastSeen()
+                break
+            end
 
             self:Face(t:GetPos(), 0.15)
             if CurTime() >= (self.reactUntil or 0) then
-                -- A burst of 3-5.
-                local wait = 60 / math.max(D.Cfg("e5RPM"), 1)
-                for _ = 1, math.random(3, 5) do
-                    if not (IsValid(t) and t:Alive()) or not self:CanSee(t) then break end
-                    self.loco:FaceTowards(t:GetPos())
-                    self:FireAt(t)
-                    self:Face(t:GetPos(), wait)
+                local d = t:GetPos():Distance(self:GetPos())
+                -- B2: now and then a rocket instead of a burst.
+                if k.rockets and CurTime() >= self.nextRocket and d > D.Cfg("b2RocketMin") and d < D.Cfg("b2RocketMax") and math.random() < 0.5 then
+                    self:FireRocket(t:GetPos(), t)
+                    self:Face(t:GetPos(), 0.6)
+                else
+                    -- A burst.
+                    local wait = 60 / math.max(D.Cfg(k.rpm), 1)
+                    for _ = 1, math.random(k.burst[1], k.burst[2]) do
+                        if not valid(t) or not self:CanSee(t) then break end
+                        self.loco:FaceTowards(t:GetPos())
+                        self:FireAt(t)
+                        self:Face(t:GetPos(), wait)
+                    end
                 end
                 bursts = bursts + 1
                 self:Face(IsValid(t) and t:GetPos() or self:GetPos(), math.Rand(0.6, 1.3))
@@ -283,7 +406,7 @@ if SERVER then
         -- Aim the gun at the target.
         local t = self.target
         if IsValid(t) then
-            local ang = (t:WorldSpaceCenter() - (self:GetPos() + EYE)):Angle()
+            local ang = (t:WorldSpaceCenter() - self:Eye()):Angle()
             self:SetPoseParameter("aim_yaw", math.Clamp(math.NormalizeAngle(ang.y - self:GetAngles().y), -60, 60))
             self:SetPoseParameter("aim_pitch", math.Clamp(math.NormalizeAngle(ang.p), -50, 50))
         else
@@ -296,8 +419,8 @@ if SERVER then
 end
 
 if CLIENT then
-    -- One shared E-5 model, moved to each droid's hand when drawn.
-    local gun
+    -- One shared gun model per kind, moved to each droid's hand when drawn.
+    local guns = {}
     local handBone = {}
     local POS, ANG = Vector(5, 1, -3), Angle(-10, 0, 180)   -- like the clone guns
 
@@ -312,10 +435,14 @@ if CLIENT then
 
     function ENT:Draw()
         self:DrawModel()
+        local mdlName = self:Kind().gun
+        if not mdlName then return end   -- (B2: wrist blasters are part of the model)
+        local gun = guns[mdlName]
         if not IsValid(gun) then
-            gun = ClientsideModel(Rhylib.Droids.E5_MODEL, RENDERGROUP_OPAQUE)
+            gun = ClientsideModel(mdlName, RENDERGROUP_OPAQUE)
             if not IsValid(gun) then return end
             gun:SetNoDraw(true)
+            guns[mdlName] = gun
         end
         local mdl = self:GetModel()
         local b = handBone[mdl]

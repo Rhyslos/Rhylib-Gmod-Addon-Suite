@@ -16,7 +16,8 @@ function D.Count()
     return n
 end
 
--- Living players droids may shoot: not noclipping, spectating or downed.
+-- Living players droids may shoot: not noclipping, spectating, downed or
+-- eliminated in a simulation.
 local targets, targetsAt = {}, 0
 function D.Targets()
     local now = CurTime()
@@ -25,7 +26,8 @@ function D.Targets()
     targets = {}
     for _, p in ipairs(player.GetAll()) do
         if p:Alive() and p:GetMoveType() ~= MOVETYPE_NOCLIP and p:GetObserverMode() == OBS_MODE_NONE
-            and not p.rhylibDown and not p:IsFlagSet(FL_NOTARGET) then
+            and not p.rhylibDown and not p:IsFlagSet(FL_NOTARGET)
+            and not p:GetNW2Bool("rhylib_simOut", false) then   -- (eliminated in training)
             targets[#targets + 1] = p
         end
     end

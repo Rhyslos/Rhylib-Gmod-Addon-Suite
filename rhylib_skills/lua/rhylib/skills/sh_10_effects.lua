@@ -99,6 +99,17 @@ local function cfg(k) return Config.Get("skills", k) end
 K.Z6 = "rhylib_z6"
 K.DC15X = "rhylib_dc15x"
 K.DP24 = "rhylib_dp24"
+
+-- The gun a weapon counts as for skills (training copies count as the real one).
+function K.GunClass(wep)
+    return wep.TrainingOf or wep:GetClass()
+end
+
+-- Same for an item id.
+function K.ItemGun(id)
+    local w = weapons.GetStored(id)
+    return w and w.TrainingOf or id
+end
 K.PISTOLS = { rhylib_dc17 = true }
 
 local function isPly(p) return IsValid(p) and p:IsPlayer() end
@@ -127,7 +138,7 @@ function K.SpreadMult(ply, wep)
     local set = K.Set(ply)
     if next(set) == nil then return 1 end
     local m = 1
-    local class = wep:GetClass()
+    local class = K.GunClass(wep)
     local steady = class == K.Z6 and set.steady_barrels and sprinting(ply, wep)
     if steady then m = m * cfg("steadySpread") end
     if set.run_gun and not steady and sprinting(ply, wep) then m = m * cfg("runGunSpread") end
@@ -144,7 +155,7 @@ end
 function K.RecoilMult(ply, wep)
     if not isPly(ply) then return 1 end
     local m = 1
-    if wep:GetClass() == K.Z6 then
+    if K.GunClass(wep) == K.Z6 then
         if K.Has(ply, "steady_barrels") and sprinting(ply, wep) then m = m * cfg("steadyRecoil") end
         if K.Has(ply, "planted") and ply:Crouching() then m = m * cfg("plantedMult") end
     end
@@ -174,15 +185,15 @@ function K.MagAllowed(ply, wep, magId)
 end
 
 function K.PelletConeMult(ply, wep)
-    if wep:GetClass() == K.DP24 and isPly(ply) and K.Has(ply, "shotgun_drills") then return cfg("shotgunCone") end
+    if K.GunClass(wep) == K.DP24 and isPly(ply) and K.Has(ply, "shotgun_drills") then return cfg("shotgunCone") end
     return 1
 end
 
 function K.FireRateMult(ply, wep, mode)
     if not isPly(ply) then return 1 end
     local m = 1
-    if wep:GetClass() == K.DC15X and K.Has(ply, "bolt_drills") then m = m * cfg("boltDrillsRate") end
-    if wep:GetClass() == "rhylib_dc15s" and wep.FireRate and K.Has(ply, "rapid_fire") then
+    if K.GunClass(wep) == K.DC15X and K.Has(ply, "bolt_drills") then m = m * cfg("boltDrillsRate") end
+    if K.GunClass(wep) == "rhylib_dc15s" and wep.FireRate and K.Has(ply, "rapid_fire") then
         m = m * cfg("rapidFireRPM") / wep.FireRate
     end
     if mode == "dual" then m = m * cfg("dualRate") end
@@ -202,6 +213,8 @@ end
 
 function K.MagBonus(ply, magId)
     if not isPly(ply) then return 0 end
+    local W = Rhylib.Weapons
+    if W and W.BaseMag then magId = W.BaseMag(magId) end   -- (training copies count too)
     if magId == "mag_medium" and K.Has(ply, "ext_mags") then return cfg("extMagBonus") end
     if magId == "mag_small" and K.Has(ply, "light_mags") then return cfg("lightMagBonus") end
     return 0
@@ -213,7 +226,7 @@ function K.CellMult(ply)
 end
 
 function K.SpinMoveMult(ply, wep, base)
-    if wep:GetClass() == K.Z6 and isPly(ply) and K.Has(ply, "gun_runner") then
+    if K.GunClass(wep) == K.Z6 and isPly(ply) and K.Has(ply, "gun_runner") then
         return math.max(base, cfg("gunRunnerSpin"))
     end
     return base
@@ -252,8 +265,8 @@ function K.AdjustWeight(ply, state, weight, cap)
                     if def and def.weight and def.weapon then
                         -- The lightest that applies (they don't stack).
                         local mult = 1
-                        if set.gun_runner and o.id == K.Z6 then mult = math.min(mult, cfg("gunRunnerWeight")) end
-                        if set.light_frame and o.id == K.DC15X then mult = math.min(mult, cfg("lightFrameWeight")) end
+                        if set.gun_runner and K.ItemGun(o.id) == K.Z6 then mult = math.min(mult, cfg("gunRunnerWeight")) end
+                        if set.light_frame and K.ItemGun(o.id) == K.DC15X then mult = math.min(mult, cfg("lightFrameWeight")) end
                         if set.shotgun_drills and def.w <= 4 and isGun(def.weapon) then mult = math.min(mult, cfg("sidearmWeight")) end
                         -- (backpack contents count at 0.7 in Items.Weight)
                         local share = cid == Items.BACK and 0.7 or 1

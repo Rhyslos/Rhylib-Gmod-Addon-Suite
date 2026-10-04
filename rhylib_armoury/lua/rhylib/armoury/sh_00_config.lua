@@ -52,13 +52,17 @@ A.CLASSES = {
     rhylib_spec_weapons = true,
     rhylib_spec_gear = true,
     rhylib_gear_cabinet = true,
+    rhylib_training_armoury = true,
+    rhylib_training_ammo = true,
 }
 A.CRATES = { "rhylib_crate_small", "rhylib_crate_medium", "rhylib_crate_large", "rhylib_med_crate" }
 
+A.TRAINING_AMMO_STOCK = { "mag_small_t", "mag_medium_t", "mag_large_t", "cell", "rocket_t" }
 A.AMMO_STOCK = { "mag_small", "mag_medium", "mag_large", "cell", "rocket", "grapple", "rhylib_thermal", "rhylib_droidpopper", "rhylib_ammo_pack" }
 
 local Config = Rhylib.Config
 Config.Register("armoury", "weapons", {}, "Weapon classes in the armoury, in order. Empty = every Rhylib weapon")
+Config.Register("armoury", "trainingWeapons", {}, "Weapon classes in the training armoury, in order. Empty = every training weapon")
 Config.Register("armoury", "gearStock", { "backpack", "jetpack" }, "Gear cabinet: equipment it hands out (endless, issued)")
 Config.Register("armoury", "lockerW", 6, "Personal locker width in cells")
 Config.Register("armoury", "lockerH", 6, "Personal locker height in cells")

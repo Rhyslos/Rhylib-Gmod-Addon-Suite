@@ -118,11 +118,11 @@ if SERVER then
         local POOL = cfg("ammoPackPool")
         local pool = (pack.data and pack.data.fill or 1) * POOL
         local spent = 0
-        local function cost(id) return id == "mag_large" and cfg("ammoPackLargeCost") or 1 end
+        local function cost(id) return W.BaseMag(id) == "mag_large" and cfg("ammoPackLargeCost") or 1 end
         local function left(id) return math.floor((pool - spent) / cost(id)) end
         local takes = {}
         for _, id in ipairs(gun.Mags) do
-            if id ~= "rocket" and W.MagTypes[id] then takes[id] = true end
+            if W.BaseMag(id) ~= "rocket" and W.MagTypes[id] then takes[id] = true end
         end
 
         -- 1. The loaded magazine.

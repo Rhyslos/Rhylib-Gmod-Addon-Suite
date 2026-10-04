@@ -8,8 +8,14 @@
 local BOLT = Material("trails/electric")
 local GLOW = Material("sprites/light_glow02_add")
 local RING = Material("effects/select_ring")
-local BLUE = Color(110, 180, 255)
-local WHITE = Color(220, 240, 255)
+-- Colour by EffectData:SetColor: 0 blue (droid popper), 1 purple (B2
+-- rocket), 2 orange-yellow (training).
+local PALETTE = {
+    [0] = { Color(110, 180, 255), Color(220, 240, 255) },
+    [1] = { Color(190, 90, 255), Color(240, 210, 255) },
+    [2] = { Color(255, 175, 50), Color(255, 240, 200) },
+}
+local BLUE, WHITE = PALETTE[0][1], PALETTE[0][2]
 local lightN = 0   -- (effects have no entity index: own light slots)
 
 local function arc(a, b, width, col)
@@ -31,6 +37,8 @@ function EFFECT:Init(data)
     self.kind = data:GetFlags()
     self.radius = math.max(data:GetRadius(), 60)
     self.start = CurTime()
+    local pal = PALETTE[data:GetColor()] or PALETTE[0]
+    self.col, self.white = pal[1], pal[2]
     self.life = self.kind == 0 and 0.7 or 1.0
     self.arcs = {}
     self.nextArcs = 0
@@ -41,7 +49,7 @@ function EFFECT:Init(data)
         local d = DynamicLight(0x7000 + lightN)
         if d then
             d.pos = self.pos
-            d.r, d.g, d.b = BLUE.r, BLUE.g, BLUE.b
+            d.r, d.g, d.b = self.col.r, self.col.g, self.col.b
             d.brightness = 5
             d.size = self.radius * 1.4
             d.decay = self.radius * 2
@@ -74,6 +82,7 @@ function EFFECT:Think()
 end
 
 function EFFECT:Render()
+    local BLUE, WHITE = self.col or BLUE, self.white or WHITE
     local f = (CurTime() - self.start) / self.life
     local fade = math.Clamp(1 - f, 0, 1)
     if self.kind == 0 then

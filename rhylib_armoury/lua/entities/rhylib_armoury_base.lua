@@ -33,6 +33,7 @@ function ENT:Initialize()
     self:SetUseType(SIMPLE_USE)
     local phys = self:GetPhysicsObject()
     if IsValid(phys) then phys:EnableMotion(false) end  -- stays put; admins can still physgun it
+    if self.Tint then self:SetColor(self.Tint) end   -- (training cabinets: yellowish)
 end
 
 if SERVER then

@@ -22,9 +22,10 @@ local function Inv() return Rhylib.Inventory end
 -- Storage for each kind
 --------------------------------------------------------------------------
 
--- Every Rhylib gun, biggest first so the shelf packs neatly (or the config list).
-local function weaponStock()
-    local list = Config.Get("armoury", "weapons")
+-- Every Rhylib gun, biggest first so the shelf packs neatly (or the config
+-- list). training: the training copies instead (rhylib_training).
+local function weaponStock(training)
+    local list = Config.Get("armoury", training and "trainingWeapons" or "weapons")
     if istable(list) and #list > 0 then return list end
     local Items = Rhylib.Items
     Items.EnsureReady()
@@ -42,7 +43,9 @@ local function weaponStock()
     for id, def in pairs(Items.defs) do
         if def.weapon and not roleItem[id] then
             local swep = weapons.Get(def.weapon)
-            if swep and swep.IsRhylib and swep.Spawnable then out[#out + 1] = id end
+            if swep and swep.IsRhylib and swep.Spawnable and not swep.NoArmoury and (swep.Training and true or false) == (training and true or false) then
+                out[#out + 1] = id
+            end
         end
     end
     table.sort(out, function(a, b)
@@ -53,9 +56,9 @@ local function weaponStock()
     return out
 end
 
-local function ammoStock()
+local function ammoStock(training)
     local out = {}
-    for _, id in ipairs(A.AMMO_STOCK) do
+    for _, id in ipairs(training and A.TRAINING_AMMO_STOCK or A.AMMO_STOCK) do
         if Rhylib.Items.defs[id] then out[#out + 1] = id end
     end
     return out
@@ -148,6 +151,10 @@ function A.Setup(ent)
         return I.CreateStorage(ent, { kind = "depot", w = 6, title = "Weapons armoury", stock = weaponStock() })
     elseif kind == "ammo" then
         return I.CreateStorage(ent, { kind = "depot", w = 6, title = "Ammo cabinet", stock = ammoStock() })
+    elseif kind == "trainingArmoury" then
+        return I.CreateStorage(ent, { kind = "depot", w = 6, title = "Training armoury", stock = weaponStock(true) })
+    elseif kind == "trainingAmmo" then
+        return I.CreateStorage(ent, { kind = "depot", w = 6, title = "Training ammo", stock = ammoStock(true) })
     elseif kind == "gear" then
         return I.CreateStorage(ent, { kind = "depot", w = 6, title = "Gear cabinet", stock = gearStock() })
     elseif kind == "spec" then

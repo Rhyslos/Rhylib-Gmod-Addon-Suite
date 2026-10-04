@@ -227,7 +227,7 @@ function K.DamageMult(ply, bolt, ent, tr, group)
         m = m * (1 + (K.Cfg("pointBlankMult") - 1) * f)
     end
     if set.headhunter and group == HITGROUP_HEAD then m = m * K.Cfg("headhunterMult") end
-    if set.shotgun_drills and IsValid(bolt.weapon) and bolt.weapon:GetClass() == K.DP24 then
+    if set.shotgun_drills and IsValid(bolt.weapon) and K.GunClass(bolt.weapon) == K.DP24 then
         m = m * K.Cfg("shotgunDamage")
     end
     if set.crits and math.random() < K.Cfg("critChance") then
@@ -290,7 +290,7 @@ end, 95)
 Rhylib.Hook.Add("EntityTakeDamage", "skills.suppress", function(ent, dmg)
     if not ent.IsRhylibDroid then return end
     local att, inf = dmg:GetAttacker(), dmg:GetInflictor()
-    if not (IsValid(att) and att:IsPlayer() and IsValid(inf) and inf:GetClass() == K.Z6 and K.Has(att, "suppression")) then return end
+    if not (IsValid(att) and att:IsPlayer() and IsValid(inf) and inf:IsWeapon() and K.GunClass(inf) == K.Z6 and K.Has(att, "suppression")) then return end
     local D = Rhylib.Droids
     if not (D and D.Suppress and D.active) then return end
     local now = CurTime()

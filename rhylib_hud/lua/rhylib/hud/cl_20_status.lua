@@ -16,6 +16,8 @@ Rhylib.Hook.Add("HUDPaint", "hud.status", function()
     local C = HUD.Colors
 
     local hp, maxHp = math.max(ply:Health(), 0), math.max(ply:GetMaxHealth(), 1)
+    local simHp, simMax = HUD.SimHealth(ply)   -- (training gun in hand: sim health, yellow)
+    if simHp then hp, maxHp = simHp, simMax end
     local ar = ply:Armor()
     local maxAr = ply.GetMaxArmor and ply:GetMaxArmor() or 100
     if maxAr <= 0 then maxAr = 100 end
@@ -39,7 +41,9 @@ Rhylib.Hook.Add("HUDPaint", "hud.status", function()
     end
 
     local low = hp / maxHp < 0.3
-    row(hp, shown.hp / maxHp, low and C.healthLow or C.health, low and C.healthLow or C.text)
+    local hc, hl = C.health, C.healthLow
+    if simHp then hc, hl = C.sim, C.simLow end
+    row(hp, shown.hp / maxHp, low and hl or hc, low and hl or C.text)
     if ar > 0 then row(ar, shown.ar / maxAr, C.armor, C.text) end
 
     if darkrp then

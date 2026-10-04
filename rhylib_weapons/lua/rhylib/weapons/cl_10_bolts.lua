@@ -23,7 +23,12 @@ local STYLES = {
     [4] = { color = Color(255, 170, 80), length = 140, width = 9, glow = 40, life = 6, rocket = true },  -- rocket
     [5] = { color = Color(14, 14, 14), length = 0, width = 1.8, glow = 0, life = 0.6, hook = true },    -- grapple hook
     [6] = { color = Color(120, 200, 255), length = 0, width = 0, glow = 22, life = 1.2, ring = 26 },     -- stun ring
+    [7] = { color = Color(255, 225, 60), length = 70, width = 5, glow = 14, life = 1.2 },   -- training (yellow)
+    [8] = { color = Color(255, 160, 40), length = 70, width = 5, glow = 14, life = 1.2 },   -- training droids (orange-yellow)
+    [9] = { color = Color(255, 225, 60), length = 140, width = 9, glow = 40, life = 6, rocket = true },  -- training rocket
 }
+-- BoltColor numbers for other addons.
+Bolts.COLOR_TRAINING, Bolts.COLOR_TRAINING_ENEMY, Bolts.COLOR_TRAINING_ROCKET = 7, 8, 9
 local COL_HOOK = Color(58, 60, 62)
 local HOOK_MINS, HOOK_MAXS = Vector(-6.75, -1.5, -1.5), Vector(2.25, 1.5, 1.5)
 

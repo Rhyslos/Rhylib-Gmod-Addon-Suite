@@ -8,6 +8,8 @@ HUD.Colors = {
     track = Color(255, 255, 255, 28),
     health = Color(214, 88, 76),
     healthLow = Color(255, 60, 50),
+    sim = Color(240, 200, 60),
+    simLow = Color(255, 170, 40),
     armor = Color(90, 150, 255),
     fuel = Color(239, 159, 39),
     text = UI.Colors.text,
@@ -15,6 +17,16 @@ HUD.Colors = {
     accent = UI.Colors.accent,
     bad = UI.Colors.bad,
 }
+
+-- Holding a training gun (rhylib_training): the health readouts show sim
+-- health in yellow instead. Returns hp, max, or nil (normal health).
+function HUD.SimHealth(ply)
+    local T = Rhylib.Training
+    if not T then return nil end
+    local w = ply:GetActiveWeapon()
+    if not (IsValid(w) and w.Training) then return nil end
+    return T.Health(ply), math.max(T.Cfg("simHealth"), 1)
+end
 
 function HUD.Scale()
     return ScrH() / 1080

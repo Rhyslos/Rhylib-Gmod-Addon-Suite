@@ -29,6 +29,8 @@ local COL_ARMOR_FILL = Color(60, 140, 255, 110)
 local COL_ARMOR_LINE = Color(90, 160, 255, 170)
 local COL_HEALTH_FILL = Color(230, 60, 50, 110)
 local COL_HEALTH_LINE = Color(240, 90, 80, 170)
+local COL_SIM_FILL = Color(240, 200, 50, 110)    -- (sim health, training guns)
+local COL_SIM_LINE = Color(250, 215, 90, 170)
 local COL_EMPTY_ALPHA = 45
 
 -- Shape, as shares of the screen (0..1). Mirrored left/right.
@@ -215,7 +217,12 @@ Rhylib.Hook.Add("HUDPaint", "hud.visor", function()
     local maxAr = ply.GetMaxArmor and ply:GetMaxArmor() or 100
     if maxAr <= 0 then maxAr = 100 end
     drawBars(cache.bars[-1], ply:Armor() / maxAr, COL_ARMOR_FILL, COL_ARMOR_LINE)
-    drawBars(cache.bars[1], math.max(ply:Health(), 0) / math.max(ply:GetMaxHealth(), 1), COL_HEALTH_FILL, COL_HEALTH_LINE)
+    local simHp, simMax = HUD.SimHealth(ply)
+    if simHp then
+        drawBars(cache.bars[1], simHp / simMax, COL_SIM_FILL, COL_SIM_LINE)
+    else
+        drawBars(cache.bars[1], math.max(ply:Health(), 0) / math.max(ply:GetMaxHealth(), 1), COL_HEALTH_FILL, COL_HEALTH_LINE)
+    end
 end, -10)
 
 --------------------------------------------------------------------------

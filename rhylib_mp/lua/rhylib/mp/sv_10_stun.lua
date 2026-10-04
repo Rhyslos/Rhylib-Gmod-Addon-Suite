@@ -37,6 +37,8 @@ end
 function MP.Stun(ply, by)
     if not IsValid(ply) or not ply:Alive() then return end
     if ply.rhylibDown then return end                         -- already downed (rhylib_medical)
+    local L = Rhylib.Lying
+    if L and L.Knocked and L.Knocked(ply) then return end     -- knocked down / out of a simulation (rhylib_core)
     if MP.IsStunned(ply) then return end                      -- no chain stuns
     if (ply.rhylibStunImmune or 0) > CurTime() then return end
     if hook.Run("Rhylib.CanStun", ply, by) == false then return end

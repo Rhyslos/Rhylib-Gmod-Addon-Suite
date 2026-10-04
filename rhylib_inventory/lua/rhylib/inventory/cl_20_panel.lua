@@ -43,6 +43,7 @@ local CATEGORY_COLORS = {
     medical = { body = Color(25, 40, 31), stripe = Color(96, 186, 126) },
     gear = { body = Color(38, 35, 30), stripe = Color(168, 146, 112) },
     misc = { body = Color(34, 34, 33), stripe = Color(136, 136, 130) },
+    training = { body = Color(44, 40, 20), stripe = Color(236, 200, 60) },   -- (rhylib_training gear)
 }
 local COL_BG = Color(14, 16, 15, 242)
 local COL_HEADER = Color(22, 25, 23, 255)

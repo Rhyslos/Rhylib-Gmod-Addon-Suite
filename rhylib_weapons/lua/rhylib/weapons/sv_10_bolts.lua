@@ -65,6 +65,50 @@ local function trace(from, to, filter)
     return util.TraceLine(traceData)
 end
 
+--[[
+    Training blasts (rockets, grenades and droid rockets with training
+    ammo): no real damage. Players in range and in sight lose sim health
+    (hook Rhylib.TrainingHit, rhylib_training), training droids take
+    normal blast damage. Falloff like util.BlastDamage.
+]]
+local blastTr = {}
+local blastData = { mask = MASK_SOLID_BRUSHONLY, output = blastTr }
+function W.TrainingBlast(pos, radius, damage, attacker, inflictor)
+    attacker = IsValid(attacker) and attacker or game.GetWorld()
+    local marked = false
+    for _, e in ipairs(ents.FindInSphere(pos, radius)) do
+        local isPly = e:IsPlayer() and e:Alive()
+        local isDroid = e.IsRhylibDroid and e.Training and e:Health() > 0
+        if isPly or isDroid then
+            local c = isPly and e:EyePos() or e:WorldSpaceCenter()
+            blastData.start, blastData.endpos = pos, c
+            util.TraceLine(blastData)
+            if not blastTr.Hit then
+                local amount = damage * math.Clamp(1 - pos:Distance(c) / radius, 0, 1)
+                if amount >= 1 then
+                    if isPly then
+                        local out = hook.Run("Rhylib.TrainingHit", e, attacker, amount, inflictor)
+                        if attacker:IsPlayer() and e ~= attacker and out ~= false then
+                            hitBatch:Send(attacker, { kind = out == true and Bolts.HIT_KILL or Bolts.HIT_BODY })
+                            marked = true
+                        end
+                    else
+                        local d = DamageInfo()
+                        d:SetDamage(amount)
+                        d:SetDamageType(DMG_BLAST)
+                        d:SetAttacker(attacker)
+                        d:SetInflictor(IsValid(inflictor) and inflictor or attacker)
+                        d:SetDamagePosition(c)
+                        d:SetDamageForce((c - pos):GetNormalized() * amount * 300)
+                        e:TakeDamageInfo(d)
+                    end
+                end
+            end
+        end
+    end
+    return marked
+end
+
 -- Rockets: blast damage and an explosion where they hit.
 local function explode(bolt, pos, normal)
     local owner = bolt.owner
@@ -72,7 +116,11 @@ local function explode(bolt, pos, normal)
     local inflictor = IsValid(bolt.weapon) and bolt.weapon or attacker
     local ex = bolt.explosive
     local at = pos + normal * 4  -- just off the surface, so walls don't eat the blast
-    util.BlastDamage(inflictor, attacker, at, ex.radius, ex.damage)
+    if bolt.training then
+        W.TrainingBlast(at, ex.radius, ex.damage, attacker, inflictor)
+    else
+        util.BlastDamage(inflictor, attacker, at, ex.radius, ex.damage)
+    end
 
     local ed = EffectData()
     ed:SetOrigin(at)
@@ -80,6 +128,49 @@ local function explode(bolt, pos, normal)
     ed:SetMagnitude(1)
     ed:SetScale(1)
     util.Effect("Explosion", ed, true, true)
+end
+
+-- Hit group, also for models whose hitboxes are all "generic" (guessed
+-- from the hit position) and lying ragdolls.
+local function hitGroup(ent, rag, tr)
+    local L = Rhylib.Lying
+    if rag then return L.HitGroup(rag, tr.HitPos) end
+    local group = tr.HitGroup
+    if group == HITGROUP_GENERIC and (ent:IsPlayer() or ent:IsNextBot()) and Rhylib.HitGroupAt then
+        group = Rhylib.HitGroupAt(ent, tr.HitPos)
+    end
+    return group
+end
+
+local function groupMult(group)
+    if group == HITGROUP_HEAD then return Config.Get("weapons", "headMult") end
+    if LIMBS[group] then return Config.Get("weapons", "limbMult") end
+    return 1
+end
+
+-- Training bolts: players lose sim health only (rhylib_training answers
+-- Rhylib.TrainingHit; true = that eliminated them). Returns true when the
+-- hit is done, false for a training droid (normal damage).
+local function trainingHit(bolt, tr, ent, rag)
+    if ent.IsRhylibDroid then
+        if ent.Training then return false end
+        local fx = EffectData()
+        fx:SetOrigin(tr.HitPos)
+        fx:SetNormal(-bolt.dir)
+        util.Effect("MetalSpark", fx, true, true)
+        return true
+    end
+    if not ent:IsPlayer() or not ent:Alive() then return true end
+    local group = hitGroup(ent, rag, tr)
+    local owner = bolt.owner
+    local attacker = IsValid(owner) and owner or game.GetWorld()
+    local out = hook.Run("Rhylib.TrainingHit", ent, attacker, bolt.damage * groupMult(group), bolt.weapon, group)
+    if IsValid(owner) and owner:IsPlayer() and out ~= false then
+        local kind = group == HITGROUP_HEAD and Bolts.HIT_HEAD or Bolts.HIT_BODY
+        if out == true then kind = Bolts.HIT_KILL end
+        hitBatch:Send(owner, { kind = kind })
+    end
+    return true
 end
 
 local function applyHit(bolt, tr)
@@ -106,26 +197,15 @@ local function applyHit(bolt, tr)
         ent:EmitSound("physics/metal/metal_solid_impact_bullet" .. math.random(1, 4) .. ".wav", 70)
         return
     end
+    if bolt.training and trainingHit(bolt, tr, ent, rag) then return end
     -- Stun bolts (SWEP.Stun or the "stun" fire mode): no damage; rhylib_mp decides what a hit does.
     if bolt.stun then
         if ent:IsPlayer() then hook.Run("Rhylib.StunHit", ent, bolt.owner, bolt.weapon) end
         return
     end
 
-    -- Models whose hitboxes are all "generic": guess the part from the hit position.
-    local group = tr.HitGroup
-    if rag then
-        group = L.HitGroup(rag, tr.HitPos)
-    elseif group == HITGROUP_GENERIC and (ent:IsPlayer() or ent:IsNextBot()) and Rhylib.HitGroupAt then
-        group = Rhylib.HitGroupAt(ent, tr.HitPos)
-    end
-
-    local mult = 1
-    if group == HITGROUP_HEAD then
-        mult = Config.Get("weapons", "headMult")
-    elseif LIMBS[group] then
-        mult = Config.Get("weapons", "limbMult")
-    end
+    local group = hitGroup(ent, rag, tr)
+    local mult = groupMult(group)
 
     local owner = bolt.owner
     local attacker = IsValid(owner) and owner or game.GetWorld()
@@ -273,6 +353,7 @@ function Bolts.Fire(owner, weapon, origin, dir, damage, opts)
         die = CurTime() + (opts and opts.life or weapon.BoltLife or Config.Get("weapons", "boltLife")),
         explosive = weapon.Explosive,
         stun = weapon.Stun or (opts and opts.stun) or nil,
+        training = weapon.Training or (opts and opts.training) or nil,   -- (rhylib_training)
         onHit = opts and opts.onHit,
         onExpire = opts and opts.onExpire,
     }

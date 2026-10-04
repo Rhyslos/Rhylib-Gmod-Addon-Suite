@@ -32,6 +32,7 @@ function L.Is(ply)
     local Med, MP = Rhylib.Medical, Rhylib.MP
     if Med and Med.IsDown and Med.IsDown(ply) then return true end
     if MP and MP.IsStunned and MP.IsStunned(ply) then return true end
+    if ply:GetNW2Float("rhylib_knockEnd", 0) ~= 0 then return true end   -- (sh_61_knock.lua)
     return false
 end
 

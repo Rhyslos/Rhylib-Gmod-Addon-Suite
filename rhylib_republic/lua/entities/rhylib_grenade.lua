@@ -153,7 +153,13 @@ if SERVER then
             local ed = EffectData()
             ed:SetOrigin(pos)
             util.Effect("Explosion", ed, true, true)
-            util.BlastDamage(self, attacker, pos, self.Radius, self.Damage)
+            -- (training grenades, e.g. from training droids: sim health only)
+            local W = Rhylib.Weapons
+            if self.training and W and W.TrainingBlast then
+                W.TrainingBlast(pos, self.Radius, self.Damage, attacker, self)
+            else
+                util.BlastDamage(self, attacker, pos, self.Radius, self.Damage)
+            end
             util.ScreenShake(pos, 6, 120, 0.8, self.Radius * 2)
             util.Decal("Scorch", pos + Vector(0, 0, 8), pos - Vector(0, 0, 40), self)
         end

@@ -11,6 +11,10 @@ Config.Register("weapons", "shotRange", 6000, "Players further than this from a 
 Config.Register("weapons", "boltLife", 1.2, "Seconds before a bolt that hit nothing disappears")
 Config.Register("weapons", "headMult", 2, "Damage multiplier for head hits")
 Config.Register("weapons", "limbMult", 0.75, "Damage multiplier for arm and leg hits")
+Config.Register("weapons", "knockMin", 30, "Explosions: damage (before armour) that knocks a player down")
+Config.Register("weapons", "knockTime", 2, "Explosions: seconds a knocked-down player lies there")
+Config.Register("weapons", "knockPush", 260, "Explosions: how hard the body is thrown (units/s, more for bigger hits)")
+Config.Register("weapons", "knockDropChance", 0.1, "Explosions: chance a knocked-down player drops the gun in their hands (0-1)")
 
 Config.Register("weapons", "lowCellThreshold", 0.1, "Below this power cell charge (0-1), damage starts to drop")
 Config.Register("weapons", "lowCellMinDamage", 0.5, "Damage multiplier when the power cell is completely drained")
@@ -36,12 +40,32 @@ W.MagTypes = {
     mag_large  = { index = 3, name = "Large magazine",  short = "Large",  rounds = 250, w = 1, h = 3, stack = 1, weight = 2.0,  model = "models/items/boxbuckshot.mdl" },
     rocket     = { index = 4, name = "Rocket",          short = "Rocket", rounds = 1,   w = 1, h = 2, stack = 1, weight = 2.5,  model = "models/weapons/w_missile_closed.mdl" },
 }
+-- Training copies (rhylib_training): same sizes, yellow bolts that only
+-- hit "sim health". Training guns take only these; normal guns never do.
+W.TRAINING_SUFFIX = "_t"
+for id, m in pairs(table.Copy(W.MagTypes)) do
+    W.MagTypes[id .. W.TRAINING_SUFFIX] = {
+        index = m.index + 4, name = "Training " .. string.lower(m.name), short = "T-" .. m.short, rounds = m.rounds,
+        w = m.w, h = m.h, stack = m.stack, weight = m.weight, model = m.model, training = true, base = id,
+    }
+end
 W.MagByIndex = {}
 for id, m in pairs(W.MagTypes) do
     m.id = id
     m.ammo = "rhylib_" .. id  -- ammo type that mirrors the count for the HUD
     W.MagByIndex[m.index] = m
 end
+-- The normal type a magazine copies ("mag_small_t" -> "mag_small").
+function W.BaseMag(id)
+    local m = W.MagTypes[id]
+    return m and m.base or id
+end
+
+-- The training copy of a magazine type.
+function W.TrainingMag(id)
+    return W.MagTypes[id .. W.TRAINING_SUFFIX] and (id .. W.TRAINING_SUFFIX) or id
+end
+
 W.CELL = "cell"
 W.CELL_WEIGHT = 1.2
 
@@ -76,8 +100,9 @@ if Rhylib.Items then
             fill = true,
             rounds = m.rounds,
             weight = m.weight,
-            category = "ammo",
+            category = m.training and "training" or "ammo",
             model = m.model,
+            training = m.training,
             hand = true,   -- can be held from the hotbar and handed out (rhylib_hand)
         })
     end
