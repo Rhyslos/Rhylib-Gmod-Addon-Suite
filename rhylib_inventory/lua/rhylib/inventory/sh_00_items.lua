@@ -117,6 +117,9 @@ function Items.RegisterWeapons()
                     rounds = full.InvUses,
                     unit = full.InvUses and "uses" or nil,
                     carrySkill = full.CarrySkill,   -- (rhylib_skills: only players with it may carry it)
+                    -- Fits a holster: SWEP.Holster, or a small pistol.
+                    holster = full.Holster or (full.Holster == nil and full.HoldType == "pistol"
+                        and (full.InvW or 1) <= 2 and (full.InvH or 1) <= 1) or nil,
                 })
             end
         end
@@ -181,7 +184,7 @@ function Items.Weight(state)
                 local def = Items.defs[o.id]
                 if def then
                     total = total + (def.weight or 0) * o.count * mult
-                    if cid == Items.SLOT_BACK and def.carry then cap = cap + def.carry end
+                    if Items.WORN[cid] and def.carry then cap = cap + def.carry end
                 end
             end
         end
@@ -290,8 +293,15 @@ end
 --   2  backpack grid, only while a backpack is worn (size from the backpack)
 --   3  back slot: holds one item with slot = "back"
 --   5  cell rack: only power cells, opened by a skill (rhylib_skills)
+--   6  ammo belt (rhylib_skills)
+--   7  holster: one pistol, while a holster is worn
+--   8-13 worn gear slots (kama, pauldron, binoculars, rangefinder, helmet
+--      light, holster), one item each with that `slot` (rhylib_gear)
 --   4  an outside container the player has open (locker, armoury, crate),
 --      see sv_30_storage.lua. Its items have their own uids.
+-- Worn slots (the back slot and the gear slots) hold one item each; a worn
+-- item with `grid` adds a container (gridCid, default the backpack grid)
+-- and can only come off while that container is empty.
 -- Both server and client keep state shaped like { cont = { [id] = { w, h, items } } }
 -- so the same placement rules run on both.
 --------------------------------------------------------------------------
@@ -302,7 +312,41 @@ Items.SLOT_BACK = 3
 Items.EXT = 4
 Items.RACK = 5       -- cell rack (rhylib_skills Load bearer): power cells only
 Items.BELT = 6       -- ammo belt (rhylib_skills Ammo belt): no worn items, no 5-long guns
-Items.CONT_BITS = 3
+Items.HOLSTER = 7    -- one pistol (def.holster), while a holster is worn
+Items.CONT_BITS = 4
+
+-- Worn slots: [cid] = { slot = def.slot, title }. GEAR_SLOTS in display order.
+Items.WORN = {
+    [Items.SLOT_BACK] = { slot = "back", title = "Back" },
+    [8] = { slot = "kama", title = "Kama" },
+    [9] = { slot = "pauldron", title = "Pauldron" },
+    [10] = { slot = "binos", title = "Binoculars" },
+    [11] = { slot = "rangefinder", title = "Rangefinder" },
+    [12] = { slot = "light", title = "Helmet light" },
+    [13] = { slot = "holster", title = "Holster" },
+}
+Items.GEAR_SLOTS = { 8, 9, 10, 11, 12, 13 }
+Items.WORN_BY_SLOT = {}
+for cid, w in pairs(Items.WORN) do Items.WORN_BY_SLOT[w.slot] = cid end
+
+function Items.IsWorn(cid) return Items.WORN[cid] ~= nil end
+
+-- Is any item worn in this slot registered? (No rhylib_gear: no gear slots.)
+function Items.SlotUsed(slot)
+    for _, def in pairs(Items.defs) do
+        if def.slot == slot then return true end
+    end
+    return false
+end
+
+-- Can ply wear this item now? (rhylib_gear: only parts their model shows.)
+-- Hook Rhylib.CanWear(ply, def) returns false, reason to refuse.
+function Items.CanWear(ply, def)
+    if not (def and def.slot) or def.slot == "back" or not IsValid(ply) then return true end
+    local ok, why = hook.Run("Rhylib.CanWear", ply, def)
+    if ok == false then return false, why or "You can't wear that" end
+    return true
+end
 
 -- Hotbar: each item can sit in one numbered slot (inst.hb). 4 slots, or
 -- 6 while a backpack is worn. Anything you hold that isn't in the
@@ -316,7 +360,9 @@ end
 
 -- Which items a container accepts at all.
 function Items.ContainerAllows(cid, def)
-    if cid == Items.SLOT_BACK then return def.slot == "back" end
+    local worn = Items.WORN[cid]
+    if worn then return def.slot == worn.slot end
+    if cid == Items.HOLSTER then return def.holster == true end
     if cid == Items.EXT then return true end  -- the storage itself decides (sv_30_storage.lua)
     if cid == Items.BACK then return not def.large and not def.grid end
     if cid == Items.RACK then return def.id == "cell" end
@@ -329,7 +375,12 @@ function Items.CanPlace(state, id, cid, x, y, rot, ignoreUid)
     local def = Items.defs[id]
     local c = state.cont[cid]
     if not def or not c or not Items.ContainerAllows(cid, def) then return false end
-    if cid == Items.SLOT_BACK then
+    if cid == Items.HOLSTER then   -- (one pistol)
+        for uid in pairs(c.items) do
+            if uid ~= ignoreUid then return false end
+        end
+    end
+    if Items.WORN[cid] then
         if x ~= 0 or y ~= 0 then return false end
         for uid in pairs(c.items) do
             if uid ~= ignoreUid then return false end
@@ -339,11 +390,17 @@ function Items.CanPlace(state, id, cid, x, y, rot, ignoreUid)
     return Items.Fits(c.w, c.h, c.items, id, x, y, rot, ignoreUid)
 end
 
--- A worn backpack can only come off when it's empty.
+-- A worn item that adds a container (backpack, holster) can only come off
+-- when that container is empty. Returns false, reason.
 function Items.CanLeave(state, inst)
-    if inst.c == Items.SLOT_BACK then
-        local back = state.cont[Items.BACK]
-        if back and next(back.items) ~= nil then return false end
+    if Items.WORN[inst.c] then
+        local def = Items.defs[inst.id]
+        if def and def.grid then
+            local g = state.cont[def.gridCid or Items.BACK]
+            if g and next(g.items) ~= nil then
+                return false, "Empty the " .. string.lower(def.gridName or "backpack") .. " first"
+            end
+        end
     end
     return true
 end

@@ -144,8 +144,9 @@ Rhylib.Net.Receive("mp.take", function(mp)
     local st = I.Get(target)
     local o = st.byUid[uid]
     if not o or not MP.SearchFinds(mp, target, o) then return end
-    if not Items.CanLeave(st, o) then
-        mp:ChatPrint("Empty the backpack first")
+    local canLeave, why = Items.CanLeave(st, o)
+    if not canLeave then
+        mp:ChatPrint(why)
         return
     end
     -- A gun keeps its current clip and cell.

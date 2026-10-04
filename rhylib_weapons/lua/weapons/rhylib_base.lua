@@ -1163,6 +1163,8 @@ if CLIENT then
 
     function SWEP:DoDrawCrosshair(x, y)
         if self:IsLowered() or self:Scoped() then return true end  -- no crosshair on safety or while sprinting
+        local o = self:GetOwner()
+        if IsValid(o) and o:GetNW2Int("rhylib_optics", 0) ~= 0 then return true end   -- (rhylib_gear: looking through binoculars)
         -- In Rhylib third person, rhylib_thirdperson draws it instead.
         local tp = Rhylib.ThirdPerson
         if not (tp and tp.Active and tp.Active()) then

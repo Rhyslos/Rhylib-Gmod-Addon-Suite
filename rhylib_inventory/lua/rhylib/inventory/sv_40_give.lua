@@ -36,8 +36,9 @@ function Inv.GiveTo(ply, target, uid, single)
     local st = Inv.Get(ply)
     local inst = st.byUid[uid]
     if not inst then return 0 end
-    if not Items.CanLeave(st, inst) then
-        Inv.Note(ply, "Empty the backpack first")
+    local canLeave, why = Items.CanLeave(st, inst)
+    if not canLeave then
+        Inv.Note(ply, why)
         return 0
     end
     local def = Items.defs[inst.id]

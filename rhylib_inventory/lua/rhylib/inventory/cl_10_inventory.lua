@@ -11,6 +11,7 @@ Rhylib.Inventory = Rhylib.Inventory or {}
 local Inv = Rhylib.Inventory
 local Items = Rhylib.Items
 
+-- (gear slots come with the server's full copy)
 Inv.cont = Inv.cont or { [Items.MAIN] = { w = 5, h = 3, items = {} }, [Items.SLOT_BACK] = { w = 1, h = 1, items = {} } }
 Inv.byUid = Inv.byUid or {}
 
@@ -117,6 +118,13 @@ end, function(ch)
 end)
 
 -- Short messages from the server, shown in the inventory window.
+-- A short note in the window (from the client itself).
+function Inv.ShowNote(text)
+    if not text then return end
+    Inv.note, Inv.noteTime = text, RealTime()
+    if not IsValid(Inv.panel) then notification.AddLegacy(text, NOTIFY_GENERIC, 3) end
+end
+
 net.Receive(Rhylib.Net.Name("inv.note"), function()
     Inv.note = net.ReadString()
     Inv.noteTime = RealTime()
@@ -218,10 +226,23 @@ end
 function Inv.RequestMove(inst, cid, x, y, rot, single)
     local c = Inv.cont[cid]
     if not c then return end
-    if cid ~= inst.c and not Items.CanLeave(Inv, inst) then return end
+    if cid ~= inst.c then
+        local canLeave, why = Items.CanLeave(Inv, inst)
+        if not canLeave then
+            if Inv.ShowNote then Inv.ShowNote(why) end
+            return
+        end
+        if Items.IsWorn(cid) then
+            local okWear, wearWhy = Items.CanWear(LocalPlayer(), Items.defs[inst.id])
+            if not okWear then
+                if Inv.ShowNote then Inv.ShowNote(wearWhy) end
+                return
+            end
+        end
+    end
     single = single and inst.count > 1
 
-    local merge = cid ~= Items.SLOT_BACK and Items.MergeTarget(c.items, inst, x, y, cid ~= EXT and LocalPlayer() or nil)
+    local merge = not Items.IsWorn(cid) and Items.MergeTarget(c.items, inst, x, y, cid ~= EXT and LocalPlayer() or nil)
     if not merge and not single and cid ~= EXT then
         if not Items.CanPlace(Inv, inst.id, cid, x, y, rot, inst.uid) then return end
         local moved = { uid = inst.uid, id = inst.id, c = cid, x = x, y = y, rot = rot, count = inst.count, data = inst.data }

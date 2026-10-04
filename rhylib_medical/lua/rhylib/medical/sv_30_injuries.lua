@@ -131,13 +131,17 @@ local IS_LIMB = { larm = true, rarm = true, lleg = true, rleg = true }
 local RANDOM_LIMB = { "torso", "torso", "torso", "head", "larm", "rarm", "lleg", "rleg" }
 
 -- Can this part break? (rhylib_skills Hard landings: legs never do;
--- other addons can answer Rhylib.CanFracture(ply, limb) with false.)
+-- other addons can answer Rhylib.CanFracture(ply, limb) with false, or
+-- Rhylib.FractureChance(ply, limb) with a 0-1 chance: rhylib_gear's kama.)
 local function canBreak(ply, limb)
     if limb == "lleg" or limb == "rleg" then
         local K = Rhylib.Skills
         if K and K.Has and K.Has(ply, "hard_landings") then return false end
     end
-    return hook.Run("Rhylib.CanFracture", ply, limb) ~= false
+    if hook.Run("Rhylib.CanFracture", ply, limb) == false then return false end
+    local chance = tonumber(hook.Run("Rhylib.FractureChance", ply, limb))
+    if chance and math.random() >= chance then return false end
+    return true
 end
 Med.CanFracture = canBreak
 
@@ -178,8 +182,10 @@ Rhylib.Hook.Add("PostEntityTakeDamage", "medical.injuries", function(ply, dmg, t
         end
     elseif bit.band(dtype, bit.bor(DMG_BLAST, DMG_BURN, DMG_SLOWBURN, DMG_PLASMA)) ~= 0 then
         for limb, share in pairs(SPREAD) do
-            hurt(ply, t, limb, amount * share, false, now)
-            t[limb].burn = math.min(100, t[limb].burn + amount * share)
+            -- (hook Rhylib.BlastPartMult(ply, limb): rhylib_gear's kama shields the legs)
+            local m = bit.band(dtype, DMG_BLAST) ~= 0 and tonumber(hook.Run("Rhylib.BlastPartMult", ply, limb)) or 1
+            hurt(ply, t, limb, amount * share * m, false, now)
+            t[limb].burn = math.min(100, t[limb].burn + amount * share * m)
         end
     else
         local group = ply.rhylibHitGroup or ply:LastHitGroup()

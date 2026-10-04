@@ -34,7 +34,8 @@ local Inv = Rhylib.Inventory
 local Items = Rhylib.Items
 local Config = Rhylib.Config
 
-local MAIN, BACK, SLOT_BACK, RACK, BELT = Items.MAIN, Items.BACK, Items.SLOT_BACK, Items.RACK, Items.BELT
+local MAIN, BACK, SLOT_BACK, RACK, BELT, HOLSTER = Items.MAIN, Items.BACK, Items.SLOT_BACK, Items.RACK, Items.BELT, Items.HOLSTER
+local IsWorn = Items.IsWorn
 
 Config.Register("inventory", "width", 5, "Personal inventory width in cells")
 Config.Register("inventory", "height", 3, "Personal inventory height in cells")
@@ -186,22 +187,37 @@ local function sendDims(ply, st, cid)
     updBatch:Send(ply, { op = OP_DIMS, cid = cid, w = c and c.w or 0, h = c and c.h or 0 })
 end
 
--- Wearing or removing a backpack adds or removes the backpack grid.
-local function updateBackpack(ply, st)
-    local worn
-    for _, inst in pairs(st.cont[SLOT_BACK].items) do worn = inst end
-    local def = worn and Items.defs[worn.id]
-    local grid = def and def.grid
-
-    local cur = st.cont[BACK]
-    if grid then
-        if not cur or cur.w ~= grid[1] or cur.h ~= grid[2] then
-            st.cont[BACK] = { w = grid[1], h = grid[2], items = cur and cur.items or {} }
-            sendDims(ply, st, BACK)
+-- Wearing or removing a backpack or holster adds or removes its grid
+-- (a worn item's `grid`, in container gridCid, default the backpack grid).
+local GRID_CIDS = { BACK, HOLSTER }
+local function updateBackpack(ply, st, depth)
+    local want = {}
+    for wcid in pairs(Items.WORN) do
+        local c = st.cont[wcid]
+        if c then
+            for _, inst in pairs(c.items) do
+                local def = Items.defs[inst.id]
+                if def and def.grid then want[def.gridCid or BACK] = def.grid end
+            end
         end
-    elseif cur then
-        st.cont[BACK] = nil
-        sendDims(ply, st, BACK)
+    end
+    for _, gcid in ipairs(GRID_CIDS) do
+        local grid, cur = want[gcid], st.cont[gcid]
+        if grid then
+            if not cur or cur.w ~= grid[1] or cur.h ~= grid[2] then
+                st.cont[gcid] = { w = grid[1], h = grid[2], items = cur and cur.items or {} }
+                sendDims(ply, st, gcid)
+            end
+        elseif cur then
+            if next(cur.items) ~= nil and Inv.SetGrid then
+                Inv.SetGrid(ply, gcid, 0, 0)   -- (what's in it moves elsewhere)
+                -- (moving it may have put something on: work it out again)
+                if (depth or 0) < 2 then return updateBackpack(ply, st, (depth or 0) + 1) end
+            else
+                st.cont[gcid] = nil
+                sendDims(ply, st, gcid)
+            end
+        end
     end
 end
 
@@ -209,13 +225,13 @@ end
 local function place(ply, st, inst, cid, x, y, rot)
     local old = inst.c and st.cont[inst.c]
     if old then old.items[inst.uid] = nil end
-    local wasSlot = inst.c == SLOT_BACK
+    local wasSlot = IsWorn(inst.c)
 
     inst.c, inst.x, inst.y, inst.rot = cid, x, y, rot
     st.cont[cid].items[inst.uid] = inst
     st.byUid[inst.uid] = inst
     sendSet(ply, st, inst)
-    if wasSlot or cid == SLOT_BACK then updateBackpack(ply, st) end
+    if wasSlot or IsWorn(cid) then updateBackpack(ply, st) end
     changed(ply)
 end
 
@@ -231,7 +247,7 @@ local function removeInst(ply, st, uid)
     st.cont[inst.c].items[uid] = nil
     st.byUid[uid] = nil
     if st.ready then updBatch:Send(ply, { op = OP_REMOVE, uid = uid }) end
-    if inst.c == SLOT_BACK then updateBackpack(ply, st) end
+    if IsWorn(inst.c) then updateBackpack(ply, st) end
     changed(ply)
     return inst
 end
@@ -239,12 +255,13 @@ end
 -- First free spot for a new item: worn slot if it fits there, then the
 -- main grid, then the backpack.
 local ROTS_SQUARE, ROTS_BOTH = { false }, { false, true }
-local SEARCH = { RACK, MAIN, BACK, BELT }   -- (the rack only takes cells)
+local SEARCH = { RACK, HOLSTER, MAIN, BACK, BELT }   -- (the rack only takes cells, the holster pistols)
 
 local function findSpot(st, id)
     local def = Items.defs[id]
-    if def.slot == "back" and Items.CanPlace(st, id, SLOT_BACK, 0, 0, false) then
-        return SLOT_BACK, 0, 0, false
+    local wcid = def.slot and Items.WORN_BY_SLOT[def.slot]
+    if wcid and Items.CanPlace(st, id, wcid, 0, 0, false) and Items.CanWear(st.ply, def) then
+        return wcid, 0, 0, false
     end
     local rots = def.w == def.h and ROTS_SQUARE or ROTS_BOTH
     for i = 1, #SEARCH do
@@ -277,13 +294,13 @@ local function load(ply, st)
     for pass = 1, 2 do
         for _, row in ipairs(saved) do
             local cid = row[7] or MAIN
-            if (pass == 1) == (cid == SLOT_BACK) then
+            if (pass == 1) == IsWorn(cid) then
                 local id, x, y, rot, count = row[1], row[2], row[3], row[4] == 1, row[5]
                 if Items.defs[id] and Items.CanPlace(st, id, cid, x, y, rot) then
                     local inst = { uid = nextUid(st), id = id, count = count, data = istable(row[6]) and row[6] or {}, hb = tonumber(row[8]) }
                     place(ply, st, inst, cid, x, y, rot)
-                elseif Items.defs[id] and (cid == RACK or cid == BELT) then
-                    -- The rack or belt is gone or smaller (skills reset): anywhere else.
+                elseif Items.defs[id] and cid ~= MAIN and cid ~= BACK then
+                    -- The rack, belt, holster or a gear slot is gone or taken: anywhere else.
                     local c2, x2, y2, r2 = findSpot(st, id)
                     local data = istable(row[6]) and row[6] or {}
                     if c2 then
@@ -321,7 +338,11 @@ function Inv.Get(ply)
         byUid = {},
         nextUid = 1,
         ready = false,  -- true once the client has its full copy
+        ply = ply,
     }
+    for _, cid in ipairs(Items.GEAR_SLOTS) do
+        if Items.SlotUsed(Items.WORN[cid].slot) then st.cont[cid] = { w = 1, h = 1, items = {} } end
+    end
     -- Grids from skills (the cell rack), before the saved items go in.
     local K = Rhylib.Skills
     if K and K.ExtraGrids then
@@ -375,7 +396,7 @@ function Inv.CanAdd(ply, id)
     local cap = Items.StackFor(def, ply)
     if cap > 1 then
         for _, o in pairs(st.byUid) do
-            if o.id == id and o.c ~= SLOT_BACK and o.count < cap and Items.IsFull(o) then return true end
+            if o.id == id and not IsWorn(o.c) and o.count < cap and Items.IsFull(o) then return true end
         end
     end
     return findSpot(st, id) ~= nil
@@ -517,8 +538,9 @@ function Inv.Drop(ply, uid, single)
     local st = Inv.Get(ply)
     local inst = st.byUid[uid]
     if not inst then return end
-    if not Items.CanLeave(st, inst) then
-        Inv.Note(ply, "Empty the backpack first")
+    local canLeave, leaveWhy = Items.CanLeave(st, inst)
+    if not canLeave then
+        Inv.Note(ply, leaveWhy)
         return
     end
     local n = (single and inst.count > 1) and 1 or inst.count
@@ -547,7 +569,7 @@ end
 -- Moves one item off a stack to x, y (ctrl + drag).
 local function moveOne(ply, st, inst, cid, x, y, rot)
     local c = st.cont[cid]
-    local target = c and cid ~= SLOT_BACK and Items.MergeTarget(c.items, inst, x, y, ply)
+    local target = c and not IsWorn(cid) and Items.MergeTarget(c.items, inst, x, y, ply)
     if target and target ~= inst then
         target.count = target.count + 1
         inst.count = inst.count - 1
@@ -575,19 +597,31 @@ function Inv.Move(ply, uid, cid, x, y, rot, single)
     local inst = st.byUid[uid]
     if not inst then return end
 
+    if IsWorn(cid) and cid ~= inst.c then
+        local okWear, wearWhy = Items.CanWear(ply, Items.defs[inst.id])
+        if not okWear then
+            Inv.Note(ply, wearWhy)
+            sendSet(ply, st, inst)
+            return
+        end
+    end
+
     if single and inst.count > 1 then
         moveOne(ply, st, inst, cid, x, y, rot)
         return
     end
 
-    if cid ~= inst.c and not Items.CanLeave(st, inst) then
-        Inv.Note(ply, "Empty the backpack first")
-        sendSet(ply, st, inst)
-        return
+    if cid ~= inst.c then
+        local canLeave, leaveWhy = Items.CanLeave(st, inst)
+        if not canLeave then
+            Inv.Note(ply, leaveWhy)
+            sendSet(ply, st, inst)
+            return
+        end
     end
 
     local c = st.cont[cid]
-    local target = c and cid ~= SLOT_BACK and Items.MergeTarget(c.items, inst, x, y, ply)
+    local target = c and not IsWorn(cid) and Items.MergeTarget(c.items, inst, x, y, ply)
     if target then
         local def = Items.defs[inst.id]
         local add = math.min(Items.StackFor(def, ply) - target.count, inst.count)
@@ -871,7 +905,7 @@ Rhylib.Net.Receive("inv.hide", function(ply)
     if Inv.Locked(ply) then return end
     local st = Inv.Get(ply)
     local inst = st.byUid[net.ReadUInt(Items.UID_BITS)]
-    if not inst or inst.c == SLOT_BACK then return end
+    if not inst or IsWorn(inst.c) then return end
     inst.data = inst.data or {}
     if inst.data.hidden then
         inst.data.hidden = nil
@@ -1071,6 +1105,35 @@ function Inv.SetGrid(ply, cid, w, h)
         end
     end
     changed(ply)
+end
+
+-- Takes a worn item off (rhylib_gear: a part the new model can't show):
+-- into the main grid or backpack, else onto the ground (job gear just goes).
+-- A worn holster's pistol moves elsewhere too.
+function Inv.TakeOff(ply, uid)
+    local st = Inv.states[ply]
+    local inst = st and st.byUid[uid]
+    if not inst or not IsWorn(inst.c) then return end
+    local rots = { false, true }
+    for _, cid in ipairs({ MAIN, BACK }) do
+        local c = st.cont[cid]
+        if c then
+            for y = 0, c.h - 1 do
+                for x = 0, c.w - 1 do
+                    for _, rot in ipairs(rots) do
+                        if Items.CanPlace(st, inst.id, cid, x, y, rot) then
+                            place(ply, st, inst, cid, x, y, rot)
+                            return true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    captureWeapon(ply, inst)
+    removeInst(ply, st, uid)
+    if not (inst.data and inst.data.loadout) then Inv.SpawnWorldItem(ply, inst.id, inst.count, inst.data) end
+    return false
 end
 
 -- Weight and carry limit sent again (a skill changed the limit).

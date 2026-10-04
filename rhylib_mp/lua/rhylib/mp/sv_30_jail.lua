@@ -104,8 +104,9 @@ local function confiscate(ply)
     local st = I.Get(ply)
     local list = {}
     for _, o in pairs(st.byUid) do list[#list + 1] = o end
-    -- Contents before the backpack itself.
-    table.sort(list, function(a, b) return (a.c == 3 and 1 or 0) < (b.c == 3 and 1 or 0) end)
+    -- Contents before what holds them (backpack, holster: worn slots).
+    local worn = Rhylib.Items and Rhylib.Items.IsWorn or function(c) return c == 3 end
+    table.sort(list, function(a, b) return (worn(a.c) and 1 or 0) < (worn(b.c) and 1 or 0) end)
     local evidence = {}
     for _, o in ipairs(list) do
         I.Internal.captureWeapon(ply, o)
@@ -212,8 +213,9 @@ function MP.Process(ply, by)
     for _, e in ipairs(rec.evidence or {}) do
         if MP.Returnable(e) then back[#back + 1] = e end
     end
-    -- Backpack before its contents, so it can hold them.
-    table.sort(back, function(a, b) return (a.c == 3 and 0 or 1) < (b.c == 3 and 0 or 1) end)
+    -- Worn things (backpack, holster) before their contents, so they can hold them.
+    local worn = Rhylib.Items and Rhylib.Items.IsWorn or function(c) return c == 3 end
+    table.sort(back, function(a, b) return (worn(a.c) and 0 or 1) < (worn(b.c) and 0 or 1) end)
     local locker = propertyLocker(rec)
     local I = inv()
     if I then

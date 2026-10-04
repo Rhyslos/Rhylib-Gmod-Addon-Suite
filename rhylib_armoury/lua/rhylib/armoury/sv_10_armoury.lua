@@ -69,6 +69,7 @@ local function gearStock()
     for _, id in ipairs(Config.Get("armoury", "gearStock") or {}) do
         if Rhylib.Items.defs[id] then out[#out + 1] = id end
     end
+    hook.Run("Rhylib.GearStock", out)   -- (rhylib_gear adds its parts)
     return out
 end
 

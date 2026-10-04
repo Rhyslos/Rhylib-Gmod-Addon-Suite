@@ -29,7 +29,9 @@ local Inv = Rhylib.Inventory
 local Items = Rhylib.Items
 local UI = Rhylib.UI
 
-local MAIN, BACK, SLOT_BACK, EXT, RACK, BELT = Items.MAIN, Items.BACK, Items.SLOT_BACK, Items.EXT, Items.RACK, Items.BELT
+local MAIN, BACK, SLOT_BACK, EXT, RACK, BELT, HOLSTER = Items.MAIN, Items.BACK, Items.SLOT_BACK, Items.EXT, Items.RACK, Items.BELT, Items.HOLSTER
+-- Short names inside the gear slots.
+local GEAR_SHORT = { kama = "Kama", pauldron = "Pauldron", binos = "Binos", rangefinder = "Range", light = "Light", holster = "Holster" }
 
 local keyVar = CreateClientConVar("rhylib_inventory_key", "g", true, false, "Key that opens the Rhylib inventory")
 local sizeVar = CreateClientConVar("rhylib_inventory_cellsize", "100", true, false, "Inventory cell size in pixels at 1080p (48-128); everything else scales with it. Reopen the inventory to apply.")
@@ -162,7 +164,16 @@ local function createModelPanel(parent)
     end
 
     function mdl:Think()
-        if self:GetModel() ~= LocalPlayer():GetModel() then setupModel(self) end
+        local ply = LocalPlayer()
+        if self:GetModel() ~= ply:GetModel() then setupModel(self) end
+        -- Bodygroups follow the player's (worn gear, rhylib_gear).
+        local ent = self.Entity
+        if IsValid(ent) then
+            for i = 0, ply:GetNumBodyGroups() - 1 do
+                local v = ply:GetBodygroup(i)
+                if ent:GetBodygroup(i) ~= v then ent:SetBodygroup(i, v) end
+            end
+        end
     end
 
     return mdl
@@ -201,10 +212,10 @@ function PANEL:SpanPx(n)
 end
 
 function PANEL:LayoutKey()
-    local m, b, e, r, bl = Inv.cont[MAIN], Inv.cont[BACK], Inv.cont[EXT], Inv.cont[RACK], Inv.cont[BELT]
+    local m, b, e, r, bl, ho = Inv.cont[MAIN], Inv.cont[BACK], Inv.cont[EXT], Inv.cont[RACK], Inv.cont[BELT], Inv.cont[HOLSTER]
     return (m and (m.w .. "x" .. m.h) or "-") .. "|" .. (b and (b.w .. "x" .. b.h) or "-")
         .. "|" .. (e and (e.w .. "x" .. e.h) or "-") .. "|" .. (r and (r.w .. "x" .. r.h) or "-")
-        .. "|" .. (bl and (bl.w .. "x" .. bl.h) or "-")
+        .. "|" .. (bl and (bl.w .. "x" .. bl.h) or "-") .. "|" .. (ho and (ho.w .. "x" .. ho.h) or "-")
 end
 
 -- Works out where every region sits and sizes the window.
@@ -248,10 +259,34 @@ function PANEL:Relayout()
         gridsH = gridsH + label + self:SpanPx(belt.h)
         gridsW = math.max(gridsW, self:SpanPx(belt.w))
     end
+    -- The holster (a worn holster), under that.
+    local holster = Inv.cont[HOLSTER]
+    if holster then
+        self.regions[#self.regions + 1] = { cid = HOLSTER, x = gridX, y = top + gridsH + label, gw = holster.w, gh = holster.h, title = "Holster" }
+        gridsH = gridsH + label + self:SpanPx(holster.h)
+        gridsW = math.max(gridsW, self:SpanPx(holster.w))
+    end
     self.rightX = gridX
 
-    -- Combine munitions button, under the Back slot.
-    self.combineRect = { x = slotX, y = top + slotSize + self.gap * 3, w = slotSize, h = math.floor(label * 1.4) }
+    -- Gear slots (rhylib_gear), two a row under the Back slot.
+    local gearY = top + slotSize + label + self.gap * 2
+    self.gearLabelY = gearY - label * 0.5
+    self.gearX = slotX
+    local rows = 0
+    for i, cid in ipairs(Items.GEAR_SLOTS) do
+        if Inv.cont[cid] then
+            local col, row = (i - 1) % 2, math.floor((i - 1) / 2)
+            rows = math.max(rows, row + 1)
+            self.regions[#self.regions + 1] = { cid = cid, slot = true, gear = true, x = slotX + col * self.step, y = gearY + row * self.step,
+                pw = self.cell, ph = self.cell, title = Items.WORN[cid].title, short = GEAR_SHORT[Items.WORN[cid].slot] }
+        end
+    end
+    self.gearRows = rows
+    local slotColH = slotSize + (rows > 0 and (label + self:SpanPx(rows) + self.gap * 2) or 0)
+
+    -- Combine munitions button, under the Back slot and the gear.
+    self.combineRect = { x = slotX, y = top + slotColH + self.gap * 3, w = slotSize, h = math.floor(label * 1.4) }
+    slotColH = slotColH + self.gap * 3 + self.combineRect.h
 
     -- Tallest a column may be: the main grid plus a backpack, and never
     -- off the screen. Anything longer scrolls (mouse wheel).
@@ -269,7 +304,7 @@ function PANEL:Relayout()
     -- An open locker, crate or armoury: to the right of your grids.
     local width = gridX + gridsW + pad
     local ext = Inv.cont[EXT]
-    local contentH = math.max(ownView, self:SpanPx(3))
+    local contentH = math.max(ownView, self:SpanPx(3), slotColH)
     if ext then
         local extX = gridX + gridsW + pad * 2
         local extH = self:SpanPx(ext.h)
@@ -442,7 +477,21 @@ function PANEL:PaintRegion(r, dragUid)
     local c = Inv.cont[r.cid]
     if not c then return end
 
-    if r.slot then
+    if r.slot and r.gear then
+        -- A gear slot: its name while empty, dim if your model can't show it.
+        local can = Items.CanWear(LocalPlayer(), { slot = Items.WORN[r.cid].slot })
+        surface.SetDrawColor(COL_SLOT.r, COL_SLOT.g, COL_SLOT.b, can and COL_SLOT.a or COL_SLOT.a * 0.4)
+        surface.DrawRect(r.x, r.y, r.pw, r.ph)
+        surface.SetDrawColor(COL_BORDER.r, COL_BORDER.g, COL_BORDER.b, can and COL_BORDER.a or COL_BORDER.a * 0.4)
+        surface.DrawOutlinedRect(r.x, r.y, r.pw, r.ph)
+        if next(c.items) == nil then
+            draw.SimpleText(string.upper(r.short or r.title), self:Font(11, 700), r.x + r.pw * 0.5, r.y + r.ph * 0.5 - (can and 0 or math.floor(6 * self.s)),
+                can and UI.Colors.textDim or COL_BORDER, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            if not can then
+                draw.SimpleText("N/A", self:Font(10, 700), r.x + r.pw * 0.5, r.y + r.ph * 0.5 + math.floor(8 * self.s), COL_BORDER, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            end
+        end
+    elseif r.slot then
         surface.SetDrawColor(COL_SLOT)
         surface.DrawRect(r.x, r.y, r.pw, r.ph)
         surface.SetDrawColor(COL_BORDER)
@@ -452,7 +501,7 @@ function PANEL:PaintRegion(r, dragUid)
             draw.SimpleText("Empty", self:Font(14), r.x + r.pw * 0.5, r.y + r.ph * 0.5, UI.Colors.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         end
     else
-        local isBack, isExt = r.cid == BACK or r.cid == RACK or r.cid == BELT, r.cid == EXT
+        local isBack, isExt = r.cid == BACK or r.cid == RACK or r.cid == BELT or r.cid == HOLSTER, r.cid == EXT
         local cellCol = isExt and COL_EXT_CELL or (isBack and COL_BACK_CELL or COL_CELL)
         local borderCol = isExt and COL_EXT_BORDER or (isBack and COL_BACK_BORDER or COL_BORDER)
         for y = 0, r.gh - 1 do
@@ -472,6 +521,8 @@ function PANEL:PaintRegion(r, dragUid)
             label(self, "Cell rack · power cells only", r.x, r.y - self.label * 0.5)
         elseif r.cid == BELT then
             label(self, "Ammo belt · no rifles or launchers", r.x, r.y - self.label * 0.5)
+        elseif r.cid == HOLSTER then
+            label(self, "Holster · pistols only", r.x, r.y - self.label * 0.5)
         end
         ticks(r.x - 3, r.y - 3, self:SpanPx(r.gw) + 6, self:SpanPx(r.gh) + 6, self.s)
     end
@@ -595,6 +646,7 @@ function PANEL:Paint(pw, ph)
     self.buttons = {}
     self:PaintHotbar()
     self:PaintCombine()
+    if self.gearRows and self.gearRows > 0 then label(self, "Gear", self.gearX, self.gearLabelY) end
     self:PaintExtControls()
     self:PaintNote(pw, ph)
 
@@ -746,6 +798,7 @@ function PANEL:DropAllowed(d, r, tx, ty)
         if not Items.CanLeave(Inv, d.inst) then return false end
         return Items.MergeTarget(c.items, probe, tx, ty) ~= nil or Items.Fits(c.w, c.h, c.items, d.inst.id, tx, ty, d.rot)
     end
+    if r.gear and not Items.CanWear(LocalPlayer(), Items.defs[d.inst.id]) then return false end
     if fromExt then
         return (not r.slot and Items.MergeTarget(c.items, probe, tx, ty, LocalPlayer()) ~= nil)
             or Items.CanPlace(Inv, d.inst.id, r.cid, tx, ty, d.rot)
@@ -901,7 +954,7 @@ function PANEL:OnMousePressed(code)
             menu:AddOption("Split stack", function() Inv.RequestSplit(inst) end)
         end
         -- Equip = put it on the hotbar (first free slot); Unequip = take it off.
-        if def and inst.c ~= SLOT_BACK then
+        if def and not Items.IsWorn(inst.c) and not def.slot then
             if inst.hb then
                 menu:AddOption("Unequip", function() Inv.RequestHotbar(nil, inst.hb) end)
             else
@@ -918,8 +971,34 @@ function PANEL:OnMousePressed(code)
                 end)
             end
         end
-        if def and def.slot == "back" and inst.c ~= SLOT_BACK then
-            menu:AddOption("Wear", function() Inv.RequestMove(inst, SLOT_BACK, 0, 0, false) end)
+        local wearCid = def and def.slot and Items.WORN_BY_SLOT[def.slot]
+        if wearCid and inst.c ~= wearCid then
+            local okWear, why = Items.CanWear(LocalPlayer(), def)
+            if okWear then
+                menu:AddOption("Wear", function() Inv.RequestMove(inst, wearCid, 0, 0, false) end)
+            else
+                menu:AddOption("Can't wear: " .. (why or "not on your model"), function() end)
+            end
+        elseif wearCid and inst.c == wearCid then
+            menu:AddOption("Take off", function()
+                -- First free spot in the main grid, then the backpack.
+                for _, cid in ipairs({ MAIN, BACK }) do
+                    local c = Inv.cont[cid]
+                    if c then
+                        for y = 0, c.h - 1 do
+                            for x = 0, c.w - 1 do
+                                for _, rot in ipairs({ false, true }) do
+                                    if Items.CanPlace(Inv, inst.id, cid, x, y, rot) then
+                                        Inv.RequestMove(inst, cid, x, y, rot)
+                                        return
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+                Inv.ShowNote("No room to take it off")
+            end)
         end
         -- Give to the player you're looking at (look at them, then open the inventory).
         local target = Inv.GiveTarget()
@@ -932,7 +1011,7 @@ function PANEL:OnMousePressed(code)
             end
         end
         -- Contraband can be hidden from searches (up to Items.HIDE_MAX).
-        if Items.IsContraband(inst.id) and inst.c ~= SLOT_BACK then
+        if Items.IsContraband(inst.id) and not Items.IsWorn(inst.c) then
             if inst.data and inst.data.hidden then
                 menu:AddOption("Unhide", function() Inv.RequestHide(inst) end)
             else

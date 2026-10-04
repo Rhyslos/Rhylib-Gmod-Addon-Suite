@@ -353,8 +353,9 @@ function Inv.Deposit(ply, uid, x, y, rot, single)
         I.sendSet(ply, st, inst)
         return
     end
-    if not Items.CanLeave(st, inst) then
-        Inv.Note(ply, "Empty the backpack first")
+    local canLeave, why = Items.CanLeave(st, inst)
+    if not canLeave then
+        Inv.Note(ply, why)
         I.sendSet(ply, st, inst)
         return
     end
@@ -433,6 +434,20 @@ function Inv.Take(ply, suid, cid, x, y, rot, single)
         Inv.Note(ply, Inv.HoldReason(so.id))
         return
     end
+    -- (rhylib_gear: parts a rank or qualification unlocks)
+    local okTake, takeWhy = hook.Run("Rhylib.CanTakeStock", ply, storage, so.id)
+    if okTake == false then
+        Inv.Note(ply, takeWhy or "You can't take that")
+        return
+    end
+
+    if Items.IsWorn(cid) then
+        local okWear, wearWhy = Items.CanWear(ply, def)
+        if not okWear then
+            Inv.Note(ply, wearWhy)
+            return
+        end
+    end
 
     local depot = storage.kind == "depot"
     local n = single and 1 or so.count
@@ -441,7 +456,7 @@ function Inv.Take(ply, suid, cid, x, y, rot, single)
     -- Merge onto a matching stack of yours, or place at x, y.
     local c = st.cont[cid]
     local probe = { uid = -1, id = so.id, count = n, data = data }
-    local target = c and cid ~= SLOT_BACK and Items.MergeTarget(c.items, probe, x, y, ply)
+    local target = c and not Items.IsWorn(cid) and Items.MergeTarget(c.items, probe, x, y, ply)
     if target then
         n = math.min(n, Items.StackFor(def, ply) - target.count)
         if n <= 0 then return end
@@ -493,6 +508,12 @@ function Inv.QuickTake(ply, suid, single)
         Inv.Note(ply, Inv.HoldReason(so.id))
         return
     end
+    -- (rhylib_gear: parts a rank or qualification unlocks)
+    local okTake, takeWhy = hook.Run("Rhylib.CanTakeStock", ply, storage, so.id)
+    if okTake == false then
+        Inv.Note(ply, takeWhy or "You can't take that")
+        return
+    end
     local depot = storage.kind == "depot"
     local n = single and 1 or so.count
     if depot then n = math.min(n, Items.StackFor(def, ply)) end
@@ -514,7 +535,7 @@ function Inv.QuickTake(ply, suid, single)
     changedStorage(storage, ply)
 end
 
-local BULK_FROM = { Items.MAIN, Items.BACK, Items.RACK, Items.BELT }
+local BULK_FROM = { Items.MAIN, Items.BACK, Items.RACK, Items.BELT, Items.HOLSTER }
 
 -- Store all: everything you carry goes in, except job gear and the
 -- backpack you wear (its contents do go in).

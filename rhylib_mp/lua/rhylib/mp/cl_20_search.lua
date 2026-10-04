@@ -6,7 +6,8 @@
 
 local MP = Rhylib.MP
 
-local CONT_NAMES = { [1] = "Carried", [2] = "Backpack", [3] = "Back slot", [5] = "Cell rack", [6] = "Ammo belt" }
+local CONT_NAMES = { [1] = "Carried", [2] = "Backpack", [3] = "Back slot", [5] = "Cell rack", [6] = "Ammo belt", [7] = "Holster" }
+for i = 8, 13 do CONT_NAMES[i] = "Worn gear" end
 
 function MP.OpenSearch(target)
     Rhylib.Net.Start("mp.search")
@@ -80,9 +81,10 @@ function MP.ShowSearch(target, cuffed, rows)
     end
     local lastC
     for _, r in ipairs(rows) do
-        if r.c ~= lastC then
-            lastC = r.c
-            local h = K.Heading(sp, CONT_NAMES[r.c] or "Other")
+        local head = CONT_NAMES[r.c] or "Other"
+        if head ~= lastC then
+            lastC = head
+            local h = K.Heading(sp, head)
             h:Dock(TOP)
             h:DockMargin(0, s(4), s(8), s(4))
         end
