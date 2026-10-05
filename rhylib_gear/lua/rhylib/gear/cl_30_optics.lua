@@ -147,31 +147,130 @@ Rhylib.Hook.Add("PreDrawViewModel", "gear.optics.vm", function()
     if looking() then return true end
 end, -110)
 
--- Night vision: a strongly green, brighter picture and a light around you.
-local NV_TAB = {
-    ["$pp_colour_addr"] = -0.06, ["$pp_colour_addg"] = 0.14, ["$pp_colour_addb"] = -0.06,
-    ["$pp_colour_brightness"] = 0.05, ["$pp_colour_contrast"] = 1.5, ["$pp_colour_colour"] = 0,
-    ["$pp_colour_mulr"] = 0, ["$pp_colour_mulg"] = 1.2, ["$pp_colour_mulb"] = 0,
-}
+-- Night vision (config gear nvMode):
+--   1 amplified (default): a wide shadowless light from the eyes (a
+--     projected texture) whose strength follows the light already there
+--     (auto gain: full in the dark, turned down in lit places), plus a
+--     soft green filter that lifts the darks and squeezes the brights.
+--   2 fully lit: the world drawn without lighting (render.SetLightingMode).
+--   0 the green filter only.
+-- 1 and 2 fade into dark green beyond nvRange, so it has a reach.
+local function nvOn() return nv and kindUp() ~= 0 end
+local function nvMode()
+    local m = tonumber(G.Cfg("nvMode")) or 1
+    return math.Clamp(math.floor(m), 0, 2)
+end
+G.NightVision = nvOn
 
+-- Auto gain: how much light there already is where you are and where you look.
+local gain = 1
+local function lum(v) return v and (v.x * 0.3 + v.y * 0.59 + v.z * 0.11) or 0 end
+local nextSample = 0
+local function updateGain()
+    if RealTime() < nextSample then return end
+    nextSample = RealTime() + 0.1
+    local me = LocalPlayer()
+    local eye = me:EyePos()
+    local tr = util.TraceLine({ start = eye, endpos = eye + me:GetAimVector() * 1500, filter = me, mask = MASK_OPAQUE })
+    local l = math.max(lum(render.GetLightColor(eye)), lum(render.GetLightColor(tr.HitPos + tr.HitNormal * 4)))
+    -- (dark ~0.01, a lit room ~0.2+, daylight 1+)
+    local want = math.Clamp(1 - l * 4, 0.1, 1)
+    gain = Lerp(0.35, gain, want)   -- (eases like a tube adjusting)
+end
+
+-- GMod's colour modify: add, then greyscale (colour 0), then + luminance
+-- x mul per channel, + brightness, then x contrast (a plain multiplier:
+-- below 1 darkens everything). So: greyscale, push it green, and boost it
+-- (less where it's already bright, so lights don't blow out).
+local tab = {
+    ["$pp_colour_addr"] = 0, ["$pp_colour_addg"] = 0, ["$pp_colour_addb"] = 0,
+    ["$pp_colour_brightness"] = 0, ["$pp_colour_contrast"] = 1, ["$pp_colour_colour"] = 0,
+    ["$pp_colour_mulr"] = 0, ["$pp_colour_mulg"] = 0, ["$pp_colour_mulb"] = 0,
+}
+local function filter(mode)
+    local lift = tonumber(G.Cfg("nvLift")) or 0.04
+    local boost = math.max(1, tonumber(G.Cfg("nvBoost")) or 1.5)
+    local g = mode == 1 and gain or 1
+    if mode == 0 then boost = boost + 0.6 end   -- (filter only: nothing else brightens it)
+    tab["$pp_colour_addr"] = 0
+    tab["$pp_colour_addg"] = lift * g
+    tab["$pp_colour_addb"] = 0
+    tab["$pp_colour_mulr"] = -0.35
+    tab["$pp_colour_mulg"] = 0.3
+    tab["$pp_colour_mulb"] = -0.35
+    tab["$pp_colour_brightness"] = lift * 0.5 * g
+    tab["$pp_colour_contrast"] = 1 + (boost - 1) * g
+    return tab
+end
+
+-- Mode 1: the amplifier light.
+local amp
+local function dropAmp()
+    if IsValid(amp) then amp:Remove() end
+    amp = nil
+end
+Rhylib.Hook.Add("PreRender", "gear.optics.nvamp", function()
+    if not (nvOn() and nvMode() == 1) then
+        if amp then dropAmp() end
+        return
+    end
+    updateGain()
+    if not IsValid(amp) then
+        amp = ProjectedTexture()
+        local m = Material("effects/flashlight/soft")
+        amp:SetTexture((m and not m:IsError()) and "effects/flashlight/soft" or "effects/flashlight001")
+        amp:SetEnableShadows(false)
+        amp:SetNearZ(12)
+        amp:SetFOV(120)
+        amp:SetColor(Color(235, 255, 235))
+    end
+    local me = LocalPlayer()
+    amp:SetPos(me:EyePos())
+    amp:SetAngles(me:EyeAngles())
+    amp:SetFarZ(math.max(200, tonumber(G.Cfg("nvLightRange")) or 4000))
+    amp:SetBrightness((tonumber(G.Cfg("nvGain")) or 2.5) * gain)
+    amp:Update()
+end)
+
+-- Mode 2: fully lit world; put back before the HUD and after the frame.
+local lit = false
+Rhylib.Hook.Add("PreRender", "gear.optics.nvlit", function()
+    if nvOn() and nvMode() == 2 then
+        render.SetLightingMode(1)
+        lit = true
+    end
+end)
+local function unlit()
+    if lit then
+        render.SetLightingMode(0)
+        lit = false
+    end
+end
+Rhylib.Hook.Add("PreDrawHUD", "gear.optics.nvlit", unlit)
+Rhylib.Hook.Add("PostRender", "gear.optics.nvlit", unlit)
+
+-- The reach: linear fog into dark green.
+local function nvFog(scale)
+    if not (nvOn() and nvMode() > 0) then return end
+    -- (off by default: it hid everything past it, and binoculars look far)
+    local range = tonumber(G.Cfg("nvRange")) or 0
+    if range <= 0 then return end
+    scale = scale or 1
+    range = math.max(200, range)
+    local from = math.Clamp(tonumber(G.Cfg("nvFadeFrom")) or 600, 0, range - 50)
+    render.FogMode(MATERIAL_FOG_LINEAR)
+    render.FogStart(from * scale)
+    render.FogEnd(range * scale)
+    render.FogMaxDensity(0.92)
+    render.FogColor(4, 18, 6)
+    return true
+end
+Rhylib.Hook.Add("SetupWorldFog", "gear.optics.nvfog", function() return nvFog(1) end)
+Rhylib.Hook.Add("SetupSkyboxFog", "gear.optics.nvfog", function(scale) return nvFog(scale) end)
 
 Rhylib.Hook.Add("RenderScreenspaceEffects", "gear.optics.nv", function()
-    if nv and kindUp() ~= 0 then DrawColorModify(NV_TAB) end
-end)
-Rhylib.Hook.Add("Think", "gear.optics.nvlight", function()
-    if not (nv and kindUp() ~= 0) then return end
-    local me = LocalPlayer()
-    local d = DynamicLight(me:EntIndex() + 0x6800)
-    if d then
-        d.pos = me:EyePos() + me:GetAimVector() * 200
-        d.r, d.g, d.b = 140, 255, 150
-        d.brightness = 1.2
-        d.decay = 2000
-        d.size = 1600
-        d.dietime = CurTime() + 0.2
-        d.noworld = false
-        d.nomodel = false
-    end
+    if not nvOn() then return end
+    DrawColorModify(filter(nvMode()))
 end)
 
 --------------------------------------------------------------------------
@@ -333,6 +432,40 @@ local function keyName(var)
 end
 
 -- fire: weapon mode (drawn under the normal HUD, 1x).
+-- The night vision picture: faint green wash, scanlines crawling down, a
+-- thin rolling band, flicker lines and grain, inside x0..x1 / y0..y1.
+local function nvLayer(w, h, x0, y0, x1, y1)
+    local now = RealTime()
+    draw.NoTexture()
+    -- Green wash, then scanlines that crawl down the picture.
+    -- (faint: a strong wash flattened the picture)
+    surface.SetDrawColor(30, 255, 60, 10)
+    surface.DrawRect(0, 0, w, h)
+    local step = math.max(3, S(4, h))
+    local off = math.floor(now * 30) % step
+    -- (light: they darkened the whole picture)
+    surface.SetDrawColor(0, 35, 0, 34)
+    for y = math.floor(y0) + off, y1, step do surface.DrawRect(0, y, w, math.max(1, math.floor(step / 2))) end
+    -- TV static: a thin, faint rolling band, flickering lines and grain.
+    local band = math.max(2, math.floor(h * 0.012))
+    local by = y0 + ((now * 0.18) % 1) * (y1 - y0 + band) - band
+    surface.SetDrawColor(170, 255, 170, 10)
+    surface.DrawRect(0, by, w, band)
+    for _ = 1, 10 do
+        local ly = math.random(math.floor(y0), math.floor(y1))
+        surface.SetDrawColor(190, 255, 190, math.random(10, 45))
+        surface.DrawRect(0, ly, w, math.random(1, 2))
+    end
+    local gx0, gx1 = math.floor(x0), math.floor(x1)
+    local gy0, gy1 = math.floor(y0), math.floor(y1)
+    local px = math.max(1, S(2, h))
+    for _ = 1, 700 do
+        local v = math.random(120, 255)
+        surface.SetDrawColor(v * 0.7, v, v * 0.7, math.random(12, 40))
+        surface.DrawRect(math.random(gx0, gx1), math.random(gy0, gy1), px, px)
+    end
+end
+
 local function drawViewer(fire)
     local kind = kindUp()
     local me = LocalPlayer()
@@ -365,37 +498,12 @@ local function drawViewer(fire)
     -- Inside: grey glass, or night vision scanlines.
     render.SetStencilCompareFunction(STENCIL_EQUAL)
     if nv then
-        local now = RealTime()
-        -- Green wash, then scanlines that crawl down the picture.
-        surface.SetDrawColor(30, 255, 60, 38)
-        surface.DrawRect(0, 0, w, h)
-        local step = math.max(3, S(4, h))
-        local off = math.floor(now * 30) % step
-        surface.SetDrawColor(0, 35, 0, 80)
-        for y = math.floor(sh.T) + off, sh.B, step do surface.DrawRect(0, y, w, math.max(1, math.floor(step / 2))) end
-        -- TV static: a slow rolling bright band, flickering lines and grain.
-        local band = h * 0.09
-        local by = sh.T + ((now * 0.18) % 1) * (sh.B - sh.T + band) - band
-        surface.SetDrawColor(170, 255, 170, 14)
-        surface.DrawRect(0, by, w, band)
-        surface.SetDrawColor(170, 255, 170, 22)
-        surface.DrawRect(0, by + band * 0.4, w, band * 0.2)
-        for _ = 1, 10 do
-            local ly = math.random(math.floor(sh.T), math.floor(sh.B))
-            surface.SetDrawColor(190, 255, 190, math.random(10, 45))
-            surface.DrawRect(0, ly, w, math.random(1, 2))
-        end
-        local gx0, gx1 = math.floor(sh.L), math.floor(sh.R)
-        local gy0, gy1 = math.floor(sh.T), math.floor(sh.B)
-        local px = math.max(1, S(2, h))
-        for _ = 1, 700 do
-            local v = math.random(120, 255)
-            surface.SetDrawColor(v * 0.7, v, v * 0.7, math.random(12, 40))
-            surface.DrawRect(math.random(gx0, gx1), math.random(gy0, gy1), px, px)
-        end
+        nvLayer(w, h, sh.L, sh.T, sh.R, sh.B)
     else
-        -- Grey glass with faint scanlines crawling down.
-        surface.SetDrawColor(140, 148, 152, 22)
+        -- Glass with faint scanlines crawling down. Dark tint only: light
+        -- grey here lifted the blacks, so you saw better in the dark with
+        -- the binoculars than without (only night vision should brighten).
+        surface.SetDrawColor(18, 24, 30, 22)
         surface.DrawRect(0, 0, w, h)
         local step = math.max(3, S(4, h))
         local off = math.floor(RealTime() * 30) % step
@@ -448,7 +556,15 @@ end, 200)
 -- visor then, so the third-person HUD shows over it (owner: cleanest).
 Rhylib.Hook.Add("HUDPaint", "gear.optics.under", function()
     local me = LocalPlayer()
-    if kindUp() ~= 0 and not looking() and not me:ShouldDrawLocalPlayer() then drawViewer(true) end
+    if kindUp() == 0 or looking() then return end
+    if not me:ShouldDrawLocalPlayer() then
+        drawViewer(true)
+    elseif nv then
+        -- Third person (weapon mode): no viewer frame, the night vision
+        -- picture over the whole screen (it used to be only the colour filter).
+        local w, h = ScrW(), ScrH()
+        nvLayer(w, h, 0, 0, w, h)
+    end
 end, -20)
 
 -- Settings and the controls list (rhylib_menus).

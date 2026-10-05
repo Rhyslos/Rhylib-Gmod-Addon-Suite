@@ -1,7 +1,8 @@
 --[[
     The Q (spawn) menu is off (owner): the Q key (+menu) is Mark target
-    instead (hook Rhylib.MarkKey, rhylib_skills). Staff open the spawn
-    menu from the toolgun (hold R): Menus.OpenSpawnMenu(). Pressing Q
+    instead (hook Rhylib.MarkKey, rhylib_skills). Staff open it from the
+    toolgun (R twice; one R opens our spawn window, cl_85_spawn.lua):
+    Menus.OpenSpawnMenu(). Pressing Q
     while it's open closes it.
 ]]
 
@@ -12,6 +13,8 @@ Menus.spawnAllowed = false
 local function spawnOpen()
     return IsValid(g_SpawnMenu) and g_SpawnMenu:IsVisible()
 end
+
+function Menus.SpawnMenuOpen() return spawnOpen() end
 
 -- Through the gamemode's own open/close (menubar, hooks).
 function Menus.OpenSpawnMenu()

@@ -146,6 +146,13 @@ Config.Register("gear", "lightRange", 2000, "Helmet lights: how far the beams re
 Config.Register("gear", "lightBrightness", 3.5, "Helmet lights: brightness of each beam")
 Config.Register("gear", "lightMaxPlayers", 2, "Helmet lights: other players whose beams light the world for you (nearest first, no shadows; your own always do). Further ones show only the lamp glow")
 Config.Register("gear", "bareHeadshotDowns", true, "With the helmet off, any head hit downs you")
+Config.Register("gear", "nvMode", 1, "Night vision: 1 = amplified (a wide shadowless light from your eyes that turns itself down where it's already bright; default), 2 = the world drawn fully lit (can glare at light sources), 0 = only the green filter")
+Config.Register("gear", "nvGain", 2.5, "Night vision (amplified): strength of the light in the dark")
+Config.Register("gear", "nvLift", 0.04, "Night vision: how much the darkest parts are lifted (the green floor)")
+Config.Register("gear", "nvBoost", 1.5, "Night vision: how much brighter the picture is made in the dark (1 = no boost; eased off in lit places)")
+Config.Register("gear", "nvRange", 0, "Night vision: fade the picture into dark green beyond this distance (units; 0 = off)")
+Config.Register("gear", "nvFadeFrom", 600, "Night vision: where that fade starts (units)")
+Config.Register("gear", "nvLightRange", 4000, "Night vision (amplified): how far its light reaches (units)")
 
 function G.Cfg(k) return Config.Get("gear", k) end
 

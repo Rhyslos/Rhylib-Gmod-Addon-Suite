@@ -1,5 +1,5 @@
 --[[
-    Toolgun (rhylib_toolgun addon): LMB place, RMB remove, R the list.
+    Toolgun (rhylib_toolgun addon): LMB place, RMB remove, R the spawn window.
     See rhylib/toolgun/sh_00_config.lua.
 
     Built on the Rhylib weapon base (rhylib_weapons), so it's held like the
@@ -17,7 +17,7 @@ SWEP.Category = "Rhylib: Staff tools"
 SWEP.Spawnable = true
 SWEP.AdminOnly = true
 SWEP.NoArmoury = true
-SWEP.ToolGun = true          -- (R opens the list instead of the reload wheel)
+SWEP.ToolGun = true          -- (R opens the spawn window instead of the reload wheel)
 SWEP.Slot = 5
 SWEP.DrawAmmo = false
 
@@ -81,12 +81,9 @@ function SWEP:SecondaryAttack()
     if CLIENT and IsFirstTimePredicted() then self:ToolClick("2") end
 end
 
-function SWEP:Reload()
-    if (self.nextMenu or 0) > CurTime() then return end
-    self.nextMenu = CurTime() + 0.5
-    if SERVER and game.SinglePlayer() then self:CallOnClient("ToolClick", "3") end
-    if CLIENT and IsFirstTimePredicted() then self:ToolClick("3") end
-end
+-- R opens the spawn window; the client reads the key itself
+-- (rhylib/toolgun/cl_10_tool.lua), so taps and holds are exact.
+function SWEP:Reload() end
 
 function SWEP:ToolClick(which)
     if not CLIENT then return end
