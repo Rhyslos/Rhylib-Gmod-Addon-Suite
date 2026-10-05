@@ -33,7 +33,7 @@ K.CLASSES = {
       desc = "Z-6 and DP-24 anchor who soaks hits and suppresses droids." },
     { id = "officer", name = "Pistol officer", cat = "officer", spec = "pistol", who = "Anyone", orders = true,
       desc = "Rex: dual pistols, quick footwork and marking targets. Leads with one command order of your choice." },
-    { id = "commander", name = "Commander", cat = "officer", spec = "commander", who = "Anyone", orders = true,
+    { id = "commander", name = "Commander", cat = "officer", spec = "commander", who = "LT and up", orders = true,
       desc = "Cody, Gree, Fox: rifles, the sun visor's locks for the squad, and a stronger command order of your choice." },
     { id = "airborne", name = "Airborne", cat = "airborne", who = "Anyone",
       desc = "Jetpack trooper: long flights, hard landings, grenades from above and slamming into droids." },
@@ -91,6 +91,11 @@ function K.ClassAllowed(ply, cls)
     if cat and cat.mpOnly then
         local MP = Rhylib.MP
         if not (MP and MP.IsMP and MP.IsMP(ply)) then return false, "Military police only" end
+    end
+    -- (the Commander line is LT and up from its first skill)
+    if cls.spec == "commander" then
+        local ok, why = K.RankOk(ply, "commandRank")
+        if not ok then return false, why end
     end
     return true
 end
