@@ -135,6 +135,7 @@ Rhylib.Hook.Add("CalcView", "gear.optics.view", function(ply, pos, angles, fov)
     if ply ~= LocalPlayer() or not looking() then return end
     local want = fov / zoom()
     smoothFov = smoothFov and Lerp(math.min(1, FrameTime() * 10), smoothFov, want) or fov
+    G.opticsFov = smoothFov   -- (Mark target: how wide the view is right now)
     return { origin = ply:EyePos(), angles = ply:EyeAngles(), fov = smoothFov, drawviewer = false }
 end, -70)
 

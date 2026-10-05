@@ -2,35 +2,42 @@
     Mark target on the client: Q asks the server to mark (hook
     Rhylib.MarkKey from rhylib_menus), and marks sent to us (ours or a
     squad mate's) are drawn over the target until they run out or the
-    target dies. Optics marks (bonus damage) are red and say so.
+    target dies. Through optics, one Q marks several (sv_30_mark).
 ]]
 
 local K = Rhylib.Skills
 local UI = Rhylib.UI
 
-K.clientMarks = K.clientMarks or {}   -- [entity index] = { by, optics, untilT }
+K.clientMarks = K.clientMarks or {}   -- [entity index] = { by, untilT }
 
 local COL = Color(242, 160, 60)
-local COL_OPTICS = Color(235, 70, 60)
 local COL_OUT = Color(0, 0, 0, 170)
 
 Rhylib.Hook.Add("Rhylib.MarkKey", "skills.mark", function()
     local me = LocalPlayer()
     if not (IsValid(me) and me:Alive() and K.Has(me, "mark_target")) then return end
+    local G = Rhylib.Gear
+    local optics = G and G.Looking and G.Looking(me) or false
     Rhylib.Net.Start("skills.markreq")
+    net.WriteBool(optics)
+    net.WriteUInt(math.Clamp(math.floor((optics and G.opticsFov or 0) * 10), 0, 1023), 10)
     net.SendToServer()
 end)
 
 Rhylib.Net.Receive("skills.mark", function()
-    local idx = net.ReadUInt(13)
-    local by = net.ReadUInt(13)   -- (officer index)
-    local optics = net.ReadBool()
+    local by = net.ReadUInt(13)   -- (who marked)
+    local replace = net.ReadBool()
     local secs = net.ReadUInt(6)
-    -- One mark per officer: drop that officer's old one.
-    for t, mk in pairs(K.clientMarks) do
-        if mk.by == by then K.clientMarks[t] = nil end
+    local n = net.ReadUInt(3)
+    -- A new Q replaces that player's older marks.
+    if replace then
+        for t, mk in pairs(K.clientMarks) do
+            if mk.by == by then K.clientMarks[t] = nil end
+        end
     end
-    K.clientMarks[idx] = { by = by, optics = optics, untilT = CurTime() + secs }
+    for _ = 1, n do
+        K.clientMarks[net.ReadUInt(13)] = { by = by, untilT = CurTime() + secs }
+    end
     surface.PlaySound(by == LocalPlayer():EntIndex() and "buttons/blip1.wav" or "buttons/blip2.wav")
 end)
 
@@ -63,7 +70,7 @@ Rhylib.Hook.Add("HUDPaint", "skills.marks", function()
             local top = e:GetPos() + Vector(0, 0, e:OBBMaxs().z + 14)
             local sp = top:ToScreen()
             if sp.visible then
-                local col = mk.optics and COL_OPTICS or COL
+                local col = COL
                 local left = mk.untilT - now
                 local a = left < 1 and left or 1
                 local r = 9 * s
@@ -71,7 +78,7 @@ Rhylib.Hook.Add("HUDPaint", "skills.marks", function()
                 diamond(sp.x, sp.y, r, ColorAlpha(col, 255 * a))
                 diamond(sp.x, sp.y, r - 3 * s, ColorAlpha(col, 160 * a))
                 local m = math.Round(top:Distance(me:EyePos()) * 0.019)
-                local text = m .. " m" .. (mk.optics and "  ·  +" .. math.Round((K.Cfg("markDamage") - 1) * 100) .. "%" or "")
+                local text = m .. " m"
                 draw.SimpleTextOutlined(text, UI.Font(12, 600), sp.x, sp.y + r + 3 * s, ColorAlpha(col, 255 * a),
                     TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, ColorAlpha(COL_OUT, COL_OUT.a * a))
             end

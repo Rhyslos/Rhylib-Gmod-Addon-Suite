@@ -236,11 +236,24 @@ local function smallMag(wep)
     return mag ~= nil and (W and W.BaseMag and W.BaseMag(mag.id) or mag.id) == "mag_small"
 end
 
+-- Hits in a row on one target: the streak under ply[key] grows by one
+-- step per hit within the window (the first hit adds nothing), up to max.
+local function streak(ply, key, ent, windowCfg, maxCfg, stepCfg)
+    local now, r = CurTime(), ply[key]
+    if r and r.ent == ent and now - r.t <= K.Cfg(windowCfg) then
+        r.n = math.min(r.n + 1, K.Cfg(maxCfg))
+    else
+        r = { ent = ent, n = 0 }
+        ply[key] = r
+    end
+    r.t = now
+    return 1 + K.Cfg(stepCfg) * r.n
+end
+
 function K.DamageMult(ply, bolt, ent, tr, group)
     if not IsValid(ply) or not ply:IsPlayer() then return 1, false end
     local m, crit = 1, false
     if K.OrderIs(ply, "focus") then m = m * K.Cfg("focusDamage") end   -- (command order)
-    if IsValid(ent) and ent.rhylibMarks and K.MarkMult then m = m * K.MarkMult(ply, ent) end   -- (Mark target)
     if ply:GetNW2Float("rhylib_rush", 0) > CurTime() then m = m * K.Cfg("rushDamage") end   -- (Battle rush)
     local set = K.Set(ply)
     if next(set) == nil then return m, false end
@@ -259,16 +272,15 @@ function K.DamageMult(ply, bolt, ent, tr, group)
     if set.priority_target and IsValid(ent) and K.PriorityTarget and K.PriorityTarget(ent) then
         m = m * K.Cfg("priorityMult")
     end
-    if set.precision_rhythm and IsValid(ent) and (ent:IsNPC() or ent:IsNextBot() or ent:IsPlayer()) and IsValid(wep) and K.GunClass(wep) == K.DC15S then
-        local now, r = CurTime(), ply.rhylibRhythm
-        if r and r.ent == ent and now - r.t <= K.Cfg("rhythmWindow") then
-            r.n = math.min(r.n + 1, K.Cfg("rhythmMax"))
-        else
-            r = { ent = ent, n = 0 }
-            ply.rhylibRhythm = r
-        end
-        r.t = now
-        m = m * (1 + K.Cfg("rhythmStep") * r.n)
+    local living = IsValid(ent) and (ent:IsNPC() or ent:IsNextBot() or ent:IsPlayer())
+    local class = IsValid(wep) and K.GunClass(wep)
+    -- Precision rhythm: aimed DC-15S hits in a row on one target.
+    if set.precision_rhythm and living and class == K.DC15S and wep.GetAiming and wep:GetAiming() then
+        m = m * streak(ply, "rhylibRhythm", ent, "rhythmWindow", "rhythmMax", "rhythmStep")
+    end
+    -- Sustained fire: DC-15A full-auto hits in a row on one target.
+    if set.sustained_fire and living and class == K.DC15A and wep.AutoModes and wep.AutoModes[wep:GetFireModeName()] then
+        m = m * streak(ply, "rhylibSustain", ent, "sustainWindow", "sustainMax", "sustainStep")
     end
     if set.called_shot and group == HITGROUP_HEAD and IsValid(ent) and K.CalledShot then K.CalledShot(ply, ent) end
     if set.shotgun_drills and IsValid(bolt.weapon) and K.GunClass(bolt.weapon) == K.DP24 then

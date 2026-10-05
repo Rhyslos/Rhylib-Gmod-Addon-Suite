@@ -61,7 +61,9 @@ reg("speedLoaderMult", 0.7, "Speed loader: pistol reload time multiplier")
 reg("markTime", 15, "Mark target: seconds a mark lasts")
 reg("markRange", 8000, "Mark target: reach (units)")
 reg("markCooldown", 1, "Mark target: seconds between marks")
-reg("markDamage", 1.15, "Mark target: damage multiplier on targets marked through optics (squad hits only)")
+reg("markMax", 5, "Mark target: most enemies one Q marks through macrobinoculars / a rangefinder")
+reg("markOpticsCone", 10, "Mark target: widest cone (degrees from the middle) searched through optics")
+reg("markAimCone", 3, "Mark target: without optics, the nearest enemy within this many degrees of the crosshair counts")
 reg("rushDamage", 1.25, "Battle rush: damage multiplier")
 reg("rushTime", 5, "Battle rush: seconds it lasts after the first hit")
 reg("rushCooldown", 60, "Battle rush: seconds before it can trigger again")
@@ -103,7 +105,15 @@ reg("carbineDraw", 0.7, "Carbine discipline: DC-15S draw time multiplier")
 reg("calledShotTime", 6, "Called shot: seconds a headshot mark lasts")
 reg("priorityMult", 1.2, "Priority target: damage multiplier on heavy droids and marked targets")
 reg("rhythmStep", 0.05, "Precision rhythm: extra damage per DC-15S hit in a row")
-reg("rhythmMax", 4, "Precision rhythm: most steps (4 x 0.05 = +20%)")
+reg("rhythmMax", 2, "Precision rhythm: most steps (2 x 0.05 = +10%); only while aiming")
+reg("overchargeDamage", 1.3, "Overcharge: DC-15A damage multiplier")
+reg("overchargeDrain", 4, "Overcharge: power cell drain multiplier")
+reg("overchargeKick", 1.15, "Overcharge: view kick multiplier")
+reg("sustainKick", 0.6, "Sustained fire: view kick multiplier once fully settled")
+reg("sustainRamp", 1.5, "Sustained fire: seconds of continuous fire to settle fully (eased)")
+reg("sustainStep", 0.02, "Sustained fire: extra damage per DC-15A hit in a row on one target")
+reg("sustainMax", 5, "Sustained fire: most steps (5 x 0.02 = +10%)")
+reg("sustainWindow", 0.4, "Sustained fire: seconds between hits to keep the streak")
 reg("rhythmWindow", 1.5, "Precision rhythm: seconds between hits to keep the streak")
 reg("firstShotWait", 3, "First shot: seconds without firing before it's ready")
 reg("firstShotMult", 1.5, "First shot: damage multiplier with the DC-15X")
@@ -130,6 +140,7 @@ K.Z6 = "rhylib_z6"
 K.DC15X = "rhylib_dc15x"
 K.DP24 = "rhylib_dp24"
 K.DC15S = "rhylib_dc15s"
+K.DC15A = "rhylib_dc15a"
 
 -- The gun a weapon counts as for skills (training copies count as the real one).
 function K.GunClass(wep)
@@ -196,6 +207,16 @@ function K.RecoilMult(ply, wep)
     if K.OrderIs(ply, "focus") then m = m * cfg("focusRecoil") end   -- (command order)
     if K.GunClass(wep) == K.DC15S and K.Has(ply, "carbine_disc") then m = m * cfg("carbineRecoil") end
     if K.Has(ply, "hover") and K.Hovering(ply) then m = m * cfg("hoverRecoil") end
+    local mode = wep.GetFireModeName and wep:GetFireModeName()
+    if mode == "overcharge" then m = m * cfg("overchargeKick") end
+    -- Sustained fire: the kick eases down (smoothstep) the longer a DC-15A
+    -- full-auto spray lasts (rhylib_base notes rhylibSprayStart per shot).
+    if wep.AutoModes and wep.AutoModes[mode] and wep.rhylibSprayStart and K.GunClass(wep) == K.DC15A
+        and CurTime() - (wep.rhylibLastShot or 0) <= 0.3
+        and K.Has(ply, "sustained_fire") then
+        local t = math.Clamp((CurTime() - wep.rhylibSprayStart) / cfg("sustainRamp"), 0, 1)
+        m = m * (1 - (1 - cfg("sustainKick")) * t * t * (3 - 2 * t))
+    end
     if K.GunClass(wep) == K.Z6 then
         if K.Has(ply, "steady_barrels") and sprinting(ply, wep) then m = m * cfg("steadyRecoil") end
         if K.Has(ply, "planted") and ply:Crouching() then m = m * cfg("plantedMult") end
@@ -211,13 +232,26 @@ function K.FirstShotReady(ply, wep)
     return CurTime() - wep:GetKickTime() >= cfg("firstShotWait")
 end
 
--- Called by the weapon base for each shot, before the shot is recorded:
--- damage multiplier for this shot.
-function K.ShotDamageMult(ply, wep)
-    if isPly(ply) and K.FirstShotReady(ply, wep) then
-        return K.GunClass(wep) == K.DC15X and cfg("firstShotMult") or cfg("firstShotOther")
-    end
+-- Fire mode damage (Overcharge); also shown by the C stats panel.
+function K.ModeDamageMult(ply, wep)
+    if wep.GetFireModeName and wep:GetFireModeName() == "overcharge" then return cfg("overchargeDamage") end
     return 1
+end
+
+-- Power cell drain multiplier per shot (Overcharge).
+function K.CellDrainMult(ply, wep)
+    if wep.GetFireModeName and wep:GetFireModeName() == "overcharge" then return cfg("overchargeDrain") end
+    return 1
+end
+
+-- Called by the weapon base for each shot, before the shot is recorded:
+-- damage multiplier for this shot (First shot, Overcharge).
+function K.ShotDamageMult(ply, wep)
+    local m = K.ModeDamageMult(ply, wep)
+    if isPly(ply) and K.FirstShotReady(ply, wep) then
+        m = m * (K.GunClass(wep) == K.DC15X and cfg("firstShotMult") or cfg("firstShotOther"))
+    end
+    return m
 end
 
 -- Heavy feed: SWEP.MagSkills = { [magId] = skill }.

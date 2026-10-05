@@ -17,9 +17,8 @@
       - everything in needs / one of needsGroups learned first,
       - points: free while config freePoints is on (testing), else
         K.Points(ply) minus what's spent,
-      - Adaptable (officer adapt_1/2/3): with onePath on, an officer may
-        learn skills of other trees, one per Adaptable (tier caps 2 / 4 /
-        any). Those "borrowed" skills skip needs, spec and branch rules and
+      - Adaptable (officer adapt_1): with onePath on, an officer may
+        learn one skill of tier 4 or lower from another tree. Those "borrowed" skills skip needs, spec and branch rules and
         don't count as a path; job rules and points still apply.
     What a player has is one NW2String "rhylib_skills" (",id,id,"), set on
     change only; K.Has parses it once per change, so it's cheap anywhere
@@ -31,7 +30,7 @@ local K = Rhylib.Skills
 local Config = Rhylib.Config
 
 Config.Register("skills", "freePoints", true, "Every skill is free and can be reset any time (testing)")
-Config.Register("skills", "startPoints", 20, "Skill points everyone has while freePoints is off")
+Config.Register("skills", "startPoints", 24, "Skill points everyone has while freePoints is off (every path costs 24, so any one can be finished)")
 Config.Register("skills", "commandRank", "LT", "Lowest rank (roster prefix) that can learn and issue command orders")
 Config.Register("skills", "onePath", true, "Only one category (Trooper, Support, Officer, Airborne, Medic, Shock Trooper) at a time")
 
@@ -68,9 +67,9 @@ K.NODES = {
     { id = "quick_hands", cat = "trooper", tier = 1, cost = 1, name = "Quick hands",
       desc = "Magazine reloads are 10% faster on every gun." },
 
-    { id = "run_gun", cat = "trooper", spec = "assault", tier = 2, cost = 2, name = "Run and gun",
+    { id = "run_gun", cat = "trooper", spec = "assault", tier = 2, cost = 3, name = "Run and gun",
       desc = "Fire while sprinting. Spread is wider while you do.", needs = { "quick_hands" } },
-    { id = "point_blank", cat = "trooper", spec = "assault", tier = 2, cost = 2, name = "Point blank",
+    { id = "point_blank", cat = "trooper", spec = "assault", tier = 2, cost = 3, name = "Point blank",
       desc = "+25% damage within 8 m, fading to normal by 15 m.", needs = { "quick_hands" } },
 
     { id = "full_auto", cat = "trooper", spec = "autorifleman", tier = 2, cost = 2, name = "Full auto",
@@ -82,17 +81,17 @@ K.NODES = {
       desc = "You can carry and throw droid poppers (EMP grenades; E + R switches impact / timed). Nobody else can even pick them up.",
       needsGroups = { { "run_gun", "point_blank" }, { "full_auto", "ext_mags" } } },
 
-    { id = "light_kit", cat = "trooper", spec = "assault", tier = 4, cost = 3, name = "Light kit",
+    { id = "light_kit", cat = "trooper", spec = "assault", tier = 4, cost = 4, name = "Light kit",
       desc = "+5% movement speed while you carry under 60% of your limit.", needs = { "droid_popper" } },
 
-    { id = "rapid_fire", cat = "trooper", spec = "assault", branch = "vanguard", tier = 5, cost = 3, name = "Rapid fire",
+    { id = "rapid_fire", cat = "trooper", spec = "assault", branch = "vanguard", tier = 5, cost = 4, name = "Rapid fire",
       desc = "The DC-15S fires 600 rounds a minute instead of 540.", needs = { "light_kit" } },
-    { id = "momentum", cat = "trooper", spec = "assault", branch = "vanguard", tier = 6, cost = 5, name = "Momentum",
+    { id = "momentum", cat = "trooper", spec = "assault", branch = "vanguard", tier = 6, cost = 7, name = "Momentum",
       desc = "A kill gives 4 s of sprinting with no stamina cost, and your next reload is 25% faster.", needs = { "rapid_fire" } },
 
-    { id = "gun_runner", cat = "trooper", spec = "assault", branch = "shock", tier = 5, cost = 3, name = "Gun runner",
+    { id = "gun_runner", cat = "trooper", spec = "assault", branch = "shock", tier = 5, cost = 4, name = "Gun runner",
       desc = "The Z-6 weighs half and barely slows you while its barrels spin.", needs = { "light_kit" } },
-    { id = "steady_barrels", cat = "trooper", spec = "assault", branch = "shock", tier = 6, cost = 5, name = "Steady barrels",
+    { id = "steady_barrels", cat = "trooper", spec = "assault", branch = "shock", tier = 6, cost = 7, name = "Steady barrels",
       desc = "While sprinting with the Z-6: spread and kick cut by more than half.", needs = { "gun_runner" } },
 
     { id = "eff_cells", cat = "trooper", spec = "autorifleman", tier = 4, cost = 3, name = "Efficient cells",
@@ -103,6 +102,12 @@ K.NODES = {
     { id = "ammo_pack", cat = "trooper", spec = "autorifleman", tier = 5, cost = 5, name = "Ammo pack",
       desc = "Carry and use ammo packs: they top up a teammate's magazines and hand out full ones for any blaster.",
       needs = { "eff_cells", "load_bearer" } },
+    { id = "overcharge", cat = "trooper", spec = "autorifleman", tier = 5, cost = 3, name = "Overcharge", icon = "bolt",
+      desc = "DC-15A Overcharge fire mode (E + R): full auto, 30% more damage and bigger bolts, a bit more kick, and the power cell drains 4x faster.",
+      needs = { "eff_cells" } },
+    { id = "sustained_fire", cat = "trooper", spec = "autorifleman", tier = 6, cost = 3, name = "Sustained fire", icon = "barrels",
+      desc = "DC-15A full auto: the kick eases off the longer you hold the trigger (40% less after 1.5 s), and hits on the same target add 2% damage each, up to +10%.",
+      needsGroups = { { "overcharge" }, { "ammo_pack" } }, needsLabel = "Needs Overcharge or Ammo pack" },
 
     -- Support
     { id = "steady_stance", cat = "support", tier = 1, cost = 1, name = "Steady stance", icon = "crouch",
@@ -124,15 +129,15 @@ K.NODES = {
     { id = "called_shot", cat = "support", spec = "marksman", tier = 3, cost = 3, name = "Called shot",
       desc = "Your headshots mark the target for you and your squad for 6 s.",
       needsGroups = { { "steady_aim" }, { "carbine_disc" } }, needsLabel = "Needs Steady aim or Carbine discipline" },
-    { id = "bolt_drills", cat = "support", spec = "marksman", tier = 4, cost = 3, name = "Bolt drills", icon = "bolt",
+    { id = "bolt_drills", cat = "support", spec = "marksman", tier = 4, cost = 2, name = "Bolt drills", icon = "bolt",
       desc = "The DC-15X fires 20% faster.", needs = { "headhunter", "long_gun" } },
     { id = "priority_target", cat = "support", spec = "marksman", tier = 4, cost = 3, name = "Priority target",
       desc = "+20% damage against heavy droids (B2s, heavy and commander B1s) and anything marked.",
       needsGroups = { { "headhunter" }, { "called_shot" } }, needsLabel = "Needs Headhunter or Called shot" },
-    { id = "precision_rhythm", cat = "support", spec = "marksman", tier = 4, cost = 3, name = "Precision rhythm",
-      desc = "Each DC-15S hit on the same target within 1.5 s adds 5% damage, up to +20%.",
+    { id = "precision_rhythm", cat = "support", spec = "marksman", tier = 4, cost = 2, name = "Precision rhythm",
+      desc = "Aimed DC-15S hits on the same target within 1.5 s add 5% damage each, up to +10%.",
       needs = { "called_shot", "carbine_disc" } },
-    { id = "first_shot", cat = "support", spec = "marksman", tier = 5, cost = 5, name = "First shot", icon = "crosshair",
+    { id = "first_shot", cat = "support", spec = "marksman", tier = 5, cost = 4, name = "First shot", icon = "crosshair",
       desc = "Aimed, after 3 s without firing: your next shot goes exactly where you aim, with +50% damage from the DC-15X or +30% from other guns.",
       needsGroups = { { "bolt_drills", "priority_target" }, { "bolt_drills", "precision_rhythm" }, { "priority_target", "precision_rhythm" } },
       needsLabel = "Needs two of Bolt drills, Priority target and Precision rhythm" },
@@ -147,14 +152,14 @@ K.NODES = {
       desc = "A 5x1 belt in your inventory: an extra large magazine, or a shotgun and a small item.", needs = { "planted" } },
     { id = "shotgun_drills", cat = "support", spec = "heavy", tier = 4, cost = 3, name = "Shotgun drills", icon = "flame",
       desc = "DP-24: +30% pellet damage, 20% tighter cone. Guns 4 cells long or shorter weigh half.", needs = { "planted" } },
-    { id = "juggernaut", cat = "support", spec = "heavy", tier = 5, cost = 5, name = "Juggernaut", icon = "shield",
+    { id = "juggernaut", cat = "support", spec = "heavy", tier = 5, cost = 6, name = "Juggernaut", icon = "shield",
       desc = "15% less damage from everything.", needs = { "ammo_belt", "shotgun_drills" } },
-    { id = "suppression", cat = "support", spec = "heavy", tier = 6, cost = 3, name = "Suppression", icon = "barrels",
+    { id = "suppression", cat = "support", spec = "heavy", tier = 6, cost = 4, name = "Suppression", icon = "barrels",
       desc = "Droids near one you hit with the Z-6 aim much worse for 3 s.", needs = { "juggernaut" } },
 
     -- Officer
     { id = "mark_target", cat = "officer", tier = 1, cost = 1, name = "Mark target",
-      desc = "Q: mark what you aim at for 15 s, seen by you and your squad. Marked through macrobinoculars or a rangefinder, it also takes 15% more damage from you and your squad's blaster hits." },
+      desc = "Q: mark what you aim at for 15 s, seen by you and your squad. Through macrobinoculars or a rangefinder, Q marks up to 5 enemies nearest the middle of the view." },
     -- Shape 1-1-3-4-3 then the orders: Dual DC-17 is the tree's trademark,
     -- so everything after Mark target goes through it.
     { id = "dual_dc17", cat = "officer", tier = 2, cost = 2, name = "Dual DC-17",
@@ -178,7 +183,7 @@ K.NODES = {
     { id = "light_rounds", cat = "officer", tier = 5, cost = 2, name = "Light rounds",
       desc = "Hits from a gun loaded with a small magazine: 15% chance to do 50% more damage. Doesn't stack with Critical hits (the better chance counts).",
       needs = { "light_mags" } },
-    { id = "crits", cat = "officer", tier = 5, cost = 3, name = "Critical hits",
+    { id = "crits", cat = "officer", tier = 5, cost = 2, name = "Critical hits",
       desc = "10% of your hits with any gun do 50% more damage (with a small magazine, Light rounds' 15% counts instead).",
       needsGroups = { { "steady_grip" }, { "speed_loader" } }, needsLabel = "Needs Steady grip or Speed loader" },
     { id = "adapt_1", cat = "officer", tier = 5, cost = 3, name = "Adaptable",
@@ -186,22 +191,22 @@ K.NODES = {
       needsGroups = { { "carbine_sidearm" }, { "sidestep" } }, needsLabel = "Needs Carbine sidearm or Sidestep" },
     -- Command orders: pick one. Issued with the command comlink to you and
     -- everyone within 380 units for 6 s, then a 6 minute cooldown.
-    { id = "cmd_wind", cat = "officer", tier = 6, cost = 3, name = "Second wind", exclusive = "command", rankCfg = "commandRank",
+    { id = "cmd_wind", cat = "officer", tier = 6, cost = 2, name = "Second wind", exclusive = "command", rankCfg = "commandRank",
       desc = "Command order (pick one). No stamina drain while sprinting, and stamina refills fast. You and everyone near you, 6 s; 6 min cooldown.",
       needsGroups = { { "light_rounds" }, { "crits" }, { "adapt_1" } }, needsLabel = "Needs Light rounds, Critical hits or Adaptable" },
-    { id = "cmd_triage", cat = "officer", tier = 6, cost = 3, name = "Field triage", exclusive = "command", rankCfg = "commandRank",
+    { id = "cmd_triage", cat = "officer", tier = 6, cost = 2, name = "Field triage", exclusive = "command", rankCfg = "commandRank",
       desc = "Command order (pick one). Downed players nearby get up (at 25% health), everyone heals 8 health a second, and all afflictions are muted (bleeding, fractures, hurt limbs, illness). You and everyone near you, 6 s; 6 min cooldown.",
       needsGroups = { { "light_rounds" }, { "crits" }, { "adapt_1" } }, needsLabel = "Needs Light rounds, Critical hits or Adaptable" },
-    { id = "cmd_hold", cat = "officer", tier = 6, cost = 3, name = "Hold fast", exclusive = "command", rankCfg = "commandRank",
+    { id = "cmd_hold", cat = "officer", tier = 6, cost = 2, name = "Hold fast", exclusive = "command", rankCfg = "commandRank",
       desc = "Command order (pick one). Armour refilled (it stays) and no damage at all while it lasts, but nobody can sprint, dash or fly: hold the position. You and everyone near you, 6 s; 6 min cooldown.",
       needsGroups = { { "light_rounds" }, { "crits" }, { "adapt_1" } }, needsLabel = "Needs Light rounds, Critical hits or Adaptable" },
-    { id = "cmd_focus", cat = "officer", tier = 6, cost = 3, name = "Focus fire", exclusive = "command", rankCfg = "commandRank",
+    { id = "cmd_focus", cat = "officer", tier = 6, cost = 2, name = "Focus fire", exclusive = "command", rankCfg = "commandRank",
       desc = "Command order (pick one). +20% damage and half the kick on every gun. You and everyone near you, 6 s; 6 min cooldown.",
       needsGroups = { { "light_rounds" }, { "crits" }, { "adapt_1" } }, needsLabel = "Needs Light rounds, Critical hits or Adaptable" },
-    { id = "cmd_open", cat = "officer", tier = 6, cost = 3, name = "Open up", exclusive = "command", rankCfg = "commandRank",
+    { id = "cmd_open", cat = "officer", tier = 6, cost = 2, name = "Open up", exclusive = "command", rankCfg = "commandRank",
       desc = "Command order (pick one). Guns use no ammo or power cells. You and everyone near you, 6 s; 6 min cooldown.",
       needsGroups = { { "light_rounds" }, { "crits" }, { "adapt_1" } }, needsLabel = "Needs Light rounds, Critical hits or Adaptable" },
-    { id = "cmd_press", cat = "officer", tier = 6, cost = 3, name = "Press forward", exclusive = "command", rankCfg = "commandRank",
+    { id = "cmd_press", cat = "officer", tier = 6, cost = 2, name = "Press forward", exclusive = "command", rankCfg = "commandRank",
       desc = "Command order (pick one). No knockback from hits, no explosion knockdowns, and 20% faster sprinting. You and everyone near you, 6 s; 6 min cooldown.",
       needsGroups = { { "light_rounds" }, { "crits" }, { "adapt_1" } }, needsLabel = "Needs Light rounds, Critical hits or Adaptable" },
 
@@ -216,25 +221,25 @@ K.NODES = {
       needs = { "hard_landings" } },
     { id = "afterburner", cat = "airborne", tier = 3, cost = 2, name = "Afterburner",
       desc = "Jetpack climbs, steers and flies 25% faster.", needs = { "extended_tanks" } },
-    { id = "aerial_stability", cat = "airborne", tier = 3, cost = 3, name = "Aerial stability",
+    { id = "aerial_stability", cat = "airborne", tier = 3, cost = 2, name = "Aerial stability",
       desc = "20% less damage while you're off the ground.",
       needsGroups = { { "extended_tanks" }, { "hover" } }, needsLabel = "Needs Extended tanks or Hover" },
-    { id = "combat_drop", cat = "airborne", tier = 3, cost = 3, name = "Combat drop",
+    { id = "combat_drop", cat = "airborne", tier = 3, cost = 2, name = "Combat drop",
       desc = "Land after 7 s or more of jetpack flight: 50% less damage for 5 s.",
       needs = { "hover" } },
     { id = "grenadier", cat = "airborne", tier = 4, cost = 3, name = "Grenadier",
       desc = "Thermal detonators you throw fly 20% further, hit 30% harder and blast 10% wider.",
       needsGroups = { { "afterburner" }, { "aerial_stability" }, { "combat_drop" } },
       needsLabel = "Needs Afterburner, Aerial stability or Combat drop" },
-    { id = "dp23_prof", cat = "airborne", tier = 5, cost = 3, name = "DP-23 proficiency",
+    { id = "dp23_prof", cat = "airborne", tier = 5, cost = 2, name = "DP-23 proficiency",
       desc = "Fire the DP-23 while flying the jetpack (other large guns still can't).",
       needs = { "grenadier", "afterburner" } },
-    { id = "blast_hardened", cat = "airborne", tier = 5, cost = 3, name = "Blast hardened",
+    { id = "blast_hardened", cat = "airborne", tier = 5, cost = 2, name = "Blast hardened",
       desc = "30% less damage from explosions.", needs = { "grenadier" } },
-    { id = "battle_rush", cat = "airborne", tier = 5, cost = 3, name = "Battle rush",
+    { id = "battle_rush", cat = "airborne", tier = 5, cost = 2, name = "Battle rush",
       desc = "The first hit you take gives you 25% more damage for 5 s. Once a minute.",
       needs = { "grenadier", "combat_drop" } },
-    { id = "death_from_above", cat = "airborne", tier = 6, cost = 5, name = "Death from above",
+    { id = "death_from_above", cat = "airborne", tier = 6, cost = 4, name = "Death from above",
       desc = "Landing hard (a long drop or a jetpack dive) slams droids around you.",
       needsGroups = { { "dp23_prof", "blast_hardened" }, { "dp23_prof", "battle_rush" }, { "blast_hardened", "battle_rush" } },
       needsLabel = "Needs two of DP-23 proficiency, Blast hardened and Battle rush" },
@@ -247,30 +252,30 @@ K.NODES = {
     { id = "steady_hands", cat = "medic", tier = 2, cost = 2, name = "Steady hands",
       desc = "Treatments (not revives) are 15% faster.", needs = { "field_drag" } },
 
-    { id = "quick_revive", cat = "medic", spec = "combat_medic", tier = 3, cost = 2, name = "Quick revive",
+    { id = "quick_revive", cat = "medic", spec = "combat_medic", tier = 3, cost = 3, name = "Quick revive",
       desc = "Revives take 20% less time.", needs = { "hands_on", "steady_hands" } },
-    { id = "under_fire", cat = "medic", spec = "combat_medic", tier = 4, cost = 3, name = "Under fire",
+    { id = "under_fire", cat = "medic", spec = "combat_medic", tier = 4, cost = 4, name = "Under fire",
       desc = "20% less damage while you revive or treat someone.", needs = { "quick_revive" } },
     { id = "deep_pockets", cat = "medic", spec = "combat_medic", tier = 4, cost = 3, name = "Deep pockets",
       desc = "Medkit stacks hold 2 more.", needs = { "quick_revive" } },
     { id = "triage", cat = "medic", spec = "combat_medic", tier = 4, cost = 3, name = "Triage",
       desc = "Downed markers reach twice as far, show who is helping and flash when time runs short.",
       needs = { "quick_revive" } },
-    { id = "medevac", cat = "medic", spec = "combat_medic", tier = 5, cost = 5, name = "Medevac", icon = "drag",
+    { id = "medevac", cat = "medic", spec = "combat_medic", tier = 5, cost = 6, name = "Medevac", icon = "drag",
       desc = "A downed player's bleed-out pauses while you drag them to cover.",
       needs = { "under_fire" } },
 
-    { id = "chem_bench", cat = "medic", spec = "chemist", tier = 3, cost = 2, name = "Chemistry",
+    { id = "chem_bench", cat = "medic", spec = "chemist", tier = 3, cost = 3, name = "Chemistry",
       desc = "Use a chemistry bench to turn medical supplies into gels, painkillers, splints, blood packs and medkits.",
       needs = { "hands_on", "steady_hands" } },
-    { id = "field_surgeon", cat = "medic", spec = "chemist", tier = 4, cost = 3, name = "Field surgeon",
+    { id = "field_surgeon", cat = "medic", spec = "chemist", tier = 4, cost = 4, name = "Field surgeon",
       desc = "Your first aid kit fully sets bones and heals burns anywhere, not just in the med bay.",
       needs = { "chem_bench" } },
     { id = "batch_brewing", cat = "medic", spec = "chemist", tier = 4, cost = 3, name = "Batch brewing",
       desc = "The bench makes two of everything.", needs = { "chem_bench" } },
     { id = "bacta_specialist", cat = "medic", spec = "chemist", tier = 4, cost = 3, name = "Bacta specialist",
       desc = "Bacta tanks near you heal twice as fast.", needs = { "chem_bench" } },
-    { id = "efficient_care", cat = "medic", spec = "chemist", tier = 5, cost = 5, name = "Efficient care", icon = "flask",
+    { id = "efficient_care", cat = "medic", spec = "chemist", tier = 5, cost = 6, name = "Efficient care", icon = "flask",
       desc = "Your first aid kits use a third less charge.",
       needs = { "field_surgeon" } },
 
