@@ -8,13 +8,19 @@
     nodes without a spec are shared by the whole category.
         { id, cat, spec, branch, tier, cost, name, desc,
           needs = { ids } (all of them),
-          needsGroups = { { ids }, { ids } } (all of one group) }
+          needsGroups = { { ids }, { ids } } (all of one group),
+          needsLabel = text for needsGroups, exclusive = group (one per set),
+          rankCfg = config key of the lowest rank allowed }
     Rules (K.CanLearn, used by the server and to grey out the menu):
       - one category at a time (config onePath),
       - one specialisation per category, one end branch per specialisation,
       - everything in needs / one of needsGroups learned first,
       - points: free while config freePoints is on (testing), else
-        K.Points(ply) minus what's spent.
+        K.Points(ply) minus what's spent,
+      - Adaptable (officer adapt_1/2/3): with onePath on, an officer may
+        learn skills of other trees, one per Adaptable (tier caps 2 / 4 /
+        any). Those "borrowed" skills skip needs, spec and branch rules and
+        don't count as a path; job rules and points still apply.
     What a player has is one NW2String "rhylib_skills" (",id,id,"), set on
     change only; K.Has parses it once per change, so it's cheap anywhere
     (SetupMove, firing, the crosshair). Effects: sh_10_effects.lua.
@@ -26,6 +32,7 @@ local Config = Rhylib.Config
 
 Config.Register("skills", "freePoints", true, "Every skill is free and can be reset any time (testing)")
 Config.Register("skills", "startPoints", 20, "Skill points everyone has while freePoints is off")
+Config.Register("skills", "commandRank", "LT", "Lowest rank (roster prefix) that can learn and issue command orders")
 Config.Register("skills", "onePath", true, "Only one category (Trooper, Support, Officer, Airborne, Medic, Shock Trooper) at a time")
 
 function K.Cfg(key) return Config.Get("skills", key) end
@@ -45,7 +52,7 @@ K.CATEGORIES = {
           { id = "marksman", name = "Marksman", desc = "Long-range engagements" },
           { id = "heavy", name = "Heavy", desc = "The Z-6, the shotgun and soaking hits" },
       } },
-    { id = "officer", name = "Officer", desc = "Sidearms, footwork and leading (more coming later)", specs = {} },
+    { id = "officer", name = "Officer", desc = "Sidearms, footwork, borrowed skills and command orders", specs = {} },
     { id = "airborne", name = "Airborne", desc = "Jetpacks, hard landings and getting in close (indoors too)", specs = {} },
     { id = "medic", name = "Medic", desc = "Medic jobs only: revives, treatment and the med bay", medicOnly = true,
       specs = {
@@ -131,20 +138,56 @@ K.NODES = {
       desc = "Droids near one you hit with the Z-6 aim much worse for 3 s.", needs = { "juggernaut" } },
 
     -- Officer
-    { id = "pistol_prof", cat = "officer", tier = 1, cost = 2, name = "Pistol proficiency",
-      desc = "DC-17: 20% less spread." },
-    { id = "light_mags", cat = "officer", tier = 2, cost = 2, name = "Light mags", icon = "mag",
+    { id = "mark_target", cat = "officer", tier = 1, cost = 1, name = "Mark target",
+      desc = "Q: mark what you aim at for 15 s, seen by you and your squad. Marked through macrobinoculars or a rangefinder, it also takes 15% more damage from you and your squad's blaster hits." },
+    { id = "pistol_prof", cat = "officer", tier = 2, cost = 2, name = "Pistol proficiency",
+      desc = "DC-17: 20% less spread.", needs = { "mark_target" } },
+    { id = "quick_draw", cat = "officer", tier = 3, cost = 1, name = "Quick draw",
+      desc = "Guns come out 40% faster when you switch to them.", needs = { "pistol_prof" } },
+    { id = "carbine_sidearm", cat = "officer", tier = 3, cost = 1, name = "Carbine sidearm",
+      desc = "DC-15S: semi-auto becomes Sidearm: held like a pistol in both hands, in first and third person, and 6% more damage.", needs = { "pistol_prof" } },
+    { id = "light_mags", cat = "officer", tier = 3, cost = 2, name = "Light mags", icon = "mag",
       desc = "Small magazines hold 50 rounds instead of 30 when you load them.", needs = { "pistol_prof" } },
-    { id = "sidestep", cat = "officer", tier = 2, cost = 2, name = "Sidestep", icon = "dodge",
+    { id = "sidestep", cat = "officer", tier = 3, cost = 2, name = "Sidestep", icon = "dodge",
       desc = "Sprint + left, right or back + Jump (or Alt + any direction): a quick step aside from the ground. Costs stamina, 2.5 s cooldown.", needs = { "pistol_prof" } },
-    { id = "carbine_sidearm", cat = "officer", tier = 2, cost = 1, name = "Carbine sidearm",
-      desc = "DC-15S: semi-auto becomes Sidearm: held like a pistol in both hands, in first and third person.", needs = { "pistol_prof" } },
-    { id = "steady_grip", cat = "officer", tier = 3, cost = 2, name = "Steady grip",
+    { id = "steady_grip", cat = "officer", tier = 4, cost = 2, name = "Steady grip",
       desc = "Pistols kick half as much when you fire (the DC-17, and the DC-15S as a sidearm).", needs = { "carbine_sidearm" } },
-    { id = "dual_dc17", cat = "officer", tier = 3, cost = 3, name = "Dual DC-17",
-      desc = "Draw a second DC-17 (E + R): two magazines loaded, shots alternate between hands.", needs = { "light_mags" } },
-    { id = "crits", cat = "officer", tier = 3, cost = 3, name = "Critical hits",
-      desc = "10% of your hits do 50% more damage.", needs = { "sidestep" } },
+    { id = "speed_loader", cat = "officer", tier = 4, cost = 2, name = "Speed loader",
+      desc = "Pistol (DC-17) reloads are 30% faster.", needs = { "carbine_sidearm" } },
+    { id = "light_rounds", cat = "officer", tier = 4, cost = 2, name = "Light rounds",
+      desc = "Hits from a gun loaded with a small magazine: 15% chance to do 50% more damage. Doesn't stack with Critical hits (the better chance counts).",
+      needs = { "light_mags" } },
+    { id = "adapt_1", cat = "officer", tier = 4, cost = 2, name = "Adaptable I",
+      desc = "Learn one skill of tier 2 or lower from any other tree. It skips that skill's requirements, but you still need the job (medic, MP) and pay its points.",
+      needs = { "sidestep" } },
+    { id = "dual_dc17", cat = "officer", tier = 5, cost = 3, name = "Dual DC-17",
+      desc = "Draw a second DC-17 (E + R): two magazines loaded, shots alternate between hands.", needs = { "steady_grip" } },
+    { id = "crits", cat = "officer", tier = 5, cost = 3, name = "Critical hits",
+      desc = "10% of your hits with any gun do 50% more damage (with a small magazine, Light rounds' 15% counts instead).", needs = { "light_rounds" } },
+    { id = "adapt_2", cat = "officer", tier = 5, cost = 3, name = "Adaptable II",
+      desc = "Learn one more skill from any other tree, tier 4 or lower. Same rules as Adaptable I.", needs = { "adapt_1" } },
+    { id = "adapt_3", cat = "officer", tier = 6, cost = 4, name = "Adaptable III",
+      desc = "Learn one more skill from any other tree, any tier. Same rules as Adaptable I.", needs = { "adapt_2" } },
+    -- Command orders: pick one. Issued with the command comlink to you and
+    -- everyone within 380 units for 6 s, then a 6 minute cooldown.
+    { id = "cmd_wind", cat = "officer", tier = 7, cost = 3, name = "Second wind", exclusive = "command", rankCfg = "commandRank",
+      desc = "Command order (pick one). No stamina drain while sprinting, and stamina refills fast. You and everyone near you, 6 s; 6 min cooldown.",
+      needsGroups = { { "dual_dc17" }, { "crits" }, { "adapt_2" } }, needsLabel = "Needs Dual DC-17, Critical hits or Adaptable II" },
+    { id = "cmd_triage", cat = "officer", tier = 7, cost = 3, name = "Field triage", exclusive = "command", rankCfg = "commandRank",
+      desc = "Command order (pick one). Heals 20 health a second and mutes all afflictions (bleeding, fractures, hurt limbs, illness). You and everyone near you, 6 s; 6 min cooldown.",
+      needsGroups = { { "dual_dc17" }, { "crits" }, { "adapt_2" } }, needsLabel = "Needs Dual DC-17, Critical hits or Adaptable II" },
+    { id = "cmd_hold", cat = "officer", tier = 7, cost = 3, name = "Hold fast", exclusive = "command", rankCfg = "commandRank",
+      desc = "Command order (pick one). Armour refilled (it stays), no damage at all while it lasts, and downed players nearby get up at full health. You and everyone near you, 6 s; 6 min cooldown.",
+      needsGroups = { { "dual_dc17" }, { "crits" }, { "adapt_2" } }, needsLabel = "Needs Dual DC-17, Critical hits or Adaptable II" },
+    { id = "cmd_focus", cat = "officer", tier = 7, cost = 3, name = "Focus fire", exclusive = "command", rankCfg = "commandRank",
+      desc = "Command order (pick one). +20% damage and half the kick on every gun. You and everyone near you, 6 s; 6 min cooldown.",
+      needsGroups = { { "dual_dc17" }, { "crits" }, { "adapt_2" } }, needsLabel = "Needs Dual DC-17, Critical hits or Adaptable II" },
+    { id = "cmd_open", cat = "officer", tier = 7, cost = 3, name = "Open up", exclusive = "command", rankCfg = "commandRank",
+      desc = "Command order (pick one). Guns use no ammo or power cells. You and everyone near you, 6 s; 6 min cooldown.",
+      needsGroups = { { "dual_dc17" }, { "crits" }, { "adapt_2" } }, needsLabel = "Needs Dual DC-17, Critical hits or Adaptable II" },
+    { id = "cmd_press", cat = "officer", tier = 7, cost = 3, name = "Press forward", exclusive = "command", rankCfg = "commandRank",
+      desc = "Command order (pick one). No knockback from hits, no explosion knockdowns, and 20% faster sprinting. You and everyone near you, 6 s; 6 min cooldown.",
+      needsGroups = { { "dual_dc17" }, { "crits" }, { "adapt_2" } }, needsLabel = "Needs Dual DC-17, Critical hits or Adaptable II" },
 
     -- Airborne (jetpack: 15 s of flight with any Airborne skill, 10 s without)
     { id = "hard_landings", cat = "airborne", tier = 1, cost = 1, name = "Hard landings",
@@ -259,18 +302,61 @@ function K.Has(ply, id)
     return K.Set(ply)[id] == true
 end
 
--- The category, spec and branch a set of skills is committed to.
+-- Adaptable: the officer skills that let you borrow from other trees,
+-- and the highest tier each one takes.
+K.ADAPT_CAT = "officer"
+K.ADAPT = { { id = "adapt_1", tier = 2 }, { id = "adapt_2", tier = 4 }, { id = "adapt_3", tier = 99 } }
+
+-- Is id a borrowed skill in this set (another tree's, through Adaptable)?
+function K.Borrowed(set, id)
+    local n = K.byId[id]
+    return n and n.cat ~= K.ADAPT_CAT and set.adapt_1 and K.Cfg("onePath") and true or false
+end
+
+-- Tier caps of the set's Adaptable slots, highest first.
+function K.AdaptSlots(set)
+    local out = {}
+    for i = #K.ADAPT, 1, -1 do
+        if set[K.ADAPT[i].id] then out[#out + 1] = K.ADAPT[i].tier end
+    end
+    return out
+end
+
+-- Do these borrowed tiers fit the slots? (highest tier into the highest cap)
+function K.FitsSlots(tiers, slots)
+    if #tiers > #slots then return false end
+    table.sort(tiers, function(a, b) return a > b end)
+    for i, t in ipairs(tiers) do
+        if t > slots[i] then return false end
+    end
+    return true
+end
+
+-- The category, spec and branch a set of skills is committed to
+-- (borrowed skills don't count).
 function K.Commitments(set)
     local cat, spec, branch = {}, {}, {}
     for id in pairs(set) do
         local n = K.byId[id]
-        if n then
+        if n and not K.Borrowed(set, id) then
             cat[n.cat] = true
             if n.spec then spec[n.cat] = n.spec end
             if n.branch then branch[n.spec] = n.branch end
         end
     end
     return cat, spec, branch
+end
+
+-- Rank check for rankCfg nodes and command orders. Returns ok, reason.
+function K.RankOk(ply, key)
+    local prefix = K.Cfg(key or "commandRank")
+    local R = Rhylib.Roster
+    if not (prefix and prefix ~= "" and R and R.RankIndex) then return true end
+    local need = R.RankIndex(prefix)
+    if need and ply:GetNW2Int("rhylib_rank", 0) < need then
+        return false, "Needs the rank " .. (R.RankName and R.RankName(need) or prefix)
+    end
+    return true
 end
 
 function K.Spent(set)
@@ -305,6 +391,22 @@ function K.CanLearn(ply, set, id)
         if not (MP and MP.IsMP and MP.IsMP(ply)) then return false, "Military police only" end
     end
     local cats, specs, branches = K.Commitments(set)
+
+    -- Borrowed through Adaptable: only the slots and points matter.
+    if K.Borrowed(set, id) and next(cats) ~= nil then
+        local tiers = { n.tier }
+        for sid in pairs(set) do
+            if K.Borrowed(set, sid) then tiers[#tiers + 1] = K.byId[sid].tier end
+        end
+        local slots = K.AdaptSlots(set)
+        if not K.FitsSlots(tiers, slots) then
+            if #tiers > #slots then return false, "All your Adaptable slots are used" end
+            return false, "No free Adaptable slot for a tier " .. n.tier .. " skill"
+        end
+        if K.Spent(set) + n.cost > K.Points(ply) then return false, "Not enough skill points" end
+        return true
+    end
+
     if K.Cfg("onePath") then
         for c in pairs(cats) do
             if c ~= n.cat then return false, "You're on the " .. (K.catById[c] and K.catById[c].name or c) .. " path (reset to change)" end
@@ -315,6 +417,12 @@ function K.CanLearn(ply, set, id)
     end
     if n.branch and branches[n.spec] and branches[n.spec] ~= n.branch then
         return false, "You chose the other branch"
+    end
+    if n.exclusive then
+        for sid in pairs(set) do
+            local o = K.byId[sid]
+            if o and o.exclusive == n.exclusive then return false, "You chose " .. o.name .. " (one of these only)" end
+        end
     end
     for _, req in ipairs(n.needs or EMPTY) do
         if not set[req] then return false, "Needs " .. (K.byId[req] and K.byId[req].name or req) end
@@ -328,7 +436,11 @@ function K.CanLearn(ply, set, id)
             end
             if all then okAny = true break end
         end
-        if not okAny then return false, "Needs both earlier skills of one specialisation" end
+        if not okAny then return false, n.needsLabel or "Needs both earlier skills of one specialisation" end
+    end
+    if n.rankCfg then
+        local ok, why = K.RankOk(ply, n.rankCfg)
+        if not ok then return false, why end
     end
     if K.Spent(set) + n.cost > K.Points(ply) then return false, "Not enough skill points" end
     return true

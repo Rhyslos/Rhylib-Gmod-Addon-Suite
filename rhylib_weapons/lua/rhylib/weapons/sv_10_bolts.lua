@@ -27,18 +27,22 @@ local Config = Rhylib.Config
 -- Shot events. Each shot is written once: shots are grouped per tick by
 -- the area they start in (cubes of SHOT_CELL units), and each group goes
 -- in one message to the players near that area, in the core's batch
--- format (read on the client with Rhylib.Net.ReceiveBatch). The shooter
--- may get their own shots; the client skips them (it drew them already).
+-- format (read on the client with Rhylib.Net.ReceiveBatch). A group with
+-- one shooter skips them (they drew it already); in a mixed group the
+-- client skips its own.
 Rhylib.Net.Register("wep.shot")
 local SHOT_CELL = 1024
 
+-- ahead: the server bolt's head start (first leg) in 1/100 s, 6 bits.
+local AHEAD_MAX = 63
 local function writeShot(s)
     net.WriteUInt(s.shooter, 13)
     net.WriteVector(s.origin)
     net.WriteNormal(s.dir)
-    net.WriteUInt(s.speed, 14)
+    net.WriteUInt(s.speed, 15)
     net.WriteUInt(s.color, 4)
     net.WriteBool(s.left)
+    net.WriteUInt(s.ahead, 6)
 end
 
 -- Hit confirm to the shooter: 0 body, 1 head, 2 down/kill.
@@ -162,7 +166,7 @@ end
 -- Training bolts: players lose sim health only (rhylib_training answers
 -- Rhylib.TrainingHit; true = that eliminated them). Returns true when the
 -- hit is done, false for a training droid (normal damage).
-local function trainingHit(bolt, tr, ent, rag)
+local function trainingHit(bolt, tr, ent, rag, group)
     if ent.IsRhylibDroid then
         if ent.Training then return false end
         local fx = EffectData()
@@ -172,7 +176,7 @@ local function trainingHit(bolt, tr, ent, rag)
         return true
     end
     if not ent:IsPlayer() or not ent:Alive() then return true end
-    local group = hitGroup(ent, rag, tr)
+    group = group or hitGroup(ent, rag, tr)
     local owner = bolt.owner
     local attacker = IsValid(owner) and owner or game.GetWorld()
     local out = hook.Run("Rhylib.TrainingHit", ent, attacker, bolt.damage * groupMult(group), bolt.weapon, group)
@@ -184,7 +188,19 @@ local function trainingHit(bolt, tr, ent, rag)
     return true
 end
 
-local function applyHit(bolt, tr)
+-- The entity a hit counts for: a lying player's ragdoll (rhylib_core)
+-- counts for the player. Returns ent, rag.
+local function hitTarget(tr)
+    local ent = tr.Entity
+    if not IsValid(ent) then return nil end
+    local L = Rhylib.Lying
+    local rag = L and L.Owner and L.Owner(ent) and ent or nil
+    if rag then ent = L.Owner(rag) end
+    return ent, rag
+end
+
+-- group: worked out while players were rewound (first leg), or nil.
+local function applyHit(bolt, tr, group)
     if bolt.onHit then
         bolt.onHit(bolt, tr)  -- special bolts (the grapple hook) handle their own hits
         return
@@ -193,12 +209,8 @@ local function applyHit(bolt, tr)
         explode(bolt, tr.HitPos, tr.HitNormal)
         return
     end
-    local ent = tr.Entity
+    local ent, rag = hitTarget(tr)
     if not IsValid(ent) then return end
-    -- A lying player's ragdoll (rhylib_core): the hit is on the player.
-    local L = Rhylib.Lying
-    local rag = L and L.Owner and L.Owner(ent) and ent or nil
-    if rag then ent = L.Owner(rag) end
     -- Riot shields (sh_60_shield.lua): a bolt from the front stops on the shield.
     if ent:IsPlayer() and Rhylib.Weapons.ShieldBlocks and Rhylib.Weapons.ShieldBlocks(ent, bolt.dir) then
         local fx = EffectData()
@@ -208,14 +220,14 @@ local function applyHit(bolt, tr)
         ent:EmitSound("physics/metal/metal_solid_impact_bullet" .. math.random(1, 4) .. ".wav", 70)
         return
     end
-    if bolt.training and trainingHit(bolt, tr, ent, rag) then return end
+    if bolt.training and trainingHit(bolt, tr, ent, rag, group) then return end
     -- Stun bolts (SWEP.Stun or the "stun" fire mode): no damage; rhylib_mp decides what a hit does.
     if bolt.stun then
         if ent:IsPlayer() then hook.Run("Rhylib.StunHit", ent, bolt.owner, bolt.weapon) end
         return
     end
 
-    local group = hitGroup(ent, rag, tr)
+    group = group or hitGroup(ent, rag, tr)
     local mult = groupMult(group)
 
     local owner = bolt.owner
@@ -271,23 +283,26 @@ end
 local groups, groupKeys, groupPool = {}, {}, {}
 local floor = math.floor
 
-local function sendShot(owner, color, origin, dir, speed, left)
+local function sendShot(owner, color, origin, dir, speed, left, ahead)
     local cx, cy, cz = floor(origin.x / SHOT_CELL), floor(origin.y / SHOT_CELL), floor(origin.z / SHOT_CELL)
     local key = (cx + 128) * 65536 + (cy + 128) * 256 + (cz + 128)
     local g = groups[key]
     if not g then
         g = table.remove(groupPool) or { items = {} }
+        g.only = owner   -- (one shooter in the group: they don't need it)
         g.x, g.y, g.z = (cx + 0.5) * SHOT_CELL, (cy + 0.5) * SHOT_CELL, (cz + 0.5) * SHOT_CELL
         groups[key] = g
         groupKeys[#groupKeys + 1] = key
     end
+    if g.only ~= owner then g.only = false end
     g.items[#g.items + 1] = {
         shooter = owner:EntIndex(),
         origin = origin,
         dir = dir,
-        speed = math.min(speed, 16383),
+        speed = math.min(math.floor(speed), 32767),
         color = color,
         left = left and true or false,
+        ahead = math.Clamp(math.floor(ahead * 100 + 0.5), 0, AHEAD_MAX),
     }
 end
 
@@ -299,14 +314,17 @@ local function flushShots()
     local reach = Config.Get("weapons", "shotRange") + SHOT_CELL * 0.87
     local reachSqr = reach * reach
     local list = getHumans()
+    -- A shooter's own client drew their bolts already (not in singleplayer).
+    local sp = game.SinglePlayer()
     for k = 1, #groupKeys do
         local key = groupKeys[k]
         local g = groups[key]
         centre:SetUnpacked(g.x, g.y, g.z)
+        local skip = not sp and g.only or nil
         local n = 0
         for i = 1, #list do
             local ply = list[i]
-            if IsValid(ply) and ply:GetPos():DistToSqr(centre) < reachSqr then
+            if ply ~= skip and IsValid(ply) and ply:GetPos():DistToSqr(centre) < reachSqr then
                 n = n + 1
                 recipients[n] = ply
             end
@@ -351,8 +369,48 @@ local function viewLag(ply)
     return ply:Ping() / 1000 + (ply.rhylibLerp or 0.1)
 end
 
-function Bolts.Fire(owner, weapon, origin, dir, damage, opts)
+-- Copy of a trace result for a hit applied later (Bolts.ApplyHits).
+local function copyTrace(tr)
+    return {
+        Hit = tr.Hit, HitWorld = tr.HitWorld, Entity = tr.Entity, HitGroup = tr.HitGroup,
+        HitPos = Vector(tr.HitPos), HitNormal = Vector(tr.HitNormal), Fraction = tr.Fraction,
+    }
+end
+
+-- Hit group of a first-leg hit, worked out while players are still
+-- rewound (Rhylib.HitGroupAt reads the target's position and angles).
+local function rewoundGroup(bolt, tr)
+    if bolt.onHit or bolt.explosive then return nil end
+    local ent, rag = hitTarget(tr)
+    if not IsValid(ent) then return nil end
+    return hitGroup(ent, rag, tr)
+end
+
+local function firstLegTrace(bolt, from, to, owner)
+    local tr = trace(from, to, owner)
+    return tr, tr.Hit and rewoundGroup(bolt, tr) or nil
+end
+
+-- hits (optional): the caller has lag compensation on already (pellets);
+-- first-leg hits are queued in this list, and the caller runs
+-- Bolts.ApplyHits(hits) after turning compensation off.
+function Bolts.Fire(owner, weapon, origin, dir, damage, opts, hits)
     local speed = opts and opts.speed or Bolts.Speed(weapon)
+    local isPly = owner:IsPlayer()
+    -- The first leg covers what the shooter saw: the bolt's flight during
+    -- their ping and interpolation, against players where they saw them.
+    local lag = isPly and math.min(viewLag(owner), Config.Get("weapons", "lagCompMax")) or 0
+    local ahead = math.max(lag, engine.TickInterval())
+    local firstLeg = speed * ahead
+
+    local life = opts and opts.life or weapon.BoltLife or Config.Get("weapons", "boltLife")
+    -- Optional reach cap (config boltRange, 0 = off). Rockets keep their
+    -- life (their blast is seen and felt where they land), scoped guns their
+    -- full reach.
+    local cap = Rhylib.Weapons.BoltRange()
+    if cap > 0 and not (opts and opts.life) and not weapon.Explosive and not weapon.Scope then
+        life = math.min(life, math.max(cap - firstLeg, 0) / speed)
+    end
     local bolt = {
         owner = owner,
         weapon = weapon,
@@ -361,7 +419,7 @@ function Bolts.Fire(owner, weapon, origin, dir, damage, opts)
         dir = dir,
         speed = speed,
         damage = damage or weapon.Damage,
-        die = CurTime() + (opts and opts.life or weapon.BoltLife or Config.Get("weapons", "boltLife")),
+        die = CurTime() + life,
         explosive = weapon.Explosive,
         stun = weapon.Stun or (opts and opts.stun) or nil,
         training = weapon.Training or (opts and opts.training) or nil,   -- (rhylib_training)
@@ -371,20 +429,26 @@ function Bolts.Fire(owner, weapon, origin, dir, damage, opts)
 
     -- (dual pistols: which gun, as the fire anim; others can't see the clip)
     local left = weapon.GetFireModeName and weapon:GetFireModeName() == "dual" and weapon:Clip1() % 2 == 1
-    sendShot(owner, opts and opts.color or weapon.BoltColor or 1, origin, dir, speed, left)
+    sendShot(owner, opts and opts.color or weapon.BoltColor or 1, origin, dir, speed, left, ahead)
 
-    local isPly = owner:IsPlayer()
-    -- The first leg covers what the shooter saw: the bolt's flight during
-    -- their ping and interpolation, against players where they saw them.
-    local lag = isPly and math.min(viewLag(owner), Config.Get("weapons", "lagCompMax")) or 0
-    local firstLeg = speed * math.max(lag, engine.TickInterval())
-
-    if isPly then owner:LagCompensation(true) end
-    local tr = trace(origin, origin + dir * firstLeg, owner)
-    if isPly then owner:LagCompensation(false) end
+    local comp = isPly and not hits
+    local tr, group
+    if comp then
+        owner:LagCompensation(true)
+        local ok, a, b = pcall(firstLegTrace, bolt, origin, origin + dir * firstLeg, owner)
+        owner:LagCompensation(false)   -- (always, even after an error)
+        if not ok then error(a, 0) end
+        tr, group = a, b
+    else
+        tr, group = firstLegTrace(bolt, origin, origin + dir * firstLeg, owner)
+    end
 
     if tr.Hit then
-        applyHit(bolt, tr)
+        if hits then
+            hits[#hits + 1] = { bolt, copyTrace(tr), group }
+        else
+            applyHit(bolt, tr, group)
+        end
         return
     end
 
@@ -394,6 +458,15 @@ function Bolts.Fire(owner, weapon, origin, dir, damage, opts)
     bolt.nextPos = Vector()
     bolt.step = dir * (speed * engine.TickInterval())
     Bolts.active[#Bolts.active + 1] = bolt
+end
+
+-- Applies first-leg hits queued by Bolts.Fire(..., hits), then empties the list.
+function Bolts.ApplyHits(hits)
+    for i = 1, #hits do
+        local h = hits[i]
+        hits[i] = nil
+        applyHit(h[1], h[2], h[3])
+    end
 end
 
 Rhylib.Hook.Add("Tick", "weapons.bolts", function()
@@ -428,4 +501,40 @@ Rhylib.Hook.Add("Tick", "weapons.bolts", function()
             i = i + 1
         end
     end
+end)
+
+--------------------------------------------------------------------------
+-- Bolt reach cap, live (owner: unsure about it, so it's easy to try)
+--   rhylib_boltrange          shows the current value
+--   rhylib_boltrange 6000     bolts stop after 6000 units (~115 m)
+--   rhylib_boltrange 0        off: bolts fly their full life
+-- Saved (Data "weapons"/"boltRange"), so it stays after a restart.
+--------------------------------------------------------------------------
+
+local function applyBoltRange(n)
+    Config.Set("weapons", "boltRange", n)
+    SetGlobal2Int("rhylib_boltRange", n)
+end
+
+Rhylib.Hook.Add("InitPostEntity", "weapons.boltrange", function()
+    local saved = tonumber(Rhylib.Data.Get("weapons", "boltRange"))
+    applyBoltRange(math.max(0, math.floor(saved or tonumber(Config.Get("weapons", "boltRange")) or 0)))
+end)
+
+Rhylib.Perms.Register("rhylib.weapons.boltrange", "admin", "Change the bolt reach cap (rhylib_boltrange)")
+
+concommand.Add("rhylib_boltrange", function(ply, _, args)
+    local function reply(t) if IsValid(ply) then ply:ChatPrint(t) else print(t) end end
+    Rhylib.Perms.Check(ply, "rhylib.weapons.boltrange", function(ok)
+        if not ok then return reply("You don't have permission for rhylib_boltrange") end
+        local n = tonumber(args[1] or "")
+        if not n then
+            local cur = Rhylib.Weapons.BoltRange()
+            return reply("Bolt reach cap: " .. (cur > 0 and (cur .. " units (~" .. math.Round(cur * 0.019) .. " m)") or "off") .. ". Use rhylib_boltrange <units> (0 = off).")
+        end
+        n = math.Clamp(math.floor(n), 0, 60000)
+        applyBoltRange(n)
+        Rhylib.Data.Set("weapons", "boltRange", n)
+        reply("Bolt reach cap " .. (n > 0 and ("set to " .. n .. " units (~" .. math.Round(n * 0.019) .. " m)") or "off"))
+    end)
 end)

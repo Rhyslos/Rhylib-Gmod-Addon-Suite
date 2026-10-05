@@ -145,9 +145,16 @@ local function sendDir(target)
     if target then net.Send(target) else net.Broadcast() end
 end
 
+-- At most one broadcast per 1.5 s: the first change goes out next tick,
+-- a burst after it (event start, many joins) goes out once at the end.
+local lastDir = 0
 function R.Dirty()
     if timer.Exists("Rhylib.Radio.Dir") then return end
-    timer.Create("Rhylib.Radio.Dir", 0.5, 1, function() sendDir() end)
+    local wait = math.max(0, lastDir + 1.5 - CurTime())
+    timer.Create("Rhylib.Radio.Dir", wait, 1, function()
+        lastDir = CurTime()
+        sendDir()
+    end)
 end
 
 function R.SendMe(ply)
@@ -388,13 +395,34 @@ timer.Create("Rhylib.Radio.Range", 5, 0, function()
     range2 = r * r
 end)
 
+-- The engine asks for every pair of players (80 players = ~6300 pairs) on
+-- each voice update, so each player's alive flag, radio state and position
+-- are read once per tick into a reused table.
+local function snap(p)
+    local s = p.rhylibVoiceSnap
+    if not s then
+        s = {}
+        p.rhylibVoiceSnap = s
+    end
+    local tick = engine.TickCount()
+    if s.tick ~= tick then
+        s.tick = tick
+        s.alive = p:Alive()
+        s.rv = p:GetNW2Int("rhylib_radio", 0)
+        local pos = p:GetPos()
+        s.x, s.y, s.z = pos.x, pos.y, pos.z
+    end
+    return s
+end
+
 Rhylib.Hook.Add("PlayerCanHearPlayersVoice", "radio.voice", function(listener, talker)
     if listener == talker then return end
-    if not talker:Alive() then return false, false end
-    local tv = talker:GetNW2Int("rhylib_radio", 0)
+    local ts = snap(talker)
+    if not ts.alive then return false, false end
+    local tv = ts.rv
     local kind = band(rshift(tv, 3), 3)
     if kind ~= 0 and band(tv, 3) == 0 then
-        local lv = listener:GetNW2Int("rhylib_radio", 0)
+        local lv = snap(listener).rv
         if band(lv, 5) == 0 then
             local id = band(rshift(tv, 5), 511)
             local hear
@@ -410,7 +438,9 @@ Rhylib.Hook.Add("PlayerCanHearPlayersVoice", "radio.voice", function(listener, t
             if hear then return true, false end
         end
     end
-    return listener:GetPos():DistToSqr(talker:GetPos()) <= range2, true
+    local ls = snap(listener)
+    local dx, dy, dz = ls.x - ts.x, ls.y - ts.y, ls.z - ts.z
+    return dx * dx + dy * dy + dz * dz <= range2, true
 end, 10)
 
 --------------------------------------------------------------------------

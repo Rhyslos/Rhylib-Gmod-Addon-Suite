@@ -93,7 +93,7 @@ end)
 Rhylib.Hook.Add("HUDPaint", "jetpack.fuel", function()
     local ply = LocalPlayer()
     if not ply:GetDTBool(J.DT_HAS) or not ply:Alive() then return end
-    local fuel = ply:GetDTFloat(J.DT_FUEL)
+    local fuel = J.Fuel(ply)
     local thrust = ply:GetDTBool(J.DT_THRUST)
     local locked = ply:GetDTBool(J.DT_LOCKED)
     if fuel >= 1 and not thrust then return end

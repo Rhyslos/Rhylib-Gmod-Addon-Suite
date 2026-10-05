@@ -35,6 +35,12 @@ function Config.Get(module, key)
     local defs = Config.defs[module]
     if defs and defs[key] then return defs[key].default end
 
-    Rhylib.Warn("config", "Unknown setting %s.%s", tostring(module), tostring(key))
+    -- Warn once per unknown key (this can be called every tick).
+    local id = tostring(module) .. "." .. tostring(key)
+    Config.warned = Config.warned or {}
+    if not Config.warned[id] then
+        Config.warned[id] = true
+        Rhylib.Warn("config", "Unknown setting %s", id)
+    end
     return nil
 end

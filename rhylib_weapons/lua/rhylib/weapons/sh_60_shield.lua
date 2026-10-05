@@ -43,19 +43,34 @@ function W.ShieldNear(ply, pos)
     return W.ShieldFaces(ply, ply:WorldSpaceCenter() - pos)
 end
 
-local function hasPhalanx(ply)
+-- Phalanx holders, rebuilt at most every 0.5 s (or when skills change),
+-- so a hit doesn't check every player's skills.
+local holders, holdersAt = {}, -1
+local function phalanxHolders()
+    local now = CurTime()
+    if now < holdersAt then return holders end
+    holdersAt = now + 0.5
+    for i = #holders, 1, -1 do holders[i] = nil end
     local K = Rhylib.Skills
-    return K and K.Has and K.Has(ply, "phalanx") or false
+    if not (K and K.Has) then return holders end
+    for _, s in ipairs(player.GetAll()) do
+        if K.Has(s, "phalanx") then holders[#holders + 1] = s end
+    end
+    return holders
 end
+Rhylib.Hook.Add("Rhylib.SkillsChanged", "weapons.phalanx", function() holdersAt = -1 end)
 
 function W.ShieldBlocks(ply, dir)
     if W.ShieldUp(ply) and W.ShieldFaces(ply, dir) then return true end
     -- Phalanx: a shield in front of ply, facing the shot, on the bolt's line.
+    local list = phalanxHolders()
+    if #list == 0 then return false end
     local range, width = Config.Get("weapons", "phalanxRange"), Config.Get("weapons", "phalanxWidth")
     local pos = ply:WorldSpaceCenter()
     local d = flat(dir)
-    for _, s in ipairs(player.GetAll()) do
-        if s ~= ply and s:Alive() and hasPhalanx(s) and W.ShieldUp(s) and W.ShieldFaces(s, dir) then
+    for i = 1, #list do
+        local s = list[i]
+        if s ~= ply and IsValid(s) and s:Alive() and W.ShieldUp(s) and W.ShieldFaces(s, dir) then
             local rel = pos - s:WorldSpaceCenter()
             rel.z = 0
             local along = rel:Dot(d)              -- ply further along the bolt = behind the shield

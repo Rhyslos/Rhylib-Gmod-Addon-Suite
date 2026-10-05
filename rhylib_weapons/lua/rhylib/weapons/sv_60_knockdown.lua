@@ -38,6 +38,7 @@ Rhylib.Hook.Add("PostEntityTakeDamage", "weapons.knock", function(ent, dmg, took
     pending[ent] = nil
     if cfg("knockTimeMax") <= 0 then return end   -- (0 = knockdowns off)
     if not took or not ent:Alive() or ent.rhylibDown or ent.rhylibGoingDown then return end   -- (going down: medical's body)
+    if hook.Run("Rhylib.CanKnockDown", ent) == false then return end   -- (rhylib_skills: Press forward)
     local L = Rhylib.Lying
     if not (L and L.Knock) or L.Knocked(ent) or L.Ragdoll(ent) then return end
     -- Thrown away from the blast, harder for bigger hits.

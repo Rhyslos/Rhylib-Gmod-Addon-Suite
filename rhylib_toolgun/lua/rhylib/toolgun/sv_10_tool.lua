@@ -45,7 +45,14 @@ local function place(ply, e, count, name)
     if not tr.Hit or tr.HitSky then return end
     local yaw = (ply:GetPos() - tr.HitPos):Angle().y   -- facing you
     local made = 0
+    -- Droids: stop at the cap instead of creating ones Initialize removes.
+    local D = Rhylib.Droids
+    local droid = D and D.Count and (e.class == "rhylib_b1" or scripted_ents.IsBasedOn(e.class, "rhylib_b1"))
     for i = 1, count do
+        if droid and D.Count() >= D.Cfg("maxActive") then
+            if made == 0 then ply:ChatPrint("Droid limit reached (" .. D.Cfg("maxActive") .. ").") end
+            break
+        end
         local pos = tr.HitPos
         if count > 1 then
             -- A small ring around the spot.

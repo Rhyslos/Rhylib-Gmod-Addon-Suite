@@ -82,7 +82,7 @@ Config.Register("droids", "flashTime", 5, "Flash charge: seconds droids stay daz
 
 function D.Cfg(k) return Config.Get("droids", k) end
 
-D.B1_MODEL = "models/npc_b1/npc_droid_cis_b1_h.mdl"
+D.B1_MODEL = "models/aussiwozzi/cgi/b1droids/b1_battledroid.mdl"   -- (same pack as the variants, B2s and training droids)
 D.E5_MODEL = "models/jajoff/sps/cgiweapons/tc13j/e5.mdl"
 D.E5_SOUND = "weapons/airboat/airboat_gun_energy2.wav"
 

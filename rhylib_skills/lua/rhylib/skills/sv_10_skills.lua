@@ -5,8 +5,9 @@
     Data "skills" key "s"..SteamID64 = { n = { ids } }.
     Nets: skills.learn (node index, 8 bits), skills.reset.
     K.SetSkills(ply, set) applies a set (NW2String, save, inventory grids).
-    K.DamageMult(ply, bolt, ent, tr, group) for rhylib_weapons (Point blank,
-    Headhunter, Shotgun drills, crits);
+    K.DamageMult(ply, bolt, ent, tr, group) for rhylib_weapons (Focus fire,
+    Carbine sidearm, Point blank, Headhunter, Shotgun drills, crits /
+    Light rounds);
     returns mult, crit.
     K.ExtraGrids(ply) for rhylib_inventory: { [cid] = { w, h } } the
     player's skills open (Load bearer: the cell rack; Ammo belt).
@@ -14,7 +15,8 @@
     (droid poppers without Droid popper), Spring legs jump power,
     Reinforced max health.
     Damage taken (EntityTakeDamage 95, before armour): Hard landings,
-    Blast hardened, Aerial stability, Combat drop, Juggernaut, Under fire.
+    Blast hardened, Aerial stability, Combat drop, Juggernaut, Under fire,
+    Hold the line, and the Hold fast / Press forward orders.
     Death from above: OnPlayerHitGround.
 ]]
 
@@ -226,11 +228,25 @@ Rhylib.Perms.Register("rhylib.skills.admin", "admin", "Reset other players' skil
 -- Damage (called by rhylib_weapons for each bolt hit)
 --------------------------------------------------------------------------
 
+-- Is this gun loaded with a small magazine (training copies count)?
+local function smallMag(wep)
+    if not (IsValid(wep) and wep.GetMag) then return false end
+    local mag = wep:GetMag()
+    local W = Rhylib.Weapons
+    return mag ~= nil and (W and W.BaseMag and W.BaseMag(mag.id) or mag.id) == "mag_small"
+end
+
 function K.DamageMult(ply, bolt, ent, tr, group)
     if not IsValid(ply) or not ply:IsPlayer() then return 1, false end
-    local set = K.Set(ply)
-    if next(set) == nil then return 1, false end
     local m, crit = 1, false
+    if K.OrderIs(ply, "focus") then m = m * K.Cfg("focusDamage") end   -- (command order)
+    if IsValid(ent) and ent.rhylibMarks and K.MarkMult then m = m * K.MarkMult(ply, ent) end   -- (Mark target)
+    local set = K.Set(ply)
+    if next(set) == nil then return m, false end
+    local wep = bolt.weapon
+    if set.carbine_sidearm and IsValid(wep) and wep.GetFireModeName and wep:GetFireModeName() == "sidearm" then
+        m = m * K.Cfg("sidearmDamage")
+    end
     if set.point_blank and bolt.start then
         local d = bolt.start:Distance(tr.HitPos)
         local near, far = K.Cfg("pointBlankNear"), K.Cfg("pointBlankFar")
@@ -241,7 +257,10 @@ function K.DamageMult(ply, bolt, ent, tr, group)
     if set.shotgun_drills and IsValid(bolt.weapon) and K.GunClass(bolt.weapon) == K.DP24 then
         m = m * K.Cfg("shotgunDamage")
     end
-    if set.crits and math.random() < K.Cfg("critChance") then
+    -- Critical hits / Light rounds: one roll at the better chance (no stacking).
+    local chance = set.crits and K.Cfg("critChance") or 0
+    if set.light_rounds and smallMag(wep) then chance = math.max(chance, K.Cfg("lightRoundsChance")) end
+    if chance > 0 and math.random() < chance then
         m = m * K.Cfg("critMult")
         crit = true
     end
@@ -294,8 +313,15 @@ Rhylib.Hook.Add("EntityTakeDamage", "skills.resist", function(ent, dmg)
         -- Shock Assault: no push from hits.
         if set.shock_assault then dmg:SetDamageForce(vector_origin) end
     end
+    -- Command orders (Hold fast blocks everything earlier, skills.holdfast).
+    if K.OrderIs(ent, "press") then dmg:SetDamageForce(vector_origin) end
     if m ~= 1 then dmg:ScaleDamage(m) end
 end, 95)
+
+-- Hold fast: no damage at all while it lasts (before lying, medical, armour).
+Rhylib.Hook.Add("EntityTakeDamage", "skills.holdfast", function(ent, dmg)
+    if ent:IsPlayer() and K.OrderIs(ent, "hold") then return true end
+end, -1200)
 
 -- Suppression: a Z-6 hit on a droid rattles the droids around it.
 Rhylib.Hook.Add("EntityTakeDamage", "skills.suppress", function(ent, dmg)
@@ -317,12 +343,18 @@ end)
 function K.HoldingLine(ply)
     local W, MP = Rhylib.Weapons, Rhylib.MP
     if not (W and W.ShieldUp and W.ShieldUp(ply) and MP and MP.IsMP) then return false end
+    -- Another MP nearby: checked at most every 0.25 s per player (hits come in bursts).
+    local now = CurTime()
+    if (ply.rhylibHoldLineAt or 0) > now then return ply.rhylibHoldLine == true end
+    ply.rhylibHoldLineAt = now + 0.25
     local r2 = K.Cfg("holdLineRange") ^ 2
     local pos = ply:GetPos()
+    local near = false
     for _, o in ipairs(player.GetAll()) do
-        if o ~= ply and o:Alive() and MP.IsMP(o) and o:GetPos():DistToSqr(pos) <= r2 then return true end
+        if o ~= ply and o:Alive() and MP.IsMP(o) and o:GetPos():DistToSqr(pos) <= r2 then near = true break end
     end
-    return false
+    ply.rhylibHoldLine = near
+    return near
 end
 
 -- Combat drop: landing after combatDropAir seconds of jetpack flight (in

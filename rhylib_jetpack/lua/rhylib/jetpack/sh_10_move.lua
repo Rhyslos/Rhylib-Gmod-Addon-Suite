@@ -31,33 +31,37 @@ local function pcfg(ply, key)
     return v
 end
 
+-- Rewrite the fuel line only when its slope changes.
+local function setRate(ply, fuel, now, rate)
+    if math.abs(ply:GetDTFloat(J.DT_RATE) - rate) > 1e-4 then J.SetLine(ply, fuel, now, rate) end
+end
+
 Rhylib.Hook.Add("SetupMove", "jetpack.move", function(ply, mv)
     if not ply:GetDTBool(J.DT_HAS) then return end
+    local now = CurTime()
     if IsValid(ply:GetDTEntity(31)) then
-        -- On a grapple rope (rhylib_weapons): no thrust, flames off.
+        -- On a grapple rope (rhylib_weapons): no thrust, flames off, fuel held.
         if ply:GetDTBool(J.DT_THRUST) then ply:SetDTBool(J.DT_THRUST, false) end
+        setRate(ply, J.Fuel(ply, now), now, 0)
         return
     end
 
     local dt = FrameTime()
-    local now = CurTime()
-    local fuel = ply:GetDTFloat(J.DT_FUEL)
+    local fuel = J.Fuel(ply, now)
     local locked = ply:GetDTBool(J.DT_LOCKED)
     local onGround = ply:OnGround()
+    if fuel <= 0 then locked = true end
 
-    -- Refill on the ground.
+    -- Refill on the ground after rechargeDelay (a line that starts in the future).
     if onGround then
-        local landed = ply:GetDTFloat(J.DT_LANDED)
-        if landed == 0 then
-            landed = now
-            ply:SetDTFloat(J.DT_LANDED, now)
-        end
-        if now - landed >= cfg("rechargeDelay") then
-            fuel = math.min(1, fuel + dt / pcfg(ply, "rechargeTime"))
+        local recharge = 1 / pcfg(ply, "rechargeTime")
+        local rate = ply:GetDTFloat(J.DT_RATE)
+        if rate <= 0 then
+            J.SetLine(ply, fuel, now + cfg("rechargeDelay"), recharge)   -- just landed
+        elseif math.abs(rate - recharge) > 1e-4 then
+            J.SetLine(ply, fuel, math.max(now, ply:GetDTFloat(J.DT_FROM)), recharge)   -- skills changed
         end
         if locked and fuel >= cfg("unlockAt") then locked = false end
-    elseif ply:GetDTFloat(J.DT_LANDED) ~= 0 then
-        ply:SetDTFloat(J.DT_LANDED, 0)
     end
 
     -- Shift hovers (holds height); jump climbs. Shift wins if both are held.
@@ -71,11 +75,7 @@ Rhylib.Hook.Add("SetupMove", "jetpack.move", function(ply, mv)
         -- Heavier loads burn fuel faster (weight and cap come from rhylib_inventory).
         local cap = ply:GetNW2Float("rhylib_carry", 0)
         local load = cap > 0 and math.min(ply:GetNW2Float("rhylib_weight", 0) / cap, 1) or 0
-        fuel = fuel - dt / pcfg(ply, "fuelTime") * (1 + cfg("loadFuelMult") * load)
-        if fuel <= 0 then
-            fuel = 0
-            locked = true
-        end
+        setRate(ply, fuel, now, -(1 + cfg("loadFuelMult") * load) / pcfg(ply, "fuelTime"))
 
         local vel = mv:GetVelocity()
 
@@ -103,10 +103,11 @@ Rhylib.Hook.Add("SetupMove", "jetpack.move", function(ply, mv)
             h = wish * along + (h - wish * along) * damp   -- keep the wanted direction, kill sideways drift
             local speed = h:Length()
             local nh = h + wish * (pcfg(ply, "airAccel") * dt)
-            local limit = math.max(pcfg(ply, "maxAirSpeed"), speed)
+            local top = pcfg(ply, "maxAirSpeed")
+            local limit = math.max(top, speed)
             if nh:Length() > limit then nh = nh:GetNormalized() * limit end
             -- Faster than the jetpack's own top speed (e.g. launched): bleed it off.
-            if limit > pcfg(ply, "maxAirSpeed") then nh = nh * damp end
+            if limit > top then nh = nh * damp end
             h = nh
         else
             h = h * damp  -- no keys: slow to a stop and hover in place
@@ -114,9 +115,10 @@ Rhylib.Hook.Add("SetupMove", "jetpack.move", function(ply, mv)
         vel.x, vel.y = h.x, h.y
 
         mv:SetVelocity(vel)
+    elseif not onGround then
+        setRate(ply, fuel, now, 0)   -- in the air, not thrusting: fuel holds
     end
 
-    ply:SetDTFloat(J.DT_FUEL, fuel)
-    ply:SetDTBool(J.DT_LOCKED, locked)
+    if ply:GetDTBool(J.DT_LOCKED) ~= locked then ply:SetDTBool(J.DT_LOCKED, locked) end
     if ply:GetDTBool(J.DT_THRUST) ~= thrusting then ply:SetDTBool(J.DT_THRUST, thrusting) end
 end)

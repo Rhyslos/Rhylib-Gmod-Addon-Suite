@@ -43,6 +43,8 @@ Rhylib.Hook.Add("SetupMove", "stamina.move", function(ply, mv)
     local penalty, over = S.Penalty(ply)
     local onGround = ply:OnGround()
     local regen = cfg("regen") * (1 - penalty * 0.5)
+    local K = Rhylib.Skills
+    if K and K.RegenMult then regen = regen * K.RegenMult(ply) end   -- (Second wind)
 
     -- Ran dry while sprinting: exhausted until back to exhaustedUntil
     -- (the line below then switches to resting).
@@ -55,8 +57,7 @@ Rhylib.Hook.Add("SetupMove", "stamina.move", function(ply, mv)
 
     if sprinting then
         local drain = -cfg("sprintDrain") * (1 + penalty)
-        local K = Rhylib.Skills
-        if K and K.FreeSprint and K.FreeSprint(ply) then drain = 0 end   -- (Momentum)
+        if K and K.FreeSprint and K.FreeSprint(ply) then drain = 0 end   -- (Momentum, Second wind)
         if math.abs(rate - drain) > 1e-3 then setLine(ply, st, now, drain) end
     else
         if wantsSprint then

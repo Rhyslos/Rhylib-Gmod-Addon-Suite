@@ -144,7 +144,7 @@ Config.Register("gear", "lightFov", 26, "Helmet lights: width of each beam (degr
 Config.Register("gear", "lightGap", -2, "Helmet lights: extra degrees each beam turns outwards past touching (positive = a dark gap in the middle, negative = closer together)")
 Config.Register("gear", "lightRange", 2000, "Helmet lights: how far the beams reach")
 Config.Register("gear", "lightBrightness", 3.5, "Helmet lights: brightness of each beam")
-Config.Register("gear", "lightMaxPlayers", 4, "Helmet lights: most players whose beams you see at once (nearest first; each beam costs a render pass)")
+Config.Register("gear", "lightMaxPlayers", 2, "Helmet lights: other players whose beams light the world for you (nearest first, no shadows; your own always do). Further ones show only the lamp glow")
 Config.Register("gear", "bareHeadshotDowns", true, "With the helmet off, any head hit downs you")
 
 function G.Cfg(k) return Config.Get("gear", k) end

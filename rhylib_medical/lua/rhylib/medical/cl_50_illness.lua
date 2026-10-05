@@ -60,7 +60,7 @@ local GRAD_L, GRAD_R = Material("vgui/gradient-l"), Material("vgui/gradient-r")
 
 Rhylib.Hook.Add("HUDPaint", "medical.illness", function()
     local ply = LocalPlayer()
-    if not IsValid(ply) or not ply:Alive() then return end
+    if not IsValid(ply) or not ply:Alive() or Med.Muted(ply) then return end
     local kind, stage = Med.IllState(ply)
     local k = Med.ILL[kind]
     if not k or stage < 2 then return end

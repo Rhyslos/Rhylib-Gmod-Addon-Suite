@@ -117,8 +117,51 @@ local function openMenu()
     end
 end
 
+-- R: a tap opens our list; holding it opens a wheel (spawn menu or our
+-- list; the Q key no longer opens the spawn menu, rhylib_menus).
+local HOLD = 0.25
+local rPress
+
+local function reloadCode()
+    local key = input.LookupBinding("+reload")
+    local c = key and input.GetKeyCode(key)
+    return (c and c > 0) and c or KEY_R
+end
+
+Rhylib.Hook.Add("Think", "tool.rhold", function()
+    if not rPress then return end
+    -- (only while the toolgun is out and nothing else has the mouse)
+    local w = LocalPlayer():GetActiveWeapon()
+    if not (IsValid(w) and w.ToolGun) or vgui.CursorVisible() then
+        rPress = nil
+        return
+    end
+    local M = Rhylib.Menus
+    local W = M and M.Wheel
+    if not input.IsButtonDown(rPress.code) then
+        rPress = nil
+        openMenu()
+        return
+    end
+    if RealTime() - rPress.at < HOLD then return end
+    local code = rPress.code
+    rPress = nil
+    if not (W and W.OpenList) then return openMenu() end
+    W.OpenList("Toolgun", {
+        { label = "Spawn menu", sub = "The Q menu", run = function()
+            if M.OpenSpawnMenu then M.OpenSpawnMenu() end
+        end },
+        { label = "Rhylib tools", sub = "Placement list", run = openMenu },
+    }, code)
+end)
+
 function Tool.Click(wep, which)
-    if which == "3" then return openMenu() end
+    if which == "3" then
+        local W = Rhylib.Menus and Rhylib.Menus.Wheel
+        if rPress or (W and W.open) then return end
+        rPress = { at = RealTime(), code = reloadCode() }
+        return
+    end
     if which == "2" then
         Rhylib.Net.Start("tool.remove")
         net.SendToServer()
@@ -150,7 +193,7 @@ function Tool.DrawHUD(wep)
     if IsValid(ent) and not ent:IsPlayer() and (ent.IsRhylibDroid or Tool.ByClass(ent:GetClass())) then
         draw.SimpleTextOutlined("RMB: remove " .. (ent.PrintName or ent:GetClass()), Rhylib.UI.Font(14, 700), ScrW() * 0.5, y + 22, COL_RED, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
     end
-    draw.SimpleTextOutlined("R: list", Rhylib.UI.Font(13), ScrW() * 0.5, y + 42, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
+    draw.SimpleTextOutlined("R: list  ·  hold R: spawn menu", Rhylib.UI.Font(13), ScrW() * 0.5, y + 42, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
 end
 
 -- Where it will go: a ring on the aimed surface.

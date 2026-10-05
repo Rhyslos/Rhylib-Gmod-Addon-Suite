@@ -10,7 +10,7 @@ function J.Set(ply, has)
     ply:SetDTBool(J.DT_HAS, has)
     ply:SetDTBool(J.DT_THRUST, false)
     if has then
-        ply:SetDTFloat(J.DT_FUEL, 1)
+        J.SetLine(ply, 1, 0, 0)
         ply:SetDTBool(J.DT_LOCKED, false)
     end
 end
@@ -38,7 +38,7 @@ Rhylib.Hook.Add("PlayerSpawn", "jetpack.spawn", function(ply)
     timer.Simple(0, function()
         if not IsValid(ply) then return end
         J.Refresh(ply)
-        ply:SetDTFloat(J.DT_FUEL, 1)
+        J.SetLine(ply, 1, 0, 0)
         ply:SetDTBool(J.DT_LOCKED, false)
     end)
 end)

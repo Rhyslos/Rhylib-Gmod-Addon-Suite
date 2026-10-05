@@ -332,20 +332,26 @@ function Inv.RemoveStorage(ent)
 end
 
 -- Close storages for anyone who walked away (checked twice a second).
+-- Only players with a storage open are checked (st.ext); removed storage
+-- entities are swept every 5 s.
 timer.Create("Rhylib.Inventory.StorageRange", 0.5, 0, function()
-    for ent, storage in pairs(Inv.storages) do
-        if not IsValid(ent) then
-            Inv.RemoveStorage(ent)
-        else
-            local pos = ent:GetPos()
-            eachStorage(storage, function(s)
-                for ply in pairs(s.viewers) do
-                    if not IsValid(ply) or not ply:Alive() or ply:GetPos():DistToSqr(pos) > MAX_DIST * MAX_DIST then
-                        if IsValid(ply) then Inv.CloseStorage(ply) else s.viewers[ply] = nil end
-                    end
-                end
-            end)
+    for ply, st in pairs(Inv.states) do
+        local storage = st.ext
+        if storage then
+            local ent = storage.ent
+            if not IsValid(ply) then
+                storage.viewers[ply] = nil
+                st.ext = nil
+            elseif not IsValid(ent) or not ply:Alive() or ply:GetPos():DistToSqr(ent:GetPos()) > MAX_DIST * MAX_DIST then
+                Inv.CloseStorage(ply)
+            end
         end
+    end
+end)
+
+timer.Create("Rhylib.Inventory.StorageSweep", 5, 0, function()
+    for ent in pairs(Inv.storages) do
+        if not IsValid(ent) then Inv.RemoveStorage(ent) end
     end
 end)
 

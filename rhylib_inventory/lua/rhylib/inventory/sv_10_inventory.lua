@@ -452,6 +452,7 @@ function Inv.MayHold(ply, id)
     if not (def and def.carrySkill) then return true end
     local K = Rhylib.Skills
     if not (K and K.Has) then return true end
+    if K.CarryOk then return K.CarryOk(ply, def.carrySkill) end
     return K.Has(ply, def.carrySkill)
 end
 
@@ -460,6 +461,8 @@ function Inv.HoldReason(id)
     local def = Items.defs[id]
     local K = Rhylib.Skills
     local n = def and def.carrySkill and K and K.byId and K.byId[def.carrySkill]
+    local special = def and def.carrySkill and K and K.CARRY_NAMES and K.CARRY_NAMES[def.carrySkill]
+    if special then return "You need " .. special .. " skill to carry that" end
     return "You need the " .. (n and n.name or "right") .. " skill to carry that"
 end
 

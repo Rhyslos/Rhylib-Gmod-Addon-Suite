@@ -9,13 +9,15 @@
         K.SpreadMult(ply, wep)           cone multiplier (sprinting, Z-6, pistols)
         K.RecoilMult(ply, wep)           view kick multiplier
         K.FireRateMult(ply, wep, mode)
-        K.ReloadMult(ply, wep, cell)     reload time multiplier (server)
+        K.ReloadMult(ply, wep, cell)     reload time multiplier (server; Speed loader: pistols)
+        K.DrawMult(ply, wep)             draw time multiplier (Quick draw)
         K.MagBonus(ply, magId)           extra rounds per magazine
         K.CellMult(ply)                  power cell shots multiplier
         K.SpinMoveMult(ply, wep, base)   walk speed while the barrels spin
         K.WeightPenaltyMult(ply)         rhylib_stamina weight penalty
         K.AdjustWeight(ply, state, weight, cap)  rhylib_inventory carry
-        K.FreeSprint(ply)                Momentum: sprinting costs nothing
+        K.FreeSprint(ply)                Momentum, Second wind: sprinting costs nothing
+        K.RegenMult(ply)                 stamina refill multiplier (Second wind)
         K.MagAllowed(ply, wep, magId)    SWEP.MagSkills (Heavy feed: Z-6 large mags)
         K.PelletConeMult(ply, wep)       shotgun pellet cone (Shotgun drills)
         K.ShotDamageMult(ply, wep)       per shot, after its spread (First shot)
@@ -52,6 +54,14 @@ reg("steadyGripRecoil", 0.5, "Steady grip: pistol view kick multiplier (DC-17, a
 reg("dualRate", 1, "Dual DC-17: fire rate multiplier (the gain is the second magazine)")
 reg("critChance", 0.1, "Critical hits: chance per hit")
 reg("critMult", 1.5, "Critical hits: damage multiplier")
+reg("lightRoundsChance", 0.15, "Light rounds: crit chance with a small magazine loaded (doesn't stack with Critical hits)")
+reg("quickDrawMult", 0.6, "Quick draw: draw time multiplier")
+reg("speedLoaderMult", 0.7, "Speed loader: pistol reload time multiplier")
+reg("markTime", 15, "Mark target: seconds a mark lasts")
+reg("markRange", 8000, "Mark target: reach (units)")
+reg("markCooldown", 1, "Mark target: seconds between marks")
+reg("markDamage", 1.15, "Mark target: damage multiplier on targets marked through optics (squad hits only)")
+reg("sidearmDamage", 1.06, "Carbine sidearm: DC-15S damage multiplier in Sidearm mode")
 reg("airborneFuel", 15, "Airborne: jetpack seconds of thrust with any Airborne skill (others: jetpack fuelTime)")
 reg("fallMult", 0.5, "Hard landings: fall damage multiplier")
 reg("tankMult", 1.4, "Extended tanks: fuel time and refill speed multiplier")
@@ -61,7 +71,7 @@ reg("combatDropAir", 7, "Combat drop: seconds of jetpack flight needed before a 
 reg("combatDropTime", 5, "Combat drop: seconds of reduced damage after landing")
 reg("combatDropMult", 0.5, "Combat drop: damage multiplier while it lasts")
 reg("sidestepSpeed", 340, "Sidestep: dash speed (units/s)")
-reg("sidestepTime", 0.12, "Sidestep: seconds at full dash speed, then it slows to sidestepCarry")
+reg("sidestepTime", 0.18, "Sidestep: seconds at full dash speed, then it slows to sidestepCarry")
 reg("sidestepCarry", 60, "Sidestep: sideways speed kept after the burst (units/s)")
 reg("sidestepCooldown", 2.5, "Sidestep: seconds between dashes")
 reg("sidestepStamina", 25, "Sidestep: stamina per dash")
@@ -161,6 +171,7 @@ function K.RecoilMult(ply, wep)
         or (wep.GetFireModeName and wep:GetFireModeName() == "sidearm")) then
         m = m * cfg("steadyGripRecoil")
     end
+    if K.OrderIs(ply, "focus") then m = m * cfg("focusRecoil") end   -- (command order)
     if K.GunClass(wep) == K.Z6 then
         if K.Has(ply, "steady_barrels") and sprinting(ply, wep) then m = m * cfg("steadyRecoil") end
         if K.Has(ply, "planted") and ply:Crouching() then m = m * cfg("plantedMult") end
@@ -210,11 +221,18 @@ function K.ReloadMult(ply, wep, cell)
     if not isPly(ply) then return 1 end
     local m = 1
     if not cell and K.Has(ply, "quick_hands") then m = m * cfg("quickHandsMult") end
+    if K.Has(ply, "speed_loader") and K.PISTOLS[K.GunClass(wep)] then m = m * cfg("speedLoaderMult") end
     if (ply.rhylibMomentumReload or 0) > CurTime() then
         m = m * cfg("momentumReload")
         ply.rhylibMomentumReload = nil   -- (one reload)
     end
     return m
+end
+
+-- Quick draw: draw time multiplier for Rhylib guns.
+function K.DrawMult(ply, wep)
+    if isPly(ply) and K.Has(ply, "quick_draw") then return cfg("quickDrawMult") end
+    return 1
 end
 
 function K.MagBonus(ply, magId)
@@ -286,7 +304,13 @@ function K.AdjustWeight(ply, state, weight, cap)
 end
 
 function K.FreeSprint(ply)
-    return isPly(ply) and ply:GetNW2Float("rhylib_momentum", 0) > CurTime()
+    if not isPly(ply) then return false end
+    return ply:GetNW2Float("rhylib_momentum", 0) > CurTime() or K.OrderIs(ply, "wind")
+end
+
+function K.RegenMult(ply)
+    if K.OrderIs(ply, "wind") then return cfg("windRegen") end
+    return 1
 end
 
 -- Light kit: a little faster while lightly loaded. Before every limiter
@@ -305,15 +329,31 @@ end, -200)
 -- Airborne
 --------------------------------------------------------------------------
 
--- Every Airborne skill needs Hard landings, so it marks the path.
+-- Any Airborne skill (an officer may borrow one without Hard landings).
+local function airborne(ply)
+    local set = K.Set(ply)
+    local c = ply.rhylibSkillCache
+    if c and c.set == set then
+        if c.air == nil then
+            c.air = false
+            for id in pairs(set) do
+                local n = K.byId[id]
+                if n and n.cat == "airborne" then c.air = true break end
+            end
+        end
+        return c.air
+    end
+    return set.hard_landings == true
+end
+
 function K.Airborne(ply)
-    return isPly(ply) and K.Has(ply, "hard_landings")
+    return isPly(ply) and airborne(ply)
 end
 
 -- rhylib_jetpack asks for these per player and tick.
 function K.JetCfg(ply, key, v)
     local set = K.Set(ply)
-    if not set.hard_landings then return v end
+    if not airborne(ply) then return v end
     if key == "fuelTime" then
         v = math.max(v, cfg("airborneFuel"))
         if set.extended_tanks then v = v * cfg("tankMult") end

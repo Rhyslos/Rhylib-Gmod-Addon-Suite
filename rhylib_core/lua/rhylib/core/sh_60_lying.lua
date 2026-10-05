@@ -58,10 +58,18 @@ end
 
 -- Our ragdolls never touch players: the hidden player stands right under
 -- the body and would hold it up like a ball (and others walk through it).
-Rhylib.Hook.Add("ShouldCollide", "core.lying", function(a, b)
-    if a:IsPlayer() and b:GetNW2Bool("rhylib_lyingRag") then return false end
-    if b:IsPlayer() and a:GetNW2Bool("rhylib_lyingRag") then return false end
-end)
+-- (the server reads a Lua field set with the NW2Bool: cheaper per pair)
+if SERVER then
+    Rhylib.Hook.Add("ShouldCollide", "core.lying", function(a, b)
+        if b.rhylibLyingRag and a:IsPlayer() then return false end
+        if a.rhylibLyingRag and b:IsPlayer() then return false end
+    end)
+else
+    Rhylib.Hook.Add("ShouldCollide", "core.lying", function(a, b)
+        if a:IsPlayer() and b:GetNW2Bool("rhylib_lyingRag") then return false end
+        if b:IsPlayer() and a:GetNW2Bool("rhylib_lyingRag") then return false end
+    end)
+end
 
 if CLIENT then return end
 
@@ -129,6 +137,7 @@ function L.Begin(ply)
     rag:SetColor(ply:GetColor())
     rag:SetMaterial(ply:GetMaterial())
     rag:SetNW2Bool("rhylib_lyingRag", true)
+    rag.rhylibLyingRag = true
     rag:SetCustomCollisionCheck(true)   -- (ShouldCollide above)
     rag:Spawn()
     rag:Activate()

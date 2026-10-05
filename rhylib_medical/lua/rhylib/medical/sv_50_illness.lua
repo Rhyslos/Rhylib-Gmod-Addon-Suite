@@ -118,7 +118,10 @@ timer.Create("Rhylib.Medical.Illness", 30, 0, function()
             s.load = math.min(100, s.load + (tonumber(rates[s.kind]) or 0.5) * 0.5)
             local stage = stageOf(s.load)
             -- Poison at full load: down (then it eases so it can be treated).
-            if s.kind == Med.ILL_POISON and s.load >= 100 then
+            -- (nothing while Field triage mutes it)
+            if Med.Muted and Med.Muted(ply) then
+                -- muted
+            elseif s.kind == Med.ILL_POISON and s.load >= 100 then
                 s.load = cfg("poisonAfterDown")
                 if not Med.IsDown(ply) and Med.Down then
                     ply:ChatPrint("The poison takes you down")

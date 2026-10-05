@@ -80,38 +80,69 @@ local function lit(ply)
     return IsValid(ply) and ply:Alive() and ply:GetNW2Bool("rhylib_lights", false) and not ply:IsDormant()
 end
 
+-- Who gets real beams is worked out 4 times a second: you always, plus
+-- the nearest lightMaxPlayers others in range. Every lit player in range
+-- gets the lamp glow (glowing).
+local keep, glowing, nextPick = {}, {}, 0
+local function pick(me)
+    local eye = EyePos()
+    local range2 = (cfg("lightRange", 2000) * 2.5) ^ 2
+    local list = {}
+    glowing = {}
+    for _, p in ipairs(player.GetAll()) do
+        if lit(p) then
+            local d = p == me and -1 or p:GetPos():DistToSqr(eye)
+            if d < range2 then
+                glowing[p] = true
+                list[#list + 1] = { p, d }
+            end
+        end
+    end
+    -- (a player who already has beams counts as 20% closer, so two players
+    -- at about the same distance don't swap beams back and forth)
+    for _, e in ipairs(list) do
+        if lamps[e[1]] and e[2] > 0 then e[2] = e[2] * 0.64 end
+    end
+    table.sort(list, function(a, b) return a[2] < b[2] end)
+    keep = {}
+    local others = cfg("lightMaxPlayers", 2)
+    for _, e in ipairs(list) do
+        if e[1] == me then
+            keep[me] = true
+        elseif others > 0 then
+            keep[e[1]] = true
+            others = others - 1
+        end
+    end
+end
+
 Rhylib.Hook.Add("Think", "gear.lights", function()
     local me = LocalPlayer()
     if not IsValid(me) then return end
-    -- The nearest lit players.
-    local eye = EyePos()
-    local list = {}
-    for _, p in ipairs(player.GetAll()) do
-        if lit(p) then list[#list + 1] = { p, p == me and -1 or p:GetPos():DistToSqr(eye) } end
-    end
-    table.sort(list, function(a, b) return a[2] < b[2] end)
-    local keep = {}
-    local range = cfg("lightRange", 2000)
-    for i = 1, math.min(#list, cfg("lightMaxPlayers", 4)) do
-        if list[i][2] < (range * 2.5) ^ 2 then keep[list[i][1]] = true end
+    if RealTime() >= nextPick then
+        nextPick = RealTime() + 0.25
+        pick(me)
     end
     for ply in pairs(lamps) do
-        if not keep[ply] then remove(ply) end
+        if not (keep[ply] and lit(ply)) then remove(ply) end
     end
+    local range = cfg("lightRange", 2000)
     local fov, bright = cfg("lightFov", 26), cfg("lightBrightness", 3.5)
     for ply in pairs(keep) do
-        local l = lamps[ply] or make(ply)
-        local pos, ang = lampOrigin(ply)
-        for i, side in ipairs({ -1, 1 }) do
-            local pt = l[i]
-            if IsValid(pt) then
-                local p, a = lampPose(pos, ang, side)
-                pt:SetPos(p)
-                pt:SetAngles(a)
-                pt:SetFOV(fov)
-                pt:SetFarZ(range)
-                pt:SetBrightness(bright)
-                pt:Update()
+        if lit(ply) then
+            local l = lamps[ply] or make(ply)
+            local pos, ang = lampOrigin(ply)
+            for i, side in ipairs({ -1, 1 }) do
+                local pt = l[i]
+                if IsValid(pt) then
+                    local p, a = lampPose(pos, ang, side)
+                    pt:SetPos(p)
+                    pt:SetAngles(a)
+                    pt:SetFOV(fov)
+                    pt:SetFarZ(range)
+                    pt:SetBrightness(bright)
+                    pt:Update()
+                end
             end
         end
     end
@@ -119,12 +150,12 @@ end)
 
 -- A glow on each lamp (not your own in first person).
 Rhylib.Hook.Add("PostDrawTranslucentRenderables", "gear.lights.glow", function(depth, sky)
-    if depth or sky or not next(lamps) then return end
+    if depth or sky or not next(glowing) then return end
     local me = LocalPlayer()
     local eye = EyePos()
     render.SetMaterial(GLOW)
-    for ply in pairs(lamps) do
-        if IsValid(ply) and not (ply == me and not me:ShouldDrawLocalPlayer()) then
+    for ply in pairs(glowing) do
+        if lit(ply) and not (ply == me and not me:ShouldDrawLocalPlayer()) then
             local pos, ang = lampOrigin(ply)
             for _, side in ipairs({ -1, 1 }) do
                 local p, a = lampPose(pos, ang, side)

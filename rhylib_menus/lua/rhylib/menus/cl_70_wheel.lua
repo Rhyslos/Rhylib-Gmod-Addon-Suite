@@ -19,6 +19,10 @@
     Entities with ENT.RhylibWheel = true (the chemistry bench) open their
     own wheel at once on E: hook Rhylib.WheelEntityOptions(ent, me, add).
 
+    W.OpenList(title, list, code) opens a wheel with no target: list =
+    { { label, run, sub } }, held while button code is down (the toolgun's
+    R menu uses it); let go on an option to run it.
+
     Menus.WheelProgress(text, secs) shows a short progress bar under the
     crosshair (for timed actions the server finishes, like cuffing).
 ]]
@@ -97,7 +101,18 @@ local function useHeld()
 end
 
 function W.Close()
-    W.open, W.target, W.list, W.pick, W.pending = false, nil, nil, nil, nil
+    W.open, W.target, W.list, W.pick, W.pending, W.title = false, nil, nil, nil, nil, nil
+end
+
+-- A wheel from a fixed list, no target (held with button code).
+function W.OpenList(title, list, code)
+    if W.open or #list == 0 then return false end
+    for i, o in ipairs(list) do o.angle = -90 + (i - 1) * 360 / #list end
+    W.open, W.target, W.list, W.title, W.code = true, nil, list, title, code
+    W.cx, W.cy = 0, 0
+    W.openedAt = RealTime()
+    surface.PlaySound("ui/buttonrollover.wav")
+    return true
 end
 
 function W.Open(target)
@@ -145,6 +160,23 @@ Rhylib.Hook.Add("Think", "menus.wheel", function()
     end
     if not W.open then return end
     local t = W.target
+    if W.title then
+        -- (a list wheel: only the key matters)
+        W.pick = W.PickOption(ScrH() / 1080)
+        if not me:Alive() then
+            W.Close()
+            return
+        end
+        if not (W.code and W.code > 0 and input.IsButtonDown(W.code)) then
+            local pick = W.pick
+            W.Close()
+            if pick and pick.run and not pick.disabled then
+                surface.PlaySound("ui/buttonclick.wav")
+                pick.run()
+            end
+        end
+        return
+    end
     if not IsValid(t) or not canOpen(me) or t:GetPos():DistToSqr(me:GetPos()) > KEEP * KEEP then
         W.Close()
         return
@@ -196,7 +228,9 @@ Rhylib.Hook.Add("HUDPaint", "menus.wheel", function()
     local dz = DEADZONE * s
     draw.RoundedBox(dz, cx - dz, cy - dz, dz * 2, dz * 2, COL_DEAD)
     draw.SimpleText(pick and "" or "Cancel", UI.Font(14), cx, cy + 9 * s, UI.Colors.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-    if IsValid(W.target) then
+    if W.title then
+        draw.SimpleText(W.title, UI.Font(15, 700), cx, cy - 9 * s, UI.Colors.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    elseif IsValid(W.target) then
         draw.SimpleText(W.target:IsPlayer() and W.target:Nick() or (W.target.PrintName or ""), UI.Font(15, 700), cx, cy - 9 * s, UI.Colors.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
 

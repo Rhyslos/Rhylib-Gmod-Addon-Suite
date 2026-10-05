@@ -3,7 +3,8 @@
 
     Stunned: no input at all, lying in a death pose (last frame).
     Cuffed:  slow walk, no sprint, jump, crouch, attack or use. Escorted
-             prisoners are pulled toward the MP when they fall behind.
+             prisoners are pulled toward the MP when they fall behind
+             (server only; their client stops predicting near the leash).
 ]]
 
 local MP = Rhylib.MP
@@ -55,8 +56,11 @@ Rhylib.Hook.Add("SetupMove", "mp.move", function(ply, mv)
     end
     mv:SetButtons(band(mv:GetButtons(), bnot(CUFF_STRIP)))
     mv:SetMaxClientSpeed(math.min(mv:GetMaxClientSpeed(), MP.Cfg("cuffWalk")))
-    -- Escort: walk toward the MP when too far behind.
-    local by = MP.EscortedBy(ply)
+    -- Escort: walk toward the MP when beyond the leash. Server only: the
+    -- prisoner's client only has the MP's interpolated (late) position,
+    -- so it couldn't predict this; it stops predicting near the leash
+    -- instead (Move hook below) and shows where the server puts it.
+    local by = SERVER and MP.EscortedBy(ply)
     if by then
         local to = by:GetPos() - ply:GetPos()
         to.z = 0
@@ -71,6 +75,37 @@ Rhylib.Hook.Add("SetupMove", "mp.move", function(ply, mv)
         end
     end
 end, -95)
+
+-- An escorted prisoner who has fallen behind isn't predicted on their own
+-- client, so the client never fights the server's pull (like a dragged
+-- body, rhylib_medical). Inside the leash they walk predicted as normal.
+-- The MP's position here is late (interpolation + ping), so it is pushed
+-- ahead by the MP's velocity, and the client hands over early (MARGIN
+-- before the leash) and takes back late (2 x MARGIN), so the server never
+-- pulls while the client still predicts, and the switch doesn't flicker.
+if CLIENT then
+    local MARGIN = 16
+    local interpVar = GetConVar("cl_interp")
+
+    Rhylib.Hook.Add("Move", "mp.escort", function(ply, mv)
+        local by = MP.IsCuffed(ply) and MP.EscortedBy(ply)
+        if not by then
+            ply.rhylibEscortHeld = nil
+            return
+        end
+        local lag = (interpVar and interpVar:GetFloat() or 0.1) + ply:Ping() / 1000
+        local to = by:GetPos() + by:GetVelocity() * lag - mv:GetOrigin()
+        to.z = 0
+        local dist = to:Length()
+        local leash = MP.Cfg("escortLeash")
+        if ply.rhylibEscortHeld then
+            if dist < math.max(0, leash - MARGIN * 2) then ply.rhylibEscortHeld = nil end
+        elseif dist > math.max(0, leash - MARGIN) then
+            ply.rhylibEscortHeld = true
+        end
+        if ply.rhylibEscortHeld then return true end
+    end)
+end
 
 -- No switching weapons while cuffed or stunned.
 Rhylib.Hook.Add("PlayerSwitchWeapon", "mp.noswitch", function(ply, old, new)

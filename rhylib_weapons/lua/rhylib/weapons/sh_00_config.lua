@@ -8,6 +8,13 @@ Config.Register("weapons", "boltSpeedMult", 1.3, "Multiplies every gun's bolt sp
 Config.Register("weapons", "recoilMult", 1, "Multiplies every gun's view recoil (SWEP.Recoil)")
 Config.Register("weapons", "firstShotMult", 0.35, "Spread of a first shot from rest, as a share of the normal cone")
 Config.Register("weapons", "shotRange", 6000, "Players further than this from a shot don't receive it")
+Config.Register("weapons", "boltRange", 0, "Bolts stop (no damage, no impact) after this many units; 0 = off, they fly their full life. Scoped guns and rockets never stop early. Admins change it live with rhylib_boltrange")
+
+-- Bolt reach cap in units (0 = none). Clients get it as a Global2Int.
+function Rhylib.Weapons.BoltRange()
+    if SERVER then return tonumber(Config.Get("weapons", "boltRange")) or 0 end
+    return GetGlobal2Int("rhylib_boltRange", 0)
+end
 Config.Register("weapons", "boltLife", 1.2, "Seconds before a bolt that hit nothing disappears")
 Config.Register("weapons", "headMult", 2, "Damage multiplier for head hits")
 Config.Register("weapons", "limbMult", 0.75, "Damage multiplier for arm and leg hits")

@@ -88,26 +88,38 @@ function Med.Painkilled(ply)
     return ply:GetNW2Float("rhylib_painkill", 0) > CurTime()
 end
 
+-- Field triage (officer order) mutes every affliction until this time.
+function Med.Muted(ply)
+    return ply:GetNW2Float("rhylib_afflMute", 0) > CurTime()
+end
+
 local function broken(p) return p.frac and not p.splint end
 
+-- Damage and burns rounded up, as the client gets them over the net
+-- (med.inj), so predicted checks agree on server and client.
+local ceil = math.ceil
+
 function Med.NoSprint(ply)
+    if Med.Muted(ply) then return false end
     local at = Med.Painkilled(ply) and 1000 or cfg("legNoSprintAt")
     for _, l in ipairs(Med.LEGS) do
         local p = Med.Part(ply, l)
-        if p.frac or p.dmg >= at then return true end
+        if p.frac or ceil(p.dmg) >= at then return true end
     end
     return false
 end
 
 function Med.BrokenLeg(ply)
+    if Med.Muted(ply) then return false end
     return broken(Med.Part(ply, "lleg")) or broken(Med.Part(ply, "rleg"))
 end
 
 function Med.CanAim(ply)
+    if Med.Muted(ply) then return true end
     local at = Med.Painkilled(ply) and 1000 or cfg("armNoAimAt")
     for _, l in ipairs(Med.ARMS) do
         local p = Med.Part(ply, l)
-        if broken(p) or p.dmg >= at then return false end
+        if broken(p) or ceil(p.dmg) >= at then return false end
     end
     return true
 end
@@ -115,28 +127,29 @@ end
 -- Extra spread in degrees from hurt arms and burns.
 function Med.SpreadPenalty(ply, baseCone)
     local t = Med.Injuries(ply)
-    if not t then return 0 end
+    if not t or Med.Muted(ply) then return 0 end
     local pk = Med.Painkilled(ply)
     local arm = 0
     for _, l in ipairs(Med.ARMS) do
         local p = t[l]
-        if p then arm = math.max(arm, broken(p) and 1 or (p.frac and 0.5 or (pk and 0 or p.dmg / 100))) end
+        if p then arm = math.max(arm, broken(p) and 1 or (p.frac and 0.5 or (pk and 0 or ceil(p.dmg) / 100))) end
     end
     if pk then return arm * cfg("armSpread") * baseCone end
     local burn = 0
     for _, l in ipairs(Med.LIMBS) do
         local p = t[l]
-        if p and p.burn > burn then burn = p.burn end
+        if p and ceil(p.burn) > burn then burn = ceil(p.burn) end
     end
     return (arm * cfg("armSpread") + burn / 100 * cfg("burnSpread")) * baseCone
 end
 
 -- Share of max stamina you can have (torso injuries lower it).
 function Med.StaminaCap(ply)
+    if Med.Muted(ply) then return 1 end
     local ill = Med.IllStaminaMult and Med.IllStaminaMult(ply) or 1   -- (illness, sh_50_illness.lua)
     if Med.Painkilled(ply) then return ill end
     local p = Med.Part(ply, "torso")
-    return (1 - math.Clamp(p.dmg / 100, 0, 1) * cfg("torsoStaminaCap")) * ill
+    return (1 - math.Clamp(ceil(p.dmg) / 100, 0, 1) * cfg("torsoStaminaCap")) * ill
 end
 
 -- Anything wrong at all (for the HUD).

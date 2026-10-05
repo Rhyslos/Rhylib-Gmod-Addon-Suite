@@ -72,6 +72,23 @@ local function sendReload(req)
     Rhylib.Net.Start("wep.reload")
     net.WriteUInt(req, W.RELOAD_REQ_BITS)
     net.SendToServer()
+    -- The server starts the reload: stop predicting shots until its reload
+    -- state arrives or about a round trip passes (SWEP:CanPrimaryAttack).
+    -- (a tap with a full clip usually does nothing, so it doesn't hold)
+    local wep = activeRhylibWeapon()
+    if not wep then return end
+    if req == 0 and wep.GetMagSize and wep:Clip1() >= wep:GetMagSize() then return end
+    -- (nothing to load: the server refuses, so don't hold)
+    if not (wep.InfiniteAmmo and wep:InfiniteAmmo()) then
+        local any = false
+        for _, opt in ipairs(options(wep)) do
+            if opt.count > 0 and (opt.req == req or (req == 0 and opt.mag)) then any = true break end
+        end
+        if not any then return end
+    end
+    local now = CurTime()
+    wep.rhylibReloadFrom = now
+    wep.rhylibReloadHold = now + LocalPlayer():Ping() / 1000 + 0.3
 end
 
 local function reset()

@@ -78,7 +78,9 @@ local traceData = { mask = MASK_SHOT, output = traceResult }
 local whizzVar = CreateClientConVar("rhylib_whizz", "1", true, false, "Near-miss sounds for bolts flying past you")
 local WHIZZ_DIST = 90
 local nextWhizz = 0
-function Bolts.NearMiss(shooter, from, dir, len, speed, tr)
+-- lead: head start the visual catches up on (CATCHUP, see Bolts.Spawn).
+local CATCHUP = 3
+function Bolts.NearMiss(shooter, from, dir, len, speed, tr, lead)
     local me = LocalPlayer()
     if not IsValid(me) or shooter == me or not whizzVar:GetBool() or not me:Alive() then return end
     if tr.Entity == me then return end   -- (a hit, not a miss)
@@ -87,7 +89,12 @@ function Bolts.NearMiss(shooter, from, dir, len, speed, tr)
     if t <= 0 or t >= len then return end
     local close = from + dir * t
     if close:DistToSqr(eye) > WHIZZ_DIST * WHIZZ_DIST then return end
-    timer.Simple(t / math.max(speed, 1), function()
+    -- (CATCHUP x speed until the head start is made up, then normal speed)
+    lead = lead or 0
+    speed = math.max(speed, 1)
+    local caught = lead * CATCHUP / (CATCHUP - 1)
+    local delay = t <= caught and t / (speed * CATCHUP) or (t - lead) / speed
+    timer.Simple(delay, function()
         local now = CurTime()
         if now < nextWhizz then return end
         nextWhizz = now + 0.07
@@ -95,10 +102,20 @@ function Bolts.NearMiss(shooter, from, dir, len, speed, tr)
     end)
 end
 
-function Bolts.Spawn(shooter, origin, dir, speed, colorIndex, left)
+-- ahead: seconds the server's bolt is ahead (its lag-compensated first
+-- leg). The visual still leaves the muzzle but flies up to CATCHUP times
+-- as fast until it has made that up (not hooks or stun rings).
+function Bolts.Spawn(shooter, origin, dir, speed, colorIndex, left, ahead)
     local style = STYLES[colorIndex] or STYLES[1]
     local muzzle = muzzlePos(shooter, origin, left)
     local range = speed * style.life
+    -- (the server's optional reach cap, boltRange; rockets, hooks and
+    -- scoped guns keep their life)
+    local cap = Rhylib.Weapons.BoltRange()
+    local w = cap > 0 and IsValid(shooter) and shooter:IsPlayer() and shooter:GetActiveWeapon()
+    if cap > 0 and not style.rocket and not style.hook and not (IsValid(w) and w.Scope) then
+        range = math.min(range, cap)
+    end
     traceData.start = origin
     traceData.endpos = origin + dir * range
     traceData.filter = IsValid(shooter) and shooter or nil
@@ -113,7 +130,9 @@ function Bolts.Spawn(shooter, origin, dir, speed, colorIndex, left)
     else
         path:Div(len)
     end
-    if not style.hook and not style.ring then Bolts.NearMiss(shooter, muzzle, path, len, speed, tr) end
+    local lead = 0
+    if ahead and ahead > 0 and not style.hook and not style.ring then lead = speed * ahead end
+    if not style.hook and not style.ring then Bolts.NearMiss(shooter, muzzle, path, len, speed, tr, lead) end
     Bolts.visual[#Bolts.visual + 1] = {
         shooter = shooter,
         origin = muzzle,
@@ -123,6 +142,8 @@ function Bolts.Spawn(shooter, origin, dir, speed, colorIndex, left)
         style = style,
         born = CurTime(),
         travelled = 0,
+        lead = lead,
+        endDist = len,   -- (a miss ends here too: the end of the real path)
         hitDist = tr.Hit and len or nil,
         hitPos = tr.Hit and finish or nil,
         hitNormal = tr.Hit and Vector(tr.HitNormal) or nil,
@@ -142,15 +163,16 @@ Rhylib.Net.ReceiveBatch("wep.shot", function()
         shooter = net.ReadUInt(13),
         origin = net.ReadVector(),
         dir = net.ReadNormal(),
-        speed = net.ReadUInt(14),
+        speed = net.ReadUInt(15),
         color = net.ReadUInt(4),
         left = net.ReadBool(),
+        ahead = net.ReadUInt(6) / 100,
     }
 end, function(s)
     local shooter = Entity(s.shooter)
     -- Your own shots were already drawn by prediction (except in singleplayer).
     if shooter == LocalPlayer() and not game.SinglePlayer() then return end
-    Bolts.Spawn(shooter, s.origin, s.dir, s.speed, s.color, s.left)
+    Bolts.Spawn(shooter, s.origin, s.dir, s.speed, s.color, s.left, s.ahead)
 end)
 
 local function impact(b)
@@ -186,9 +208,18 @@ Rhylib.Hook.Add("Think", "weapons.bolts", function()
         local remove = not b.style or not b.origin or now - b.born > b.style.life  -- (no style/origin: from before an autorefresh)
 
         if not remove then
-            local t = b.travelled + b.speed * dt
+            local step = b.speed * dt
+            local lead = b.lead
+            if lead and lead > 0 then
+                local extra = math.min(lead, step * (CATCHUP - 1))
+                b.lead = lead - extra
+                step = step + extra
+            end
+            local t = b.travelled + step
             if b.hitDist and t >= b.hitDist then
                 impact(b)
+                remove = true
+            elseif b.endDist and t >= b.endDist then
                 remove = true
             else
                 b.travelled = t

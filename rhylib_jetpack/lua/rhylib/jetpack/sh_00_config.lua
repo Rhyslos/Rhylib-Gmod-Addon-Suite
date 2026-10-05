@@ -10,9 +10,14 @@
         DTBool 31  wearing a jetpack
         DTBool 30  locked (ran dry, must land and recharge)
         DTBool 29  thrusting right now (for effects)
-        DTFloat 30 fuel, 0 to 1
-        DTFloat 31 time the player landed (0 while in the air)
-    Slots 29-31 are used so they don't clash with player classes that
+        DTFloat 30 fuel at the start of the line, 0 to 1
+        DTFloat 31 when the line starts (in the future while refill waits)
+        DTFloat 23 fuel per second along the line (minus = thrusting)
+    Fuel is a line like rhylib_stamina's: fuel now = DTFloat 30 +
+    DTFloat 23 * max(0, now - DTFloat 31), clamped to 0..1. It is only
+    rewritten when the slope changes, so a long flight sends nothing
+    tick by tick. Read it with J.Fuel(ply).
+    High slots are used so they don't clash with player classes that
     use the low slots.
 ]]
 
@@ -23,7 +28,8 @@ J.DT_HAS = 31
 J.DT_LOCKED = 30
 J.DT_THRUST = 29
 J.DT_FUEL = 30
-J.DT_LANDED = 31
+J.DT_FROM = 31
+J.DT_RATE = 23
 
 local Config = Rhylib.Config
 Config.Register("jetpack", "fuelTime", 10, "Seconds of thrust from a full tank (rhylib_skills Airborne: skills airborneFuel)")
@@ -39,6 +45,19 @@ Config.Register("jetpack", "airAccel", 420, "Sideways steering while thrusting (
 Config.Register("jetpack", "maxAirSpeed", 235, "Top sideways speed from steering (units/s)")
 Config.Register("jetpack", "airStopTau", 0.3, "How quickly sideways movement stops with no keys held (seconds); lower = stops faster")
 Config.Register("jetpack", "loadFuelMult", 0.3, "At a full load the jetpack burns this much more fuel (0.3 = 30% faster)")
+
+-- Fuel at time t (default now), 0 to 1.
+function J.Fuel(ply, t)
+    local v = ply:GetDTFloat(J.DT_FUEL) + ply:GetDTFloat(J.DT_RATE) * math.max(0, (t or CurTime()) - ply:GetDTFloat(J.DT_FROM))
+    return math.Clamp(v, 0, 1)
+end
+
+-- Start a new fuel line: fuel at time from, changing by rate per second.
+function J.SetLine(ply, fuel, from, rate)
+    ply:SetDTFloat(J.DT_FUEL, fuel)
+    ply:SetDTFloat(J.DT_FROM, from)
+    ply:SetDTFloat(J.DT_RATE, rate)
+end
 
 function J.Has(ply)
     return ply:GetDTBool(J.DT_HAS)

@@ -97,6 +97,8 @@ local GLYPHS = {
     wall = { { "R", .1, .2, .38, .16 }, { "R", .52, .2, .38, .16 }, { "R", .1, .42, .18, .16 }, { "R", .32, .42, .36, .16 },
         { "R", .72, .42, .18, .16 }, { "R", .1, .64, .38, .16 }, { "R", .52, .64, .38, .16 } },
     phalanx = { { "R", .06, .22, .26, .6 }, { "R", .37, .16, .26, .6 }, { "R", .68, .22, .26, .6 } },
+    swap = { { "R", .14, .3, .56, .1 }, { "P", { .7, .18, .9, .35, .7, .52 } },
+        { "R", .3, .6, .56, .1 }, { "P", { .3, .82, .1, .65, .3, .48 } } },
 }
 
 -- Icon per skill (a node's own `icon` wins).
@@ -112,6 +114,9 @@ local ICONS = {
     batch_brewing = "stack", bacta_specialist = "drop",
     riot_shield = "riot", shield_bash = "bash", escort_drills = "cuffs", breaching = "door",
     thorough_search = "search", shock_assault = "charge", hold_line = "wall", flash_charge = "burst", phalanx = "phalanx",
+    mark_target = "target", quick_draw = "bolt", speed_loader = "mag",
+    light_rounds = "rounds", adapt_1 = "swap", adapt_2 = "swap", adapt_3 = "swap",
+    cmd_wind = "run", cmd_triage = "cross", cmd_hold = "shield", cmd_focus = "aim", cmd_open = "box", cmd_press = "charge",
 }
 
 local function iconOf(n) return n.icon or ICONS[n.id] or "star" end
@@ -329,6 +334,10 @@ local function build(page)
             }
             if cat.medicOnly then table.insert(rules, 1, "Medic jobs only.") end
             if cat.mpOnly then table.insert(rules, 1, "Military police jobs only.") end
+            if cat.id == K.ADAPT_CAT then
+                rules[#rules + 1] = "Adaptable: learn skills from other trees (tier 2, 4, then any), job rules still apply."
+                rules[#rules + 1] = "Command orders: pick one. Needs the rank " .. tostring(K.Cfg("commandRank")) .. "; issued with the command comlink."
+            end
             for _, r in ipairs(rules) do
                 Kit.SetCol(C.accent)
                 surface.DrawRect(pad, y + S(6), S(4), S(4))
@@ -358,6 +367,7 @@ local function build(page)
             ny = ny + S(21)
         end
         local where = n.spec and K.specById[n.spec] and K.specById[n.spec].name or "Shared"
+        if set[n.id] and K.Borrowed(set, n.id) then where = "Borrowed (Adaptable)" end
         if n.branch then
             for _, s in ipairs(K.catById[n.cat].specs or {}) do
                 for _, b in ipairs(s.branches or {}) do
@@ -378,7 +388,7 @@ local function build(page)
         local reqs = reqsOf(n)
         if #reqs > 0 then
             y = y + S(12)
-            Kit.Caps(n.needsGroups and "Needs one of these pairs" or "Needs", pad, y + S(6))
+            Kit.Caps(n.needsGroups and (n.needsLabel or "Needs one of these pairs") or "Needs", pad, y + S(6))
             y = y + S(18)
             if n.needsGroups then
                 for _, g in ipairs(n.needsGroups) do

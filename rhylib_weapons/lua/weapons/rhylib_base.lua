@@ -268,7 +268,7 @@ end
 function SWEP:OnFireModeChanged(_, _, new)
     -- (the stored mode isn't updated yet inside this notify: work from new)
     local name = self:ModeNameAt(new)
-    self.rhylibModeCache = nil
+    if self.rhylibModeCache then self.rhylibModeCache[1] = nil end
     self:ApplyDualViewModel(name == "dual")
     self:ApplyModeCarrier(name, true)
     if SERVER then
@@ -380,10 +380,49 @@ function SWEP:OnLoweredChanged(name, _, on)
     self:SetHoldType((safety or lowered) and self:LoweredHoldType() or self:ActiveHoldType())
 end
 
+-- Quick draw (rhylib_skills): called from Deploy, after the engine has
+-- started the draw animation and set the wait to its end: the animation
+-- plays faster and the gun (and the player's next attack) is ready sooner.
+function SWEP:QuickDraw()
+    local owner = self:GetOwner()
+    if not (IsValid(owner) and owner:IsPlayer()) then return end
+    local K = Rhylib.Skills
+    local m = K and K.DrawMult and K.DrawMult(owner, self) or 1
+    local vm = owner:GetViewModel()
+    if m >= 1 or not IsValid(vm) then return end
+    -- The draw animation's own length (not whatever the viewmodel was
+    -- playing: an idle loop can be very long), capped.
+    local seq = vm:SelectWeightedSequence(ACT_VM_DRAW)
+    if not seq or seq < 0 then return end
+    local dur = math.min(vm:SequenceDuration(seq), 2)
+    local t = CurTime() + dur * m
+    vm:SetPlaybackRate(1 / m)
+    self.rhylibDrawEnd = t
+    -- Only ever bring the waits forward, never push them later.
+    if self:GetNextPrimaryFire() > t then self:SetNextPrimaryFire(t) end
+    if self:GetNextSecondaryFire() > t then self:SetNextSecondaryFire(t) end
+    local na = owner:GetInternalVariable("m_flNextAttack")
+    if isnumber(na) and na > t then owner:SetSaveValue("m_flNextAttack", t) end
+end
+
+function SWEP:EndQuickDraw(owner)
+    self.rhylibDrawEnd = nil
+    local vm = IsValid(owner) and owner:GetViewModel()
+    if IsValid(vm) and not self:IsReloading() then vm:SetPlaybackRate(1) end
+end
+
 -- Test mode (rhylib_infammo, admins): firing uses nothing, reloads are free.
 function SWEP:InfiniteAmmo()
     local o = self:GetOwner()
     return IsValid(o) and o:IsPlayer() and o:GetNW2Bool("rhylib_infammo") or false
+end
+
+-- Shots take no ammo or cell charge: test ammo, or the officer order
+-- Open up (rhylib_skills). Reloads still work normally under Open up.
+function SWEP:NoAmmoUse()
+    if self:InfiniteAmmo() then return true end
+    local K = Rhylib.Skills
+    return K and K.OrderIs and K.OrderIs(self:GetOwner(), "open") or false
 end
 
 -- Is the carrier viewmodel in use? (set in Initialize)
@@ -426,7 +465,9 @@ function SWEP:GetFireModeName()
     local c = self.rhylibModeCache
     if c and c[1] == m and c[2] == t then return c[3] end
     local name = self:ModeNameAt(m)
-    self.rhylibModeCache = { m, t, name }
+    -- (one table per weapon, reused)
+    if not c then c = {} self.rhylibModeCache = c end
+    c[1], c[2], c[3] = m, t, name
     return name
 end
 
@@ -570,6 +611,7 @@ if SERVER then
 end
 
 function SWEP:Deploy()
+    self:QuickDraw()
     self:SetAiming(false)
     self:FixFireMode()
     if self:GetFireModeName() == "dual" then self:ApplyDualViewModel(true) end
@@ -578,6 +620,7 @@ function SWEP:Deploy()
 end
 
 function SWEP:Holster()
+    if self.rhylibDrawEnd then self:EndQuickDraw(self:GetOwner()) end   -- (the viewmodel is shared)
     self:SetAiming(false)
     self:SetBurstLeft(0)
     self:SetSpinStart(0)
@@ -656,7 +699,22 @@ end
 
 function SWEP:CanPrimaryAttack()
     if self:IsLowered() then return false end
-    if self:GetReloadKind() ~= RELOAD_NONE then return false end
+    if self:GetReloadKind() ~= RELOAD_NONE then
+        self.rhylibReloadHold = nil
+        return false
+    end
+    -- (client: a reload was asked for, the server's answer isn't here yet;
+    -- cl_30_reload. Commands from before the request, run again by
+    -- prediction, still fire.)
+    local hold = self.rhylibReloadHold
+    if hold then
+        local now = CurTime()
+        if now >= hold then
+            self.rhylibReloadHold = nil
+        elseif now >= (self.rhylibReloadFrom or 0) then
+            return false
+        end
+    end
     if self:TooHeavyToFire() then return false end
 
     if self:Clip1() <= 0 then
@@ -717,6 +775,30 @@ end
 local STUN_OPTS = { stun = true, color = 6, speed = 2600 }
 SWEP.StunFireRate = 75   -- one ring every 0.8 s
 
+-- First-leg pellet hits, applied after lag compensation (reused list).
+local pelletHits = {}
+
+-- The bolts of one shot. hits: see Bolts.Fire (server, several pellets).
+local function firePellets(self, owner, origin, dir, pellets, cone, damage, stun, hits)
+    for i = 1, pellets do
+        local d = dir
+        if self.Pellets then
+            -- Around the shot's own direction (the cone shown when firing).
+            local pa = util.SharedRandom("rhylib.pellet.a", 0, 2 * math.pi, i)
+            local off = math.tan(math.rad(cone) * math.sqrt(util.SharedRandom("rhylib.pellet.r", 0, 1, i)))
+            local da = d:Angle()
+            d = da:Forward() + da:Right() * (math.cos(pa) * off) - da:Up() * (math.sin(pa) * off)
+            d:Normalize()
+        end
+        local opts = stun and STUN_OPTS or nil
+        if SERVER then
+            Rhylib.Weapons.Bolts.Fire(owner, self, origin, d, stun and 0 or damage, opts, hits)
+        elseif IsFirstTimePredicted() then
+            Rhylib.Weapons.Bolts.FireLocal(owner, self, origin, d, opts)
+        end
+    end
+end
+
 -- One shot: spread, recoil, ammo, sound and the bolt.
 function SWEP:FireShot()
     local owner = self:GetOwner()
@@ -733,11 +815,11 @@ function SWEP:FireShot()
     Spread.AddShot(self, Spread.NearestArc(a), now)
     -- Shotguns: Pellets bolts, one round each (fewer when the clip is low).
     local pellets = self.Pellets or 1
-    if not self:InfiniteAmmo() then
+    if not self:NoAmmoUse() then
         pellets = math.max(1, math.min(pellets, self:Clip1()))
         self:TakePrimaryAmmo(pellets)
     end
-    if self.UsesCell and not self:InfiniteAmmo() then
+    if self.UsesCell and not self:NoAmmoUse() then
         local shots = self.CellShots * (K and K.CellMult and K.CellMult(owner) or 1)
         self:SetCell(math.max(0, self:GetCell() - 1 / shots))
     end
@@ -773,23 +855,19 @@ function SWEP:FireShot()
     local origin = owner:GetShootPos()
     local cone = self.PelletCone or 0
     if self.Pellets and K and K.PelletConeMult then cone = cone * K.PelletConeMult(owner, self) end   -- (Shotgun drills)
-    for i = 1, pellets do
-        local d = dir
-        if self.Pellets then
-            -- Around the shot's own direction (the cone shown when firing).
-            local pa = util.SharedRandom("rhylib.pellet.a", 0, 2 * math.pi, i)
-            local off = math.tan(math.rad(cone) * math.sqrt(util.SharedRandom("rhylib.pellet.r", 0, 1, i)))
-            local da = d:Angle()
-            d = da:Forward() + da:Right() * (math.cos(pa) * off) - da:Up() * (math.sin(pa) * off)
-            d:Normalize()
-        end
-        local opts = stun and STUN_OPTS or nil
-        if SERVER then
-            Rhylib.Weapons.Bolts.Fire(owner, self, origin, d, stun and 0 or damage, opts)
-        elseif IsFirstTimePredicted() then
-            Rhylib.Weapons.Bolts.FireLocal(owner, self, origin, d, opts)
-        end
+    -- Several pellets: one lag compensation around them all; their hits
+    -- are applied after it's off (Bolts.ApplyHits).
+    local hits = SERVER and pellets > 1 and owner:IsPlayer() and pelletHits or nil
+    if not hits then
+        firePellets(self, owner, origin, dir, pellets, cone, damage, stun)
+        return
     end
+    for i = #hits, 1, -1 do hits[i] = nil end   -- (left over if a hit errored)
+    owner:LagCompensation(true)
+    local ok, err = pcall(firePellets, self, owner, origin, dir, pellets, cone, damage, stun, hits)
+    owner:LagCompensation(false)   -- (always, even after an error)
+    if not ok then error(err, 0) end
+    Rhylib.Weapons.Bolts.ApplyHits(hits)
 end
 
 -- One grapple hook (see rhylib/weapons/sh_30_grapple.lua).
@@ -1121,6 +1199,8 @@ end
 function SWEP:Think()
     local owner = self:GetOwner()
     if not IsValid(owner) or not owner:IsPlayer() then return end
+    -- (Quick draw: back to normal speed once the faster draw is done)
+    if self.rhylibDrawEnd and CurTime() >= self.rhylibDrawEnd then self:EndQuickDraw(owner) end
 
     if SERVER and self:IsReloading() and CurTime() >= self:GetReloadEnd() then
         self:FinishReload()

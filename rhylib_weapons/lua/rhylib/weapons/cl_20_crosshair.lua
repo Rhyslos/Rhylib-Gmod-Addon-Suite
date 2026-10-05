@@ -174,6 +174,13 @@ function X.Draw(wep, x, y)
     local thick = math.Clamp(thickVar:GetFloat(), 0.5, 3)
     local op = math.Clamp(opacityVar:GetFloat(), 0.1, 1)
     colLineNow.a = 255 * op
+    -- (a tint, e.g. an officer's command order: rhylib_skills)
+    local tint = Rhylib.UI.Tint
+    if tint then
+        colLineNow.r, colLineNow.g, colLineNow.b = tint.r, tint.g, tint.b
+    else
+        colLineNow.r, colLineNow.g, colLineNow.b = colLine.r, colLine.g, colLine.b
+    end
     colOutlineNow.a = colOutline.a * op
     beginStrokes()
     surface.SetDrawColor(colOutlineNow)

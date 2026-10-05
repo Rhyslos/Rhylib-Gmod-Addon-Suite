@@ -67,15 +67,27 @@ local function healthy(t)
     return true
 end
 
--- What the owner last got, as whole numbers, so tiny changes aren't sent.
+-- What the owner last got, as whole numbers (as sent over the net), so
+-- tiny changes aren't sent. Each part packs into one number below 122412;
+-- three parts fit exactly in one double, so six parts make two numbers.
+local SIG_BASE = 122412
+local function packPart(p)
+    local frac = p.frac and (p.splint and 2 or 1) or 0
+    local dmg = math.Clamp(math.ceil(p.dmg), 0, 100)
+    local burn = math.Clamp(math.ceil(p.burn), 0, 100)
+    return ((dmg * 4 + math.Clamp(p.bleed, 0, 3)) * 3 + frac) * 101 + burn
+end
+
 local function signature(t)
-    if not t then return "" end
-    local s = ""
-    for _, l in ipairs(Med.LIMBS) do
+    if not t then return -1, -1 end
+    local a, b = 0, 0
+    for i, l in ipairs(Med.LIMBS) do
         local p = t[l]
-        s = s .. math.ceil(p.dmg) .. "," .. p.bleed .. "," .. (p.frac and (p.splint and 2 or 1) or 0) .. "," .. math.ceil(p.burn) .. ";"
+        if p then
+            if i <= 3 then a = a * SIG_BASE + packPart(p) else b = b * SIG_BASE + packPart(p) end
+        end
     end
-    return s
+    return a, b
 end
 
 function Med.MarkInjuries(ply)
@@ -89,9 +101,9 @@ Rhylib.Hook.Add("Tick", "medical.injuries.send", function()
     for ply in pairs(dirty) do
         dirty[ply] = nil
         if IsValid(ply) then
-            local sig = signature(inj[ply])
-            if sig ~= ply.rhylibInjSent then
-                ply.rhylibInjSent = sig
+            local sa, sb = signature(inj[ply])
+            if sa ~= ply.rhylibInjSigA or sb ~= ply.rhylibInjSigB then
+                ply.rhylibInjSigA, ply.rhylibInjSigB = sa, sb
                 local list = { ply }
                 local v = viewers[ply]
                 if v then
@@ -203,7 +215,7 @@ Rhylib.Hook.Add("PostEntityTakeDamage", "medical.injuries", function(ply, dmg, t
         -- Torso hits knock the wind out of you.
         -- (not with the Shock Assault skill)
         local K = Rhylib.Skills
-        if limb == "torso" and Rhylib.Stamina and Rhylib.Stamina.Drain
+        if limb == "torso" and Rhylib.Stamina and Rhylib.Stamina.Drain and not Med.Muted(ply)
             and not (K and K.Has and K.Has(ply, "shock_assault")) then
             Rhylib.Stamina.Drain(ply, amount * cfg("torsoStaminaHit"))
         end
@@ -292,7 +304,8 @@ timer.Create("Rhylib.Medical.Injuries", 1, 0, function()
             -- (a treatment whose helper is gone no longer counts)
             if ply.rhylibTreated and not IsValid(ply:GetNW2Entity("rhylib_healBy")) then ply.rhylibTreated = nil end
             -- Bleeding while down is the bleed-out timer's job; none while being treated.
-            if loss > 0 and not ply.rhylibDown and not ply.rhylibTreated then
+            -- (no bleeding while Field triage mutes afflictions)
+            if loss > 0 and not ply.rhylibDown and not ply.rhylibTreated and not Med.Muted(ply) then
                 -- Keep the fraction so slow bleeds still add up.
                 ply.rhylibBleedAcc = (ply.rhylibBleedAcc or 0) + loss
                 local whole = math.floor(ply.rhylibBleedAcc)

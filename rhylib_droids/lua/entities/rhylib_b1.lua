@@ -19,7 +19,7 @@ AddCSLuaFile()
 ENT.Base = "base_nextbot"
 ENT.Type = "nextbot"
 ENT.PrintName = "B1 battle droid"
-ENT.Category = "Rhylib Droids"
+ENT.Category = "Rhylib: B1 battle droids"
 ENT.Spawnable = false   -- spawned from the NPCs tab (list "NPC") or the toolgun
 ENT.AdminOnly = true
 ENT.IsRhylibDroid = true
@@ -130,27 +130,80 @@ if SERVER then
         return not tr.Hit or tr.Entity == t
     end
 
-    -- Closest visible target in range, checked at most every 0.3 s.
+    local MAX_TRACES = 4
+    local SWITCH = 0.49     -- (0.7 squared) a new target must be 30% closer
+    local REMEMBER = 2      -- seen this recently: no new reaction delay
+    local cand, candD = {}, {}   -- scratch lists (Look never yields)
+
+    -- A visible target in range: keeps the current one while it's in sight
+    -- unless another is much closer, else the nearest visible (nearest
+    -- first, at most 4 traces, plus one rotating farther one). Every 0.3 s,
+    -- 0.5 s while engaged.
     function ENT:Look()
         local now = CurTime()
         if now < self.nextLook then return self.target end
-        self.nextLook = now + 0.3 + math.Rand(0, 0.1)   -- spread droids over ticks
         local k = self:Kind()
         local range = D.Cfg(k.range)
         local pos = self:GetPos()
-        local best, bestD
+        local cur = self.target
+        -- Targets in range, sorted nearest first (insertion sort, few).
+        local n, curD = 0, nil
         for _, p in ipairs(D.Targets()) do
             local d = p:GetPos():DistToSqr(pos)
-            if d < range * range and (not bestD or d < bestD) and self:CanSee(p) then
-                best, bestD = p, d
+            if d < range * range then
+                if p == cur then curD = d end
+                local i = n
+                while i > 0 and candD[i] > d do
+                    cand[i + 1], candD[i + 1] = cand[i], candD[i]
+                    i = i - 1
+                end
+                cand[i + 1], candD[i + 1] = p, d
+                n = n + 1
             end
         end
+        local best, traces = nil, 0
+        local limit = math.huge
+        if curD then
+            traces = 1
+            if self:CanSee(cur) then
+                best = cur
+                limit = curD * SWITCH
+            end
+        end
+        local i = 1
+        while i <= n and traces < MAX_TRACES and candD[i] < limit do
+            local p = cand[i]
+            if p ~= cur then
+                traces = traces + 1
+                if self:CanSee(p) then best = p break end
+            end
+            i = i + 1
+        end
+        -- Nothing seen and some left untraced: one more trace, rotating
+        -- over the farther ones (a player in the open behind hidden ones).
+        if not best and i <= n then
+            local rot = (self.lookRot or 0) % (n - i + 1)
+            self.lookRot = rot + 1
+            local p = cand[i + rot]
+            if p ~= cur and self:CanSee(p) then best = p end
+        end
+        for i = 1, n do cand[i] = nil end
+        self.nextLook = now + (best and best == cur and 0.5 or 0.3) + math.Rand(0, 0.1)   -- spread droids over ticks
         if best then
-            if self.target ~= best then
+            -- Reaction delay only for a target not seen in the last 2 s.
+            local seen = self.seenAt
+            if not seen then seen = {} self.seenAt = seen end
+            if self.target ~= best and now - (seen[best] or -100) > REMEMBER then
                 local react = D.Cfg(k.reaction) * math.Rand(0.8, 1.3)
                 if D.Boosted(self) then react = react * D.Cfg("cmdReaction") end
                 self.reactUntil = now + react
             end
+            if not seen[best] then
+                for p, at in pairs(seen) do
+                    if not IsValid(p) or now - at > REMEMBER then seen[p] = nil end
+                end
+            end
+            seen[best] = now
             self.target = best
             self.lastSeen = best:GetPos()
             self.lastSeenAt = now
@@ -162,6 +215,7 @@ if SERVER then
 
     -- Shot at by a player it hadn't seen: turn toward them.
     function ENT:OnInjured(dmg)
+        self.woken = true   -- ends an idle wait early
         local att = dmg:GetAttacker()
         if IsValid(att) and att:IsPlayer() and not IsValid(self.target) then
             self.lastSeen = att:GetPos()
@@ -192,14 +246,22 @@ if SERVER then
     -- Shooting
     --------------------------------------------------------------------------
 
+    -- Hand bone ids per model: { right, left } (false = none).
+    local hands = {}
+
     -- (dual: both arms in turn)
     function ENT:Muzzle()
-        local hand = "ValveBiped.Bip01_R_Hand"
+        local mdl = self:GetModel() or ""
+        local h = hands[mdl]
+        if not h then
+            h = { self:LookupBone("ValveBiped.Bip01_R_Hand") or false, self:LookupBone("ValveBiped.Bip01_L_Hand") or false }
+            hands[mdl] = h
+        end
+        local b = h[1]
         if self:Kind().dual then
             self.leftArm = not self.leftArm
-            if self.leftArm then hand = "ValveBiped.Bip01_L_Hand" end
+            if self.leftArm then b = h[2] end
         end
-        local b = self:LookupBone(hand)
         local pos = b and self:GetBonePosition(b)
         if not pos then return self:Eye() end
         return pos + self:GetForward() * (self:Kind().gun and 18 or 10) + Vector(0, 0, 2)
@@ -340,9 +402,13 @@ if SERVER then
 
     -- Walk a path for up to maxTime; stop early when a target shows up (watch).
     function ENT:Go(pos, maxTime, watch)
-        local path = Path("Follow")
-        path:SetMinLookAheadDistance(300)
-        path:SetGoalTolerance(40)
+        local path = self.path   -- one per droid (Go never nests)
+        if not path then
+            path = Path("Follow")
+            path:SetMinLookAheadDistance(300)
+            path:SetGoalTolerance(40)
+            self.path = path
+        end
         if not path:Compute(self, pos) then return false end
         local stop = CurTime() + maxTime
         while path:IsValid() and CurTime() < stop do
@@ -420,6 +486,16 @@ if SERVER then
         self.target = nil
     end
 
+    -- Any target within 1.5x range (distance only, no traces).
+    function ENT:AnyoneNear()
+        local r = D.Cfg(self:Kind().range) * 1.5
+        local pos = self:GetPos()
+        for _, p in ipairs(D.Targets()) do
+            if p:GetPos():DistToSqr(pos) < r * r then return true end
+        end
+        return false
+    end
+
     function ENT:RunBehaviour()
         while true do
             if self:Look() then
@@ -429,6 +505,15 @@ if SERVER then
                 local pos = self.lastSeen
                 self.lastSeen = nil
                 self:Go(pos, 8, true)
+            elseif not self:AnyoneNear() then
+                -- Nobody anywhere near: stand still for 3-5 s, waking
+                -- early when hit or someone comes near.
+                local stop = CurTime() + math.Rand(3, 5)
+                self.woken = false
+                while CurTime() < stop and not self.woken do
+                    coroutine.wait(0.5)
+                    if self:AnyoneNear() then break end
+                end
             elseif math.random() < 0.35 then
                 -- Wander near home.
                 local pos = self.home + Vector(math.Rand(-350, 350), math.Rand(-350, 350), 0)
@@ -452,15 +537,23 @@ if SERVER then
         local want = speed > 10 and (speed > 110 and A.run or A.walk) or A.idle
         if self:GetActivity() ~= want then self:StartActivity(want) end
 
-        -- Aim the gun at the target.
+        -- Aim the gun at the target. Sent only on a 3 degree change, or
+        -- a smaller one after 0.1 s (fewer entity updates).
         local t = self.target
+        local yaw, pitch = 0, 0
         if IsValid(t) then
             local ang = (t:WorldSpaceCenter() - self:Eye()):Angle()
-            self:SetPoseParameter("aim_yaw", math.Clamp(math.NormalizeAngle(ang.y - self:GetAngles().y), -60, 60))
-            self:SetPoseParameter("aim_pitch", math.Clamp(math.NormalizeAngle(ang.p), -50, 50))
-        else
-            self:SetPoseParameter("aim_yaw", 0)
-            self:SetPoseParameter("aim_pitch", 0)
+            yaw = math.Clamp(math.NormalizeAngle(ang.y - self:GetAngles().y), -60, 60)
+            pitch = math.Clamp(math.NormalizeAngle(ang.p), -50, 50)
+        end
+        local dy, dp = math.abs(yaw - (self.aimYaw or 999)), math.abs(pitch - (self.aimPitch or 999))
+        if dy > 0.25 or dp > 0.25 then
+            local now = CurTime()
+            if dy > 3 or dp > 3 or now - (self.aimAt or 0) >= 0.1 then
+                self.aimYaw, self.aimPitch, self.aimAt = yaw, pitch, now
+                self:SetPoseParameter("aim_yaw", yaw)
+                self:SetPoseParameter("aim_pitch", pitch)
+            end
         end
 
         if speed > 10 then self:BodyMoveXY() else self:FrameAdvance() end
