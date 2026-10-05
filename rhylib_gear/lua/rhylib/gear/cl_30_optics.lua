@@ -680,7 +680,33 @@ Rhylib.Hook.Add("HUDPaint", "gear.visor.layer", function()
     if kindUp() ~= 0 or not visorDown() then return end
     local me = LocalPlayer()
     if not me:Alive() then return end
+    -- Only in the clear opening: the visor shell's (semi-transparent)
+    -- brow and cheeks are written into the stencil and skipped.
+    local tris = Rhylib.HUD and Rhylib.HUD.VisorShellTris and Rhylib.HUD.VisorShellTris()
+    if not tris or #tris == 0 then
+        visorLayer(ScrW(), ScrH())
+        return
+    end
+    render.ClearStencil()
+    render.SetStencilEnable(true)
+    render.SetStencilWriteMask(255)
+    render.SetStencilTestMask(255)
+    render.SetStencilReferenceValue(1)
+    render.SetStencilCompareFunction(STENCIL_ALWAYS)
+    render.SetStencilPassOperation(STENCIL_REPLACE)
+    render.SetStencilFailOperation(STENCIL_KEEP)
+    render.SetStencilZFailOperation(STENCIL_REPLACE)
+    render.OverrideColorWriteEnable(true, false)
+    draw.NoTexture()
+    surface.SetTexture(0)
+    surface.SetDrawColor(255, 255, 255, 255)
+    for i = 1, #tris do surface.DrawPoly(tris[i]) end
+    render.OverrideColorWriteEnable(false, false)
+    render.SetStencilCompareFunction(STENCIL_NOTEQUAL)
+    render.SetStencilPassOperation(STENCIL_KEEP)
+    render.SetStencilZFailOperation(STENCIL_KEEP)
     visorLayer(ScrW(), ScrH())
+    render.SetStencilEnable(false)
 end, -30)
 
 -- Settings and the controls list (rhylib_menus).

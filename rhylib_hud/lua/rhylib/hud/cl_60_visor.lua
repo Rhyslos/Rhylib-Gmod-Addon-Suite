@@ -224,18 +224,28 @@ function HUD.OpticsWeaponMode()
     return IsValid(ply) and ply:GetNW2Int("rhylib_optics", 0) ~= 0 and ply:GetNW2Bool("rhylib_opticsFire", false)
 end
 
--- Drawn before the other HUD parts (priority -10), so they sit on top.
-Rhylib.Hook.Add("HUDPaint", "hud.visor", function()
-    if not HUD.VisorActive() then return end
+-- Rebuilt when the screen size or the brow settings change.
+local function ensureShell()
     local W, H = ScrW(), ScrH()
-    -- (rebuilt when the screen size or the brow settings change)
     local be, bc, bv = browEdgeVar:GetFloat(), browCentreVar:GetFloat(), browCurveVar:GetFloat()
     if cache.w ~= W or cache.h ~= H or cache.be ~= be or cache.bc ~= bc or cache.bv ~= bv then
         build(W, H)
         cache.be, cache.bc, cache.bv = be, bc, bv
     end
+    return cache
+end
 
-    local shell = cache
+-- The shell's triangles (brow + cheeks) while the visor shows, else nil.
+-- Read only. rhylib_gear masks the sun visor layer with them.
+function HUD.VisorShellTris()
+    if not HUD.VisorActive() then return nil end
+    return ensureShell().tris
+end
+
+-- Drawn before the other HUD parts (priority -10), so they sit on top.
+Rhylib.Hook.Add("HUDPaint", "hud.visor", function()
+    if not HUD.VisorActive() then return end
+    local shell = ensureShell()
     draw.NoTexture()
     surface.SetDrawColor(COL_SHELL)
     for _, t in ipairs(shell.tris) do surface.DrawPoly(t) end
