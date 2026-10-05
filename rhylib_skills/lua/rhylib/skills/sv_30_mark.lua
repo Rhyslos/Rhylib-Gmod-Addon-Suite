@@ -12,8 +12,12 @@
     feed Priority target); there's no damage bonus any more.
     Marks live on the target: ent.rhylibMarks = { [marker] = { untilT } };
     K.marks[marker] = { [ent] = true }.
-    skills.mark (marker 13, replace bit, seconds 6, count 3, targets 13
-    each) goes to the marker and their squad only (rhylib_radio squads).
+    skills.mark (marker 13, replace bit, quiet bit, seconds 6, count 3,
+    targets 13 each) goes to the marker and their squad only (rhylib_radio
+    squads).
+    Sun visor (rhylib_gear) down + Mark target: every visorSpotEvery s up to
+    markMax enemies in sight within visorSpotCone of the view are spotted
+    for visorSpotTime s (quiet, added to the player's marks).
 ]]
 
 local K = Rhylib.Skills
@@ -114,7 +118,7 @@ end, { rate = 4, burst = 4 })
 
 -- Mark these targets for ply (replace: drop ply's older marks first) and
 -- tell them and their squad.
-function K.PlaceMarks(ply, list, secs, replace)
+function K.PlaceMarks(ply, list, secs, replace, quiet)
     local mine = K.marks[ply]
     if replace and mine then
         for e in pairs(mine) do
@@ -130,16 +134,32 @@ function K.PlaceMarks(ply, list, secs, replace)
         local e = list[i]
         mine[e] = true
         e.rhylibMarks = e.rhylibMarks or {}
-        e.rhylibMarks[ply] = { untilT = untilT }
+        -- (a shorter spot never cuts a longer mark short)
+        local old = not replace and e.rhylibMarks[ply]
+        e.rhylibMarks[ply] = { untilT = math.max(untilT, old and old.untilT or 0) }
     end
     Rhylib.Net.Start("skills.mark")
     net.WriteUInt(ply:EntIndex(), 13)
     net.WriteBool(replace == true)
+    net.WriteBool(quiet == true)
     net.WriteUInt(math.Clamp(math.Round(secs), 0, 63), 6)
     net.WriteUInt(n, 3)
     for i = 1, n do net.WriteUInt(list[i]:EntIndex(), 13) end   -- (indexes: targets may be outside a mate's view)
     net.Send(viewers(ply))
 end
+
+-- Sun visor auto spot (checked once a second, only for visor wearers).
+timer.Create("Rhylib.Skills.VisorSpot", 1, 0, function()
+    local now = CurTime()
+    for _, ply in ipairs(player.GetHumans()) do
+        if ply:GetNW2Bool("rhylib_visorDown", false) and ply:Alive() and not ply.rhylibDown
+            and (ply.rhylibVisorSpot or 0) <= now and K.Has(ply, "mark_target") then
+            ply.rhylibVisorSpot = now + K.Cfg("visorSpotEvery")
+            local list = inCone(ply, K.Cfg("visorSpotCone"), K.Cfg("markMax"))
+            if #list > 0 then K.PlaceMarks(ply, list, K.Cfg("visorSpotTime"), false, true) end
+        end
+    end
+end)
 
 -- Called shot (Marksman): a headshot adds the target to your marks.
 -- Refreshed at most once a second, once per tick (pellets); placed a tick

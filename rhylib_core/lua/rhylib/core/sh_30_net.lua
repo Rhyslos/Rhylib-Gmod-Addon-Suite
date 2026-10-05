@@ -53,10 +53,58 @@ function Net.Start(name)
     net.Start(PREFIX .. name)
 end
 
--- Send the message that is being written and record its size.
+-- Send the message that is being written (its size is recorded by the
+-- net wrappers below).
 local function finish(name, sendFn, target)
-    Rhylib.Profiler.AddNet(name, net.BytesWritten() or 0)
     sendFn(target)
+end
+
+-- Server traffic for the profiler: every net message (other addons' too),
+-- bytes x recipients, by name ("rhylib." dropped). Costs nothing while the
+-- profiler is off. Wrapped once (refresh-safe).
+if SERVER and not net.rhylibWrapped then
+    net.rhylibWrapped = true
+    local start = net.Start
+    net.Start = function(name, ...)
+        Rhylib.Net.cur = name
+        return start(name, ...)
+    end
+    local function label(name)
+        if string.sub(name, 1, #PREFIX) == PREFIX then return string.sub(name, #PREFIX + 1) end
+        return name
+    end
+    local function wrap(fname, count)
+        local orig = net[fname]
+        if not orig then return end
+        net[fname] = function(a, ...)
+            local P = Rhylib.Profiler
+            local cur = Rhylib.Net.cur
+            Rhylib.Net.cur = nil
+            if cur and P and P.enabled then
+                local n = count(a)
+                if n > 0 then P.AddNet(label(cur), (net.BytesWritten() or 0) * n) end
+            end
+            return orig(a, ...)
+        end
+    end
+    -- (bots get no net messages: they don't count)
+    local function recipients(t)
+        if istable(t) then
+            local n = 0
+            for i = 1, #t do
+                local p = t[i]
+                if IsValid(p) and not p:IsBot() then n = n + 1 end
+            end
+            return n
+        end
+        if type(t) == "CRecipientFilter" then return t:GetCount() end
+        return (IsValid(t) and not t:IsBot()) and 1 or 0
+    end
+    wrap("Send", recipients)
+    wrap("Broadcast", function() return #player.GetHumans() end)
+    wrap("SendOmit", function(t) return math.max(0, #player.GetHumans() - recipients(t)) end)
+    wrap("SendPVS", function() return 1 end)   -- (unknown: counted once)
+    wrap("SendPAS", function() return 1 end)
 end
 
 --------------------------------------------------------------------------

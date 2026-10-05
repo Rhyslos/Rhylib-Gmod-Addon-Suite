@@ -44,6 +44,10 @@ function R.Char(id)
     return c or nil
 end
 
+-- Forget cached characters (after saved data changed behind them).
+function R.ForgetChars() chars = {} end
+Rhylib.Hook.Add("Rhylib.DataPurged", "roster.cache", function() R.ForgetChars() end)
+
 function R.SaveChar(id, c)
     chars[id] = c
     Data.Set("char", id, c)

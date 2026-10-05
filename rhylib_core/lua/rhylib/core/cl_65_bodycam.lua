@@ -30,6 +30,8 @@ local lastHeadYaw
 local camDead = false   -- (on a corpse: respawning keeps the spawn's facing)
 
 function L.ThirdPersonOn()
+    local TP = Rhylib.ThirdPerson
+    if TP and TP.Wanted then return TP.Wanted() end
     local tp = GetConVar("rhylib_thirdperson")
     local allowed = GetConVar("rhylib_thirdperson_allowed")
     return tp and tp:GetBool() and (not allowed or allowed:GetBool())

@@ -562,7 +562,7 @@ local function suggestions(textValue)
     if not typed then return out end
     typed = string.lower(typed)
     for _, ch in ipairs(Chat.CHANNELS) do
-        for _, cmd in ipairs(ch.cmds) do
+        for _, cmd in ipairs(Chat.CanUse(LocalPlayer(), ch) and ch.cmds or {}) do
             if string.sub(cmd, 1, #typed) == typed then
                 out[#out + 1] = { label = "/" .. cmd, desc = ch.desc, fill = "/" .. cmd .. " ", col = ch.color }
                 break
@@ -581,6 +581,8 @@ local function channelRows()
     for _, ch in ipairs(Chat.CHANNELS) do
         if ch.private then
             out[#out + 1] = { label = "Private message", desc = "/pm name", col = ch.color, pm = true }
+        elseif not Chat.CanUse(LocalPlayer(), ch) then
+            -- (squad / battalion / command you're not in: not listed)
         else
             out[#out + 1] = { label = ch.name, desc = ch.desc, col = ch.color, ch = ch }
         end
@@ -620,12 +622,23 @@ local function submit(str)
     if kind == "pass" then
         RunConsoleCommand("say", str)  -- DarkRP and admin mod commands
     elseif kind == "switch" then
+        local ok, why = Chat.CanUse(LocalPlayer(), a)
+        if not ok then
+            Chat.Add({ { COL_SYSTEM, why } })
+            return true
+        end
         if not a.private then Chat.current = a end
         return true
     elseif kind == "usage" then
         Chat.Add({ { COL_SYSTEM, a } })
         return true
     elseif kind == "send" then
+        -- (e.g. still on Squad after leaving the squad: say so, don't send it elsewhere)
+        local ok, why = Chat.CanUse(LocalPlayer(), a)
+        if not ok then
+            Chat.Add({ { COL_SYSTEM, why .. ". Pick another channel (click the channel name)." } })
+            return true
+        end
         local target = NULL
         if a.private then
             target = Chat.FindPlayer(c)
@@ -746,7 +759,7 @@ function PANEL:CheckSwitch()
     local value = self.entry:GetValue()
     local cmd = string.match(value, "^/(%S+)%s$")
     local ch = (value == "// " and Chat.byId.public) or (cmd and Chat.byCmd[string.lower(cmd)])
-    if ch and not ch.private then
+    if ch and not ch.private and Chat.CanUse(LocalPlayer(), ch) then
         Chat.current = ch
         self.entry:SetText("")
     end

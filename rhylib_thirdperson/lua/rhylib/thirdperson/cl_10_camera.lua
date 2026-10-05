@@ -48,9 +48,24 @@ TP.aimFrac = 0               -- 0 hip, 1 aiming (smoothed)
 TP.side = sideVar:GetFloat() -- smoothed shoulder side
 TP.camHeight = nil           -- smoothed camera height above the feet
 
+-- The server's mode: "choice", "third" or "first" (config thirdperson mode).
+function TP.Mode()
+    if allowedVar and not allowedVar:GetBool() then return "first" end
+    local m = Rhylib.Config.Get("thirdperson", "mode")
+    if m == "third" or m == "first" then return m end
+    return "choice"
+end
+
+-- Third person wanted right now (mode, else the player's own switch).
+function TP.Wanted()
+    local m = TP.Mode()
+    if m == "first" then return false end
+    return m == "third" or enabledVar:GetBool()
+end
+
 function TP.Active()
     local ply = LocalPlayer()
-    return enabledVar:GetBool() and allowedVar:GetBool() and IsValid(ply) and ply:Alive()
+    return TP.Wanted() and IsValid(ply) and ply:Alive()
         and not ply:InVehicle() and ply:GetObserverMode() == OBS_MODE_NONE
         and not (ply:GetNW2Int("rhylib_optics", 0) ~= 0 and not ply:GetNW2Bool("rhylib_opticsFire", false))   -- (rhylib_gear: looking through binoculars; weapon mode keeps third person)
 end
@@ -277,8 +292,12 @@ end)
 --------------------------------------------------------------------------
 
 function TP.Toggle()
-    if not allowedVar:GetBool() then
-        chat.AddText(Color(255, 190, 80), "Third person is disabled on this server.")
+    local m = TP.Mode()
+    if m == "first" then
+        chat.AddText(Color(255, 190, 80), "This server is first person only.")
+        return
+    elseif m == "third" then
+        chat.AddText(Color(255, 190, 80), "This server keeps everyone in third person.")
         return
     end
     RunConsoleCommand("rhylib_thirdperson", enabledVar:GetBool() and "0" or "1")

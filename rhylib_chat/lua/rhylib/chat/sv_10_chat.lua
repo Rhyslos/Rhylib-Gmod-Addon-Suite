@@ -73,6 +73,11 @@ route.admin = function(ply, ch, text)
     end
 end
 
+-- Comms: everyone, like public (the tag is the difference).
+route.comms = function(ply, ch, text)
+    send(player.GetHumans(), ch, ply, text)
+end
+
 route.rp = function(ply, ch, text)
     send(player.GetHumans(), ch, ply, text)
 end
@@ -90,6 +95,31 @@ route.event = function(ply, ch, text)
         print(string.format("[Chat][%s] %s: %s", ch.name, ply:Nick(), text))
     end)
     return false  -- sent (and logged) above, after the permission check
+end
+
+-- Squad / battalion / command: the members (Chat.CanUse is checked first).
+route.squad = function(ply, ch, text)
+    local id, list = Chat.SquadOf(ply), {}
+    for _, p in ipairs(player.GetHumans()) do
+        if Chat.SquadOf(p) == id then list[#list + 1] = p end
+    end
+    send(list, ch, ply, text)
+end
+
+route.battalion = function(ply, ch, text)
+    local bn, list = Chat.BattalionOf(ply), {}
+    for _, p in ipairs(player.GetHumans()) do
+        if Chat.BattalionOf(p) == bn then list[#list + 1] = p end
+    end
+    send(list, ch, ply, text)
+end
+
+route.command = function(ply, ch, text)
+    local list = {}
+    for _, p in ipairs(player.GetHumans()) do
+        if Chat.InCommand(p) then list[#list + 1] = p end
+    end
+    send(list, ch, ply, text)
 end
 
 route.pm = function(ply, ch, text, target)
@@ -110,6 +140,11 @@ Rhylib.Net.Receive("chat.send", function(ply)
     local text = string.Trim(net.ReadString())
     if not ch or text == "" then return end
     if not ch.private then target = nil end  -- only private messages have a target
+    local usable, whyNot = Chat.CanUse(ply, ch)
+    if not usable then
+        note(ply, whyNot)
+        return
+    end
     -- rhylib_admin (mutes) and others can stop it.
     local can, why = hook.Run("Rhylib.CanChat", ply, ch.id, text)
     if can == false then

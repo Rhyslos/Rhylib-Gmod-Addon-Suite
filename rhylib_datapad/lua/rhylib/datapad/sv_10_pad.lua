@@ -39,6 +39,11 @@ function D.Load(ns, key, default)
     return v
 end
 
+-- Forget every cached copy (after saved data was changed behind it,
+-- e.g. rhylib_purge_battalion).
+function D.ClearCache() cache = {} end
+Rhylib.Hook.Add("Rhylib.DataPurged", "datapad.cache", function() D.ClearCache() end)
+
 function D.Store(ns, key, v)
     cache[ns .. "/" .. key] = v
     Data.Set(ns, key, v)

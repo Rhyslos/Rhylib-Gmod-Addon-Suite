@@ -121,6 +121,7 @@ local function checkUse(ply)
         ply:SetNW2Int("rhylib_optics", 0)
         ply:SetNW2Bool("rhylib_opticsFire", false)
     end
+    if G.SetVisor and ply:GetNW2Bool("rhylib_visorDown", false) and not G.Active(ply, "visor") then G.SetVisor(ply, false) end
     if not lightsAllowed(ply) then G.SetLights(ply, false) end
 end
 
@@ -138,6 +139,7 @@ end
 Rhylib.Hook.Add("PlayerSpawn", "gear.spawn", function(ply)
     ply:SetNW2Int("rhylib_optics", 0)
     ply:SetNW2Bool("rhylib_opticsFire", false)
+    ply:SetNW2Bool("rhylib_visorDown", false)
     timer.Simple(0.5, function()
         if not IsValid(ply) or not ply:Alive() then return end
         refresh(ply)
@@ -170,6 +172,7 @@ Rhylib.Net.Receive("gear.helmet", function(ply)
     ply:SetNW2Bool("rhylib_helmetOff", not ply:GetNW2Bool("rhylib_helmetOff", false))
     if not G.HelmetOn(ply) then
         if G.SetOptics then G.SetOptics(ply, 0) end
+        if G.SetVisor then G.SetVisor(ply, false) end
         G.SetLights(ply, false)
     end
     ply:EmitSound("items/ammo_pickup.wav", 50, 90)

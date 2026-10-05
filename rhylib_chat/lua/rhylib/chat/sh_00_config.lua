@@ -4,7 +4,9 @@
     Channels: public, local, advert, admin, private messages, RP (public
     roleplay actions) and Event (event announcements to everyone, sent by
     staff with the rhylib.chat.event permission).
-    (Squad, battalion and command come with those systems.)
+    Squad (your radio squad), Battalion (your battalion) and Command
+    (officers from commandRank up and battalion commanders, any battalion)
+    only show for players who can use them (Chat.CanUse).
 
     Typing:
       plain text            goes to your current channel (click the
@@ -15,6 +17,11 @@
       /admin text   /a text               admins (anyone can send, for reports)
       /rp text                            everyone, as an action: "* Name text"
       /event text   /ev text              everyone, highlighted with a banner (staff)
+      /squad text   /sq text              your radio squad
+      /battalion text /bn text            your battalion
+      /command text /cmd text             officers and commanders
+      /comms text   /co text              everyone, tagged [Comms] (like public;
+                                          set chat defaultChannel "comms" to make it the default)
       /pm name text  /pm "two words" text a private message
       /local (nothing else)               switches your current channel
 
@@ -27,7 +34,7 @@
 Rhylib.Chat = Rhylib.Chat or {}
 local Chat = Rhylib.Chat
 
--- index = network id (3 bits), keep the order stable.
+-- index = network id (4 bits), keep the order stable.
 Chat.CHANNELS = {
     { id = "public", name = "Public", color = Color(228, 227, 220), cmds = { "public", "p", "ooc" }, desc = "Everyone on the server" },
     { id = "local", name = "Local", color = Color(151, 196, 89), cmds = { "local", "l" }, desc = "People near you" },
@@ -36,20 +43,62 @@ Chat.CHANNELS = {
     { id = "pm", name = "PM", color = Color(190, 150, 255), cmds = { "pm", "w", "msg" }, desc = "Private message: /pm name text", private = true },
     { id = "rp", name = "RP", color = Color(120, 190, 230), cmds = { "rp" }, desc = "Roleplay actions, everyone sees them", action = true },
     { id = "event", name = "Event", color = Color(255, 205, 80), cmds = { "event", "ev" }, desc = "Event announcements to everyone (staff)", staff = "rhylib.chat.event" },
-}  -- 7 channels max with 3 bits; add new ones at the end
+    { id = "squad", name = "Squad", color = Color(110, 220, 200), cmds = { "squad", "sq" }, desc = "Your radio squad", needs = "squad" },
+    { id = "battalion", name = "Battalion", color = Color(140, 170, 255), cmds = { "battalion", "bn" }, desc = "Your battalion", needs = "battalion" },
+    { id = "command", name = "Command", color = Color(235, 185, 120), cmds = { "command", "cmd" }, desc = "Officers and commanders", needs = "command" },
+    { id = "comms", name = "Comms", color = Color(130, 205, 235), cmds = { "comms", "co" }, desc = "Everyone, as radio comms" },
+}  -- 15 channels max with 4 bits; add new ones at the end
 Chat.byId, Chat.byCmd = {}, {}
 for i, c in ipairs(Chat.CHANNELS) do
     c.index = i
     Chat.byId[c.id] = c
     for _, cmd in ipairs(c.cmds) do Chat.byCmd[cmd] = c end
 end
-Chat.CHANNEL_BITS = 3
+Chat.CHANNEL_BITS = 4
 
 local Config = Rhylib.Config
-Config.Register("chat", "defaultChannel", "public", "Channel plain text goes to until a player picks another")
+Config.Register("chat", "defaultChannel", "public", "Channel plain text goes to until a player picks another (public, comms, local, ...)")
 Config.Register("chat", "localRange", 600, "How far local chat carries (units)")
 Config.Register("chat", "advertCooldown", 30, "Seconds between adverts per player")
 Config.Register("chat", "maxLength", 300, "Longest message in characters")
+Config.Register("chat", "commandRank", "LT", "Lowest roster rank in the Command channel (battalion commanders always are)")
+
+-- Who a channel reaches (shared: the server routes with it, the client
+-- only lists channels you can use).
+function Chat.SquadOf(ply)
+    local Radio = Rhylib.Radio
+    return Radio and Radio.SquadOf and Radio.SquadOf(ply) or 0
+end
+
+-- Your battalion: rhylib_roster's, else your job's battalion (not the
+-- Recruits category).
+function Chat.BattalionOf(ply)
+    local bn = ply:GetNW2String("rhylib_bn", "")
+    if bn ~= "" then return bn end
+    local job = RPExtraTeams and RPExtraTeams[ply:Team()]
+    return job and isstring(job.battalion) and job.battalion or ""
+end
+
+function Chat.InCommand(ply)
+    local job = RPExtraTeams and RPExtraTeams[ply:Team()]
+    if job and job.commander then return true end
+    local Roster = Rhylib.Roster
+    if not (Roster and Roster.RankIndex) then return false end
+    local need = Roster.RankIndex(Rhylib.Config.Get("chat", "commandRank")) or 6
+    return ply:GetNW2Int("rhylib_rank", 0) >= need
+end
+
+-- ok, reason
+function Chat.CanUse(ply, ch)
+    if ch.needs == "squad" then
+        if Chat.SquadOf(ply) == 0 then return false, "You're not in a radio squad" end
+    elseif ch.needs == "battalion" then
+        if Chat.BattalionOf(ply) == "" then return false, "You're not in a battalion" end
+    elseif ch.needs == "command" then
+        if not Chat.InCommand(ply) then return false, "Only officers (" .. tostring(Rhylib.Config.Get("chat", "commandRank")) .. " and up) and commanders use the Command channel" end
+    end
+    return true
+end
 
 -- Finds a player by (part of) their name. Exact matches win.
 function Chat.FindPlayer(name)

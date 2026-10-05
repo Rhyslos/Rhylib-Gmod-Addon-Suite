@@ -213,6 +213,11 @@ Menus.AddSetting("Third person", {
     id = "tp.on", order = 10,
     title = "Third person", desc = "Over-the-shoulder camera",
     kind = "toggle", convar = "rhylib_thirdperson",
+    -- (only when the server lets players choose)
+    showIf = function()
+        local TP = Rhylib.ThirdPerson
+        return not (TP and TP.Mode) or TP.Mode() == "choice"
+    end,
 })
 Menus.AddSetting("Third person", {
     id = "tp.side", order = 20,

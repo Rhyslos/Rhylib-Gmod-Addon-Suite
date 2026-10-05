@@ -163,6 +163,9 @@ function X.Draw(wep, x, y)
     end
     local ply = LocalPlayer()
     local fov = wep:TranslateFOV(ply:GetFOV())
+    -- (rhylib_gear sun visor zoom narrows the view further)
+    local Gr = Rhylib.Gear
+    if Gr and Gr.visorFov and Gr.visorFov > 1 then fov = fov / Gr.visorFov end
     local s = ScrH() / 1080
     local t = CurTime()
 

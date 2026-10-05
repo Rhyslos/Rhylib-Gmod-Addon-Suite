@@ -65,7 +65,7 @@ G.ITEMS = {
     rhylib_helmet_light = { slot = "light", name = "Helmet lights", desc = "Worn on the helmet: two lamps (flashlight key)",
         groups = { "flashlighthelmet" }, on = { "trooper_flashlight" },
         w = 1, h = 1, weight = 0.2, model = "models/props_junk/garbage_metalcan001a.mdl" },
-    rhylib_sunvisor = { slot = "visor", name = "Sun visor", desc = "Worn on the helmet (not with macrobinoculars on models where they share a mount)",
+    rhylib_sunvisor = { slot = "visor", name = "Sun visor", desc = "Helmet gear key (L): visor down for a red tactical view, 3x zoom on the optics mode key, night vision on the flashlight key; with Mark target it spots enemies every 5 s. Not with macrobinoculars on models where they share a mount.",
         groups = { "sunvisor", "binos" }, on = { "sunvisor" },
         w = 1, h = 1, weight = 0.1, model = "models/props_lab/binderblue.mdl" },
     rhylib_holster = { slot = "holster", name = "Holster", desc = "Worn: holsters for two pistols",
@@ -130,7 +130,7 @@ G.ON_HELMET = { binos = true, rangefinder = true, light = true, visor = true }
 
 function G.HelmetOn(ply) return not ply:GetNW2Bool("rhylib_helmetOff", false) end
 
-Config.Register("gear", "kit", { ["*"] = { "rhylib_macrobinoculars" }, ["327th"] = { "rhylib_kama", "rhylib_pauldron" } },
+Config.Register("gear", "kit", { ["*"] = { "rhylib_macrobinoculars" } },
     "Battalion kit given at spawn as job gear: battalion (part of its name, * = everyone) -> item ids")
 Config.Register("gear", "unlocks", {
     rhylib_kama = { rank = "SGT" }, rhylib_pauldron = { rank = "SGT" }, rhylib_rangefinder = { rank = "LT" },
@@ -146,6 +146,7 @@ Config.Register("gear", "lightRange", 2000, "Helmet lights: how far the beams re
 Config.Register("gear", "lightBrightness", 3.5, "Helmet lights: brightness of each beam")
 Config.Register("gear", "lightMaxPlayers", 2, "Helmet lights: other players whose beams light the world for you (nearest first, no shadows; your own always do). Further ones show only the lamp glow")
 Config.Register("gear", "bareHeadshotDowns", true, "With the helmet off, any head hit downs you")
+Config.Register("gear", "visorZoom", 3, "Sun visor: the zoom its zoom toggle gives (the optics mode key, default middle mouse)")
 Config.Register("gear", "nvMode", 1, "Night vision: 1 = amplified (a wide shadowless light from your eyes that turns itself down where it's already bright; default), 2 = the world drawn fully lit (can glare at light sources), 0 = only the green filter")
 Config.Register("gear", "nvGain", 2.5, "Night vision (amplified): strength of the light in the dark")
 Config.Register("gear", "nvLift", 0.04, "Night vision: how much the darkest parts are lifted (the green floor)")
@@ -236,7 +237,16 @@ function G.Active(ply, slot)
     local inst = G.Worn(ply, slot)
     if inst == nil then return false end
     if G.ON_HELMET[slot] and not G.HelmetOn(ply) then return false end
+    if slot == "visor" and G.VisorBlocked(ply) then return false end
     return G.ItemShown(ply, inst.id)
+end
+
+-- Models whose sun visor is only an option of the binoculars' group: with
+-- macrobinoculars worn the group shows them, so the visor can't be used.
+function G.VisorBlocked(ply)
+    if not G.Worn(ply, "binos") then return false end
+    local g = G.ModelInfo(ply).groups.sunvisor
+    return not G.Option(g, { "sunvisor" })
 end
 
 -- You have to see it to wear it, and helmet lights rule out optics (the back slot is free: a backpack works
