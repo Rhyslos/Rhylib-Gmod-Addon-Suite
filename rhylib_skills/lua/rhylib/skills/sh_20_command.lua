@@ -37,7 +37,7 @@ K.ORDERS = {
     { key = "hold", skill = "cmd_hold", name = "Hold fast", col = Color(79, 143, 232), text = "Armour refilled, no damage, hold position" },
     { key = "focus", skill = "cmd_focus", name = "Focus fire", col = Color(232, 97, 60), text = "+20% damage, half the kick" },
     { key = "open", skill = "cmd_open", name = "Open up", col = Color(167, 123, 232), text = "No ammo used" },
-    { key = "press", skill = "cmd_press", name = "Press forward", col = Color(60, 201, 214), text = "No knockback, faster sprint" },
+    { key = "press", skill = "cmd_press", name = "Press forward", col = Color(214, 48, 58), text = "No knockback, faster sprint" },
 }
 K.orderByKey = {}
 for i, o in ipairs(K.ORDERS) do

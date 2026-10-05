@@ -416,6 +416,7 @@ function K.CanLearn(ply, set, id)
     local n = K.byId[id]
     if not n then return false, "No such skill" end
     if set[id] then return false, "Already learned" end
+    if K.ClassOf and K.ClassOf(ply) then return false, "You're playing a class (leave it on the Class page first)" end
     local cat = K.catById[n.cat]
     if cat and cat.medicOnly then
         local Med = Rhylib.Medical

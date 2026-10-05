@@ -21,7 +21,8 @@
 
     Fire modes and safety:
       - E + R cycles through the weapon's FireModes ("semi", "auto", "burst").
-        Any mode but "auto" fires once per trigger pull (e.g. "sidearm").
+        Any mode but "auto" (and "overcharge", SWEP.AutoModes) fires once
+        per trigger pull (e.g. "sidearm").
       - Shift + E + R toggles safety: the weapon is lowered (passive hold),
         can't fire or aim, and the crosshair hides.
       Semi and burst need a fresh trigger pull for each shot or burst.
@@ -742,7 +743,7 @@ function SWEP:PrimaryAttack()
     if self:GetLowered() then return end        -- sprinting: gun is down
 
     local mode = self:GetFireModeName()
-    if mode ~= "auto" or self:GetSafety() then
+    if not self.AutoModes[mode] or self:GetSafety() then
         if not self:GetTriggerReady() then return end
         self:SetTriggerReady(false)
     end
@@ -776,13 +777,17 @@ end
 
 -- The MP "stun" fire mode: slow blue rings that do no damage (rhylib_mp).
 local STUN_OPTS = { stun = true, color = 6, speed = 2600 }
+-- Overcharge (DC-15A, Autorifleman skill): bigger, brighter bolts (training copies stay yellow).
+local OVER_OPTS = { color = 10 }
+-- Modes that keep firing while the trigger is held.
+SWEP.AutoModes = { auto = true, overcharge = true }
 SWEP.StunFireRate = 75   -- one ring every 0.8 s
 
 -- First-leg pellet hits, applied after lag compensation (reused list).
 local pelletHits = {}
 
 -- The bolts of one shot. hits: see Bolts.Fire (server, several pellets).
-local function firePellets(self, owner, origin, dir, pellets, cone, damage, stun, hits)
+local function firePellets(self, owner, origin, dir, pellets, cone, damage, stun, hits, overcharge)
     for i = 1, pellets do
         local d = dir
         if self.Pellets then
@@ -793,7 +798,7 @@ local function firePellets(self, owner, origin, dir, pellets, cone, damage, stun
             d = da:Forward() + da:Right() * (math.cos(pa) * off) - da:Up() * (math.sin(pa) * off)
             d:Normalize()
         end
-        local opts = stun and STUN_OPTS or nil
+        local opts = stun and STUN_OPTS or (overcharge and not self.Training and OVER_OPTS) or nil
         if SERVER then
             Rhylib.Weapons.Bolts.Fire(owner, self, origin, d, stun and 0 or damage, opts, hits)
         elseif IsFirstTimePredicted() then
@@ -824,11 +829,20 @@ function SWEP:FireShot()
     end
     if self.UsesCell and not self:NoAmmoUse() then
         local shots = self.CellShots * (K and K.CellMult and K.CellMult(owner) or 1)
+        if K and K.CellDrainMult then shots = shots / K.CellDrainMult(owner, self) end   -- (Overcharge)
         self:SetCell(math.max(0, self:GetCell() - 1 / shots))
     end
 
     local stun = self:GetFireModeName() == "stun"
-    self:EmitSound(stun and "weapons/stunstick/spark2.wav" or self.FireSound, 80, util.SharedRandom("rhylib.pitch", 96, 104), 1, CHAN_WEAPON)
+    local over = self:GetFireModeName() == "overcharge"
+    -- (Overcharge: the same shot, pitched down so it sounds heavier)
+    self:EmitSound(stun and "weapons/stunstick/spark2.wav" or self.FireSound, over and 85 or 80,
+        util.SharedRandom("rhylib.pitch", 96, 104) * (over and 0.82 or 1), 1, CHAN_WEAPON)
+    -- Sustained fire (rhylib_skills): when this spray started (a gap over 0.3 s starts a new one).
+    if SERVER or IsFirstTimePredicted() then
+        if now - (self.rhylibLastShot or 0) > 0.3 then self.rhylibSprayStart = now end
+        self.rhylibLastShot = now
+    end
     -- Dual pistols take turns (left on odd rounds left).
     if CLIENT and IsFirstTimePredicted() then self.rhylibLeftShot = self:Clip1() % 2 == 1 end
     if self:DualViewModelOn() and self:Clip1() % 2 == 1 then
@@ -862,12 +876,12 @@ function SWEP:FireShot()
     -- are applied after it's off (Bolts.ApplyHits).
     local hits = SERVER and pellets > 1 and owner:IsPlayer() and pelletHits or nil
     if not hits then
-        firePellets(self, owner, origin, dir, pellets, cone, damage, stun)
+        firePellets(self, owner, origin, dir, pellets, cone, damage, stun, nil, over)
         return
     end
     for i = #hits, 1, -1 do hits[i] = nil end   -- (left over if a hit errored)
     owner:LagCompensation(true)
-    local ok, err = pcall(firePellets, self, owner, origin, dir, pellets, cone, damage, stun, hits)
+    local ok, err = pcall(firePellets, self, owner, origin, dir, pellets, cone, damage, stun, hits, over)
     owner:LagCompensation(false)   -- (always, even after an error)
     if not ok then error(err, 0) end
     Rhylib.Weapons.Bolts.ApplyHits(hits)

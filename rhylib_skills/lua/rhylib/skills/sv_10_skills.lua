@@ -67,11 +67,12 @@ end
 function K.ExtraGrids(ply)
     local out = {}
     local Items = Rhylib.Items
-    if Items and Items.RACK and K.Stored(ply).load_bearer then
+    local set = K.GridSet and K.GridSet(ply) or K.Stored(ply)   -- (class mode: the class's)
+    if Items and Items.RACK and set.load_bearer then
         local r = K.Cfg("cellRack") or { 5, 2 }
         out[Items.RACK] = { r[1], r[2] }
     end
-    if Items and Items.BELT and K.Stored(ply).ammo_belt then
+    if Items and Items.BELT and set.ammo_belt then
         local b = K.Cfg("ammoBelt") or { 5, 1 }
         out[Items.BELT] = { b[1], b[2] }
     end
@@ -138,11 +139,12 @@ local function applyJump(ply)
     end
 end
 
-function K.SetSkills(ply, set)
+-- noSave: a class preset (class mode); the player's own tree stays in Data.
+function K.SetSkills(ply, set, noSave)
     ply.rhylibSkills = set
     ply.rhylibSkillsLoaded = true
     ply:SetNW2String("rhylib_skills", setString(set))
-    if not ply:IsBot() then
+    if not ply:IsBot() and not noSave then
         local ids = {}
         for id in pairs(set) do ids[#ids + 1] = id end
         table.sort(ids)
@@ -197,6 +199,7 @@ Rhylib.Net.Receive("skills.learn", function(ply)
 end, { rate = 4, burst = 8 })
 
 Rhylib.Net.Receive("skills.reset", function(ply)
+    if K.ClassOf(ply) then return K.Note(ply, "You're playing a class: leave it on the Class page first", true) end
     if next(K.Stored(ply)) == nil then return end
     if not K.Cfg("freePoints") and hook.Run("Rhylib.CanResetSkills", ply) ~= true then
         return K.Note(ply, "You can't reset your skills right now", true)
@@ -218,6 +221,7 @@ concommand.Add("rhylib_skills_reset", function(ply, _, args)
             end
         end
         if not IsValid(target) then return reply("No such player") end
+        if K.ClassOf(target) and K.LeaveClass then K.LeaveClass(target, true) end
         K.SetSkills(target, {})
         reply("Reset the skills of " .. target:Nick())
     end)

@@ -12,7 +12,7 @@ local stats = { open = false, code = nil }
 
 local MODE_NAMES = {
     semi = "Semi", auto = "Auto", burst = "Burst", dual = "Dual", sidearm = "Sidearm",
-    stun = "Stun", grapple = "Grapple",
+    stun = "Stun", grapple = "Grapple", overcharge = "Overcharge",
 }
 
 local function gun(me)
@@ -42,6 +42,7 @@ local function build(w, me)
 
     local pellets = w.Pellets or 1
     local dmg = (w.Damage or 0) * (w.GetCellDamageMult and w:GetCellDamageMult() or 1)
+    if K and K.ModeDamageMult then dmg = dmg * K.ModeDamageMult(me, w) end   -- (Overcharge)
     local rpm = w.CurrentFireRate and w:CurrentFireRate() or w.FireRate or 0
     local mode = w.GetFireModeName and w:GetFireModeName() or "semi"
     add("Damage", pellets > 1 and (math.Round(dmg) .. " × " .. pellets .. " pellets") or tostring(math.Round(dmg)),
@@ -82,6 +83,7 @@ local function build(w, me)
     if #takes > 0 then add("Magazines", table.concat(takes, ", ")) end
     if w.UsesCell then
         local shots = (w.CellShots or 0) * (K and K.CellMult and K.CellMult(me) or 1)
+        if K and K.CellDrainMult then shots = shots / K.CellDrainMult(me, w) end
         add("Power cell", math.Round(shots) .. " shots, " .. math.Round((w.GetCell and w:GetCell() or 0) * 100) .. "% left")
     end
     if w.ReloadTime then add("Reload", string.format("%.1f s", w.ReloadTime)) end

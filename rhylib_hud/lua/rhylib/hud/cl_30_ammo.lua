@@ -18,6 +18,13 @@
 
 local HUD = Rhylib.HUD
 
+-- Fire mode text (long names shortened so they fit beside the gun name).
+local SHORT = { overcharge = "OVERCH" }
+local function modeLabel(wep)
+    local m = wep:GetFireModeName()
+    return SHORT[m] or string.upper(m)
+end
+
 local function drawContent(ply, wep, x, y, w, sizes)
     local s = HUD.Scale()
     local C = HUD.Colors
@@ -29,7 +36,7 @@ local function drawContent(ply, wep, x, y, w, sizes)
     HUD.Text(wep:GetPrintName() or "", 16, x, y, C.dim)
     if wep.GetFireModeName then
         local safe = wep:GetSafety()
-        local label = safe and "SAFE" or string.upper(wep:GetFireModeName())
+        local label = safe and "SAFE" or modeLabel(wep)
         HUD.Text(label, 14, right, y + math.floor(1 * s), safe and C.fuel or C.accent, TEXT_ALIGN_RIGHT)
     end
     y = y + sizes.name
@@ -108,7 +115,7 @@ function HUD.AmmoInfo(ply, wep)
     end
     if wep.GetFireModeName then
         info.safe = wep:GetSafety()
-        info.mode = info.safe and "SAFE" or string.upper(wep:GetFireModeName())
+        info.mode = info.safe and "SAFE" or modeLabel(wep)
     end
     info.clip = math.max(wep:Clip1(), 0)
     info.maxClip = wep.GetMagSize and wep:GetMagSize() or wep:GetMaxClip1()

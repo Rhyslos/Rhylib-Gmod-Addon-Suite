@@ -294,7 +294,7 @@ local function build(page)
     local reset = Kit.Button(side, "Reset skills", function()
         Rhylib.Net.Start("skills.reset")
         net.SendToServer()
-    end, { small = true, danger = true })
+    end, { small = true, danger = true, enabled = function() return not (K.ClassOf and K.ClassOf(me)) end })
     reset:Dock(BOTTOM)
     reset:DockMargin(S(10), 0, S(10), S(10))
 
@@ -314,7 +314,8 @@ local function build(page)
         local set = K.Set(me)
         -- Points, above the reset button.
         local spent = K.Spent(set)
-        local pts = K.Cfg("freePoints") and ("Spent " .. spent .. " points  ·  free while testing")
+        local pts = (K.ClassOf and K.ClassOf(me)) and ("Class preset: " .. K.ClassOf(me).name)
+            or K.Cfg("freePoints") and ("Spent " .. spent .. " points  ·  free while testing")
             or ("Points: " .. (K.Points(me) - spent) .. " left of " .. K.Points(me))
         draw.SimpleText(pts, Kit.Font(12, 600), w * 0.5, h - S(52), C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         Kit.SetCol(C.edgeLight)
@@ -337,6 +338,10 @@ local function build(page)
                 "Lines show what each skill needs first.",
             }
             if cat.medicOnly then table.insert(rules, 1, "Medic jobs only.") end
+            local playing = K.ClassOf and K.ClassOf(me)
+            if playing then
+                table.insert(rules, 1, "You're playing the " .. playing.name .. " class (class mode): these are its skills. Go back to your own tree on the Class page.")
+            end
             if cat.mpOnly then table.insert(rules, 1, "Military police jobs only.") end
             if cat.id == K.ADAPT_CAT then
                 rules[#rules + 1] = "Adaptable: learn one skill of tier 4 or lower from another tree; job rules still apply."
@@ -673,6 +678,17 @@ local function build(page)
             end
         end
         tree:InvalidateLayout(true)
+    end
+
+    -- Staff: switch class mode (players then pick on the Class page).
+    if me:IsAdmin() then
+        local cm = Kit.Button(bar, function() return K.ClassMode() and "Class mode: on" or "Class mode: off" end, function()
+            Rhylib.Net.Start("skills.classmode")
+            net.WriteBool(not K.ClassMode())
+            net.SendToServer()
+        end, { small = true, selected = function() return K.ClassMode() end, tooltip = "Staff: switch class mode for everyone" })
+        cm:Dock(RIGHT)
+        cm:SetWide(S(150))
     end
 
     for _, c in ipairs(K.CATEGORIES) do

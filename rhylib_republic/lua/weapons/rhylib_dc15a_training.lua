@@ -17,4 +17,4 @@ SWEP.TrainingOf = "rhylib_dc15a"   -- (skills treat it as the real gun)
 SWEP.BoltColor = 7             -- training yellow
 SWEP.InvCategory = "training"
 SWEP.Mags = { "mag_medium_t", "mag_small_t" }
-SWEP.FireModes = { "semi", "auto" }   -- (no stun mode: training bolts take sim health only)
+SWEP.FireModes = { "semi", "auto", "overcharge" }   -- (no stun mode: training bolts take sim health only)

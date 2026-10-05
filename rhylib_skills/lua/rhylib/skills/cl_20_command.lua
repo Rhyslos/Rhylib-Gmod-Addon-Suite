@@ -8,8 +8,24 @@
 local K = Rhylib.Skills
 local UI = Rhylib.UI
 
-local GRAD_U, GRAD_D = Material("vgui/gradient-u"), Material("vgui/gradient-d")
-local GRAD_L, GRAD_R = Material("vgui/gradient-l"), Material("vgui/gradient-r")
+-- Soft edge glow: thin strips whose alpha falls off smoothly towards the
+-- middle (drawn untextured: the gradient materials showed as flat blocks).
+local STRIPS = 28
+local function edgeGlow(col, alpha, w, h)
+    local e = math.floor(h * 0.11)
+    local step = math.max(1, math.ceil(e / STRIPS))
+    draw.NoTexture()
+    surface.SetTexture(0)
+    for i = 0, e - 1, step do
+        local t = 1 - i / e
+        local a = alpha * t * t * t   -- (eased: bright at the edge, gone well before the middle)
+        surface.SetDrawColor(col.r, col.g, col.b, a)
+        surface.DrawRect(0, i, w, step)            -- top
+        surface.DrawRect(0, h - i - step, w, step) -- bottom
+        surface.DrawRect(i, 0, step, h)            -- left
+        surface.DrawRect(w - i - step, 0, step, h) -- right
+    end
+end
 
 K.orderFrom = K.orderFrom or ""
 
@@ -61,13 +77,10 @@ Rhylib.Hook.Add("HUDPaint", "skills.orderhud", function()
     local total = math.max(K.Cfg("commandTime"), 0.1)
     local fade = math.Clamp(left / 0.6, 0, 1)
 
-    -- Edge glow.
-    local e = math.floor(h * 0.12)
-    surface.SetDrawColor(o.col.r, o.col.g, o.col.b, 45 * fade)
-    surface.SetMaterial(GRAD_D) surface.DrawTexturedRect(0, 0, w, e)
-    surface.SetMaterial(GRAD_U) surface.DrawTexturedRect(0, h - e, w, e)
-    surface.SetMaterial(GRAD_R) surface.DrawTexturedRect(0, 0, e, h)
-    surface.SetMaterial(GRAD_L) surface.DrawTexturedRect(w - e, 0, e, h)
+    -- Edge glow: a brighter pulse as the order lands, then a soft steady glow.
+    local since = total - left
+    local pulse = since < 0.8 and (1 - since / 0.8) or 0
+    edgeGlow(o.col, (32 + 50 * pulse) * fade, w, h)
 
     -- The bar: name, who gave it, time left.
     local bw, bh = math.floor(w * 0.18), math.max(4, math.floor(h * 0.005))
