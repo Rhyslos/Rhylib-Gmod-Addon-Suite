@@ -117,7 +117,9 @@ function K.Fit(text, font, maxW)
         out = "…"
         local n = utf8.len(text)
         for i = (n or #text) - 1, 1, -1 do
-            local cut = n and (utf8.offset(text, i + 1) - 1) or i
+            -- (GMod's utf8.offset can return nil; fall back to bytes)
+            local o = n and utf8.offset(text, i + 1)
+            local cut = o and (o - 1) or i
             local try = string.sub(text, 1, cut) .. "…"
             if surface.GetTextSize(try) <= maxW then out = try break end
         end
