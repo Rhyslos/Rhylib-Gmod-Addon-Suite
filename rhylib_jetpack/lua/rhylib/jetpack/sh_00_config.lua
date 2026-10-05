@@ -45,6 +45,7 @@ Config.Register("jetpack", "airAccel", 420, "Sideways steering while thrusting (
 Config.Register("jetpack", "maxAirSpeed", 235, "Top sideways speed from steering (units/s)")
 Config.Register("jetpack", "airStopTau", 0.3, "How quickly sideways movement stops with no keys held (seconds); lower = stops faster")
 Config.Register("jetpack", "loadFuelMult", 0.3, "At a full load the jetpack burns this much more fuel (0.3 = 30% faster)")
+Config.Register("jetpack", "hoverFuel", 1, "Fuel burn multiplier while hovering (rhylib_skills Hover: skills hoverFuelMult)")
 
 -- Fuel at time t (default now), 0 to 1.
 function J.Fuel(ply, t)

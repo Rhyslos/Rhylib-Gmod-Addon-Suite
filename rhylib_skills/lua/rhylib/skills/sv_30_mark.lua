@@ -1,5 +1,5 @@
 --[[
-    Mark target (Officer tier 1). Q (rhylib_menus turns +menu into hook
+    Mark target (Officer tier 1; Marksman Called shot marks by headshot). Q (rhylib_menus turns +menu into hook
     Rhylib.MarkKey) sends skills.markreq; the server traces from the eyes
     (lag compensated) and marks the NPC, NextBot or player hit for
     markTime seconds. One mark per officer (a new one replaces it).
@@ -62,14 +62,17 @@ Rhylib.Net.Receive("skills.markreq", function(ply)
     local L = Rhylib.Lying
     if IsValid(e) and L and L.Owner and L.Owner(e) then e = L.Owner(e) end
     if not markable(e, ply) then return end
+    K.PlaceMark(ply, e, K.Cfg("markTime"), optics)
+end, { rate = 4, burst = 4 })
 
-    -- One mark per officer.
+-- Put ply's mark on e (one mark per player: the old one goes) and tell
+-- them and their squad.
+function K.PlaceMark(ply, e, secs, optics)
     local old = K.marks[ply]
     if IsValid(old) and old.rhylibMarks then old.rhylibMarks[ply] = nil end
-    local secs = K.Cfg("markTime")
     K.marks[ply] = e
     e.rhylibMarks = e.rhylibMarks or {}
-    e.rhylibMarks[ply] = { untilT = now + secs, optics = optics }
+    e.rhylibMarks[ply] = { untilT = CurTime() + secs, optics = optics }
 
     Rhylib.Net.Start("skills.mark")
     net.WriteUInt(e:EntIndex(), 13)   -- (an index: the target may be outside a mate's view)
@@ -77,7 +80,47 @@ Rhylib.Net.Receive("skills.markreq", function(ply)
     net.WriteBool(optics)
     net.WriteUInt(math.Clamp(math.Round(secs), 0, 63), 6)
     net.Send(viewers(ply))
-end, { rate = 4, burst = 4 })
+end
+
+-- Called shot (Marksman): a headshot marks the target. Refreshed at most
+-- once a second; an optics mark already on it stays an optics mark and
+-- keeps its longer time. Placed a tick later, so a killing shot marks nothing.
+function K.CalledShot(ply, e)
+    if e:IsPlayer() then return end   -- (droids and NPCs only: no marking team mates)
+    -- Once per tick (several pellets can hit the head at once).
+    if ply.rhylibCalledAt == CurTime() then return end
+    -- Keep a live optics mark (an officer's Q) on another target.
+    local cur = K.marks[ply]
+    if IsValid(cur) and cur ~= e then
+        local m = cur.rhylibMarks and cur.rhylibMarks[ply]
+        if m and m.optics and m.untilT > CurTime() then return end
+    end
+    local secs = K.Cfg("calledShotTime")
+    local mk = e.rhylibMarks and e.rhylibMarks[ply]
+    local left = mk and mk.untilT - CurTime() or 0
+    if left > secs - 1 then return end
+    ply.rhylibCalledAt = CurTime()
+    local optics = mk ~= nil and left > 0 and mk.optics or false
+    timer.Simple(0, function()
+        if IsValid(ply) and markable(e, ply) then K.PlaceMark(ply, e, math.max(secs, left), optics) end
+    end)
+end
+
+-- Priority target (Marksman): heavy droids and anything with a live mark.
+function K.PriorityTarget(ent)
+    local marks = ent.rhylibMarks
+    if marks then
+        local now = CurTime()
+        for _, mk in pairs(marks) do
+            if mk.untilT > now then return true end
+        end
+    end
+    if ent.IsRhylibDroid and ent.Kind then
+        local k = ent:Kind()
+        return k.big == true or k.commander == true or ent.DroidKind == "b1_heavy"
+    end
+    return false
+end
 
 -- Damage multiplier for a hit by shooter on ent: optics marks by the
 -- shooter or a squad mate. Not stacked across several officers.

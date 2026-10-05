@@ -23,7 +23,7 @@ local function cfg(key)
 end
 
 -- Per-player values (rhylib_skills Airborne changes fuel and speed).
-local PER_PLAYER = { fuelTime = true, rechargeTime = true, climbSpeed = true, airAccel = true, maxAirSpeed = true }
+local PER_PLAYER = { fuelTime = true, rechargeTime = true, climbSpeed = true, airAccel = true, maxAirSpeed = true, hoverFuel = true }
 local function pcfg(ply, key)
     local v = cfg(key)
     local K = Rhylib.Skills
@@ -75,7 +75,9 @@ Rhylib.Hook.Add("SetupMove", "jetpack.move", function(ply, mv)
         -- Heavier loads burn fuel faster (weight and cap come from rhylib_inventory).
         local cap = ply:GetNW2Float("rhylib_carry", 0)
         local load = cap > 0 and math.min(ply:GetNW2Float("rhylib_weight", 0) / cap, 1) or 0
-        setRate(ply, fuel, now, -(1 + cfg("loadFuelMult") * load) / pcfg(ply, "fuelTime"))
+        local burn = (1 + cfg("loadFuelMult") * load) / pcfg(ply, "fuelTime")
+        if hover then burn = burn * pcfg(ply, "hoverFuel") end   -- (Airborne Hover)
+        setRate(ply, fuel, now, -burn)
 
         local vel = mv:GetVelocity()
 

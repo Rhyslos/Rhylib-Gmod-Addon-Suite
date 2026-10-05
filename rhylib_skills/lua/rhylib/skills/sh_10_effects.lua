@@ -23,6 +23,7 @@
         K.ShotDamageMult(ply, wep)       per shot, after its spread (First shot)
         K.JetCfg(ply, key, value)        rhylib_jetpack settings per player (Airborne)
         K.Airborne(ply)                  has any Airborne skill
+        K.Hovering(ply)                  hovering on the jetpack (Hover)
     Numbers are config "skills" values so they can be tuned without code.
 ]]
 
@@ -64,11 +65,17 @@ reg("markDamage", 1.15, "Mark target: damage multiplier on targets marked throug
 reg("rushDamage", 1.25, "Battle rush: damage multiplier")
 reg("rushTime", 5, "Battle rush: seconds it lasts after the first hit")
 reg("rushCooldown", 60, "Battle rush: seconds before it can trigger again")
+reg("grenadeRange", 1.2, "Grenadier: throw distance multiplier")
+reg("grenadeDamage", 1.3, "Grenadier: frag damage multiplier")
+reg("grenadeRadius", 1.1, "Grenadier: blast radius multiplier (frag, EMP, flash)")
 reg("sidearmDamage", 1.06, "Carbine sidearm: DC-15S damage multiplier in Sidearm mode")
 reg("airborneFuel", 15, "Airborne: jetpack seconds of thrust with any Airborne skill (others: jetpack fuelTime)")
 reg("fallMult", 0.5, "Hard landings: fall damage multiplier")
 reg("tankMult", 1.4, "Extended tanks: fuel time and refill speed multiplier")
-reg("springJump", 1.2, "Spring legs: jump power multiplier")
+reg("springJump", 1.2, "Hard landings: jump power multiplier")
+reg("hoverFuelMult", 0.5, "Hover: jetpack fuel burn multiplier while hovering")
+reg("hoverSpread", 0.75, "Hover: spread multiplier while hovering")
+reg("hoverRecoil", 0.75, "Hover: view kick multiplier while hovering")
 reg("afterburnerMult", 1.25, "Afterburner: jetpack climb, steering and top speed multiplier")
 reg("combatDropAir", 7, "Combat drop: seconds of jetpack flight needed before a landing counts")
 reg("combatDropTime", 5, "Combat drop: seconds of reduced damage after landing")
@@ -89,9 +96,18 @@ reg("stanceSpread", 0.8, "Steady stance: spread multiplier while crouched")
 reg("steadyAimSpread", 0.75, "Steady aim: spread multiplier while aiming")
 reg("headhunterMult", 1.25, "Headhunter: headshot damage multiplier")
 reg("boltDrillsRate", 1.2, "Bolt drills: DC-15X fire rate multiplier")
-reg("lightFrameWeight", 0.5, "Light frame: DC-15X weight multiplier")
+reg("longGunWeight", 0.75, "Long gun: DC-15X weight multiplier")
+reg("carbineSpread", 0.7, "Carbine discipline: DC-15S spread multiplier while aiming")
+reg("carbineRecoil", 0.85, "Carbine discipline: DC-15S view kick multiplier")
+reg("carbineDraw", 0.7, "Carbine discipline: DC-15S draw time multiplier")
+reg("calledShotTime", 6, "Called shot: seconds a headshot mark lasts")
+reg("priorityMult", 1.2, "Priority target: damage multiplier on heavy droids and marked targets")
+reg("rhythmStep", 0.05, "Precision rhythm: extra damage per DC-15S hit in a row")
+reg("rhythmMax", 4, "Precision rhythm: most steps (4 x 0.05 = +20%)")
+reg("rhythmWindow", 1.5, "Precision rhythm: seconds between hits to keep the streak")
 reg("firstShotWait", 3, "First shot: seconds without firing before it's ready")
-reg("firstShotMult", 1.5, "First shot: damage multiplier")
+reg("firstShotMult", 1.5, "First shot: damage multiplier with the DC-15X")
+reg("firstShotOther", 1.3, "First shot: damage multiplier with other guns")
 reg("firstShotSpread", 0.05, "First shot: spread multiplier")
 reg("reinforcedHealth", 25, "Reinforced: extra max health")
 reg("plantedMult", 0.5, "Planted: Z-6 spread and kick multiplier while crouched")
@@ -113,6 +129,7 @@ local function cfg(k) return Config.Get("skills", k) end
 K.Z6 = "rhylib_z6"
 K.DC15X = "rhylib_dc15x"
 K.DP24 = "rhylib_dp24"
+K.DC15S = "rhylib_dc15s"
 
 -- The gun a weapon counts as for skills (training copies count as the real one).
 function K.GunClass(wep)
@@ -162,6 +179,8 @@ function K.SpreadMult(ply, wep)
     if set.planted and crouched and class == K.Z6 then m = m * cfg("plantedMult") end
     local aiming = wep.GetAiming and wep:GetAiming()
     if set.steady_aim and aiming then m = m * cfg("steadyAimSpread") end
+    if set.carbine_disc and aiming and class == K.DC15S then m = m * cfg("carbineSpread") end
+    if set.hover and K.Hovering(ply) then m = m * cfg("hoverSpread") end
     if set.first_shot and K.FirstShotReady(ply, wep) then m = m * cfg("firstShotSpread") end
     return m
 end
@@ -175,6 +194,8 @@ function K.RecoilMult(ply, wep)
         m = m * cfg("steadyGripRecoil")
     end
     if K.OrderIs(ply, "focus") then m = m * cfg("focusRecoil") end   -- (command order)
+    if K.GunClass(wep) == K.DC15S and K.Has(ply, "carbine_disc") then m = m * cfg("carbineRecoil") end
+    if K.Has(ply, "hover") and K.Hovering(ply) then m = m * cfg("hoverRecoil") end
     if K.GunClass(wep) == K.Z6 then
         if K.Has(ply, "steady_barrels") and sprinting(ply, wep) then m = m * cfg("steadyRecoil") end
         if K.Has(ply, "planted") and ply:Crouching() then m = m * cfg("plantedMult") end
@@ -193,7 +214,9 @@ end
 -- Called by the weapon base for each shot, before the shot is recorded:
 -- damage multiplier for this shot.
 function K.ShotDamageMult(ply, wep)
-    if isPly(ply) and K.FirstShotReady(ply, wep) then return cfg("firstShotMult") end
+    if isPly(ply) and K.FirstShotReady(ply, wep) then
+        return K.GunClass(wep) == K.DC15X and cfg("firstShotMult") or cfg("firstShotOther")
+    end
     return 1
 end
 
@@ -233,9 +256,13 @@ function K.ReloadMult(ply, wep, cell)
 end
 
 -- Quick draw: draw time multiplier for Rhylib guns.
+-- Quick draw, and Carbine discipline for the DC-15S (the faster one wins).
 function K.DrawMult(ply, wep)
-    if isPly(ply) and K.Has(ply, "quick_draw") then return cfg("quickDrawMult") end
-    return 1
+    if not isPly(ply) then return 1 end
+    local m = 1
+    if K.Has(ply, "quick_draw") then m = cfg("quickDrawMult") end
+    if K.Has(ply, "carbine_disc") and K.GunClass(wep) == K.DC15S then m = math.min(m, cfg("carbineDraw")) end
+    return m
 end
 
 function K.MagBonus(ply, magId)
@@ -282,7 +309,7 @@ function K.AdjustWeight(ply, state, weight, cap)
     if not isPly(ply) then return weight, cap end
     local set = K.Set(ply)
     if set.load_bearer then cap = cap + cfg("loadBearerCarry") end
-    if set.gun_runner or set.light_frame or set.shotgun_drills then
+    if set.gun_runner or set.long_gun or set.shotgun_drills then
         local Items = Rhylib.Items
         if not (Items and Items.defs) then return weight, cap end
         for cid, c in pairs(state.cont or {}) do
@@ -293,10 +320,10 @@ function K.AdjustWeight(ply, state, weight, cap)
                         -- The lightest that applies (they don't stack).
                         local mult = 1
                         if set.gun_runner and K.ItemGun(o.id) == K.Z6 then mult = math.min(mult, cfg("gunRunnerWeight")) end
-                        if set.light_frame and K.ItemGun(o.id) == K.DC15X then mult = math.min(mult, cfg("lightFrameWeight")) end
+                        if set.long_gun and K.ItemGun(o.id) == K.DC15X then mult = math.min(mult, cfg("longGunWeight")) end
                         if set.shotgun_drills and def.w <= 4 and isGun(def.weapon) then mult = math.min(mult, cfg("sidearmWeight")) end
-                        -- (backpack contents count at 0.7 in Items.Weight)
-                        local share = cid == Items.BACK and 0.7 or 1
+                        -- (backpack contents count at backpackWeightMult in Items.Weight)
+                        local share = cid == Items.BACK and (Config.Get("inventory", "backpackWeightMult") or 0.8) or 1
                         if mult < 1 then weight = weight - def.weight * (1 - mult) * (o.count or 1) * share end
                     end
                 end
@@ -309,6 +336,19 @@ end
 -- DP-23 proficiency (Airborne): the DP-23 fires while flying a jetpack.
 function K.FlyFire(ply, wep)
     return isPly(ply) and K.GunClass(wep) == "rhylib_dp23" and K.Has(ply, "dp23_prof")
+end
+
+-- Grenadier (Airborne): range, damage and radius multipliers for thrown
+-- grenades, or nil without the skill.
+function K.GrenadeMults(ply)
+    if not (isPly(ply) and K.Has(ply, "grenadier")) then return nil end
+    return cfg("grenadeRange"), cfg("grenadeDamage"), cfg("grenadeRadius")
+end
+
+-- Hovering on the jetpack: in the air, thrusting, Sprint held (rhylib_jetpack).
+function K.Hovering(ply)
+    local J = Rhylib.Jetpack
+    return J ~= nil and ply:GetDTBool(J.DT_THRUST) and ply:KeyDown(IN_SPEED) and not ply:OnGround()
 end
 
 function K.FreeSprint(ply)
@@ -367,6 +407,8 @@ function K.JetCfg(ply, key, v)
         if set.extended_tanks then v = v * cfg("tankMult") end
     elseif key == "rechargeTime" then
         if set.extended_tanks then v = v / cfg("tankMult") end
+    elseif key == "hoverFuel" then
+        if set.hover then v = v * cfg("hoverFuelMult") end
     elseif key == "climbSpeed" or key == "airAccel" or key == "maxAirSpeed" then
         if set.afterburner then v = v * cfg("afterburnerMult") end
     end

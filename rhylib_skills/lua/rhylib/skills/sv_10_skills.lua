@@ -12,7 +12,7 @@
     K.ExtraGrids(ply) for rhylib_inventory: { [cid] = { w, h } } the
     player's skills open (Load bearer: the cell rack; Ammo belt).
     On a change: items the player may no longer carry are dropped
-    (droid poppers without Droid popper), Spring legs jump power,
+    (droid poppers without Droid popper), Hard landings jump power,
     Reinforced max health.
     Damage taken (EntityTakeDamage 95, before armour): Hard landings,
     Blast hardened, Aerial stability, Combat drop, Juggernaut, Under fire,
@@ -126,9 +126,9 @@ local function applyHealth(ply, spawned)
     end
 end
 
--- Spring legs: jump power, applied on top of whatever the job set.
+-- Hard landings: jump power, applied on top of whatever the job set.
 local function applyJump(ply)
-    local want = K.Has(ply, "spring_legs")
+    local want = K.Has(ply, "hard_landings")   -- (Hard landings: jump higher)
     if want and not ply.rhylibSpringBase then
         ply.rhylibSpringBase = ply:GetJumpPower()
         ply:SetJumpPower(ply.rhylibSpringBase * K.Cfg("springJump"))
@@ -255,6 +255,22 @@ function K.DamageMult(ply, bolt, ent, tr, group)
         m = m * (1 + (K.Cfg("pointBlankMult") - 1) * f)
     end
     if set.headhunter and group == HITGROUP_HEAD then m = m * K.Cfg("headhunterMult") end
+    -- Marksman: Priority target, Precision rhythm (DC-15S hits in a row), Called shot.
+    if set.priority_target and IsValid(ent) and K.PriorityTarget and K.PriorityTarget(ent) then
+        m = m * K.Cfg("priorityMult")
+    end
+    if set.precision_rhythm and IsValid(ent) and (ent:IsNPC() or ent:IsNextBot() or ent:IsPlayer()) and IsValid(wep) and K.GunClass(wep) == K.DC15S then
+        local now, r = CurTime(), ply.rhylibRhythm
+        if r and r.ent == ent and now - r.t <= K.Cfg("rhythmWindow") then
+            r.n = math.min(r.n + 1, K.Cfg("rhythmMax"))
+        else
+            r = { ent = ent, n = 0 }
+            ply.rhylibRhythm = r
+        end
+        r.t = now
+        m = m * (1 + K.Cfg("rhythmStep") * r.n)
+    end
+    if set.called_shot and group == HITGROUP_HEAD and IsValid(ent) and K.CalledShot then K.CalledShot(ply, ent) end
     if set.shotgun_drills and IsValid(bolt.weapon) and K.GunClass(bolt.weapon) == K.DP24 then
         m = m * K.Cfg("shotgunDamage")
     end

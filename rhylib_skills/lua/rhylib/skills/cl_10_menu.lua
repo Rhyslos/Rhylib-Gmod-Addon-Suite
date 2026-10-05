@@ -107,15 +107,16 @@ local ICONS = {
     droid_popper = "grenade", light_kit = "feather", rapid_fire = "bolt", momentum = "star",
     gun_runner = "barrels", steady_barrels = "aim", eff_cells = "cell", load_bearer = "weight", ammo_pack = "box",
     pistol_prof = "pistol", carbine_sidearm = "pistol", steady_grip = "pistol", dual_dc17 = "dual", crits = "star",
-    hard_landings = "down", extended_tanks = "fuel", spring_legs = "spring", afterburner = "flame",
-    combat_drop = "landing", blast_hardened = "shield", aerial_stability = "up", death_from_above = "burst",
+    hard_landings = "down", extended_tanks = "fuel", afterburner = "flame",
+    combat_drop = "landing", blast_hardened = "shield", aerial_stability = "anchor", death_from_above = "burst",
     field_drag = "drag", hands_on = "heart", steady_hands = "clock", quick_revive = "cross", under_fire = "shield",
     deep_pockets = "pocket", triage = "eye", chem_bench = "flask", field_surgeon = "bone",
     batch_brewing = "stack", bacta_specialist = "drop",
     riot_shield = "riot", shield_bash = "bash", escort_drills = "cuffs", breaching = "door",
     thorough_search = "search", shock_assault = "charge", hold_line = "wall", flash_charge = "burst", phalanx = "phalanx",
     mark_target = "target", quick_draw = "bolt", speed_loader = "mag",
-    light_rounds = "rounds", adapt_1 = "swap", dp23_prof = "up", battle_rush = "burst",
+    light_rounds = "rounds", adapt_1 = "swap", dp23_prof = "rounds", battle_rush = "burst", grenadier = "grenade", hover = "up",
+    carbine_disc = "aim", called_shot = "eye", priority_target = "star", precision_rhythm = "stack",
     cmd_wind = "run", cmd_triage = "cross", cmd_hold = "shield", cmd_focus = "aim", cmd_open = "box", cmd_press = "charge",
 }
 
@@ -247,10 +248,13 @@ local function columns(cat)
 end
 
 local function reqsOf(n)
-    local out = {}
-    for _, r in ipairs(n.needs or {}) do out[#out + 1] = r end
+    local out, seen = {}, {}
+    local function add(r)
+        if not seen[r] then seen[r] = true out[#out + 1] = r end
+    end
+    for _, r in ipairs(n.needs or {}) do add(r) end
     for _, g in ipairs(n.needsGroups or {}) do
-        for _, r in ipairs(g) do out[#out + 1] = r end
+        for _, r in ipairs(g) do add(r) end
     end
     return out
 end
@@ -494,7 +498,9 @@ local function build(page)
                                     Kit.SetCol(lit and C.accent or C.edgeLight, lit and 255 or 150)
                                     local px, py = ppos.cx, ppos.y + L.sq + L.labelH + S(2)
                                     local cx, cy = cpos.cx, cpos.y
-                                    local busY = math.floor(cy - L.busGap)
+                                    -- Each child in a row gets its own bus height, so
+                                    -- crossing links stay readable.
+                                    local busY = math.floor(cy - L.busGap + (cpos.busOff or 0))
                                     local half = math.floor(th * 0.5)
                                     surface.DrawRect(math.floor(px) - half, math.floor(py), th, math.max(1, busY - math.floor(py)))
                                     local a, b = math.min(px, cx), math.max(px, cx)
@@ -613,7 +619,7 @@ local function build(page)
                     local b = self.byNode[n.id]
                     b:SetPos(cx - math.floor(bw * 0.5), y)
                     b:SetSize(bw, sq + labelH)
-                    L.pos[n.id] = { cx = cx, y = y }
+                    L.pos[n.id] = { cx = cx, y = y, busOff = math.floor((i - (cnt + 1) * 0.5) * S(6)) }
                 end
             end
         end

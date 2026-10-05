@@ -240,6 +240,18 @@ function SWEP:Throw(force, lift)
     g:SetOwner(o)
     local tint = self:IsImpact() and (self.ImpactColor or Color(255, 190, 150)) or self.PropColor
     if tint then g:SetColor(tint) end
+    -- Grenadier skill: further (distance grows with speed squared, so the
+    -- speed gets the square root), harder and wider.
+    local K = Rhylib.Skills
+    local range, dmg, rad
+    if K and K.GrenadeMults then range, dmg, rad = K.GrenadeMults(o) end
+    if range then
+        force = force * math.sqrt(range)
+        g.Damage = g.Damage * dmg
+        g.Radius = g.Radius * rad
+        g.EmpRadius = g.EmpRadius * rad
+        g.FlashRadius = g.FlashRadius * rad
+    end
     g:Spawn()
     local phys = g:GetPhysicsObject()
     if IsValid(phys) then
