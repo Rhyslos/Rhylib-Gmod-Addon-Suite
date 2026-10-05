@@ -370,7 +370,7 @@ local function build(page)
             end
             if cat.mpOnly then table.insert(rules, 1, "Military police jobs only.") end
             if cat.id == K.ADAPT_CAT then
-                rules[#rules + 1] = "Adaptable: learn one skill of tier 4 or lower from another tree; job rules still apply."
+                rules[#rules + 1] = "Adaptable: learn one skill of tier 4 or lower from another tree or the other officer side; job rules still apply."
                 rules[#rules + 1] = "Command orders: pick one. Needs the rank " .. tostring(K.Cfg("commandRank")) .. "; issued with the command comlink."
             end
             for _, r in ipairs(rules) do
@@ -467,6 +467,8 @@ local function build(page)
         local spec = specs[full.id]
         local branch = spec and branches[spec]
         if not spec then return full, full.id end
+        -- (Adaptable: the other officer side stays open to borrow from)
+        if full.id == K.ADAPT_CAT and K.Set(me).adapt_1 and K.Cfg("onePath") then return full, full.id .. "|adapt" end
         local view = { id = full.id, name = full.name, desc = full.desc, specs = {} }
         for _, s in ipairs(full.specs or {}) do
             if s.id == spec then

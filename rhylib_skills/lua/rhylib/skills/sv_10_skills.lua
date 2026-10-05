@@ -61,7 +61,16 @@ function K.Stored(ply)
         local n = K.byId[id]
         if n and n.cat == "officer" and count[n.spec] then count[n.spec] = count[n.spec] + 1 end
     end
-    if count.pistol > 0 and count.commander > 0 then
+    -- (Adaptable may borrow from the other side: fine while it fits its slot)
+    local legit = false
+    if set.adapt_1 and count.pistol > 0 and count.commander > 0 then
+        local tiers = {}
+        for id in pairs(set) do
+            if K.Borrowed(set, id) then tiers[#tiers + 1] = K.byId[id].tier end
+        end
+        legit = K.FitsSlots(tiers, K.AdaptSlots(set))
+    end
+    if count.pistol > 0 and count.commander > 0 and not legit then
         local drop = count.pistol >= count.commander and "commander" or "pistol"
         local hadAdapt = set.adapt_1
         for id in pairs(set) do
@@ -79,6 +88,17 @@ function K.Stored(ply)
             table.sort(ids)
             Data.Set("skills", key(ply), { n = ids })
         end
+    end
+    -- Skills another one made pointless (Full auto with Combat veteran) go.
+    local dropped = false
+    for id in pairs(set) do
+        if K.Redundant(set, K.byId[id]) then set[id] = nil dropped = true end
+    end
+    if dropped and not ply:IsBot() then
+        local ids = {}
+        for id in pairs(set) do ids[#ids + 1] = id end
+        table.sort(ids)
+        Data.Set("skills", key(ply), { n = ids })
     end
     ply.rhylibSkills = set
     ply.rhylibSkillsLoaded = true

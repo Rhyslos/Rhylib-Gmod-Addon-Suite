@@ -18,7 +18,8 @@
       - points: free while config freePoints is on (testing), else
         K.Points(ply) minus what's spent,
       - Adaptable (officer adapt_1): with onePath on, an officer may
-        learn one skill of tier 4 or lower from another tree. Those "borrowed" skills skip needs, spec and branch rules and
+        learn one skill of tier 4 or lower from another tree or the other
+        officer specialisation. Those "borrowed" skills skip needs, spec and branch rules and
         don't count as a path; job rules and points still apply.
     What a player has is one NW2String "rhylib_skills" (",id,id,"), set on
     change only; K.Has parses it once per change, so it's cheap anywhere
@@ -77,7 +78,8 @@ K.NODES = {
       desc = "+25% damage within 8 m, fading to normal by 15 m.", needs = { "quick_hands" } },
 
     { id = "full_auto", cat = "trooper", spec = "autorifleman", tier = 2, cost = 2, name = "Full auto",
-      desc = "DC-15A full-auto fire mode (E + R).", needs = { "quick_hands" } },
+      desc = "DC-15A full-auto fire mode (E + R).", needs = { "quick_hands" },
+      redundantWith = "combat_veteran", redundantWhy = "Combat veteran already gives you DC-15A full auto" },
     { id = "ext_mags", cat = "trooper", spec = "autorifleman", tier = 2, cost = 2, name = "Extended mags",
       desc = "Medium magazines hold 70 rounds instead of 60 when you load them.", needs = { "quick_hands" } },
 
@@ -259,8 +261,8 @@ K.NODES = {
       desc = "Rifles (DC-15A, Westar-M5): 10% less spread and kick, 10% faster reloads, and the DC-15A full-auto mode. Carbines (DC-15S, DP-23): 8% more damage. With the Z-6 in your hands: 10% less damage taken.",
       needs = { "field_logistics" } },
     { id = "adapt_1", cat = "officer", spec = "commander", tier = 6, cost = 3, name = "Adaptable", rankCfg = "commandRank",
-      desc = "Learn one skill of tier 4 or lower from any other tree. It skips that skill's requirements, but you still need the job (medic, MP) and pay its points.",
-      needs = { "steady_line" } },
+      desc = "Learn one skill of tier 4 or lower from any other tree, or from the Pistol officer side of this one. It skips that skill's requirements, but you still need the job (medic, MP) and pay its points.",
+      needs = { "combat_veteran" } },
     { id = "chain_command", cat = "officer", spec = "commander", tier = 6, cost = 2, name = "Chain of command", rankCfg = "commandRank",
       desc = "Your orders also reach every radio squad mate, however far away (alive and not downed).",
       needsGroups = { { "seasoned_cmd" }, { "standing_orders" } }, needsLabel = "Needs Seasoned command or Standing orders" },
@@ -404,10 +406,21 @@ end
 K.ADAPT_CAT = "officer"
 K.ADAPT = { { id = "adapt_1", tier = 4 } }   -- (owner 2026-10-05: one borrowed skill, tier 4 or lower)
 
--- Is id a borrowed skill in this set (another tree's, through Adaptable)?
+-- Is id a borrowed skill in this set (another tree's, or the other officer
+-- specialisation's, through Adaptable)?
 function K.Borrowed(set, id)
     local n = K.byId[id]
-    return n and n.cat ~= K.ADAPT_CAT and set.adapt_1 and K.Cfg("onePath") and true or false
+    if not (n and set.adapt_1 and K.Cfg("onePath")) then return false end
+    if n.cat ~= K.ADAPT_CAT then return true end
+    local own = K.byId.adapt_1 and K.byId.adapt_1.spec
+    return n.spec ~= nil and own ~= nil and n.spec ~= own
+end
+
+-- A skill made pointless by another one you have (redundantWith)? Reason or nil.
+function K.Redundant(set, n)
+    if n and n.redundantWith and set[n.redundantWith] then
+        return n.redundantWhy or ("You have " .. (K.byId[n.redundantWith] and K.byId[n.redundantWith].name or n.redundantWith))
+    end
 end
 
 -- Tier caps of the set's Adaptable slots, highest first.
@@ -488,10 +501,19 @@ function K.CanLearn(ply, set, id)
         local MP = Rhylib.MP
         if not (MP and MP.IsMP and MP.IsMP(ply)) then return false, "Military police only" end
     end
+    local redundant = K.Redundant(set, n)
+    if redundant then return false, redundant end
     local cats, specs, branches = K.Commitments(set)
 
-    -- Borrowed through Adaptable: only the slots and points matter.
+    -- Borrowed through Adaptable: only the slots and points matter
+    -- (and one command order).
     if K.Borrowed(set, id) and next(cats) ~= nil then
+        if n.exclusive then
+            for sid in pairs(set) do
+                local o = K.byId[sid]
+                if o and o.exclusive == n.exclusive then return false, "You chose " .. o.name .. " (one of these only)" end
+            end
+        end
         local tiers = { n.tier }
         for sid in pairs(set) do
             if K.Borrowed(set, sid) then tiers[#tiers + 1] = K.byId[sid].tier end
@@ -550,6 +572,8 @@ end
 function K.Excluded(ply, set, id)
     local n = K.byId[id]
     if not n or set[id] then return nil end
+    local redundant = K.Redundant(set, n)
+    if redundant then return redundant end
     local cats, specs, branches = K.Commitments(set)
     if K.Borrowed(set, id) and next(cats) ~= nil then return nil end   -- (Adaptable can still take it)
     if K.Cfg("onePath") then
