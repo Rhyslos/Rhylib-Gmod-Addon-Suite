@@ -253,19 +253,24 @@ K.NODES = {
       needsLabel = "Needs a command order" },
     { id = "steady_line", cat = "officer", spec = "commander", tier = 5, cost = 2, name = "Steady the line", icon = "shield", rankCfg = "commandRank",
       desc = "You and your radio squad mates within 15 m of you: 15% less kick and stamina refills 25% faster.", needs = { "rifle_drill" } },
-    { id = "seasoned_cmd", cat = "officer", spec = "commander", tier = 5, cost = 2, name = "Seasoned command", rankCfg = "commandRank",
+    { id = "seasoned_cmd", cat = "officer", spec = "commander", tier = 5, cost = 1, name = "Seasoned command", rankCfg = "commandRank",
       desc = "Your order cooldown is 4 minutes instead of 6.", needs = { "cmd_presence" } },
     { id = "standing_orders", cat = "officer", spec = "commander", tier = 5, cost = 2, name = "Standing orders", rankCfg = "commandRank",
       desc = "Your orders last 10 s instead of 6.", needs = { "cmd_presence" } },
     { id = "combat_veteran", cat = "officer", spec = "commander", tier = 5, cost = 2, name = "Combat veteran", icon = "star", rankCfg = "commandRank",
       desc = "Rifles (DC-15A, Westar-M5): 10% less spread and kick, 10% faster reloads, and the DC-15A full-auto mode. Carbines (DC-15S, DP-23): 8% more damage. With the Z-6 in your hands: 10% less damage taken.",
       needs = { "field_logistics" } },
-    { id = "adapt_1", cat = "officer", spec = "commander", tier = 6, cost = 3, name = "Adaptable", rankCfg = "commandRank",
+    { id = "adapt_1", cat = "officer", spec = "commander", tier = 6, cost = 2, name = "Adaptable", rankCfg = "commandRank",
       desc = "Learn one skill of tier 4 or lower from any other tree, or from the Pistol officer side of this one. It skips that skill's requirements, but you still need the job (medic, MP) and pay its points.",
       needs = { "combat_veteran" } },
     { id = "chain_command", cat = "officer", spec = "commander", tier = 6, cost = 2, name = "Chain of command", rankCfg = "commandRank",
       desc = "Your orders also reach every radio squad mate, however far away (alive and not downed).",
       needsGroups = { { "seasoned_cmd" }, { "standing_orders" } }, needsLabel = "Needs Seasoned command or Standing orders" },
+    -- Capstone (2026-10-06az, owner). Path still 24: Adaptable and
+    -- Seasoned command each cost one point less to make room.
+    { id = "reinforcements", cat = "officer", spec = "commander", tier = 7, cost = 2, name = "Reinforcements", icon = "stack", rankCfg = "commandRank",
+      desc = "Right-click with the command comlink: a clone squad (a trooper, a medic, a rifleman and a heavy) arrives around you, steps toward the enemy and follows you, for 10 minutes. You lead them: clones near you aim better, react faster and pause less. 15 min cooldown.",
+      needsGroups = { { "adapt_1" }, { "chain_command" } }, needsLabel = "Needs Adaptable or Chain of command" },
 
     -- Airborne (jetpack: 15 s of flight with any Airborne skill, 10 s without).
     -- Shape 1-2-3-1-3-1: it widens, narrows to Grenadier, then widens again.

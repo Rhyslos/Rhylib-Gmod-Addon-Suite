@@ -29,19 +29,25 @@ local TRAIN = "rhylib_training_save"
 local SPAWNS = "rhylib_spawns_save"
 
 local ALL = {
-    { id = "b1", name = "B1 battle droid", cat = "NPCs", class = "rhylib_b1", count = true },
-    { id = "b2", name = "B2 super battle droid", cat = "NPCs", class = "rhylib_b2", count = true },
-    { id = "b2c", name = "B2 mortar droid", cat = "NPCs", class = "rhylib_b2_cannon", count = true },
-    { id = "b2r", name = "B2 rocket droid", cat = "NPCs", class = "rhylib_b2_rocketdroid", count = true },
-    { id = "b1_commander", name = "B1 commander droid", cat = "NPCs", class = "rhylib_b1_commander", count = true },
-    { id = "b1_heavy", name = "B1 heavy droid", cat = "NPCs", class = "rhylib_b1_heavy", count = true },
-    { id = "b1_aat", name = "B1 AAT crew droid", cat = "NPCs", class = "rhylib_b1_aat", count = true },
-    { id = "b1_geonosis", name = "B1 Geonosis droid", cat = "NPCs", class = "rhylib_b1_geonosis", count = true },
-    { id = "b1_marine", name = "B1 marine droid", cat = "NPCs", class = "rhylib_b1_marine", count = true },
-    { id = "b1_security", name = "B1 security droid", cat = "NPCs", class = "rhylib_b1_security", count = true },
-    { id = "b1_snow", name = "B1 snow droid", cat = "NPCs", class = "rhylib_b1_snow", count = true },
-    { id = "b1t", name = "B1 training droid", cat = "NPCs", class = "rhylib_b1_training", count = true },
-    { id = "b2t", name = "B2 training droid", cat = "NPCs", class = "rhylib_b2_training", count = true },
+    { id = "b1", name = "B1 battle droid", cat = "Droid NPCs", class = "rhylib_b1", count = true },
+    { id = "b2", name = "B2 super battle droid", cat = "Droid NPCs", class = "rhylib_b2", count = true },
+    { id = "b2c", name = "B2 mortar droid", cat = "Droid NPCs", class = "rhylib_b2_cannon", count = true },
+    { id = "b2r", name = "B2 rocket droid", cat = "Droid NPCs", class = "rhylib_b2_rocketdroid", count = true },
+    { id = "b1_commander", name = "B1 commander droid", cat = "Droid NPCs", class = "rhylib_b1_commander", count = true },
+    { id = "b1_heavy", name = "B1 heavy droid", cat = "Droid NPCs", class = "rhylib_b1_heavy", count = true },
+    { id = "b1_aat", name = "B1 AAT crew droid", cat = "Droid NPCs", class = "rhylib_b1_aat", count = true },
+    { id = "b1_geonosis", name = "B1 Geonosis droid", cat = "Droid NPCs", class = "rhylib_b1_geonosis", count = true },
+    { id = "b1_marine", name = "B1 marine droid", cat = "Droid NPCs", class = "rhylib_b1_marine", count = true },
+    { id = "b1_security", name = "B1 security droid", cat = "Droid NPCs", class = "rhylib_b1_security", count = true },
+    { id = "b1_snow", name = "B1 snow droid", cat = "Droid NPCs", class = "rhylib_b1_snow", count = true },
+    { id = "b1t", name = "B1 training droid", cat = "Droid NPCs", class = "rhylib_b1_training", count = true },
+    { id = "b2t", name = "B2 training droid", cat = "Droid NPCs", class = "rhylib_b2_training", count = true },
+    -- Clone troopers (friendly NPCs, 2026-10-06az)
+    { id = "ct_trooper", name = "Clone trooper", cat = "Clone NPCs", class = "rhylib_ct_trooper", count = true },
+    { id = "ct_rifleman", name = "Clone rifleman", cat = "Clone NPCs", class = "rhylib_ct_rifleman", count = true },
+    { id = "ct_heavy", name = "Clone heavy", cat = "Clone NPCs", class = "rhylib_ct_heavy", count = true },
+    { id = "ct_medic", name = "Clone medic", cat = "Clone NPCs", class = "rhylib_ct_medic", count = true },
+    { id = "ct_commander", name = "Clone commander", cat = "Clone NPCs", class = "rhylib_ct_commander", count = true },
     -- Droid orders (rhylib_droids sv_20_orders): a brush that sets the mode
     -- of droids near where you aim, and admin-only markers.
     { id = "ord_guard", name = "Order: guard here", cat = "Droid orders", order = "guard" },
@@ -50,6 +56,12 @@ local ALL = {
     { id = "mk_attack", name = "Marker: attack here", cat = "Droid orders", class = "rhylib_droid_marker", marker = 1 },
     { id = "mk_defend", name = "Marker: defend this", cat = "Droid orders", class = "rhylib_droid_marker", marker = 2 },
     { id = "mk_fallback", name = "Marker: fall back here", cat = "Droid orders", class = "rhylib_droid_marker", marker = 3 },
+    -- Clone orders (2026-10-06bb): same brush and markers for clone NPCs.
+    { id = "cord_guard", name = "Clones: guard here", cat = "Clone orders", order = "guard", side = 1 },
+    { id = "cord_patrol", name = "Clones: patrol here", cat = "Clone orders", order = "patrol", side = 1 },
+    { id = "cord_attack", name = "Clones: attack", cat = "Clone orders", order = "attack", side = 1 },
+    { id = "cmk_attack", name = "Clone marker: attack here", cat = "Clone orders", class = "rhylib_droid_marker", marker = 1, side = 1 },
+    { id = "cmk_defend", name = "Clone marker: defend this", cat = "Clone orders", class = "rhylib_droid_marker", marker = 2, side = 1 },
     { id = "spawn", name = "Spawn point (set battalion with E)", cat = "Spawns", class = "rhylib_spawn_point", named = true, save = SPAWNS },
     { id = "eventspawn", name = "Event spawn (open it with E)", cat = "Spawns", class = "rhylib_event_spawn", named = true, save = SPAWNS },
     { id = "beacon", name = "Training respawn beacon", cat = "Training", class = "rhylib_training_beacon", named = true, save = TRAIN },
@@ -80,7 +92,7 @@ local ALL = {
 
 -- The Rhylib tab's categories, top to bottom (owner: NPCs on their own,
 -- not alphabetical); others follow alphabetically.
-Tool.CAT_ORDER = { "NPCs", "Droid orders", "Spawns", "Armoury", "Medical", "Base", "Training", "Testing" }
+Tool.CAT_ORDER = { "Clone NPCs", "Clone orders", "Droid NPCs", "Droid orders", "Spawns", "Armoury", "Medical", "Base", "Training", "Testing" }
 
 -- The installed entries (built once, after entities are registered).
 function Tool.Entries()

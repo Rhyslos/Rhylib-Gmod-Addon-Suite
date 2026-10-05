@@ -62,15 +62,31 @@ local LIMBS = {
 local traceResult = {}
 local traceData = { mask = MASK_SHOT, output = traceResult }
 
--- (soft-knocked players are hidden and can't be hurt: bolts fly through)
-local function trace(from, to, filter)
+-- Bolts fly through: soft-knocked players (hidden, can't be hurt), and
+-- friendlies (rhylib_droids clone NPCs, 2026-10-06az): players' and
+-- clones' bolts pass clones, clones' bolts pass players.
+-- (cloneShot: the bolt came from a clone, even if that clone is gone now)
+local function passes(e, owner, cloneShot)
+    local fromClone = cloneShot or (owner ~= nil and owner.IsRhylibClone == true)
+    if e:IsPlayer() then
+        if e:GetNW2Bool("rhylib_knockSoft", false) then return true end
+        return fromClone
+    end
+    if e.IsRhylibClone == true then return fromClone or (owner ~= nil and owner:IsPlayer()) end
+    -- (a lying player's ragdoll counts as the player)
+    local L = Rhylib.Lying
+    return fromClone and L and L.Owner and IsValid(L.Owner(e)) or false
+end
+
+local function trace(from, to, filter, cloneShot)
     traceData.start = from
     traceData.endpos = to
     traceData.filter = filter
     local tr = util.TraceLine(traceData)
+    local owner = IsValid(filter) and filter or nil
     local skip
     for _ = 1, 4 do
-        if not (IsValid(tr.Entity) and tr.Entity:IsPlayer() and tr.Entity:GetNW2Bool("rhylib_knockSoft", false)) then break end
+        if not (IsValid(tr.Entity) and passes(tr.Entity, owner, cloneShot)) then break end
         skip = skip or { filter }
         skip[#skip + 1] = tr.Entity
         traceData.filter = skip
@@ -211,6 +227,8 @@ local function applyHit(bolt, tr, group)
     end
     local ent, rag = hitTarget(tr)
     if not IsValid(ent) then return end
+    -- Clone NPC bolts never hurt players or clones (rhylib_droids).
+    if bolt.clone and (ent:IsPlayer() or ent.IsRhylibClone) then return end
     -- Riot shields (sh_60_shield.lua): a bolt from the front stops on the shield.
     if ent:IsPlayer() and Rhylib.Weapons.ShieldBlocks and Rhylib.Weapons.ShieldBlocks(ent, bolt.dir) then
         local fx = EffectData()
@@ -387,7 +405,7 @@ local function rewoundGroup(bolt, tr)
 end
 
 local function firstLegTrace(bolt, from, to, owner)
-    local tr = trace(from, to, owner)
+    local tr = trace(from, to, owner, bolt.clone)
     return tr, tr.Hit and rewoundGroup(bolt, tr) or nil
 end
 
@@ -423,6 +441,7 @@ function Bolts.Fire(owner, weapon, origin, dir, damage, opts, hits)
         explosive = weapon.Explosive,
         stun = weapon.Stun or (opts and opts.stun) or nil,
         training = weapon.Training or (opts and opts.training) or nil,   -- (rhylib_training)
+        clone = owner.IsRhylibClone == true or nil,   -- (rhylib_droids clone NPC: never hurts friendlies)
         onHit = opts and opts.onHit,
         onExpire = opts and opts.onExpire,
     }
@@ -485,7 +504,7 @@ Rhylib.Hook.Add("Tick", "weapons.bolts", function()
             to:Set(b.pos)
             to:Add(b.step)
             local owner = b.owner
-            local tr = trace(b.pos, to, IsValid(owner) and owner or nil)
+            local tr = trace(b.pos, to, IsValid(owner) and owner or nil, b.clone)
             if tr.Hit then
                 applyHit(b, tr)
                 remove = true

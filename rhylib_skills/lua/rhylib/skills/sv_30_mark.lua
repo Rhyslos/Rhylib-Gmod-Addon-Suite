@@ -74,11 +74,12 @@ end
 local function markable(e, ply)
     if not IsValid(e) or e == ply then return false end
     if not (e:IsNPC() or e:IsNextBot() or e:IsPlayer()) then return false end
+    if e.IsRhylibClone then return false end   -- (friendly clone NPCs)
     return e:Health() > 0 and (not e:IsPlayer() or e:Alive())
 end
 
 local function enemy(e)
-    return IsValid(e) and (e:IsNPC() or e:IsNextBot()) and e:Health() > 0
+    return IsValid(e) and (e:IsNPC() or e:IsNextBot()) and not e.IsRhylibClone and e:Health() > 0
 end
 
 -- Enemies within coneDeg of the aim, nearest the middle first, in sight

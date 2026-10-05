@@ -124,6 +124,43 @@ Config.Register("droids", "runSpread", 1.4, "Aim cone multiplier while running")
 Config.Register("droids", "walkSpread", 1.1, "Aim cone multiplier while walking")
 Config.Register("droids", "pathPerTick", 4, "Most route and cover searches all droids start in one tick (spreads the cost)")
 
+-- Clone troopers (2026-10-06az, owner): friendly NPCs on the droid brain.
+-- They fight droids, never hurt players (or get hurt by them), and the
+-- Commander's Reinforcements skill calls a squad of them.
+Config.Register("droids", "cloneMax", 40, "Most clone NPCs alive at once")
+Config.Register("droids", "cloneAggro", 3, "Clone NPC aggression 1-5 (same scale as the droids'; 3 = moderate)")
+Config.Register("droids", "cloneFollowRadius", 600, "Clones following an officer fight at most this far from them")
+Config.Register("droids", "ctModel", "models/hazo/npc/ct_trp/npc_ct_trp_f.mdl", "Clone trooper NPC model (troopers, riflemen, heavies; the _h version works too)")
+Config.Register("droids", "ctMedicModel", "models/hazo/npc/ct_medic/npc_ct_medic_f.mdl", "Clone medic NPC model")
+Config.Register("droids", "ctCmdModel", "models/hazo/npc/ct_cmd/npc_ct_cmd_f.mdl", "Clone commander NPC model")
+Config.Register("droids", "ctHealth", 220, "Clone trooper / rifleman / medic: health")
+Config.Register("droids", "ctSpeed", 190, "Clone run speed")
+Config.Register("droids", "ctRange", 3000, "How far a clone sees and shoots")
+Config.Register("droids", "ctReaction", 0.5, "Seconds before a clone starts firing at a new target")
+Config.Register("droids", "ctDamage", 14, "Clone DC-15S damage per bolt")
+Config.Register("droids", "ctRPM", 360, "Clone DC-15S shots per minute within a burst")
+Config.Register("droids", "ctSpread", 1.3, "Clone inaccuracy cone (degrees), more against moving targets")
+Config.Register("droids", "ctRifleDamage", 20, "Clone rifleman / commander DC-15A damage per bolt")
+Config.Register("droids", "ctRifleRPM", 300, "Clone DC-15A shots per minute within a burst")
+Config.Register("droids", "ctHeavyHealth", 300, "Clone heavy: health")
+Config.Register("droids", "ctHeavySpeed", 160, "Clone heavy: run speed")
+Config.Register("droids", "ctHeavyDamage", 11, "Clone heavy Z-6 damage per bolt")
+Config.Register("droids", "ctHeavyRPM", 900, "Clone heavy Z-6 shots per minute within a burst")
+Config.Register("droids", "ctHeavySpread", 2.2, "Clone heavy inaccuracy cone (degrees)")
+Config.Register("droids", "ctCmdHealth", 400, "Clone commander: health (boosts clones near it like a B1 commander boosts droids)")
+Config.Register("droids", "ctMedicHeal", 2, "Clone medic: health a second for players and clones near it")
+Config.Register("droids", "ctMedicRadius", 300, "Clone medic: healing radius")
+Config.Register("droids", "ctPopperChance", 0.15, "Clone trooper: chance after each burst to throw a droid popper at a droid in sight (doubled at a group)")
+Config.Register("droids", "ctPopperLobChance", 0.4, "Clone trooper: chance to throw a droid popper where a droid just went out of sight")
+Config.Register("droids", "ctPopperCooldown", 30, "Clone trooper: seconds between one clone's droid poppers")
+Config.Register("droids", "ctDownGuards", 2, "Clones that go and stand guard over a downed player (0 = off)")
+Config.Register("droids", "ctMedicRepair", 4, "Clone medic: injury damage and burns healed a second on each body part of players near it (bleeding stops, breaks get splinted first)")
+Config.Register("droids", "ctMedicReviveRadius", 1500, "Clone medic: goes to downed or just-dead players this close")
+Config.Register("droids", "ctMedicReviveTime", 5, "Clone medic: seconds crouched on the body to get someone up")
+Config.Register("droids", "ctMedicReviveHealth", 0.3, "Clone medic: share of max health a revived player gets up with")
+Config.Register("droids", "ctMedicDeadWindow", 60, "Clone medic: dead players can be brought back this many seconds after dying (0 = downed players only)")
+Config.Register("droids", "ctDownRadius", 1500, "Clones this close to a downed player can be sent to guard them")
+
 function D.Cfg(k) return Config.Get("droids", k) end
 
 D.B1_MODEL = "models/aussiwozzi/cgi/b1droids/b1_battledroid.mdl"   -- (same pack as the variants, B2s and training droids)
@@ -172,13 +209,39 @@ D.KINDS.b2_rocket = variant("b2", "B2 rocket droid", "models/aussiwozzi/cgi/b1dr
 D.KINDS.b1t = variant("b1", "B1 training droid", D.B1T_MODEL, { training = true, color = 8 })
 D.KINDS.b2t = variant("b2", "B2 training droid", D.B2T_MODEL, { training = true, color = 8 })
 
-D.CLASSES = { b1 = "rhylib_b1", b2 = "rhylib_b2", b1t = "rhylib_b1_training", b2t = "rhylib_b2_training", b2_cannon = "rhylib_b2_cannon", b2_rocket = "rhylib_b2_rocketdroid" }
+-- Clone troopers (side "republic"): rhylib_clone and its one-line
+-- subclasses. Models come from config (modelCfg); fallback = HL2's
+-- Combine soldier (it has rifle animations), never a droid model.
+local DC15S, DC15A, Z6 = "models/jajoff/sps/cgiweapons/tc13j/dc15s.mdl", "models/jajoff/sps/cgiweapons/tc13j/dc15a.mdl", "models/jajoff/sps/cgiweapons/tc13j/z6.mdl"
+D.CLONE_FALLBACK = "models/combine_soldier.mdl"
+D.KINDS.ct_trooper = { name = "Clone trooper", side = "republic", modelCfg = "ctModel", health = "ctHealth", speed = "ctSpeed", range = "ctRange", reaction = "ctReaction",
+    damage = "ctDamage", rpm = "ctRPM", spread = "ctSpread", burst = { 2, 4 }, color = 1, gun = DC15S, poppers = true, cover = true,
+    sound = "weapons/airboat/airboat_gun_energy1.wav" }
+D.KINDS.ct_rifleman = variant("ct_trooper", "Clone rifleman", nil, { damage = "ctRifleDamage", rpm = "ctRifleRPM", burst = { 2, 3 }, gun = DC15A, poppers = false,
+    sound = "weapons/airboat/airboat_gun_energy2.wav" })
+D.KINDS.ct_heavy = variant("ct_trooper", "Clone heavy", nil, { health = "ctHeavyHealth", speed = "ctHeavySpeed", damage = "ctHeavyDamage", rpm = "ctHeavyRPM",
+    spread = "ctHeavySpread", burst = { 6, 10 }, gun = Z6, poppers = false, cover = false, sound = "weapons/airboat/airboat_gun_energy2.wav" })
+D.KINDS.ct_medic = variant("ct_trooper", "Clone medic", nil, { modelCfg = "ctMedicModel", poppers = false, medic = true })
+D.KINDS.ct_commander = variant("ct_trooper", "Clone commander", nil, { modelCfg = "ctCmdModel", health = "ctCmdHealth", damage = "ctRifleDamage", rpm = "ctRifleRPM",
+    burst = { 2, 3 }, gun = DC15A, poppers = false, commander = true, sound = "weapons/airboat/airboat_gun_energy2.wav" })
+
+-- The model a kind uses (config for clones).
+function D.KindModel(k)
+    if k.modelCfg then
+        local m = D.Cfg(k.modelCfg)
+        if isstring(m) and m ~= "" then return m end
+    end
+    return k.model
+end
+
+D.CLASSES = { b1 = "rhylib_b1", b2 = "rhylib_b2", b1t = "rhylib_b1_training", b2t = "rhylib_b2_training", b2_cannon = "rhylib_b2_cannon", b2_rocket = "rhylib_b2_rocketdroid",
+    ct_trooper = "rhylib_ct_trooper", ct_rifleman = "rhylib_ct_rifleman", ct_heavy = "rhylib_ct_heavy", ct_medic = "rhylib_ct_medic", ct_commander = "rhylib_ct_commander" }
 for _, v in ipairs({ "aat", "commander", "geonosis", "heavy", "marine", "security", "snow" }) do
     D.CLASSES["b1_" .. v] = "rhylib_b1_" .. v
 end
 
 D.MODES = { "guard", "patrol", "attack" }   -- (index 1-3 on the wire)
-D.MODE_NAMES = { guard = "Guard", patrol = "Patrol", attack = "Attack" }
+D.MODE_NAMES = { guard = "Guard", patrol = "Patrol", attack = "Attack", follow = "Follow" }
 D.AGGRO_NAMES = { "Fall back", "Slow retreat", "Moderate", "March", "Charge" }
 
 -- Aggression 1-5 (server: config, live; clients: Global2Int).
@@ -207,7 +270,8 @@ for kind, class in pairs(D.CLASSES) do
         Name = D.KINDS[kind].name,
         Class = class,
         -- (owner: split up so they're easier to find)
-        Category = D.KINDS[kind].training and "Rhylib: Training droids" or (string.sub(kind, 1, 2) == "b2" and "Rhylib: B2 super battle droids" or "Rhylib: B1 battle droids"),
+        Category = D.KINDS[kind].side == "republic" and "Rhylib: Clone troopers" or D.KINDS[kind].training and "Rhylib: Training droids"
+            or (string.sub(kind, 1, 2) == "b2" and "Rhylib: B2 super battle droids" or "Rhylib: B1 battle droids"),
         AdminOnly = true,
     })
     if CLIENT then language.Add(class, D.KINDS[kind].name) end

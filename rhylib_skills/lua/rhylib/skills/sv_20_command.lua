@@ -17,9 +17,13 @@ K.triage = K.triage or {}
 -- (memory only; a map change does).
 K.orderCd = K.orderCd or {}
 
+K.reinfCd = K.reinfCd or {}
+
 Rhylib.Hook.Add("PlayerInitialSpawn", "skills.ordercd", function(ply)
     local t = K.orderCd[ply:SteamID64() or ""]
     if t and t > CurTime() then ply:SetNW2Float("rhylib_orderCd", t) end
+    local r = K.reinfCd[ply:SteamID64() or ""]
+    if r and r > CurTime() then ply:SetNW2Float("rhylib_reinfCd", r) end
 end)
 
 local function canReceive(p)
@@ -90,6 +94,33 @@ function K.IssueOrder(ply)
     net.WriteEntity(ply)
     net.Send(hit)
     return true
+end
+
+-- Reinforcements (Commander capstone, 2026-10-06az): a clone squad
+-- (rhylib_droids D.CallSquad) around the officer. Returns ok, reason.
+function K.CallReinforcements(ply)
+    if not K.Has(ply, "reinforcements") then return false, "You haven't learned Reinforcements" end
+    if not canReceive(ply) then return false, "You can't call reinforcements right now" end
+    local ok, why = K.RankOk(ply, "commandRank")
+    if not ok then return false, why end
+    local MP = Rhylib.MP
+    if MP and MP.IsCuffed and (MP.IsCuffed(ply) or MP.IsStunned(ply)) then return false, "You can't call reinforcements right now" end
+    local cd = K.ReinfCooldown(ply)
+    if cd > 0 then
+        local s = math.ceil(cd)
+        return false, string.format("Reinforcements ready in %d:%02d", math.floor(s / 60), s % 60)
+    end
+    local D = Rhylib.Droids
+    if not (D and D.CallSquad) then return false, "Reinforcements aren't available on this server" end
+    local squad = cfg("reinfSquad")
+    if not istable(squad) or #squad == 0 then return false, "No reinforcements are set up (skills reinfSquad)" end
+    local made = D.CallSquad(ply, squad, cfg("reinfLife"))
+    if made == 0 then return false, "No room for reinforcements here, or the clone limit is reached" end
+    local untilT = CurTime() + cfg("reinfCooldown")
+    ply:SetNW2Float("rhylib_reinfCd", untilT)
+    K.reinfCd[ply:SteamID64() or ""] = untilT
+    ply:EmitSound("npc/combine_soldier/vo/affirmative.wav", 70, 105)
+    return true, made
 end
 
 -- Field triage: triageHeal health a second, in quarter-second steps.

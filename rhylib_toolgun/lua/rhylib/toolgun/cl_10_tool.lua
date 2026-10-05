@@ -305,7 +305,7 @@ function Tool.DrawHUD(wep)
     local y = ScrH() * 0.5 + 40
     draw.SimpleTextOutlined(text, Rhylib.UI.Font(16, 700), ScrW() * 0.5, y, COL, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
     local ent = tr.Entity
-    if IsValid(ent) and not ent:IsPlayer() and (ent.IsRhylibDroid or Tool.ByClass(ent:GetClass()) or ent:GetNW2Bool("rhylib_toolSpawned")) then
+    if IsValid(ent) and not ent:IsPlayer() and (ent.IsRhylibDroid or ent.IsRhylibClone or Tool.ByClass(ent:GetClass()) or ent:GetNW2Bool("rhylib_toolSpawned")) then
         draw.SimpleTextOutlined("RMB: remove " .. (ent.PrintName or ent:GetClass()), Rhylib.UI.Font(14, 700), ScrW() * 0.5, y + 22, COL_RED, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
     end
     draw.SimpleTextOutlined("R: spawn window  ·  hold R: peek  ·  R twice: old Q menu", Rhylib.UI.Font(13), ScrW() * 0.5, y + 42, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
@@ -333,7 +333,7 @@ end)
 
 -- With the toolgun out: each droid's mode over its head (staff only see
 -- this, since only they hold the toolgun).
-local MODE_COL = { guard = Color(110, 170, 255), patrol = Color(120, 230, 140), attack = Color(255, 100, 80) }
+local MODE_COL = { guard = Color(110, 170, 255), patrol = Color(120, 230, 140), attack = Color(255, 100, 80), follow = Color(240, 220, 120) }
 local droidList, droidListAt = {}, 0
 Rhylib.Hook.Add("HUDPaint", "toolgun.droidmodes", function()
     local ply = LocalPlayer()
@@ -344,7 +344,7 @@ Rhylib.Hook.Add("HUDPaint", "toolgun.droidmodes", function()
         droidListAt = now + 0.5
         droidList = {}
         for _, e in ipairs(ents.GetAll()) do
-            if e.IsRhylibDroid then droidList[#droidList + 1] = e end
+            if e.IsRhylibDroid or e.IsRhylibClone then droidList[#droidList + 1] = e end
         end
     end
     local eye = EyePos()

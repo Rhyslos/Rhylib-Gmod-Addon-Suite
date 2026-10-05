@@ -104,6 +104,19 @@ function Bolts.NearMiss(shooter, from, dir, len, speed, tr, lead)
     end)
 end
 
+-- Same rule as the server's trace (sv_10_bolts passes): players' and
+-- clones' bolts fly through clone NPCs, clones' through players (and
+-- their lying ragdolls), soft-knocked players for everyone.
+local function visualPasses(e, owner)
+    if e:IsPlayer() then
+        if e:GetNW2Bool("rhylib_knockSoft", false) then return true end
+        return owner ~= nil and owner.IsRhylibClone == true
+    end
+    if e.IsRhylibClone == true then return owner ~= nil and (owner:IsPlayer() or owner.IsRhylibClone == true) end
+    local L = Rhylib.Lying
+    return owner ~= nil and owner.IsRhylibClone == true and L and L.Owner and IsValid(L.Owner(e)) or false
+end
+
 -- ahead: seconds the server's bolt is ahead (its lag-compensated first
 -- leg). The visual still leaves the muzzle but flies up to CATCHUP times
 -- as fast until it has made that up (not hooks or stun rings).
@@ -120,8 +133,19 @@ function Bolts.Spawn(shooter, origin, dir, speed, colorIndex, left, ahead)
     end
     traceData.start = origin
     traceData.endpos = origin + dir * range
-    traceData.filter = IsValid(shooter) and shooter or nil
+    local owner = IsValid(shooter) and shooter or nil
+    traceData.filter = owner
     util.TraceLine(traceData)
+    -- (friendlies: the server's bolt flies through them, so the visual does too)
+    local skip
+    for _ = 1, 4 do
+        if not (IsValid(traceResult.Entity) and visualPasses(traceResult.Entity, owner)) then break end
+        skip = skip or { owner }
+        skip[#skip + 1] = traceResult.Entity
+        traceData.filter = skip
+        util.TraceLine(traceData)
+    end
+    traceData.filter = nil
     local tr = traceResult
     local finish = Vector(tr.HitPos)
     -- Straight from the muzzle to the end of the real path.

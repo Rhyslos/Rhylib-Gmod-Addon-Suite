@@ -3,7 +3,8 @@
 
     Carried by officers with a command order skill (job gear, given at
     spawn). LMB gives the order to you and everyone within commandRadius
-    in sight (K.IssueOrder). While it's out, a ring on the ground shows
+    in sight (K.IssueOrder). RMB calls reinforcements with the Commander
+    capstone (K.CallReinforcements). While it's out, a ring on the ground shows
     the reach, in the order's colour (grey while on cooldown).
     First person is a placeholder: the HL2 SLAM detonator in the left hand.
 ]]
@@ -57,7 +58,23 @@ function SWEP:VMDuration()
 end
 
 function SWEP:Reload() end
-function SWEP:SecondaryAttack() end
+
+-- Reinforcements (Commander capstone): a clone squad around you.
+function SWEP:SecondaryAttack()
+    self:SetNextSecondaryFire(CurTime() + 1)
+    if CLIENT then return end
+    local K, owner = Rhylib.Skills, self:GetOwner()
+    if not (K and K.CallReinforcements and IsValid(owner)) then return end
+    if not K.Has(owner, "reinforcements") then return end
+    local ok, res = K.CallReinforcements(owner)
+    if ok then
+        self:SendWeaponAnim(ACT_SLAM_DETONATOR_DETONATE)
+        self.rhylibIdleAt = CurTime() + self:VMDuration()
+        K.Note(owner, string.format("Reinforcements inbound: %d clone%s", res, res == 1 and "" or "s"))
+    elseif res then
+        K.Note(owner, res, true)
+    end
+end
 
 function SWEP:PrimaryAttack()
     self:SetNextPrimaryFire(CurTime() + 1)
@@ -127,5 +144,19 @@ if CLIENT then
             line = "Ready  ·  Left click: give the order (" .. o.text .. ")"
         end
         draw.SimpleText(line, Rhylib.UI.Font(15), w * 0.5, y + h * 0.028, (ok and cd <= 0) and C.text or C.textDim, TEXT_ALIGN_CENTER)
+        -- Reinforcements (Commander capstone)
+        if K.Has(me, "reinforcements") and K.ReinfCooldown then
+            local rc = K.ReinfCooldown(me)
+            local rl
+            if not ok then
+                rl = nil
+            elseif rc > 0 then
+                local s = math.ceil(rc)
+                rl = string.format("Reinforcements in %d:%02d", math.floor(s / 60), s % 60)
+            else
+                rl = "Right click: call reinforcements"
+            end
+            if rl then draw.SimpleText(rl, Rhylib.UI.Font(15), w * 0.5, y + h * 0.052, rc <= 0 and C.text or C.textDim, TEXT_ALIGN_CENTER) end
+        end
     end
 end

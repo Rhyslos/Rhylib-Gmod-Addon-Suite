@@ -508,7 +508,7 @@ Rhylib.Hook.Add("OnPlayerHitGround", "skills.slam", function(ply, inWater, _, sp
     local r = K.Cfg("slamRadius")
     local base = K.Cfg("slamDamage") * math.min(2, speed / K.Cfg("slamSpeed"))
     for _, e in ipairs(ents.FindInSphere(pos, r)) do
-        if IsValid(e) and e ~= ply and (e:IsNPC() or e:IsNextBot()) and e:Health() > 0
+        if IsValid(e) and e ~= ply and (e:IsNPC() or e:IsNextBot()) and not e.IsRhylibClone and e:Health() > 0
             and not util.TraceLine({ start = pos + Vector(0, 0, 16), endpos = e:WorldSpaceCenter(), mask = MASK_SOLID_BRUSHONLY }).Hit then
             local to = e:WorldSpaceCenter() - pos
             local f = 1 - math.Clamp(to:Length() / r, 0, 1) * 0.6

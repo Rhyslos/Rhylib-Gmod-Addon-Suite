@@ -51,17 +51,22 @@ local function place(ply, e, count, name, mode)
     -- An order brush: droids near the spot get the mode.
     if e.order then
         if not (D and D.PaintMode) then return end
-        local n = D.PaintMode(tr.HitPos, e.order)
-        ply:ChatPrint(string.format("[Droids] %d droid%s: %s", n, n == 1 and "" or "s", D.MODE_NAMES[e.order] or e.order))
+        local n = D.PaintMode(tr.HitPos, e.order, e.side)
+        local what = e.side == 1 and "clone" or "droid"
+        ply:ChatPrint(string.format("[%s] %d %s%s: %s", e.side == 1 and "Clones" or "Droids", n, what, n == 1 and "" or "s", D.MODE_NAMES[e.order] or e.order))
         ply:EmitSound("buttons/button14.wav", 60, n > 0 and 120 or 80)
         return
     end
     local yaw = (ply:GetPos() - tr.HitPos):Angle().y   -- facing you
     local made = 0
-    -- Droids: stop at the cap instead of creating ones Initialize removes.
+    -- Droids and clones: stop at the cap instead of creating ones Initialize removes.
     local droid = D and D.Count and (e.class == "rhylib_b1" or scripted_ents.IsBasedOn(e.class, "rhylib_b1"))
+    local clone = droid and D.CloneCount and (e.class == "rhylib_clone" or scripted_ents.IsBasedOn(e.class, "rhylib_clone"))
     for i = 1, count do
-        if droid and D.Count() >= D.Cfg("maxActive") then
+        if clone and D.CloneCount() >= D.Cfg("cloneMax") then
+            if made == 0 then ply:ChatPrint("Clone limit reached (" .. D.Cfg("cloneMax") .. ").") end
+            break
+        elseif droid and not clone and D.Count() >= D.Cfg("maxActive") then
             if made == 0 then ply:ChatPrint("Droid limit reached (" .. D.Cfg("maxActive") .. ").") end
             break
         end
@@ -79,7 +84,7 @@ local function place(ply, e, count, name, mode)
             ent:SetPos(pos + tr.HitNormal * 2)
             ent:SetAngles(Angle(0, yaw, 0))
             if e.named and ent.SetBeaconName then ent:SetBeaconName(name ~= "" and name or "Beacon") end
-            if e.marker then ent.MarkerKind = e.marker end
+            if e.marker then ent.MarkerKind, ent.MarkerSide = e.marker, e.side end
             ent:Spawn()
             ent:Activate()
             -- Sit on the surface: lift by how far the model reaches below its origin.
@@ -231,7 +236,7 @@ local function removable(ent)
     if ent.rhylibToolSpawned then return { class = ent:GetClass() } end
     local par = ent:GetParent()
     if IsValid(par) and par.rhylibToolSpawned then return { class = par:GetClass(), ent = par } end
-    if ent.IsRhylibDroid or ent:GetClass() == "rhylib_b2_rocket" then return { class = ent:GetClass() } end
+    if ent.IsRhylibDroid or ent.IsRhylibClone or ent:GetClass() == "rhylib_b2_rocket" then return { class = ent:GetClass() } end
     return Tool.ByClass(ent:GetClass())
 end
 

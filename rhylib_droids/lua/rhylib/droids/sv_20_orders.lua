@@ -29,8 +29,9 @@ D.MARKER_KINDS = KIND_NAMES
 
 -- Mode for a droid (and where its area is).
 function D.SetMode(droid, mode, center)
-    if not (IsValid(droid) and droid.IsRhylibDroid) then return end
+    if not (IsValid(droid) and (droid.IsRhylibDroid or droid.IsRhylibClone)) then return end
     if mode ~= "guard" and mode ~= "patrol" and mode ~= "attack" then mode = "guard" end
+    droid.leader, droid.advanceTo = nil, nil   -- (a new mode ends following an officer)
     droid.mode = mode
     if center then droid.home = center end
     if mode ~= "attack" then droid.objective, droid.objectiveMarker = nil, nil end
@@ -63,12 +64,23 @@ function D.ApplyMarker(droid, marker)
     droid.nextLook = 0
 end
 
-function D.MarkerPlaced(marker, kind)
+-- Markers have a side (2026-10-06bb, owner: clones need their own attack
+-- and defend orders): side 1 = clone markers (D.clones, D.lastCloneOrder),
+-- else droid markers (D.active, D.lastOrder / D.lastFallback).
+local function sideList(side) return side == 1 and (D.clones or {}) or D.active end
+
+function D.MarkerPlaced(marker, kind, side)
     D.markers[marker] = kind
-    if kind == "fallback" then D.lastFallback = marker else D.lastOrder = marker end
+    if side == 1 then
+        D.lastCloneOrder = marker
+    elseif kind == "fallback" then
+        D.lastFallback = marker
+    else
+        D.lastOrder = marker
+    end
     local r = D.Cfg("markerRadius")
     local pos = marker:GetPos()
-    for d in pairs(D.active) do
+    for d in pairs(sideList(side)) do
         if IsValid(d) and d:GetPos():DistToSqr(pos) < r * r then D.ApplyMarker(d, marker) end
     end
 end
@@ -77,7 +89,11 @@ function D.MarkerRemoved(marker)
     D.markers[marker] = nil
     if D.lastOrder == marker then D.lastOrder = nil end
     if D.lastFallback == marker then D.lastFallback = nil end
-    for d in pairs(D.active) do
+    if D.lastCloneOrder == marker then D.lastCloneOrder = nil end
+    local all = {}
+    for d in pairs(D.active) do all[d] = true end
+    for d in pairs(D.clones or {}) do all[d] = true end
+    for d in pairs(all) do
         if IsValid(d) then
             if d.objectiveMarker == marker then
                 d.objectiveMarker = nil
@@ -94,23 +110,32 @@ end
 
 -- A droid the toolgun placed: the picked mode, then the latest markers.
 function D.ToolPlaced(droid, mode)
-    if not (IsValid(droid) and droid.IsRhylibDroid) then return end
+    if not (IsValid(droid) and (droid.IsRhylibDroid or droid.IsRhylibClone)) then return end
     D.SetMode(droid, mode or "guard", droid:GetPos())
+    if droid.IsRhylibClone then
+        -- (clones follow the latest clone marker)
+        if IsValid(D.lastCloneOrder) then D.ApplyMarker(droid, D.lastCloneOrder) end
+        return
+    end
     if IsValid(D.lastOrder) then D.ApplyMarker(droid, D.lastOrder) end
     if IsValid(D.lastFallback) then D.ApplyMarker(droid, D.lastFallback) end
 end
 
 -- The toolgun's order brush: every droid near pos gets the mode, with its
 -- area centred where it stands (attack: no area).
-function D.PaintMode(pos, mode)
+-- side 1 = clones (a GM can re-order a squad, which ends following an
+-- officer), else droids.
+function D.PaintMode(pos, mode, side)
     local r = D.Cfg("brushRadius")
     local n = 0
-    for d in pairs(D.active) do
-        if IsValid(d) and d:GetPos():DistToSqr(pos) < r * r then
-            d.objectiveMarker, d.homeMarker = nil, nil
-            D.SetMode(d, mode, d:GetPos())
-            d.nextLook = 0
-            n = n + 1
+    for _, list in ipairs({ sideList(side) }) do
+        for d in pairs(list) do
+            if IsValid(d) and d:GetPos():DistToSqr(pos) < r * r then
+                d.objectiveMarker, d.homeMarker = nil, nil
+                D.SetMode(d, mode, d:GetPos())
+                d.nextLook = 0
+                n = n + 1
+            end
         end
     end
     return n

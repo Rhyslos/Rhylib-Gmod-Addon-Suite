@@ -35,6 +35,9 @@ reg("pressSprint", 1.2, "Press forward: sprint speed multiplier")
 reg("presenceMult", 1.5, "Command presence: order radius multiplier")
 reg("seasonedCooldown", 240, "Seasoned command: order cooldown (seconds)")
 reg("standingTime", 10, "Standing orders: seconds orders last")
+reg("reinfCooldown", 900, "Reinforcements (Commander capstone): seconds between calls")
+reg("reinfLife", 600, "Reinforcements: seconds the squad stays before pulling out (0 = until killed)")
+reg("reinfSquad", { "ct_trooper", "ct_medic", "ct_rifleman", "ct_heavy" }, "Reinforcements: the clone kinds that come (ct_trooper, ct_rifleman, ct_heavy, ct_medic, ct_commander)")
 
 local function cfg(k) return Config.Get("skills", k) end
 
@@ -93,6 +96,11 @@ end
 -- Seconds until this officer can give an order again (0 = ready).
 function K.OrderCooldown(ply)
     return math.max(0, ply:GetNW2Float("rhylib_orderCd", 0) - CurTime())
+end
+
+-- Seconds until this officer can call reinforcements again (0 = ready).
+function K.ReinfCooldown(ply)
+    return math.max(0, ply:GetNW2Float("rhylib_reinfCd", 0) - CurTime())
 end
 
 -- The comlink is carried by anyone with a command order skill

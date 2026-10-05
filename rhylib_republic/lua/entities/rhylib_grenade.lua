@@ -272,9 +272,10 @@ if SERVER then
 
         local r2 = self.EmpRadius * self.EmpRadius
         -- Players in range and in sight are stunned (rhylib_mp's stun,
-        -- thrower included), with a zap on them.
+        -- thrower included), with a zap on them. Not from clone NPCs'
+        -- poppers (noStun: they're on your side).
         local MP = Rhylib.MP
-        if MP and MP.Stun then
+        if MP and MP.Stun and not self.noStun then
             for _, p in ipairs(player.GetAll()) do
                 if p:Alive() then
                     local c = p:WorldSpaceCenter()
@@ -293,7 +294,7 @@ if SERVER then
         local D = Rhylib.Droids
         for droid in pairs(D and D.active or {}) do
             -- (a training EMP only takes out training droids)
-            if IsValid(droid) and droid:Health() > 0 and (droid.Training or not self.training) then
+            if IsValid(droid) and droid:Health() > 0 and (droid.Training or not self.training) and not (self.noStun and droid.Training) then
                 local c = droid:WorldSpaceCenter()
                 if c:DistToSqr(pos) <= r2 then
                     local tr = util.TraceLine({ start = pos, endpos = c, mask = MASK_SOLID_BRUSHONLY })

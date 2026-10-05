@@ -17,9 +17,12 @@ ENT.IsDroidMarker = true
 local KINDS = { "attack", "defend", "fallback" }
 local LABELS = { "ATTACK HERE", "DEFEND THIS", "FALL BACK HERE" }
 local COLS = { Color(235, 70, 60), Color(70, 150, 255), Color(255, 200, 60) }
+-- Clone markers (Side 1, 2026-10-06bb): own colours and a "CLONES" tag.
+local CLONE_COLS = { Color(255, 140, 40), Color(80, 230, 200), Color(255, 200, 60) }
 
 function ENT:SetupDataTables()
     self:NetworkVar("Int", 0, "Kind")
+    self:NetworkVar("Int", 1, "Side")   -- (0 droids, 1 clones)
 end
 
 function ENT:KindName() return KINDS[self:GetKind()] or "attack" end
@@ -33,9 +36,11 @@ if SERVER then
         local k = self.MarkerKind or self:GetKind()
         if not KINDS[k] then k = 1 end
         self:SetKind(k)
+        local side = self.MarkerSide or self:GetSide()
+        self:SetSide(side == 1 and 1 or 0)
         -- (after the toolgun has set the position)
         timer.Simple(0, function()
-            if IsValid(self) and Rhylib.Droids and Rhylib.Droids.MarkerPlaced then Rhylib.Droids.MarkerPlaced(self, KINDS[k]) end
+            if IsValid(self) and Rhylib.Droids and Rhylib.Droids.MarkerPlaced then Rhylib.Droids.MarkerPlaced(self, KINDS[k], self:GetSide()) end
         end)
     end
 
@@ -59,7 +64,8 @@ if CLIENT then
     function ENT:DrawTranslucent()
         if not canSee() then return end
         local k = self:GetKind()
-        local col = COLS[k] or COLS[1]
+        local clone = self:GetSide() == 1
+        local col = (clone and CLONE_COLS or COLS)[k] or COLS[1]
         local pos = self:GetPos()
         local pulse = 0.75 + 0.25 * math.sin(CurTime() * 4)
         render.SetMaterial(RING)
@@ -76,7 +82,7 @@ if CLIENT then
         local ang = (pos - EyePos()):Angle()
         ang = Angle(0, ang.y - 90, 90)
         cam.Start3D2D(pos + Vector(0, 0, 70), ang, 0.25)
-            draw.SimpleTextOutlined(LABELS[k] or "", Rhylib.UI.Font(40, 800), 0, 0, col, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 2, color_black)
+            draw.SimpleTextOutlined((clone and "CLONES: " or "DROIDS: ") .. (LABELS[k] or ""), Rhylib.UI.Font(40, 800), 0, 0, col, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 2, color_black)
             draw.SimpleTextOutlined("staff only", Rhylib.UI.Font(22), 0, 34, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, color_black)
         cam.End3D2D()
     end
