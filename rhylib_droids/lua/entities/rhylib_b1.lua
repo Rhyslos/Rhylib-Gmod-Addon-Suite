@@ -396,8 +396,36 @@ if SERVER then
         return true
     end
 
-    -- B2 cannon: a wrist rocket lobbed high, landing near pos.
+    -- B2 rocket droid: a level rocket at the target that dives into the
+    -- floor just before it (rhylib_b2_rocket with r.direct).
+    function ENT:FireDirectRocket(t)
+        local from = self:GetPos() + Vector(0, 0, 80) + self:GetForward() * 10
+        local speed = D.Cfg("b2DirectSpeed")
+        local pos = t:GetPos()
+        -- Lead a moving target by the flight time; miss more at range.
+        pos = pos + t:GetVelocity() * math.Clamp(from:Distance(pos) / math.max(speed, 1), 0, 2)
+        local miss = VectorRand() * D.Cfg("b2RocketSpread") * from:Distance(pos) / 1000
+        miss.z = 0
+        pos = pos + miss
+        local aim = pos + Vector(0, 0, 80)   -- (player head height: it curves down onto this spot)
+        local r = ents.Create("rhylib_b2_rocket")
+        if not IsValid(r) then return end
+        r:SetPos(from)
+        r.direct = true
+        r.diveAt = aim
+        r.vel = (aim - from):GetNormalized() * speed
+        r.owner = self
+        r.training = self.Training
+        r:SetOwner(self)
+        r:Spawn()
+        self:EmitSound("weapons/stinger_fire1.wav", 80, 105)
+        if self.anims.shoot then self:RestartGesture(self.anims.shoot, true, true) end
+        self.nextRocket = CurTime() + D.Cfg("b2RocketCooldown") * math.Rand(0.8, 1.3)
+    end
+
+    -- B2 mortar: a wrist rocket lobbed high, landing near pos.
     function ENT:FireRocket(pos, mover)
+        if self:Kind().direct and IsValid(mover) then return self:FireDirectRocket(mover) end
         local from = self:GetPos() + Vector(0, 0, 80) + self:GetForward() * 10
         local dist = from:Distance(pos)
         local g = math.abs(physenv.GetGravity().z)
@@ -438,7 +466,7 @@ if SERVER then
             else
                 self.nextNade = now + 5
             end
-        elseif k.rockets and now >= self.nextRocket and d > D.Cfg("b2RocketMin") and d < D.Cfg("b2RocketMax") then
+        elseif k.rockets and not k.direct and now >= self.nextRocket and d > D.Cfg("b2RocketMin") and d < D.Cfg("b2RocketMax") then   -- (rocket droid: needs sight)
             self:Face(pos, 0.3)
             self:FireRocket(pos)
         end

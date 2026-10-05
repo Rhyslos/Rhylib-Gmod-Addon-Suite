@@ -111,7 +111,7 @@ local function buildTab(body)
             }
         end
         return items
-    end)
+    end, Tool.CAT_ORDER)
     tab.build(inner)
     body.search = inner.search
 end

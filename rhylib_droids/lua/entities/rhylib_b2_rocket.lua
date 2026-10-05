@@ -1,5 +1,8 @@
 --[[
-    B2 wrist rocket: a small rocket lobbed high that drops onto its target.
+    B2 wrist rocket: a small rocket lobbed high that drops onto its target
+    (B2 mortar), or with r.direct (B2 rocket droid) one that flies level,
+    without gravity, at r.diveAt and turns straight down into the floor
+    b2DiveDist before it (or once it has passed it), so it works indoors.
     Moved by hand each tick (gravity, one trace per tick), so it never
     tunnels. Blast: config b2RocketDamage / b2RocketRadius, purple EMP-style
     effect (rhylib_republic's rhylib_emp, colour 1). Training droids' rockets
@@ -69,8 +72,51 @@ if SERVER then
         if now > self.dieAt then self:Remove() return end
         local dt = engine.TickInterval()
         local from = self:GetPos()
-        self.vel.z = self.vel.z - math.abs(physenv.GetGravity().z) * dt
-        local to = from + self.vel * dt
+        local to
+        if self.direct then
+            -- Level flight, then a curved dive (a quarter ellipse) that ends
+            -- pointing straight down onto the floor at the aim point.
+            if not self.arc and self.diveAt then
+                local to2 = Vector(self.diveAt.x - from.x, self.diveAt.y - from.y, 0)
+                local v2 = Vector(self.vel.x, self.vel.y, 0)
+                -- Eases off a little over the last b2SlowTime before the dive
+                -- (owner: it came in too fast at the end).
+                local D = Rhylib.Droids
+                self.speed0 = self.speed0 or self.vel:Length()
+                local window = self.speed0 * D.Cfg("b2SlowTime")
+                local rem = to2:Length() - D.Cfg("b2DiveDist")
+                if window > 0 and rem < window then
+                    local p = math.Clamp(1 - rem / window, 0, 1)
+                    p = p * p * (3 - 2 * p)   -- (smoothstep)
+                    self.vel = self.vel:GetNormalized() * self.speed0 * Lerp(p, 1, D.Cfg("b2SlowMult"))
+                end
+                if to2:Length() <= Rhylib.Droids.Cfg("b2DiveDist") or to2:Dot(v2) <= 0 then
+                    -- The floor under the aim point.
+                    local g = util.TraceLine({ start = self.diveAt, endpos = self.diveAt - Vector(0, 0, 400), mask = MASK_SOLID_BRUSHONLY })
+                    local floor = g.Hit and g.HitPos or (self.diveAt - Vector(0, 0, 70))
+                    local a = math.max(to2:Length(), 1)
+                    if to2:Dot(v2) <= 0 then a = 1 end
+                    local b = math.max(from.z - floor.z, 1)
+                    local dir = (to2:Dot(v2) > 0 and to2 or v2):GetNormalized()
+                    -- (θ per second from the speed over about a quarter ellipse's length)
+                    self.arc = { p0 = from, dir = dir, a = a, b = b, t = 0,
+                        rate = self.vel:Length() / (math.pi * 0.25 * (a + b) + 1) * (math.pi * 0.5) }
+                end
+            end
+            local arc = self.arc
+            if arc then
+                arc.t = math.min(arc.t + arc.rate * dt, math.pi * 0.5)
+                local s, c = math.sin(arc.t), math.cos(arc.t)
+                to = arc.p0 + arc.dir * (arc.a * s) - Vector(0, 0, arc.b * (1 - c))
+                -- (heading along the curve: level at the start, straight down at the end)
+                self.vel = (arc.dir * (arc.a * c) + Vector(0, 0, -arc.b * s)):GetNormalized() * self.vel:Length()
+                -- At the end: keep going down until it hits the floor.
+                if arc.t >= math.pi * 0.5 then to = to - Vector(0, 0, 40) end
+            end
+        else
+            self.vel.z = self.vel.z - math.abs(physenv.GetGravity().z) * dt
+        end
+        to = to or (from + self.vel * dt)
         trData.start, trData.endpos = from, to
         trData.filter = self.filterFn
         util.TraceLine(trData)

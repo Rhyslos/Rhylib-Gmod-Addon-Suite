@@ -11,8 +11,11 @@
       rattles the droids near it for a few seconds.
       B2 super battle droid (rhylib_b2): tough and slow, a blaster in each
       arm firing long fast bursts (no rocket).
-      B2 cannon (rhylib_b2_cannon): slower bursts, and a wrist rocket
-      lobbed high over cover (purple blast).
+      B2 mortar (rhylib_b2_cannon, was "B2 cannon"): slower bursts, and a
+      wrist rocket lobbed high over cover (purple blast).
+      B2 rocket droid (rhylib_b2_rocketdroid): same arm, but its rocket
+      flies straight at you and dives into the floor just before you, so
+      it works down hallways and indoors (needs sight of you).
       Training B1 / B2 (rhylib_b1_training, rhylib_b2_training): like the
       B1 and B2 with orange-yellow bolts that only take sim health
       (rhylib_training).
@@ -66,6 +69,10 @@ Config.Register("droids", "b2RocketCooldown", 9, "B2 wrist rocket: seconds betwe
 Config.Register("droids", "b2RocketMin", 350, "B2 wrist rocket: closest target it fires at")
 Config.Register("droids", "b2RocketMax", 2600, "B2 wrist rocket: furthest target it fires at")
 Config.Register("droids", "b2RocketSpread", 70, "B2 wrist rocket: miss distance per 1000 units of range")
+Config.Register("droids", "b2DirectSpeed", 1300, "B2 rocket droid: rocket speed (units/s)")
+Config.Register("droids", "b2SlowTime", 1, "B2 rocket droid: seconds before the dive over which the rocket slows down")
+Config.Register("droids", "b2SlowMult", 0.65, "B2 rocket droid: speed share it slows to by the dive (kept through the curve)")
+Config.Register("droids", "b2DiveDist", 220, "B2 rocket droid: how far before its target the rocket starts curving down into the floor")
 
 Config.Register("droids", "heavyHealth", 340, "B1 heavy: health")
 Config.Register("droids", "heavySpeed", 140, "B1 heavy: run speed")
@@ -143,14 +150,17 @@ D.KINDS.b1_snow = variant("b1", "B1 snow droid", B1V .. "snow.mdl")
 D.KINDS.b1_heavy = variant("b1", "B1 heavy droid", B1V .. "heavy.mdl",
     { health = "heavyHealth", speed = "heavySpeed", rpm = "heavyRPM", spread = "heavySpread", burst = { 6, 10 }, nades = false })
 D.KINDS.b1_commander = variant("b1", "B1 commander droid", B1V .. "commander.mdl", { health = "cmdHealth", commander = true })
-D.KINDS.b2_cannon = variant("b2", "B2 cannon droid", "models/aussiwozzi/cgi/b1droids/b2_battledroid_cannon.mdl",
+D.KINDS.b2_cannon = variant("b2", "B2 mortar droid", "models/aussiwozzi/cgi/b1droids/b2_battledroid_cannon.mdl",
     { rpm = "b2cRPM", burst = { 2, 4 }, dual = false, rockets = true })
+-- (owner's original idea: a level rocket that dives down just before you)
+D.KINDS.b2_rocket = variant("b2", "B2 rocket droid", "models/aussiwozzi/cgi/b1droids/b2_battledroid_cannon.mdl",
+    { rpm = "b2cRPM", burst = { 2, 4 }, dual = false, rockets = true, direct = true })
 
 -- Training droids: yellow bolts (color 8), no kill credit.
 D.KINDS.b1t = variant("b1", "B1 training droid", D.B1T_MODEL, { training = true, color = 8 })
 D.KINDS.b2t = variant("b2", "B2 training droid", D.B2T_MODEL, { training = true, color = 8 })
 
-D.CLASSES = { b1 = "rhylib_b1", b2 = "rhylib_b2", b1t = "rhylib_b1_training", b2t = "rhylib_b2_training", b2_cannon = "rhylib_b2_cannon" }
+D.CLASSES = { b1 = "rhylib_b1", b2 = "rhylib_b2", b1t = "rhylib_b1_training", b2t = "rhylib_b2_training", b2_cannon = "rhylib_b2_cannon", b2_rocket = "rhylib_b2_rocketdroid" }
 for _, v in ipairs({ "aat", "commander", "geonosis", "heavy", "marine", "security", "snow" }) do
     D.CLASSES["b1_" .. v] = "rhylib_b1_" .. v
 end

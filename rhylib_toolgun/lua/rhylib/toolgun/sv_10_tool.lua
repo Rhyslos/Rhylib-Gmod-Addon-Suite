@@ -105,7 +105,7 @@ Rhylib.Net.Receive("tool.place", function(ply)
     if not e then return end
     if not e.count then count = 1 end
     allowed(ply, function() place(ply, e, count, name) end)
-end, { rate = 4, burst = 6 })
+end, { rate = 20, burst = 20 })   -- (owner: as fast as you click)
 
 -- Spawning spawn-window things (sandbox gamemodes, DarkRP included).
 local function markSpawned(ent)
@@ -211,7 +211,7 @@ Rhylib.Net.Receive("tool.spawn", function(ply)
     local wep = string.sub(net.ReadString(), 1, 64)
     if kind < 1 or kind > 5 or name == "" then return end
     allowed(ply, function() spawnThing(ply, kind, name, skin, body, wep) end)
-end, { rate = 5, burst = 8 })
+end, { rate = 20, burst = 20 })
 
 -- Rhylib things and what the toolgun spawned (never players or map entities).
 local function removable(ent)
@@ -232,7 +232,7 @@ Rhylib.Net.Receive("tool.remove", function(ply)
         queueSave(e.save)
         ply:EmitSound("buttons/button15.wav", 60, 100)
     end)
-end, { rate = 4, burst = 6 })
+end, { rate = 20, burst = 20 })
 
 Rhylib.Net.Receive("tool.save", function(ply)
     allowed(ply, function()
@@ -262,10 +262,54 @@ Tool.Give = give
 
 Rhylib.Net.Receive("tool.give", give, { rate = 1, burst = 2 })
 
+-- !keeptoolgun: gives you one if you don't have it, and you get it again
+-- after every respawn (saved per player; say it again to stop).
+local function keepKey(ply) return "keep_" .. ply:SteamID64() end
+
+function Tool.KeepsToolgun(ply)
+    if ply.rhylibKeepTool == nil then
+        ply.rhylibKeepTool = not ply:IsBot() and Rhylib.Data.Get("toolgun", keepKey(ply)) == true or false
+    end
+    return ply.rhylibKeepTool
+end
+
+local function keepToolgun(ply)
+    if not IsValid(ply) then return end
+    Rhylib.Perms.Check(ply, "rhylib.toolgun", function(ok)
+        if not IsValid(ply) then return end
+        if not ok then return ply:ChatPrint("You don't have permission for the toolgun") end
+        local on = not Tool.KeepsToolgun(ply)
+        ply.rhylibKeepTool = on
+        if on then
+            Rhylib.Data.Set("toolgun", keepKey(ply), true)
+            if ply:Alive() and not ply:HasWeapon(CLASS) then ply:Give(CLASS) end
+            ply:ChatPrint("[Toolgun] You'll keep the toolgun after dying. Say !keeptoolgun again to stop.")
+        else
+            Rhylib.Data.Delete("toolgun", keepKey(ply))
+            ply:ChatPrint("[Toolgun] You won't get the toolgun back after dying any more.")
+        end
+    end)
+end
+
+-- After the inventory hands weapons back and stows them (timer 0 / 0.1).
+Rhylib.Hook.Add("PlayerSpawn", "toolgun.keep", function(ply)
+    if ply:IsBot() or not Tool.KeepsToolgun(ply) then return end
+    timer.Simple(0.5, function()
+        if not (IsValid(ply) and ply:Alive()) or ply:HasWeapon(CLASS) then return end
+        Rhylib.Perms.Check(ply, "rhylib.toolgun", function(ok)
+            if ok and IsValid(ply) and ply:Alive() and not ply:HasWeapon(CLASS) then ply:Give(CLASS) end
+        end)
+    end)
+end)
+
 Rhylib.Hook.Add("PlayerSay", "toolgun.chat", function(ply, text)
     local t = string.lower(string.Trim(text or ""))
     if t == "!toolgun" or t == "/toolgun" then
         give(ply)
+        return ""
+    end
+    if t == "!keeptoolgun" or t == "/keeptoolgun" then
+        keepToolgun(ply)
         return ""
     end
 end, -50)

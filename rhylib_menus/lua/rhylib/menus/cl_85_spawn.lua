@@ -142,7 +142,9 @@ end
 -- A tab with categories on the left and tiles on the right.
 -- getItems() = { { cat, name, ...tile fields } } (built when first shown).
 -- A search shows matches from every category.
-function SP.CatalogueTab(getItems)
+-- catOrder (optional): category names that come first, in that order;
+-- the rest follow alphabetically.
+function SP.CatalogueTab(getItems, catOrder)
     local tab = {}
     function tab.build(body)
         local S = K.S
@@ -153,7 +155,13 @@ function SP.CatalogueTab(getItems)
             if not cats[c] then cats[c] = {} order[#order + 1] = c end
             table.insert(cats[c], it)
         end
-        table.sort(order, function(a, b) return string.lower(a) < string.lower(b) end)
+        local rank = {}
+        for i, c in ipairs(catOrder or {}) do rank[L(c)] = i end
+        table.sort(order, function(a, b)
+            local ra, rb = rank[a] or 1000, rank[b] or 1000
+            if ra ~= rb then return ra < rb end
+            return string.lower(a) < string.lower(b)
+        end)
         for _, c in ipairs(order) do
             table.sort(cats[c], function(a, b) return lower(a.name) < lower(b.name) end)
         end

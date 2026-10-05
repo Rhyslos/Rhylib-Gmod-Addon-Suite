@@ -70,13 +70,13 @@ function SWEP:GetMag() return nil end
 -- Clicks are worked out on the client (what's chosen lives there) and
 -- sent to the server, which checks everything again.
 function SWEP:PrimaryAttack()
-    self:SetNextPrimaryFire(CurTime() + 0.25)
+    self:SetNextPrimaryFire(CurTime() + 0.05)   -- (owner: place as fast as you click)
     if SERVER and game.SinglePlayer() then self:CallOnClient("ToolClick", "1") end
     if CLIENT and IsFirstTimePredicted() then self:ToolClick("1") end
 end
 
 function SWEP:SecondaryAttack()
-    self:SetNextSecondaryFire(CurTime() + 0.25)
+    self:SetNextSecondaryFire(CurTime() + 0.05)
     if SERVER and game.SinglePlayer() then self:CallOnClient("ToolClick", "2") end
     if CLIENT and IsFirstTimePredicted() then self:ToolClick("2") end
 end
