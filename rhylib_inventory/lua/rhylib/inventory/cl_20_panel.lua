@@ -398,6 +398,18 @@ function PANEL:Relayout()
     width = math.max(width, self:SpanPx(self.hotbarN) + pad * 2)
     self.hotbarX = math.floor((width - self:SpanPx(self.hotbarN)) * 0.5)
 
+    -- An open storage uses the window's full height: down past the hotbar
+    -- row's bottom, as long as the hotbar isn't under it.
+    local ec = self.cols.ext
+    if ec and self.hotbarX + self:SpanPx(self.hotbarN) + pad <= ec.x then
+        local full = self.hotbarY + self.cell - ec.top
+        if full > ec.view then
+            ec.view = math.min(ec.content, full)
+            self.scroll.ext = math.Clamp(self.scroll.ext or 0, 0, math.max(0, ec.content - ec.view))
+            self:ApplyScroll()
+        end
+    end
+
     self:SetSize(width, self.hotbarY + self.cell + self.footer + pad * 0.5)
     self:Center()  -- stays centred when a backpack grid appears or disappears
 end
