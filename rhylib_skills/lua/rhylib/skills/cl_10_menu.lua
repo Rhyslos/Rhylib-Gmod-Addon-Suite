@@ -483,30 +483,44 @@ local function build(page)
                 end
             end
 
-            -- Connectors: down from under the parent's name, across, down
-            -- into the child. Dim first, the learned path on top.
+            -- Connectors: down from under each parent's name to its bus, along
+            -- the bus, down into each child. Dim first, the learned path on top.
             local th = math.max(2, S(2))
-            for pass = 1, 2 do
-                for _, n in ipairs(nodes) do
-                    local cpos = L.pos[n.id]
-                    if cpos then
-                        for _, r in ipairs(reqsOf(n)) do
-                            local ppos = L.pos[r]
-                            if ppos then
-                                local lit = set[r] and set[n.id]
-                                if (pass == 2) == (lit and true or false) then
-                                    Kit.SetCol(lit and C.accent or C.edgeLight, lit and 255 or 150)
-                                    local px, py = ppos.cx, ppos.y + L.sq + L.labelH + S(2)
-                                    local cx, cy = cpos.cx, cpos.y
-                                    -- Each child in a row gets its own bus height, so
-                                    -- crossing links stay readable.
-                                    local busY = math.floor(cy - L.busGap + (cpos.busOff or 0))
-                                    local half = math.floor(th * 0.5)
-                                    surface.DrawRect(math.floor(px) - half, math.floor(py), th, math.max(1, busY - math.floor(py)))
-                                    local a, b = math.min(px, cx), math.max(px, cx)
-                                    surface.DrawRect(math.floor(a) - half, busY - half, math.floor(b - a) + th, th)
-                                    surface.DrawRect(math.floor(cx) - half, busY, th, math.max(1, math.floor(cy) - busY))
-                                end
+            local half = math.floor(th * 0.5)
+            local function vline(x, y0, y1)
+                surface.DrawRect(math.floor(x) - half, math.floor(y0), th, math.max(1, math.floor(y1) - math.floor(y0)))
+            end
+            local function hline(x0, x1, y)
+                local a, b = math.min(x0, x1), math.max(x0, x1)
+                surface.DrawRect(math.floor(a) - half, y - half, math.floor(b - a) + th, th)
+            end
+            local function bottom(id) local p = L.pos[id] return p.y + L.sq + L.labelH + S(2) end
+            Kit.SetCol(C.edgeLight, 150)
+            for _, bus in ipairs(L.buses or {}) do
+                local lo, hi = math.huge, -math.huge
+                for _, id in ipairs(bus.parents) do
+                    local x = L.pos[id].cx
+                    lo, hi = math.min(lo, x), math.max(hi, x)
+                    vline(x, bottom(id), bus.y)
+                end
+                for _, id in ipairs(bus.children) do
+                    local x = L.pos[id].cx
+                    lo, hi = math.min(lo, x), math.max(hi, x)
+                    vline(x, bus.y, L.pos[id].y)
+                end
+                hline(lo, hi, bus.y)
+            end
+            Kit.SetCol(C.accent, 255)
+            for _, bus in ipairs(L.buses or {}) do
+                for _, cid in ipairs(bus.children) do
+                    if set[cid] then
+                        local cx = L.pos[cid].cx
+                        for _, pid in ipairs(bus.parents) do
+                            if set[pid] then
+                                local px = L.pos[pid].cx
+                                vline(px, bottom(pid), bus.y)
+                                hline(px, cx, bus.y)
+                                vline(cx, bus.y, L.pos[cid].y)
                             end
                         end
                     end
@@ -619,7 +633,42 @@ local function build(page)
                     local b = self.byNode[n.id]
                     b:SetPos(cx - math.floor(bw * 0.5), y)
                     b:SetSize(bw, sq + labelH)
-                    L.pos[n.id] = { cx = cx, y = y, busOff = math.floor((i - (cnt + 1) * 0.5) * S(6)) }
+                    L.pos[n.id] = { cx = cx, y = y }
+                end
+            end
+            -- Link buses: the skills in a row that need the same skills share
+            -- one line (so six orders needing the same three draw one bus);
+            -- different sets get their own height, left to right.
+            L.buses = {}
+            local byTier = {}
+            for _, n in ipairs(nodes) do
+                local ps = {}
+                for _, r in ipairs(reqsOf(n)) do
+                    if L.pos[r] then ps[#ps + 1] = r end
+                end
+                if #ps > 0 then
+                    table.sort(ps)
+                    local key = table.concat(ps, ",")
+                    local t = byTier[n.tier]
+                    if not t then t = { list = {}, byKey = {} } byTier[n.tier] = t end
+                    local bus = t.byKey[key]
+                    if not bus then
+                        bus = { parents = ps, children = {}, x = 0 }
+                        t.byKey[key] = bus
+                        t.list[#t.list + 1] = bus
+                    end
+                    bus.children[#bus.children + 1] = n.id
+                    bus.x = bus.x + L.pos[n.id].cx
+                end
+            end
+            for tier, t in pairs(byTier) do
+                for _, bus in ipairs(t.list) do bus.x = bus.x / #bus.children end
+                table.sort(t.list, function(a, b) return a.x < b.x end)
+                local cnt = #t.list
+                local step = math.max(S(3), math.min(S(6), math.floor(L.busGap / cnt)))
+                for i, bus in ipairs(t.list) do
+                    bus.y = math.floor(L.rowY(tier) - L.busGap + (i - (cnt + 1) * 0.5) * step)
+                    L.buses[#L.buses + 1] = bus
                 end
             end
         end
