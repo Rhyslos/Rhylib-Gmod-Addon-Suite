@@ -5,7 +5,8 @@
         rhylib_loadtest <bots> [fire 0/1] [droids]
             adds bots up to <bots> load bots in total (each a real player
             slot: start the server with enough maxplayers, e.g. 82), gives
-            them a rifle with test ammo and lets them roam, sprint, jump,
+            them a battalion trooper job (bots have no character, so
+            they'd stay cadets) and a rifle through the inventory with test ammo and lets them roam, sprint, jump,
             and fire bursts (fire 1, the default). [droids] spawns that many
             droids around them (within the droid limit; needs rhylib_droids),
             so bolts, damage, downing and respawns all get exercised.
@@ -35,28 +36,84 @@ end
 
 function LT.Count() return #LT.Bots() end
 
-local function arm(p)
-    if not (IsValid(p) and p:Alive()) then return end
-    p:SetNW2Bool("rhylib_infammo", true)   -- (test ammo: no reloading)
+-- A battalion trooper job for the bot (DarkRP jobs with a `battalion`, not
+-- MP, medic or commander; lowest minRank), spread over the battalions.
+-- Bots have no roster character, so they'd stay cadets otherwise.
+local function trooperJobs()
+    local best = {}
+    for t, j in pairs(RPExtraTeams or {}) do
+        if isstring(j.battalion) and j.battalion ~= "" and not j.mp and not j.medic and not j.commander then
+            -- (minRank is a rank prefix like "PVT"; rhylib_roster turns it into a number)
+            local R = Rhylib.Roster
+            local rank = (j.minRank and R and R.RankIndex and R.RankIndex(j.minRank)) or 0
+            local b = best[j.battalion]
+            if not b or rank < b.rank then best[j.battalion] = { team = t, rank = rank } end
+        end
+    end
+    local out = {}
+    for _, b in pairs(best) do out[#out + 1] = b.team end
+    table.sort(out)
+    return out
+end
+
+local function enlist(p, i)
+    if not (IsValid(p) and p.changeTeam) then return end
+    local jobs = trooperJobs()
+    if #jobs == 0 then return end
+    local t = jobs[(i - 1) % #jobs + 1]
+    if p:Team() ~= t then p:changeTeam(t, true, true) end
+end
+
+local function pickGun(p)
     for _, class in ipairs(GUNS) do
-        if weapons.GetStored(class) then
-            if not p:HasWeapon(class) then p:Give(class) end
-            p:SelectWeapon(class)
-            -- (full auto, so a held trigger fires a burst, not one shot)
-            local w = p:GetWeapon(class)
-            if IsValid(w) and w.FireModes and w.SetFireMode then
-                for i, m in ipairs(w.FireModes) do
-                    if m == "auto" then w:SetFireMode(i) break end
-                end
-            end
-            break
+        if weapons.GetStored(class) then return class end
+    end
+end
+
+-- Full auto, so a held trigger fires a burst, not one shot.
+local function draw(p, class)
+    if not (IsValid(p) and p:Alive()) then return end
+    p:SelectWeapon(class)
+    local w = p:GetWeapon(class)
+    if IsValid(w) and w.FireModes and w.SetFireMode then
+        for i, m in ipairs(w.FireModes) do
+            if m == "auto" then w:SetFireMode(i) break end
         end
     end
 end
 
+local function arm(p)
+    if not (IsValid(p) and p:Alive()) then return end
+    p:SetNW2Bool("rhylib_infammo", true)   -- (test ammo: no reloading)
+    local class = pickGun(p)
+    if not class then return end
+    local Inv = Rhylib.Inventory
+    if Inv and Inv.AddItem and Inv.Count and Rhylib.Items and Rhylib.Items.defs[class] then
+        -- Through the inventory (weight, weapon state), like a real player;
+        -- the inventory stows guns on spawn, so it's drawn a moment later.
+        if Inv.Count(p, class) < 1 then Inv.AddItem(p, class, 1, { issued = true }) end
+    elseif not p:HasWeapon(class) then
+        p:Give(class)
+    end
+    timer.Simple(0.2, function() draw(p, class) end)
+end
+
 Rhylib.Hook.Add("PlayerSpawn", "loadtest.arm", function(p)
-    if p.rhylibLoadBot then timer.Simple(0.5, function() arm(p) end) end
+    if not p.rhylibLoadBot then return end
+    -- (after the spawn points' own placement, which runs a tick later)
+    timer.Simple(0.3, function() if LT.Place then LT.Place(p) end end)
+    timer.Simple(0.5, function() arm(p) end)
 end)
+
+-- Load bots don't hurt each other (owner: they shot each other down and
+-- most lay downed or dead). Bolts still fly, trace and hit; only the
+-- damage between load bots is dropped, before armour and medical. Droids
+-- still hurt them, so the damage code gets used once droids are added.
+Rhylib.Hook.Add("EntityTakeDamage", "loadtest.nofriendly", function(ent, dmg)
+    if not (ent.rhylibLoadBot and ent:IsPlayer()) then return end
+    local a = dmg:GetAttacker()
+    if IsValid(a) and a.rhylibLoadBot then return true end
+end, -1300)
 
 -- Movement and firing, made up per bot (the server runs bots' commands).
 Rhylib.Hook.Add("StartCommand", "loadtest.drive", function(p, cmd)
@@ -105,6 +162,8 @@ end)
 -- Dead load bots come back after 5 s (no client to press a key).
 timer.Create("Rhylib.LoadTest.Respawn", 1, 0, function()
     for _, p in ipairs(player.GetBots()) do
+        -- (fell out of the map: back in near someone)
+        if p.rhylibLoadBot and p:Alive() and not util.IsInWorld(p:GetPos()) then LT.Place(p) end
         if p.rhylibLoadBot and not p:Alive() then
             p.rhylibDeadAt = p.rhylibDeadAt or CurTime()
             if CurTime() - p.rhylibDeadAt > 5 then
@@ -124,6 +183,43 @@ local function spotNear(pos)
     local try = pos + Vector(math.Rand(-600, 600), math.Rand(-600, 600), 64)
     local tr = util.TraceLine({ start = try, endpos = try - Vector(0, 0, 512), mask = MASK_SOLID_BRUSHONLY })
     return tr.Hit and tr.HitPos or nil
+end
+
+-- Somewhere in the map to put a stray bot near: a human, else an
+-- in-world load bot.
+local function anchor(skip)
+    for _, h in ipairs(player.GetHumans()) do
+        if h:Alive() and util.IsInWorld(h:GetPos()) then return h:GetPos() end
+    end
+    for _, b in ipairs(LT.Bots()) do
+        if b ~= skip and b:Alive() and util.IsInWorld(b:GetPos()) then return b:GetPos() end
+    end
+end
+
+-- A free standing spot (player hull fits) near pos, or nil.
+local function freeSpot(p, pos)
+    for _ = 1, 8 do
+        local spot = spotNear(pos)
+        if spot and util.IsInWorld(spot + Vector(0, 0, 40)) then
+            local tr = util.TraceHull({ start = spot + Vector(0, 0, 4), endpos = spot + Vector(0, 0, 4),
+                mins = p:OBBMins(), maxs = p:OBBMaxs(), mask = MASK_PLAYERSOLID, filter = p })
+            if not tr.Hit then return spot + Vector(0, 0, 4) end
+        end
+    end
+end
+
+-- Spread a bot out from its spawn (80 on one spawn point stack up, and the
+-- unstick pushed some under the map), or rescue one that's out of the world.
+function LT.Place(p)
+    if not (IsValid(p) and p:Alive()) then return end
+    local base = p:GetPos()
+    if not util.IsInWorld(base) then base = anchor(p) end
+    if not base then return end
+    local spot = freeSpot(p, base)
+    if spot then
+        p:SetPos(spot)
+        p:SetVelocity(-p:GetVelocity())
+    end
 end
 
 local function addDroids(n, say)
@@ -167,8 +263,13 @@ concommand.Add("rhylib_loadtest", function(ply, _, args)
             break
         end
         p.rhylibLoadBot = true
-        -- (its first spawn ran before the flag was set)
-        timer.Simple(0.5, function() arm(p) end)
+        -- (its first spawn ran before the flag was set; a job change
+        -- respawns it, which arms it again through the spawn hook)
+        local n = i
+        timer.Simple(0.5, function()
+            enlist(p, n)
+            arm(p)
+        end)
         made = made + 1
     end
     say(string.format("[Rhylib] Load test: %d load bots (%d new), firing %s. rhylib_loadtest_stop ends it.",

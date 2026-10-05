@@ -556,15 +556,20 @@ local function visorLayer(w, h)
     surface.SetDrawColor(255, 200, 200, 11)   -- (softer: 16 was harsh)
     for x = (w % step) * 0.5, w, step do surface.DrawRect(math.floor(x), 0, 1, h) end
     for y = (h % step) * 0.5, h, step do surface.DrawRect(0, math.floor(y), w, 1) end
-    -- Scan line, bottom to top every 3.5 s, with a soft glow under it.
-    local glow = S(36, h)
-    local y = h - ((now / 3.5) % 1) * (h + glow)
-    surface.SetDrawColor(255, 60, 40, 14)
-    surface.DrawRect(0, y, w, glow)
-    surface.SetDrawColor(255, 70, 50, 26)
-    surface.DrawRect(0, y, w, math.floor(glow * 0.3))
-    surface.SetDrawColor(255, 90, 60, 140)
-    surface.DrawRect(0, y, w, math.max(2, S(2, h)))
+    -- Scan line, bottom to top in 3.5 s with a soft glow under it, then a
+    -- 3.5 s pause off screen (owner: it came back too often).
+    local SWEEP, PAUSE = 3.5, 3.5
+    local t = now % (SWEEP + PAUSE)
+    if t < SWEEP then
+        local glow = S(36, h)
+        local y = h - (t / SWEEP) * (h + glow)
+        surface.SetDrawColor(255, 60, 40, 14)
+        surface.DrawRect(0, y, w, glow)
+        surface.SetDrawColor(255, 70, 50, 26)
+        surface.DrawRect(0, y, w, math.floor(glow * 0.3))
+        surface.SetDrawColor(255, 90, 60, 140)
+        surface.DrawRect(0, y, w, math.max(2, S(2, h)))
+    end
     -- Grain.
     local px = math.max(1, S(2, h))
     for _ = 1, 500 do

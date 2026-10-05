@@ -15,8 +15,15 @@ local feed = {}
 local COL_NPC = Color(200, 170, 120)
 local col = Color(0, 0, 0)  -- reused while drawing
 
+-- Newer GMod passes entities here (players, NPCs) instead of names.
 local function niceName(s)
     if not s or s == "" then return "" end
+    if not isstring(s) then
+        if not IsValid(s) then return "" end
+        if s:IsPlayer() then return s:Nick() end
+        local n = s.PrintName
+        if isstring(n) and n ~= "" then s = n else s = "#" .. s:GetClass() end
+    end
     if string.sub(s, 1, 1) == "#" then return language.GetPhrase(string.sub(s, 2)) end
     return s
 end
@@ -59,6 +66,7 @@ end
 
 function Menus.AddKill(attacker, attackerTeam, inflictor, victim, victimTeam)
     attacker, victim = niceName(attacker), niceName(victim)
+    if not isstring(inflictor) then inflictor = IsValid(inflictor) and inflictor:GetClass() or "" end
     local me = IsValid(LocalPlayer()) and LocalPlayer():Nick()
     local line = {
         time = RealTime(),
