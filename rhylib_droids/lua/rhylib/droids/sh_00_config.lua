@@ -110,6 +110,18 @@ Config.Register("droids", "settleMult", 1.6, "Aim cone multiplier at first sight
 Config.Register("droids", "crowdFree", 3, "Droids that can fire at one player at full accuracy")
 Config.Register("droids", "crowdMult", 0.12, "Extra aim cone per droid above crowdFree firing at the same player")
 Config.Register("droids", "crowdMax", 1.4, "Most the crowd rule widens the aim cone (multiplier)")
+-- Orders (2026-10-06ay, owner): modes per droid (guard / patrol /
+-- attack), admin-only markers (attack here, defend this, fall back here)
+-- and one aggression level for every droid that GMs turn up or down live.
+Config.Register("droids", "aggression", 3, "Droid aggression 1-5: 1 fall back to a fallback point while firing, 2 slow retreat (no pushing, more cover), 3 moderate (default), 4 march forward firing (charge when spread out or in tight spaces), 5 running charge. GMs change it live with !droidaggro or the toolgun")
+Config.Register("droids", "walkMult", 0.5, "Walking (marching) speed as a share of a droid's run speed")
+Config.Register("droids", "guardRadius", 700, "Guard mode: how far a droid fights away from its post")
+Config.Register("droids", "patrolRadius", 900, "Patrol mode: how far a droid walks around its patrol centre")
+Config.Register("droids", "markerRadius", 2000, "Droids within this range of a new marker follow it (droids placed after it follow it too)")
+Config.Register("droids", "brushRadius", 400, "Toolgun order brush: droids within this range of where you aim get the order")
+Config.Register("droids", "marchGroup", 2, "Marching (aggression 4) needs this many other droids close by; fewer, or a tight space, means a charge")
+Config.Register("droids", "runSpread", 1.4, "Aim cone multiplier while running")
+Config.Register("droids", "walkSpread", 1.1, "Aim cone multiplier while walking")
 Config.Register("droids", "pathPerTick", 4, "Most route and cover searches all droids start in one tick (spreads the cost)")
 
 function D.Cfg(k) return Config.Get("droids", k) end
@@ -163,6 +175,17 @@ D.KINDS.b2t = variant("b2", "B2 training droid", D.B2T_MODEL, { training = true,
 D.CLASSES = { b1 = "rhylib_b1", b2 = "rhylib_b2", b1t = "rhylib_b1_training", b2t = "rhylib_b2_training", b2_cannon = "rhylib_b2_cannon", b2_rocket = "rhylib_b2_rocketdroid" }
 for _, v in ipairs({ "aat", "commander", "geonosis", "heavy", "marine", "security", "snow" }) do
     D.CLASSES["b1_" .. v] = "rhylib_b1_" .. v
+end
+
+D.MODES = { "guard", "patrol", "attack" }   -- (index 1-3 on the wire)
+D.MODE_NAMES = { guard = "Guard", patrol = "Patrol", attack = "Attack" }
+D.AGGRO_NAMES = { "Fall back", "Slow retreat", "Moderate", "March", "Charge" }
+
+-- Aggression 1-5 (server: config, live; clients: Global2Int).
+function D.Aggro()
+    local v
+    if SERVER then v = D.aggroLive or D.Cfg("aggression") else v = GetGlobal2Int("rhylib_droidAggro", 3) end
+    return math.Clamp(math.Round(tonumber(v) or 3), 1, 5)
 end
 
 -- A droid's blaster as rhylib_weapons sees it (BoltColor 2 = red, 8 = training).

@@ -44,13 +44,21 @@ local function queueSave(cmd)
     end)
 end
 
-local function place(ply, e, count, name)
+local function place(ply, e, count, name, mode)
     local tr = aim(ply)
     if not tr.Hit or tr.HitSky then return end
+    local D = Rhylib.Droids
+    -- An order brush: droids near the spot get the mode.
+    if e.order then
+        if not (D and D.PaintMode) then return end
+        local n = D.PaintMode(tr.HitPos, e.order)
+        ply:ChatPrint(string.format("[Droids] %d droid%s: %s", n, n == 1 and "" or "s", D.MODE_NAMES[e.order] or e.order))
+        ply:EmitSound("buttons/button14.wav", 60, n > 0 and 120 or 80)
+        return
+    end
     local yaw = (ply:GetPos() - tr.HitPos):Angle().y   -- facing you
     local made = 0
     -- Droids: stop at the cap instead of creating ones Initialize removes.
-    local D = Rhylib.Droids
     local droid = D and D.Count and (e.class == "rhylib_b1" or scripted_ents.IsBasedOn(e.class, "rhylib_b1"))
     for i = 1, count do
         if droid and D.Count() >= D.Cfg("maxActive") then
@@ -71,6 +79,7 @@ local function place(ply, e, count, name)
             ent:SetPos(pos + tr.HitNormal * 2)
             ent:SetAngles(Angle(0, yaw, 0))
             if e.named and ent.SetBeaconName then ent:SetBeaconName(name ~= "" and name or "Beacon") end
+            if e.marker then ent.MarkerKind = e.marker end
             ent:Spawn()
             ent:Activate()
             -- Sit on the surface: lift by how far the model reaches below its origin.
@@ -80,6 +89,8 @@ local function place(ply, e, count, name)
                 local phys = ent:GetPhysicsObject()
                 if IsValid(phys) then phys:EnableMotion(false) end
             end
+            -- (droids: the picked mode, then the latest markers)
+            if IsValid(ent) and droid and D.ToolPlaced then D.ToolPlaced(ent, mode) end
             if IsValid(ent) then
                 ent.rhylibToolPlaced = true
                 if ent.CPPISetOwner then ent:CPPISetOwner(ply) end
@@ -101,10 +112,11 @@ Rhylib.Net.Receive("tool.place", function(ply)
     local id = string.sub(net.ReadString(), 1, 32)
     local count = math.Clamp(net.ReadUInt(3), 1, 5)
     local name = string.sub(net.ReadString(), 1, 32)
+    local mode = ({ "guard", "patrol", "attack" })[net.ReadUInt(2)] or "guard"
     local e = Tool.ById(id)
     if not e then return end
     if not e.count then count = 1 end
-    allowed(ply, function() place(ply, e, count, name) end)
+    allowed(ply, function() place(ply, e, count, name, mode) end)
 end, { rate = 20, burst = 20 })   -- (owner: as fast as you click)
 
 -- Spawning spawn-window things (sandbox gamemodes, DarkRP included).
@@ -225,8 +237,18 @@ end
 
 Rhylib.Net.Receive("tool.remove", function(ply)
     allowed(ply, function()
-        local ent = aim(ply).Entity
+        local tr = aim(ply)
+        local ent = tr.Entity
         local e = removable(ent)
+        -- Droid markers aren't solid: the nearest one to where you aim.
+        if not e and tr.Hit then
+            local best, bestD = nil, 80 * 80
+            for _, m in ipairs(ents.FindByClass("rhylib_droid_marker")) do
+                local d = m:GetPos():DistToSqr(tr.HitPos)
+                if d < bestD then best, bestD = m, d end
+            end
+            if best then ent, e = best, { class = best:GetClass() } end
+        end
         if not e then return end
         if IsValid(e.ent) then e.ent:Remove() else ent:Remove() end
         queueSave(e.save)

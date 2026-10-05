@@ -42,6 +42,14 @@ local ALL = {
     { id = "b1_snow", name = "B1 snow droid", cat = "NPCs", class = "rhylib_b1_snow", count = true },
     { id = "b1t", name = "B1 training droid", cat = "NPCs", class = "rhylib_b1_training", count = true },
     { id = "b2t", name = "B2 training droid", cat = "NPCs", class = "rhylib_b2_training", count = true },
+    -- Droid orders (rhylib_droids sv_20_orders): a brush that sets the mode
+    -- of droids near where you aim, and admin-only markers.
+    { id = "ord_guard", name = "Order: guard here", cat = "Droid orders", order = "guard" },
+    { id = "ord_patrol", name = "Order: patrol here", cat = "Droid orders", order = "patrol" },
+    { id = "ord_attack", name = "Order: attack", cat = "Droid orders", order = "attack" },
+    { id = "mk_attack", name = "Marker: attack here", cat = "Droid orders", class = "rhylib_droid_marker", marker = 1 },
+    { id = "mk_defend", name = "Marker: defend this", cat = "Droid orders", class = "rhylib_droid_marker", marker = 2 },
+    { id = "mk_fallback", name = "Marker: fall back here", cat = "Droid orders", class = "rhylib_droid_marker", marker = 3 },
     { id = "spawn", name = "Spawn point (set battalion with E)", cat = "Spawns", class = "rhylib_spawn_point", named = true, save = SPAWNS },
     { id = "eventspawn", name = "Event spawn (open it with E)", cat = "Spawns", class = "rhylib_event_spawn", named = true, save = SPAWNS },
     { id = "beacon", name = "Training respawn beacon", cat = "Training", class = "rhylib_training_beacon", named = true, save = TRAIN },
@@ -72,14 +80,15 @@ local ALL = {
 
 -- The Rhylib tab's categories, top to bottom (owner: NPCs on their own,
 -- not alphabetical); others follow alphabetically.
-Tool.CAT_ORDER = { "NPCs", "Spawns", "Armoury", "Medical", "Base", "Training", "Testing" }
+Tool.CAT_ORDER = { "NPCs", "Droid orders", "Spawns", "Armoury", "Medical", "Base", "Training", "Testing" }
 
 -- The installed entries (built once, after entities are registered).
 function Tool.Entries()
     if Tool.list then return Tool.list end
     local list = {}
     for _, e in ipairs(ALL) do
-        if scripted_ents.GetStored(e.class) then list[#list + 1] = e end
+        -- (orders need rhylib_droids, the rest their entity)
+        if (e.order and Rhylib.Droids) or (e.class and scripted_ents.GetStored(e.class)) then list[#list + 1] = e end
     end
     hook.Run("Rhylib.ToolEntries", list)
     for i, e in ipairs(list) do e.index = i end

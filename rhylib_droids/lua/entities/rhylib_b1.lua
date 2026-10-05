@@ -104,6 +104,9 @@ function ENT:Initialize()
     self.loco:SetStepHeight(18)
     self.loco:SetJumpHeight(40)
     self.home = self:GetPos()
+    -- (guard where spawned until a GM says otherwise: sv_20_orders)
+    self.mode = "guard"
+    self:SetNW2String("rhylib_dmode", "guard")
     self.nextLook = 0
     self.nextNade = CurTime() + math.Rand(3, 8)
     self.nextRocket = CurTime() + math.Rand(2, 5)
@@ -325,6 +328,8 @@ if SERVER then
         dir:Normalize()
         -- Inaccuracy: base cone, worse against moving targets.
         local mult = D.SuppressMult(self) * (extra or 1)
+        -- (firing on the move is a little less accurate)
+        if self.loco:GetVelocity():Length2DSqr() > 400 then mult = mult * D.Cfg(self.running and "runSpread" or "walkSpread") end
         if D.Boosted(self) then mult = mult * D.Cfg("cmdSpread") end
         local cone = math.rad((D.Cfg(k.spread) + (speed or 0) * D.Cfg("moveSpread")) * mult)
         local a = math.Rand(0, math.pi * 2)
@@ -530,14 +535,17 @@ if SERVER then
     function ENT:WantsCover()
         if not self:Kind().cover or not self.threatPos or CurTime() < (self.coverReady or 0) then return false end
         if CurTime() - (self.threatAt or 0) > 10 then return false end   -- (no recent threat to hide from)
-        if self.retreatPending or D.SuppressMult(self) > 1 then return true end
+        if self.retreatPending then return true end
+        local L = D.Aggro()
+        if L >= 5 then return false end   -- (a charge doesn't stop for cover)
+        if D.SuppressMult(self) > 1 then return true end
         local hits = self.hits
         if not hits then return false end
         local now, win, n = CurTime(), D.Cfg("coverWindow"), 0
         for i = #hits, 1, -1 do
             if now - hits[i] <= win then n = n + 1 else table.remove(hits, i) end
         end
-        return n >= D.Cfg("coverHits")
+        return n >= (L <= 2 and 1 or D.Cfg("coverHits"))   -- (retreating droids take cover sooner)
     end
 
     -- A hiding spot near it that the threat can't see (far: one that's
@@ -590,6 +598,7 @@ if SERVER then
         self.coverKey = key
         self.target = nil   -- (no aiming through the cover; Look picks it up after)
         self.loco:SetDesiredSpeed(D.Cfg(k.speed) * 1.15)
+        self.running = true
         local ok = self:Go(spot, far and 6 or 4, false)
         self.loco:SetDesiredSpeed(D.Cfg(k.speed))
         -- Didn't get there (no route, stuck): not in cover after all.
@@ -637,56 +646,244 @@ if SERVER then
             and t:GetNW2Float("rhylib_knockEnd", 0) == 0
     end
 
+    --------------------------------------------------------------------------
+    -- Orders: mode area, aggression, moving while firing
+    --------------------------------------------------------------------------
+
+    -- The area a guard / patrol droid stays in (nil = attack: anywhere).
+    function ENT:AreaRadius()
+        if self.mode == "patrol" then return D.Cfg("patrolRadius") end
+        if self.mode == "attack" then return nil end
+        return D.Cfg("guardRadius")
+    end
+
+    -- A point pulled back inside the droid's area.
+    function ENT:InArea(pos)
+        local r = self:AreaRadius()
+        if not (r and self.home) then return pos end
+        local off = pos - self.home
+        off.z = 0
+        if off:Length() <= r then return pos end
+        return self.home + off:GetNormalized() * r + Vector(0, 0, pos.z - self.home.z)
+    end
+
+    function ENT:SetPace(run)
+        local speed = D.Cfg(self:Kind().speed)
+        if not run then speed = speed * D.Cfg("walkMult") end
+        self.loco:SetDesiredSpeed(speed)
+        self.running = run
+    end
+
+    -- Several droids close by and room to the sides: march; else charge.
+    function ENT:CanMarch()
+        local now = CurTime()
+        if (self.marchAt or 0) > now then return self.march end
+        self.marchAt = now + 1
+        local pos, n = self:GetPos(), 0
+        for d in pairs(D.active) do
+            if d ~= self and IsValid(d) and d:GetPos():DistToSqr(pos) < 450 * 450 then n = n + 1 end
+        end
+        local ok = n >= D.Cfg("marchGroup")
+        if ok then
+            -- (a corridor: walls close on both sides)
+            local eye, right = self:Eye(), self:GetRight() * 160
+            local l = util.TraceLine({ start = eye, endpos = eye - right, mask = MASK_SOLID_BRUSHONLY })
+            local r = util.TraceLine({ start = eye, endpos = eye + right, mask = MASK_SOLID_BRUSHONLY })
+            if l.Hit and r.Hit then ok = false end
+        end
+        self.march = ok
+        return ok
+    end
+
+    -- Where to fall back to (aggression 1): a fallback marker, else home.
+    function ENT:FallbackPoint()
+        return self.fallback or self.home
+    end
+
+    -- Where to move while fighting t, and whether to run (nil = stay).
+    function ENT:PlanMove(t)
+        local L = D.Aggro()
+        local pos, tp = self:GetPos(), t:GetPos()
+        local d = pos:Distance(tp)
+        local goal, run
+        if L == 1 then
+            local fb = self:FallbackPoint()
+            if fb and pos:DistToSqr(fb) > 150 * 150 then goal, run = fb, false end
+        elseif L == 2 then
+            -- Fights, never pushes, backs off from anyone close.
+            if d < 600 then goal, run = pos + (pos - tp):GetNormalized() * 220, false end
+        elseif L == 3 then
+            if d > ADVANCE_DIST then goal, run = pos + (tp - pos):GetNormalized() * 300, false end
+        else
+            if d > 260 then
+                goal = tp
+                run = L >= 5 or not self:CanMarch()
+            end
+        end
+        if goal and L > 1 then goal = self:InArea(goal) end
+        if goal and goal:DistToSqr(pos) < 60 * 60 then goal = nil end
+        return goal, run
+    end
+
+    -- Can it walk straight there (no route needed)? Checked when planning.
+    local hullTr = {}
+    local hull = { mask = MASK_NPCSOLID, output = hullTr }   -- (props and other droids block it too)
+    function ENT:StraightTo(goal)
+        local k = self:Kind()
+        hull.start = self:GetPos() + Vector(0, 0, 20)
+        hull.endpos = goal + Vector(0, 0, 20)
+        hull.mins = k.big and Vector(-16, -16, 0) or Vector(-13, -13, 0)
+        hull.maxs = k.big and Vector(16, 16, 50) or Vector(13, 13, 46)
+        hull.filter = self
+        util.TraceHull(hull)
+        if hullTr.Hit then return false end
+        -- (and ground halfway and under the far end: no backing off ledges)
+        for _, p in ipairs({ (self:GetPos() + goal) * 0.5, goal }) do
+            local g = util.TraceLine({ start = p + Vector(0, 0, 20), endpos = p - Vector(0, 0, 80), mask = MASK_SOLID_BRUSHONLY })
+            if not g.Hit then return false end
+        end
+        return true
+    end
+
+    -- One tick of movement while fighting: straight lines keep facing the
+    -- target (walking or backing off while firing); routes face the way
+    -- they go (it fires when the target is still in front).
+    function ENT:StepMove(t)
+        local now = CurTime()
+        if now >= (self.planAt or 0) then
+            self.planAt = now + math.Rand(0.4, 0.7)
+            local goal, run = self:PlanMove(t)
+            self.moveGoal = goal
+            if goal then
+                self:SetPace(run)
+                local dist = goal:Distance(self:GetPos())
+                self.moveStraight = dist < 700 and self:StraightTo(goal)
+                -- (a new route only when the goal moved a fair share of the way)
+                local slack = math.max(100, dist * 0.25)
+                if not self.moveStraight and (not self.pathGoal or self.pathGoal:DistToSqr(goal) > slack * slack
+                    or not (self.path and self.path:IsValid())) then
+                    self.needPath = true
+                end
+            end
+        end
+        local goal = self.moveGoal
+        if not goal then
+            self.loco:FaceTowards(t:GetPos())
+            return
+        end
+        if self.moveStraight then
+            self.loco:Approach(goal, 1)
+            self.loco:FaceTowards(t:GetPos())
+            if self.loco:IsStuck() then
+                self:HandleStuck()
+                self.moveGoal = nil
+            end
+            return
+        end
+        -- A route (computed within the per-tick budget).
+        local path = self.path
+        if not path then
+            path = Path("Follow")
+            path:SetMinLookAheadDistance(300)
+            path:SetGoalTolerance(40)
+            self.path = path
+        end
+        -- (keeps following the old route while waiting for budget)
+        if (self.needPath or not self.pathGoal) and D.TakeBudget() then
+            self.needPath = false
+            if path:Compute(self, goal) then
+                self.pathGoal = goal
+            else
+                self.moveGoal, self.pathGoal = nil, nil
+                self.planAt = CurTime() + 2   -- (no route: don't ask again at once)
+                return
+            end
+        end
+        if self.pathGoal and path:IsValid() then
+            path:Update(self)
+            -- Falling back / retreating keeps the gun on the enemy.
+            if D.Aggro() <= 2 then self.loco:FaceTowards(t:GetPos()) end
+            if self.loco:IsStuck() then
+                self:HandleStuck()
+                self.moveGoal, self.pathGoal = nil, nil
+            end
+        else
+            self.loco:FaceTowards(t:GetPos())
+        end
+    end
+
+    -- Is the target within the gun's reach of where the body faces?
+    function ENT:Facing(t)
+        local f = self:GetForward()
+        local to = t:GetPos() - self:GetPos()
+        to.z = 0
+        f.z = 0
+        if to:LengthSqr() < 1 then return true end
+        to:Normalize()
+        f:Normalize()
+        return f:Dot(to) > 0.42   -- (within ~65 degrees, inside the aim pose range)
+    end
+
+    --------------------------------------------------------------------------
+    -- Fighting: one tick at a time, moving and firing together
+    --------------------------------------------------------------------------
+
     function ENT:Engage()
         local k = self:Kind()
         local t = self.target
-        local bursts = 0
+        local burstLeft, nextShot = 0, 0
+        self.planAt = 0
         while valid(t) do
             if self:CoverCheck() then break end
             self:Look()
             if self.target ~= t then
                 t = self.target
                 if not IsValid(t) then break end
+                burstLeft = 0
             end
-            if CurTime() - (self.lastSeenAt or 0) > 1.5 then   -- lost sight
+            local now = CurTime()
+            if now - (self.lastSeenAt or 0) > 1.5 then   -- lost sight
                 self:LobAtLastSeen()
                 break
             end
 
-            self:Face(t:GetPos(), 0.15)
-            if CurTime() >= (self.reactUntil or 0) then
-                local d = t:GetPos():Distance(self:GetPos())
-                -- B2 cannon: now and then a rocket instead of a burst.
-                if k.rockets and CurTime() >= self.nextRocket and d > D.Cfg("b2RocketMin") and d < D.Cfg("b2RocketMax") and math.random() < 0.5 then
-                    self:FireRocket(t:GetPos(), t)
-                    self:Face(t:GetPos(), 0.6)
-                else
-                    -- A burst.
-                    local wait = 60 / math.max(D.Cfg(k.rpm), 1)
-                    for _ = 1, math.random(k.burst[1], k.burst[2]) do
-                        if not valid(t) or not self:CanSee(t) then break end
-                        self.loco:FaceTowards(t:GetPos())
-                        self:FireAt(t)
-                        self:Face(t:GetPos(), wait)
+            self:StepMove(t)
+
+            if now >= (self.reactUntil or 0) and now >= nextShot and self:Facing(t) then
+                if burstLeft <= 0 then
+                    local d = t:GetPos():Distance(self:GetPos())
+                    -- B2 mortar / rocket droid: now and then a rocket instead of a burst.
+                    if k.rockets and now >= self.nextRocket and d > D.Cfg("b2RocketMin") and d < D.Cfg("b2RocketMax") and math.random() < 0.5 then
+                        self:FireRocket(t:GetPos(), t)
+                        nextShot = now + 0.6 + math.Rand(0.6, 1.3)
+                    else
+                        burstLeft = math.random(k.burst[1], k.burst[2])
                     end
                 end
-                bursts = bursts + 1
-                -- B1: now and then a grenade at a target in the open
-                -- (more likely at a group).
-                if IsValid(t) then self:NadeAt(t) end
-                local pause = math.Rand(0.6, 1.3)
-                if D.Boosted(self) then pause = pause * D.Cfg("cmdPause") end
-                self:Face(IsValid(t) and t:GetPos() or self:GetPos(), pause)
-                if IsValid(t) and self.threatPos then self.threatPos = t:GetPos() end   -- (once shot at: cover from the one it's fighting)
-                if self:CoverCheck() then break end
-                -- Far away: walk a bit closer every few bursts.
-                if IsValid(t) and bursts % 3 == 0 and t:GetPos():DistToSqr(self:GetPos()) > ADVANCE_DIST * ADVANCE_DIST then
-                    local toward = self:GetPos() + (t:GetPos() - self:GetPos()):GetNormalized() * 400
-                    self:Go(toward, 1.5, false)
+                if burstLeft > 0 then
+                    if self:CanSee(t) then
+                        self:FireAt(t)
+                        burstLeft = burstLeft - 1
+                    else
+                        burstLeft = 0
+                    end
+                    if burstLeft > 0 then
+                        nextShot = now + 60 / math.max(D.Cfg(k.rpm), 1)
+                    else
+                        local pause = math.Rand(0.6, 1.3)
+                        if D.Boosted(self) then pause = pause * D.Cfg("cmdPause") end
+                        nextShot = now + pause
+                        if IsValid(t) and self.threatPos then self.threatPos = t:GetPos() end   -- (once shot at: cover from the one it's fighting)
+                        -- B1: now and then a grenade at a target in the open
+                        -- (more likely at a group); not while on the move.
+                        if IsValid(t) and not self.moveGoal then self:NadeAt(t) end
+                    end
                 end
             end
+            coroutine.yield()
         end
         self.target = nil
+        self.moveGoal, self.pathGoal = nil, nil
     end
 
     -- Any target within 1.5x range (distance only, no traces).
@@ -699,33 +896,82 @@ if SERVER then
         return false
     end
 
+    -- The nearest target anywhere (attack mode hunting; distance only).
+    function ENT:NearestTarget(maxDist)
+        local pos, best, bestD = self:GetPos(), nil, (maxDist or 6000) ^ 2
+        for _, p in ipairs(D.Targets()) do
+            local d = p:GetPos():DistToSqr(pos)
+            if d < bestD then best, bestD = p, d end
+        end
+        return best
+    end
+
+    -- Waits up to secs, waking early when hit or someone comes in sight.
+    function ENT:Idle(secs)
+        local stop = CurTime() + secs
+        self.woken = false
+        while CurTime() < stop and not self.woken do
+            coroutine.wait(0.5)
+            if self:Look() then return end
+        end
+    end
+
+    -- Go, and after a failed route a short wait (no retrying every tick).
+    function ENT:GoOrWait(pos, secs, watch)
+        if self:Go(pos, secs, watch) == false and not self.target then self:Idle(math.Rand(1, 2)) end
+    end
+
     function ENT:RunBehaviour()
         while true do
+            local L = D.Aggro()
+            self.mode = self.mode or "guard"
+            local fb = self:FallbackPoint()
             if self:CoverCheck() then
                 -- (came out of cover: look again straight away)
             elseif self:Look() then
                 self:Engage()
-            elseif self.lastSeen and CurTime() - (self.lastSeenAt or 0) < 20 then
-                -- Go where the target was last seen (or where the shot came from).
-                local pos = self.lastSeen
+            elseif L == 1 and fb and self:GetPos():DistToSqr(fb) > 200 * 200 then
+                self:SetPace(false)
+                self:GoOrWait(fb, 8, true)
+            elseif L >= 3 and self.lastSeen and CurTime() - (self.lastSeenAt or 0) < 20 then
+                -- Go where the target was last seen (or where the shot came
+                -- from); guards and patrols only within their area.
+                local pos = self:InArea(self.lastSeen)
                 self.lastSeen = nil
-                self:Go(pos, 8, true)
-            elseif not self:AnyoneNear() then
-                -- Nobody anywhere near: stand still for 3-5 s, waking
-                -- early when hit or someone comes near.
-                local stop = CurTime() + math.Rand(3, 5)
-                self.woken = false
-                while CurTime() < stop and not self.woken do
-                    coroutine.wait(0.5)
-                    if self:AnyoneNear() then break end
+                self:SetPace(L >= 5 or self.mode == "attack")
+                self:GoOrWait(pos, 8, true)
+            elseif self.mode == "attack" and L >= 3 then
+                -- Push on: to the objective, then hunt the nearest players.
+                self:SetPace(L >= 5)
+                if self.objective and self:GetPos():DistToSqr(self.objective) > 300 * 300 then
+                    self:GoOrWait(self.objective, 8, true)
+                else
+                    self.objective = nil   -- (reached: hunt from here on)
+                    local p = self:NearestTarget(6000)
+                    if p then self:GoOrWait(p:GetPos(), 5, true) else self:Idle(math.Rand(1, 2)) end
                 end
-            elseif math.random() < 0.35 then
-                -- Wander near home.
-                local pos = self.home + Vector(math.Rand(-350, 350), math.Rand(-350, 350), 0)
-                self:Go(pos, 5, true)
-                if not self.target then coroutine.wait(math.Rand(2, 4)) end
+            elseif self.mode ~= "attack" and self.home
+                and self:GetPos():DistToSqr(self.home) > (self.mode == "patrol" and D.Cfg("patrolRadius") or 250) ^ 2 then
+                -- Back to its post / patrol area.
+                self:SetPace(false)
+                self:GoOrWait(self.home, 8, true)
+            elseif self.mode == "patrol" then
+                -- Walk around the patrol area.
+                self:SetPace(false)
+                -- (a point inside the circle, not the square around it)
+                local a, r = math.Rand(0, math.pi * 2), D.Cfg("patrolRadius") * math.sqrt(math.Rand(0, 0.9))
+                self:GoOrWait(self.home + Vector(math.cos(a) * r, math.sin(a) * r, 0), 8, true)
+                if not self.target then self:Idle(math.Rand(1, 3)) end
+            elseif not self:AnyoneNear() then
+                -- Nobody anywhere near: stand still a while.
+                self:Idle(math.Rand(3, 5))
+            elseif math.random() < 0.25 then
+                -- Guard: shift a little around the post.
+                self:SetPace(false)
+                self:GoOrWait((self.home or self:GetPos()) + Vector(math.Rand(-200, 200), math.Rand(-200, 200), 0), 4, true)
+                if not self.target then self:Idle(math.Rand(2, 4)) end
             else
-                coroutine.wait(math.Rand(1, 2))
+                self:Idle(math.Rand(1, 2))
             end
             coroutine.yield()
         end
