@@ -241,6 +241,7 @@ function K.DamageMult(ply, bolt, ent, tr, group)
     local m, crit = 1, false
     if K.OrderIs(ply, "focus") then m = m * K.Cfg("focusDamage") end   -- (command order)
     if IsValid(ent) and ent.rhylibMarks and K.MarkMult then m = m * K.MarkMult(ply, ent) end   -- (Mark target)
+    if ply:GetNW2Float("rhylib_rush", 0) > CurTime() then m = m * K.Cfg("rushDamage") end   -- (Battle rush)
     local set = K.Set(ply)
     if next(set) == nil then return m, false end
     local wep = bolt.weapon
@@ -310,6 +311,14 @@ Rhylib.Hook.Add("EntityTakeDamage", "skills.resist", function(ent, dmg)
             if a and a.kind ~= Med.A_STAB then m = m * K.Cfg("underFireMult") end
         end
         if set.hold_line and K.HoldingLine(ent) then m = m * K.Cfg("holdLineMult") end
+        -- Battle rush: the first hit (not a fall) after the cooldown fires you up.
+        if set.battle_rush and bit.band(t, DMG_FALL) == 0 and dmg:GetDamage() > 0
+            and (ent.rhylibRushReady or 0) <= CurTime() then
+            ent.rhylibRushReady = CurTime() + K.Cfg("rushCooldown")
+            ent:SetNW2Float("rhylib_rush", CurTime() + K.Cfg("rushTime"))
+            ent:EmitSound("npc/combine_soldier/vo/on2.wav", 60, 120)
+            K.Note(ent, "Battle rush: " .. math.Round((K.Cfg("rushDamage") - 1) * 100) .. "% more damage for " .. K.Cfg("rushTime") .. " s")
+        end
         -- Shock Assault: no push from hits.
         if set.shock_assault then dmg:SetDamageForce(vector_origin) end
     end

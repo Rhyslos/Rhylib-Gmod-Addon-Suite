@@ -23,7 +23,8 @@ reg("commandRadius", 380, "Command orders: radius (units, like a droid popper)")
 reg("commandTime", 6, "Command orders: seconds they last")
 reg("commandCooldown", 360, "Command orders: seconds before an officer can give the next one")
 reg("windRegen", 4, "Second wind: stamina refill speed multiplier")
-reg("triageHeal", 20, "Field triage: health per second")
+reg("triageHeal", 8, "Field triage: health per second")
+reg("triageRevive", 0.25, "Field triage: downed players in reach get up with this share of their max health")
 reg("focusDamage", 1.2, "Focus fire: damage multiplier")
 reg("focusRecoil", 0.5, "Focus fire: view kick multiplier")
 reg("pressSprint", 1.2, "Press forward: sprint speed multiplier")
@@ -32,8 +33,8 @@ local function cfg(k) return Config.Get("skills", k) end
 
 K.ORDERS = {
     { key = "wind", skill = "cmd_wind", name = "Second wind", col = Color(242, 209, 75), text = "No stamina drain, fast refill" },
-    { key = "triage", skill = "cmd_triage", name = "Field triage", col = Color(91, 201, 122), text = "Healing, afflictions muted" },
-    { key = "hold", skill = "cmd_hold", name = "Hold fast", col = Color(79, 143, 232), text = "Armour refilled, no damage" },
+    { key = "triage", skill = "cmd_triage", name = "Field triage", col = Color(91, 201, 122), text = "Downed get up, healing, afflictions muted" },
+    { key = "hold", skill = "cmd_hold", name = "Hold fast", col = Color(79, 143, 232), text = "Armour refilled, no damage, hold position" },
     { key = "focus", skill = "cmd_focus", name = "Focus fire", col = Color(232, 97, 60), text = "+20% damage, half the kick" },
     { key = "open", skill = "cmd_open", name = "Open up", col = Color(167, 123, 232), text = "No ammo used" },
     { key = "press", skill = "cmd_press", name = "Press forward", col = Color(60, 201, 214), text = "No knockback, faster sprint" },
@@ -81,6 +82,21 @@ function K.CarryOk(ply, skill)
     if skill == "command" then return K.OrderOf(ply) ~= nil end
     return K.Has(ply, skill)
 end
+
+-- Hold fast: hold the position. No sprint (so no jetpack hover either),
+-- no jetpack climb in the air, walk speed at most (jumping still works on
+-- the ground). After Light kit (-200), before Sidestep (-150) and the
+-- jetpack, which read the buttons left here.
+Rhylib.Hook.Add("SetupMove", "skills.holdfast", function(ply, mv)
+    if not K.OrderIs(ply, "hold") then return end
+    local b = mv:GetButtons()
+    b = bit.band(b, bit.bnot(IN_SPEED))
+    if not ply:OnGround() then b = bit.band(b, bit.bnot(IN_JUMP)) end
+    mv:SetButtons(b)
+    local walk = ply:GetWalkSpeed()
+    mv:SetMaxClientSpeed(math.min(mv:GetMaxClientSpeed(), walk))
+    mv:SetMaxSpeed(math.min(mv:GetMaxSpeed(), walk))
+end, -160)
 
 -- Press forward: sprint faster. Before every limiter (they only lower it).
 Rhylib.Hook.Add("SetupMove", "skills.press", function(ply, mv)

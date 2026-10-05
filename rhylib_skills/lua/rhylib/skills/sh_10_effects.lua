@@ -61,6 +61,9 @@ reg("markTime", 15, "Mark target: seconds a mark lasts")
 reg("markRange", 8000, "Mark target: reach (units)")
 reg("markCooldown", 1, "Mark target: seconds between marks")
 reg("markDamage", 1.15, "Mark target: damage multiplier on targets marked through optics (squad hits only)")
+reg("rushDamage", 1.25, "Battle rush: damage multiplier")
+reg("rushTime", 5, "Battle rush: seconds it lasts after the first hit")
+reg("rushCooldown", 60, "Battle rush: seconds before it can trigger again")
 reg("sidearmDamage", 1.06, "Carbine sidearm: DC-15S damage multiplier in Sidearm mode")
 reg("airborneFuel", 15, "Airborne: jetpack seconds of thrust with any Airborne skill (others: jetpack fuelTime)")
 reg("fallMult", 0.5, "Hard landings: fall damage multiplier")
@@ -303,6 +306,11 @@ function K.AdjustWeight(ply, state, weight, cap)
     return math.max(0, weight), cap
 end
 
+-- DP-23 proficiency (Airborne): the DP-23 fires while flying a jetpack.
+function K.FlyFire(ply, wep)
+    return isPly(ply) and K.GunClass(wep) == "rhylib_dp23" and K.Has(ply, "dp23_prof")
+end
+
 function K.FreeSprint(ply)
     if not isPly(ply) then return false end
     return ply:GetNW2Float("rhylib_momentum", 0) > CurTime() or K.OrderIs(ply, "wind")
@@ -390,6 +398,7 @@ Rhylib.Hook.Add("SetupMove", "skills.dodge", function(ply, mv)
     if not (alt or (mv:KeyPressed(IN_JUMP) and mv:KeyDown(IN_SPEED))) then return end
     if not alt and mv:GetSideSpeed() == 0 and mv:GetForwardSpeed() >= 0 then return end
     if not K.Has(ply, "sidestep") or not ply:OnGround() then return end
+    if K.OrderIs and K.OrderIs(ply, "hold") then return end   -- (Hold fast: hold the position)
     if not ply:Alive() or ply:GetMoveType() ~= MOVETYPE_WALK or ply:WaterLevel() >= 2 then return end
     local Med = Rhylib.Medical
     if Med and Med.IsDown and (Med.IsDown(ply) or (Med.Dragging and Med.Dragging(ply))) then return end

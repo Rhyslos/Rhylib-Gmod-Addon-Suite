@@ -694,7 +694,10 @@ end
 function SWEP:TooHeavyToFire()
     local owner = self:GetOwner()
     local jp = Rhylib.Jetpack
-    return self.InvLarge and IsValid(owner) and owner:IsPlayer() and jp and jp.Flying and jp.Flying(owner) or false
+    if not (self.InvLarge and IsValid(owner) and owner:IsPlayer() and jp and jp.Flying and jp.Flying(owner)) then return false end
+    local K = skills()
+    if K and K.FlyFire and K.FlyFire(owner, self) then return false end   -- (DP-23 proficiency)
+    return true
 end
 
 function SWEP:CanPrimaryAttack()

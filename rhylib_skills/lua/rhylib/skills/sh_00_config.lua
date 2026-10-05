@@ -157,39 +157,37 @@ K.NODES = {
     { id = "light_rounds", cat = "officer", tier = 4, cost = 2, name = "Light rounds",
       desc = "Hits from a gun loaded with a small magazine: 15% chance to do 50% more damage. Doesn't stack with Critical hits (the better chance counts).",
       needs = { "light_mags" } },
-    { id = "adapt_1", cat = "officer", tier = 4, cost = 2, name = "Adaptable I",
-      desc = "Learn one skill of tier 2 or lower from any other tree. It skips that skill's requirements, but you still need the job (medic, MP) and pay its points.",
+    { id = "adapt_1", cat = "officer", tier = 4, cost = 3, name = "Adaptable",
+      desc = "Learn one skill of tier 4 or lower from any other tree. It skips that skill's requirements, but you still need the job (medic, MP) and pay its points.",
       needs = { "sidestep" } },
     { id = "dual_dc17", cat = "officer", tier = 5, cost = 3, name = "Dual DC-17",
       desc = "Draw a second DC-17 (E + R): two magazines loaded, shots alternate between hands.", needs = { "steady_grip" } },
     { id = "crits", cat = "officer", tier = 5, cost = 3, name = "Critical hits",
       desc = "10% of your hits with any gun do 50% more damage (with a small magazine, Light rounds' 15% counts instead).", needs = { "light_rounds" } },
-    { id = "adapt_2", cat = "officer", tier = 5, cost = 3, name = "Adaptable II",
-      desc = "Learn one more skill from any other tree, tier 4 or lower. Same rules as Adaptable I.", needs = { "adapt_1" } },
-    { id = "adapt_3", cat = "officer", tier = 6, cost = 4, name = "Adaptable III",
-      desc = "Learn one more skill from any other tree, any tier. Same rules as Adaptable I.", needs = { "adapt_2" } },
     -- Command orders: pick one. Issued with the command comlink to you and
     -- everyone within 380 units for 6 s, then a 6 minute cooldown.
-    { id = "cmd_wind", cat = "officer", tier = 7, cost = 3, name = "Second wind", exclusive = "command", rankCfg = "commandRank",
+    { id = "cmd_wind", cat = "officer", tier = 6, cost = 3, name = "Second wind", exclusive = "command", rankCfg = "commandRank",
       desc = "Command order (pick one). No stamina drain while sprinting, and stamina refills fast. You and everyone near you, 6 s; 6 min cooldown.",
-      needsGroups = { { "dual_dc17" }, { "crits" }, { "adapt_2" } }, needsLabel = "Needs Dual DC-17, Critical hits or Adaptable II" },
-    { id = "cmd_triage", cat = "officer", tier = 7, cost = 3, name = "Field triage", exclusive = "command", rankCfg = "commandRank",
-      desc = "Command order (pick one). Heals 20 health a second and mutes all afflictions (bleeding, fractures, hurt limbs, illness). You and everyone near you, 6 s; 6 min cooldown.",
-      needsGroups = { { "dual_dc17" }, { "crits" }, { "adapt_2" } }, needsLabel = "Needs Dual DC-17, Critical hits or Adaptable II" },
-    { id = "cmd_hold", cat = "officer", tier = 7, cost = 3, name = "Hold fast", exclusive = "command", rankCfg = "commandRank",
-      desc = "Command order (pick one). Armour refilled (it stays), no damage at all while it lasts, and downed players nearby get up at full health. You and everyone near you, 6 s; 6 min cooldown.",
-      needsGroups = { { "dual_dc17" }, { "crits" }, { "adapt_2" } }, needsLabel = "Needs Dual DC-17, Critical hits or Adaptable II" },
-    { id = "cmd_focus", cat = "officer", tier = 7, cost = 3, name = "Focus fire", exclusive = "command", rankCfg = "commandRank",
+      needsGroups = { { "dual_dc17" }, { "crits" }, { "adapt_1" } }, needsLabel = "Needs Dual DC-17, Critical hits or Adaptable" },
+    { id = "cmd_triage", cat = "officer", tier = 6, cost = 3, name = "Field triage", exclusive = "command", rankCfg = "commandRank",
+      desc = "Command order (pick one). Downed players nearby get up (at 25% health), everyone heals 8 health a second, and all afflictions are muted (bleeding, fractures, hurt limbs, illness). You and everyone near you, 6 s; 6 min cooldown.",
+      needsGroups = { { "dual_dc17" }, { "crits" }, { "adapt_1" } }, needsLabel = "Needs Dual DC-17, Critical hits or Adaptable" },
+    { id = "cmd_hold", cat = "officer", tier = 6, cost = 3, name = "Hold fast", exclusive = "command", rankCfg = "commandRank",
+      desc = "Command order (pick one). Armour refilled (it stays) and no damage at all while it lasts, but nobody can sprint, dash or fly: hold the position. You and everyone near you, 6 s; 6 min cooldown.",
+      needsGroups = { { "dual_dc17" }, { "crits" }, { "adapt_1" } }, needsLabel = "Needs Dual DC-17, Critical hits or Adaptable" },
+    { id = "cmd_focus", cat = "officer", tier = 6, cost = 3, name = "Focus fire", exclusive = "command", rankCfg = "commandRank",
       desc = "Command order (pick one). +20% damage and half the kick on every gun. You and everyone near you, 6 s; 6 min cooldown.",
-      needsGroups = { { "dual_dc17" }, { "crits" }, { "adapt_2" } }, needsLabel = "Needs Dual DC-17, Critical hits or Adaptable II" },
-    { id = "cmd_open", cat = "officer", tier = 7, cost = 3, name = "Open up", exclusive = "command", rankCfg = "commandRank",
+      needsGroups = { { "dual_dc17" }, { "crits" }, { "adapt_1" } }, needsLabel = "Needs Dual DC-17, Critical hits or Adaptable" },
+    { id = "cmd_open", cat = "officer", tier = 6, cost = 3, name = "Open up", exclusive = "command", rankCfg = "commandRank",
       desc = "Command order (pick one). Guns use no ammo or power cells. You and everyone near you, 6 s; 6 min cooldown.",
-      needsGroups = { { "dual_dc17" }, { "crits" }, { "adapt_2" } }, needsLabel = "Needs Dual DC-17, Critical hits or Adaptable II" },
-    { id = "cmd_press", cat = "officer", tier = 7, cost = 3, name = "Press forward", exclusive = "command", rankCfg = "commandRank",
+      needsGroups = { { "dual_dc17" }, { "crits" }, { "adapt_1" } }, needsLabel = "Needs Dual DC-17, Critical hits or Adaptable" },
+    { id = "cmd_press", cat = "officer", tier = 6, cost = 3, name = "Press forward", exclusive = "command", rankCfg = "commandRank",
       desc = "Command order (pick one). No knockback from hits, no explosion knockdowns, and 20% faster sprinting. You and everyone near you, 6 s; 6 min cooldown.",
-      needsGroups = { { "dual_dc17" }, { "crits" }, { "adapt_2" } }, needsLabel = "Needs Dual DC-17, Critical hits or Adaptable II" },
+      needsGroups = { { "dual_dc17" }, { "crits" }, { "adapt_1" } }, needsLabel = "Needs Dual DC-17, Critical hits or Adaptable" },
 
-    -- Airborne (jetpack: 15 s of flight with any Airborne skill, 10 s without)
+    -- Airborne (jetpack: 15 s of flight with any Airborne skill, 10 s without).
+    -- Two columns: flight (tanks, afterburner, DP-23, aerial stability) and
+    -- assault (spring legs, combat drop, battle rush, blast hardened).
     { id = "hard_landings", cat = "airborne", tier = 1, cost = 1, name = "Hard landings",
       desc = "Half fall damage, and your legs never break. Jetpacks fly 15 s instead of 10." },
     { id = "extended_tanks", cat = "airborne", tier = 2, cost = 2, name = "Extended tanks",
@@ -201,13 +199,17 @@ K.NODES = {
     { id = "combat_drop", cat = "airborne", tier = 3, cost = 3, name = "Combat drop",
       desc = "Land after 7 s or more of jetpack flight: 50% less damage for 5 s.",
       needs = { "spring_legs" } },
-    { id = "blast_hardened", cat = "airborne", tier = 4, cost = 3, name = "Blast hardened",
-      desc = "30% less damage from explosions.", needs = { "afterburner", "combat_drop" } },
-    { id = "aerial_stability", cat = "airborne", tier = 4, cost = 3, name = "Aerial stability",
-      desc = "20% less damage while you're off the ground.", needs = { "afterburner", "combat_drop" } },
-    { id = "death_from_above", cat = "airborne", tier = 5, cost = 5, name = "Death from above",
+    { id = "dp23_prof", cat = "airborne", tier = 4, cost = 3, name = "DP-23 proficiency",
+      desc = "Fire the DP-23 while flying the jetpack (other large guns still can't).", needs = { "afterburner" } },
+    { id = "battle_rush", cat = "airborne", tier = 4, cost = 3, name = "Battle rush",
+      desc = "The first hit you take gives you 25% more damage for 5 s. Once a minute.", needs = { "combat_drop" } },
+    { id = "aerial_stability", cat = "airborne", tier = 5, cost = 3, name = "Aerial stability",
+      desc = "20% less damage while you're off the ground.", needs = { "dp23_prof" } },
+    { id = "blast_hardened", cat = "airborne", tier = 5, cost = 3, name = "Blast hardened",
+      desc = "30% less damage from explosions.", needs = { "battle_rush" } },
+    { id = "death_from_above", cat = "airborne", tier = 6, cost = 5, name = "Death from above",
       desc = "Landing hard (a long drop or a jetpack dive) slams droids around you.",
-      needs = { "blast_hardened", "aerial_stability" } },
+      needs = { "aerial_stability", "blast_hardened" } },
 
     -- Medic (medic jobs only)
     { id = "field_drag", cat = "medic", tier = 1, cost = 1, name = "Field drag",
@@ -305,7 +307,7 @@ end
 -- Adaptable: the officer skills that let you borrow from other trees,
 -- and the highest tier each one takes.
 K.ADAPT_CAT = "officer"
-K.ADAPT = { { id = "adapt_1", tier = 2 }, { id = "adapt_2", tier = 4 }, { id = "adapt_3", tier = 99 } }
+K.ADAPT = { { id = "adapt_1", tier = 4 } }   -- (owner 2026-10-05: one borrowed skill, tier 4 or lower)
 
 -- Is id a borrowed skill in this set (another tree's, through Adaptable)?
 function K.Borrowed(set, id)

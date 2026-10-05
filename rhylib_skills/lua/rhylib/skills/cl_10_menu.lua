@@ -115,7 +115,7 @@ local ICONS = {
     riot_shield = "riot", shield_bash = "bash", escort_drills = "cuffs", breaching = "door",
     thorough_search = "search", shock_assault = "charge", hold_line = "wall", flash_charge = "burst", phalanx = "phalanx",
     mark_target = "target", quick_draw = "bolt", speed_loader = "mag",
-    light_rounds = "rounds", adapt_1 = "swap", adapt_2 = "swap", adapt_3 = "swap",
+    light_rounds = "rounds", adapt_1 = "swap", dp23_prof = "up", battle_rush = "burst",
     cmd_wind = "run", cmd_triage = "cross", cmd_hold = "shield", cmd_focus = "aim", cmd_open = "box", cmd_press = "charge",
 }
 
@@ -335,7 +335,7 @@ local function build(page)
             if cat.medicOnly then table.insert(rules, 1, "Medic jobs only.") end
             if cat.mpOnly then table.insert(rules, 1, "Military police jobs only.") end
             if cat.id == K.ADAPT_CAT then
-                rules[#rules + 1] = "Adaptable: learn skills from other trees (tier 2, 4, then any), job rules still apply."
+                rules[#rules + 1] = "Adaptable: learn one skill of tier 4 or lower from another tree; job rules still apply."
                 rules[#rules + 1] = "Command orders: pick one. Needs the rank " .. tostring(K.Cfg("commandRank")) .. "; issued with the command comlink."
             end
             for _, r in ipairs(rules) do

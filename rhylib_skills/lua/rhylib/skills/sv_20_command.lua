@@ -52,12 +52,11 @@ function K.IssueOrder(ply)
     local Med, A = Rhylib.Medical, Rhylib.Armor
     for _, p in ipairs(player.GetAll()) do
         local near = IsValid(p) and p:Alive() and p:GetPos():DistToSqr(ply:GetPos()) <= r2
-        -- Hold fast: downed players in reach get up at full health.
-        if near and o.key == "hold" and Med and Med.IsDown and Med.IsDown(p) and Med.Revive
+        -- Field triage: downed players in reach get up at triageRevive of
+        -- their max health (the heal and muted afflictions follow).
+        if near and o.key == "triage" and Med and Med.IsDown and Med.IsDown(p) and Med.Revive
             and not util.TraceLine({ start = from, endpos = p:GetPos() + Vector(0, 0, 20), mask = MASK_SOLID_BRUSHONLY }).Hit then
-            Med.Revive(p, p:GetMaxHealth(), ply)
-            if Med.ClearInjuries then Med.ClearInjuries(p) end
-            p:SetHealth(p:GetMaxHealth())
+            Med.Revive(p, math.max(1, p:GetMaxHealth() * cfg("triageRevive")), ply)
         end
         if near and canReceive(p)
             and (p == ply or not util.TraceLine({ start = from, endpos = p:EyePos(), mask = MASK_SOLID_BRUSHONLY }).Hit) then
