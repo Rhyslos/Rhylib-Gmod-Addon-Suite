@@ -6,9 +6,12 @@
     each specialisation has its own column, end branches sit in framed
     boxes inside it.
 
-    Click a skill to learn it (skills.learn); "Reset skills" clears all
+    Click a skill to learn it (skills.learn); right-click a learned one to
+    undo it (skills.unlearn: nothing else may need it; any time while
+    reset is allowed, else within undoWindow s); "Reset skills" clears all
     (skills.reset). Learned = filled accent square, can learn = green
-    edge, locked = dim. The panel on the right explains the skill under
+    edge, locked = dim, ruled out by an earlier choice (K.Excluded:
+    other path / specialisation / branch / one-of group) = greyed out. The panel on the right explains the skill under
     the mouse (or the last one clicked).
 
     Icons are small vector glyphs drawn here (ICONS / GLYPHS), so there
@@ -29,6 +32,22 @@ local function learn(n)
     net.WriteUInt(n.index, 8)
     net.SendToServer()
 end
+
+local function unlearn(n)
+    Rhylib.Net.Start("skills.unlearn")
+    net.WriteUInt(n.index, 8)
+    net.SendToServer()
+end
+
+-- Can the learned skill n be undone? Structure here; the time window is
+-- only a hint (the server may allow more, e.g. a reset hook).
+local function canUndo(me, set, n)
+    local ok, why = K.CanUnlearn(me, set, n.id)
+    if not ok then return false, why end
+    return K.UndoAllowed(K.learnedAt, n.id), nil
+end
+
+local EXCLUDED_ALPHA = 0.3
 
 --------------------------------------------------------------------------
 -- Glyphs: shapes in a 0-1 box. R = rect, P = convex polygon, C = disc,
@@ -262,7 +281,10 @@ end
 local function stateOf(me, set, n)
     if set[n.id] then return "learned" end
     local ok, why = K.CanLearn(me, set, n.id)
-    return ok and "open" or "locked", why
+    if ok then return "open" end
+    local ex = K.Excluded(me, set, n.id)
+    if ex then return "excluded", ex end
+    return "locked", why
 end
 
 --------------------------------------------------------------------------
@@ -367,7 +389,7 @@ local function build(page)
         Kit.SetCol(state == "learned" and C.accent or (state == "open" and C.good or C.edgeDark))
         surface.DrawOutlinedRect(pad, y, box, box, 2)
         drawGlyph(iconOf(n), pad + box * 0.16, y + box * 0.16, box * 0.68,
-            state == "locked" and C.textDim or (state == "learned" and C.accent or C.text), state == "learned" and C.buttonDown or C.button)
+            (state == "locked" or state == "excluded") and C.textDim or (state == "learned" and C.accent or C.text), state == "learned" and C.buttonDown or C.button)
         local tx = pad + box + S(12)
         local nameLines = wrap(n.name, Kit.Font(17, 700), w - tx - pad, 2)
         local ny = y + S(2)
@@ -388,7 +410,10 @@ local function build(page)
         y = y + box + S(14)
 
         local stateText = state == "learned" and "Learned" or (state == "open" and "Click to learn" or why or "Locked")
-        draw.SimpleText(stateText, Kit.Font(13, 700), pad, y, state == "learned" and C.accent or (state == "open" and C.good or C.warn), TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+        if state == "learned" and canUndo(me, set, n) then stateText = "Learned · right-click to undo" end
+        if state == "excluded" then stateText = "Ruled out: " .. (why or "") end
+        stateText = Kit.Fit(stateText, Kit.Font(13, 700), w - pad * 2)
+        draw.SimpleText(stateText, Kit.Font(13, 700), pad, y, state == "learned" and C.accent or (state == "open" and C.good or (state == "excluded" and C.textDim or C.warn)), TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
         y = y + S(26)
         for _, l in ipairs(wrap(n.desc or "", Kit.Font(14), w - pad * 2, 8)) do
             draw.SimpleText(l, Kit.Font(14), pad, y, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
@@ -541,6 +566,11 @@ local function build(page)
             function b:Paint(w, h)
                 local set = K.Set(me)
                 local state = stateOf(me, set, n)
+                local excluded = state == "excluded"
+                if excluded then
+                    state = "locked"
+                    surface.SetAlphaMultiplier(EXCLUDED_ALPHA)
+                end
                 local sq = L.sq or w
                 local ox = math.floor((w - sq) * 0.5)
                 local hov = self:IsHovered()
@@ -585,6 +615,7 @@ local function build(page)
                 for i, l in ipairs(lines) do
                     draw.SimpleText(l, f, w * 0.5, sq + S(4) + (i - 1) * S(14), state == "locked" and C.textDim or C.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
                 end
+                if excluded then surface.SetAlphaMultiplier(1) end
                 return true
             end
             function b:DoClick()
@@ -598,6 +629,19 @@ local function build(page)
                     return
                 end
                 learn(n)
+            end
+            -- Right-click: undo a learned skill (misclicks).
+            function b:DoRightClick()
+                picked = n
+                local set = K.Set(me)
+                if not set[n.id] then return end
+                local ok, why = K.CanUnlearn(me, set, n.id)
+                if not ok then
+                    surface.PlaySound("buttons/button10.wav")
+                    chat.AddText(Color(235, 90, 80), "[Skills] ", Color(225, 225, 225), n.name .. ": " .. why)
+                    return
+                end
+                unlearn(n)
             end
         end
 

@@ -8,13 +8,19 @@
       - through macrobinoculars / a rangefinder (no crosshair there): up to
         markMax enemies nearest the middle of the view (within a cone from
         the client's zoomed fov, capped by markOpticsCone), in sight.
-    A new Q replaces that player's marks. Marks only show the target (and
-    feed Priority target); there's no damage bonus any more.
-    Marks live on the target: ent.rhylibMarks = { [marker] = { untilT } };
+      - sun visor down: the enemy the client rings (visor bit + its index),
+        checked here (enemy, in sight, within markVisorCone of the aim).
+    A Q mark is a LOCK: a new Q replaces that player's older locks (spots
+    stay). Locks give the marker's squad mates (not Marksmen) x
+    markLockDamage on that target (K.LockMult, from K.DamageMult); the
+    marker sees a red ring on it, the squad a red diamond. Spots (visor)
+    and Called shot marks only show the target. Any live mark feeds
+    Priority target.
+    Marks live on the target: ent.rhylibMarks = { [marker] = { untilT, lock } };
     K.marks[marker] = { [ent] = true }.
-    skills.mark (marker 13, replace bit, quiet bit, seconds 6, count 3,
-    targets 13 each) goes to the marker and their squad only (rhylib_radio
-    squads).
+    skills.mark (marker 13, replace bit, quiet bit, lock bit, seconds 6,
+    count 3, targets 13 each) goes to the marker and their squad only
+    (rhylib_radio squads).
     Sun visor (rhylib_gear) down + Mark target: every visorSpotEvery s up to
     markMax enemies in sight within visorSpotCone of the view are spotted
     for visorSpotTime s (quiet, added to the player's marks).
@@ -84,6 +90,7 @@ end
 Rhylib.Net.Receive("skills.markreq", function(ply)
     local opticsReq = net.ReadBool()
     local fov = net.ReadUInt(10) / 10
+    local visorIdx = net.ReadBool() and net.ReadUInt(13) or nil
     if not ply:Alive() or ply.rhylibDown or not K.Has(ply, "mark_target") then return end
     local now = CurTime()
     if (ply.rhylibMarkNext or 0) > now then return end
@@ -92,7 +99,20 @@ Rhylib.Net.Receive("skills.markreq", function(ply)
     local G = Rhylib.Gear
     local optics = opticsReq and G and G.Looking and G.Looking(ply) or false
     local list
-    if optics then
+    if visorIdx and ply:GetNW2Bool("rhylib_visorDown", false) then
+        -- The enemy the visor rings (the client picked it from the spots).
+        local e = Entity(visorIdx)
+        list = {}
+        if enemy(e) then
+            local eye = ply:EyePos()
+            local d = e:WorldSpaceCenter() - eye
+            local len = d:Length()
+            if len > 1 and len <= K.Cfg("markRange") and ply:GetAimVector():Dot(d / len) >= math.cos(math.rad(K.Cfg("markVisorCone")))
+                and not util.TraceLine({ start = eye, endpos = e:WorldSpaceCenter(), mask = MASK_SOLID_BRUSHONLY }).Hit then
+                list[1] = e
+            end
+        end
+    elseif optics then
         -- (the client's zoomed view: the middle 60% of its half-width)
         local cone = math.Clamp(fov * 0.5 * 0.6, 1, K.Cfg("markOpticsCone"))
         ply:LagCompensation(true)
@@ -113,35 +133,44 @@ Rhylib.Net.Receive("skills.markreq", function(ply)
         end
         ply:LagCompensation(false)
     end
-    if #list > 0 then K.PlaceMarks(ply, list, K.Cfg("markTime"), true) end
+    if #list > 0 then K.PlaceMarks(ply, list, K.Cfg("markTime"), true, false, true) end
 end, { rate = 4, burst = 4 })
 
--- Mark these targets for ply (replace: drop ply's older marks first) and
--- tell them and their squad.
-function K.PlaceMarks(ply, list, secs, replace, quiet)
-    local mine = K.marks[ply]
-    if replace and mine then
-        for e in pairs(mine) do
-            if IsValid(e) and e.rhylibMarks then e.rhylibMarks[ply] = nil end
-        end
-        mine = nil
-    end
-    mine = mine or {}
+-- Mark these targets for ply and tell them and their squad. replace: drop
+-- ply's older locks first; lock: these are locks (a Q).
+function K.PlaceMarks(ply, list, secs, replace, quiet, lock)
+    local mine = K.marks[ply] or {}
     K.marks[ply] = mine
-    local untilT = CurTime() + secs
+    local now = CurTime()
+    if replace then
+        for e in pairs(mine) do
+            local mk = IsValid(e) and e.rhylibMarks and e.rhylibMarks[ply]
+            if not mk or mk.lock or mk.untilT <= now then
+                if mk then e.rhylibMarks[ply] = nil end
+                mine[e] = nil
+            end
+        end
+    end
+    local untilT = now + secs
     local n = math.min(#list, 7)
     for i = 1, n do
         local e = list[i]
         mine[e] = true
         e.rhylibMarks = e.rhylibMarks or {}
-        -- (a shorter spot never cuts a longer mark short)
-        local old = not replace and e.rhylibMarks[ply]
-        e.rhylibMarks[ply] = { untilT = math.max(untilT, old and old.untilT or 0) }
+        local old = e.rhylibMarks[ply]
+        if old and old.untilT <= now then old = nil end
+        if lock then
+            e.rhylibMarks[ply] = { untilT = untilT, lock = true }
+        else
+            -- (a shorter spot never cuts a longer mark short, nor unlocks it)
+            e.rhylibMarks[ply] = { untilT = math.max(untilT, old and old.untilT or 0), lock = old and old.lock or nil }
+        end
     end
     Rhylib.Net.Start("skills.mark")
     net.WriteUInt(ply:EntIndex(), 13)
     net.WriteBool(replace == true)
     net.WriteBool(quiet == true)
+    net.WriteBool(lock == true)
     net.WriteUInt(math.Clamp(math.Round(secs), 0, 63), 6)
     net.WriteUInt(n, 3)
     for i = 1, n do net.WriteUInt(list[i]:EntIndex(), 13) end   -- (indexes: targets may be outside a mate's view)
@@ -175,6 +204,34 @@ function K.CalledShot(ply, e)
     timer.Simple(0, function()
         if IsValid(ply) and markable(e, ply) then K.PlaceMarks(ply, { e }, math.max(secs, left), false) end
     end)
+end
+
+-- Is this set a Marksman's (any Marksman skill, borrowed ones too)?
+local function marksman(set)
+    for id in pairs(set) do
+        local n = K.byId[id]
+        if n and n.spec == "marksman" then return true end
+    end
+    return false
+end
+
+-- Locked target: x markLockDamage for squad mates of whoever locked it
+-- (not the marker, not Marksmen: they have Priority target).
+function K.LockMult(ply, ent, set)
+    local marks = IsValid(ent) and not ent:IsPlayer() and ent.rhylibMarks   -- (never against players)
+    if not marks then return 1 end
+    local now = CurTime()
+    local sq
+    for marker, mk in pairs(marks) do
+        if mk.lock and mk.untilT > now and marker ~= ply and IsValid(marker) then
+            sq = sq or squadOf(ply)
+            if sq > 0 and squadOf(marker) == sq then
+                if marksman(set) then return 1 end
+                return K.Cfg("markLockDamage")
+            end
+        end
+    end
+    return 1
 end
 
 -- Priority target (Marksman): heavy droids and anything with a live mark.

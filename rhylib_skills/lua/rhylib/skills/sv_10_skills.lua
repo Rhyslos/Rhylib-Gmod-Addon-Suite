@@ -3,7 +3,9 @@
     that only the server works out (damage, Momentum, the cell rack).
 
     Data "skills" key "s"..SteamID64 = { n = { ids } }.
-    Nets: skills.learn (node index, 8 bits), skills.reset.
+    Nets: skills.learn (node index, 8 bits), skills.unlearn (node index:
+    right-click undo, K.CanUnlearn + K.UndoAllowed or the reset hook),
+    skills.reset.
     K.SetSkills(ply, set) applies a set (NW2String, save, inventory grids).
     K.DamageMult(ply, bolt, ent, tr, group) for rhylib_weapons (Focus fire,
     Carbine sidearm, Point blank, Headhunter, Shotgun drills, crits /
@@ -195,7 +197,25 @@ Rhylib.Net.Receive("skills.learn", function(ply)
     if not ok then return K.Note(ply, why, true) end
     set[n.id] = true
     K.SetSkills(ply, set)
+    ply.rhylibLearnedAt = ply.rhylibLearnedAt or {}
+    ply.rhylibLearnedAt[n.id] = CurTime()
     K.Note(ply, "Learned " .. n.name)
+end, { rate = 4, burst = 8 })
+
+-- Right-click undo (misclicks): only a skill nothing else needs.
+Rhylib.Net.Receive("skills.unlearn", function(ply)
+    local n = K.NODES[net.ReadUInt(8)]
+    if not n then return end
+    local set = table.Copy(K.Stored(ply))
+    local ok, why = K.CanUnlearn(ply, set, n.id)
+    if not ok then return K.Note(ply, why, true) end
+    if not K.UndoAllowed(ply.rhylibLearnedAt, n.id) and hook.Run("Rhylib.CanResetSkills", ply) ~= true then
+        return K.Note(ply, "Only a skill learned in the last " .. math.Round(K.Cfg("undoWindow") / 60, 1) .. " minutes can be undone", true)
+    end
+    set[n.id] = nil
+    if ply.rhylibLearnedAt then ply.rhylibLearnedAt[n.id] = nil end
+    K.SetSkills(ply, set)
+    K.Note(ply, "Undid " .. n.name)
 end, { rate = 4, burst = 8 })
 
 Rhylib.Net.Receive("skills.reset", function(ply)
@@ -205,6 +225,7 @@ Rhylib.Net.Receive("skills.reset", function(ply)
         return K.Note(ply, "You can't reset your skills right now", true)
     end
     K.SetSkills(ply, {})
+    ply.rhylibLearnedAt = nil
     K.Note(ply, "Skills reset")
 end, { rate = 1, burst = 2 })
 
@@ -260,6 +281,7 @@ function K.DamageMult(ply, bolt, ent, tr, group)
     if K.OrderIs(ply, "focus") then m = m * K.Cfg("focusDamage") end   -- (command order)
     if ply:GetNW2Float("rhylib_rush", 0) > CurTime() then m = m * K.Cfg("rushDamage") end   -- (Battle rush)
     local set = K.Set(ply)
+    if K.LockMult then m = m * K.LockMult(ply, ent, set) end   -- (a squad mate's locked mark)
     if next(set) == nil then return m, false end
     local wep = bolt.weapon
     if set.carbine_sidearm and IsValid(wep) and wep.GetFireModeName and wep:GetFireModeName() == "sidearm" then

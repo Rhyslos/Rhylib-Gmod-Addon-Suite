@@ -8,7 +8,9 @@
     Other addons add fixed controls with
         Rhylib.Menus.AddControl(section, keys, text, need)
     keys may name game binds in braces: "{+use} + {+reload}" shows the
-    player's own keys. need() returns false to hide the row.
+    player's own keys; "[convar]" shows a Rhylib key setting's key. need()
+    returns false to hide the row. Settings > Layout (cl_26_layout.lua)
+    draws all of these on a keyboard.
 ]]
 
 local Menus = Rhylib.Menus
@@ -31,9 +33,14 @@ function Menus.AddControl(section, keys, text, need)
     list[#list + 1] = { keys = keys, text = text, need = need }
 end
 
--- "{+use} + {+reload}" -> "E + R" with the player's own binds.
+-- "{+use} + {+reload}" -> "E + R" with the player's own binds; "[convar]"
+-- -> that key setting's key.
 local function keyText(keys)
-    return (string.gsub(keys, "{([^}]+)}", function(bind)
+    local s = string.gsub(keys, "%[([%w_]+)%]", function(cv)
+        local v = ConVarExists(cv) and GetConVar(cv):GetString() or ""
+        return v ~= "" and string.upper(v) or "unbound"
+    end)
+    return (string.gsub(s, "{([^}]+)}", function(bind)
         local k = input.LookupBinding(bind)
         return k and string.upper(k) or ("[" .. bind .. "]")
     end))
@@ -202,3 +209,8 @@ A("Inventory", "{+attack} / {+attack2}", "Holding magazines etc.: give one to wh
 A("Inventory", "{+attack} / {+attack2}", "Ammo pack: resupply who you look at / yourself", has("Weapons"))
 
 A("Datapad", "{+attack}", "Open the datapad (while holding it)", has("Datapad"))
+
+A("Staff", "{+reload}", "Toolgun: spawn window (tap opens, hold keeps it open, double tap: the old Q menu)", function()
+    local me = LocalPlayer()
+    return Rhylib.Tool ~= nil and IsValid(me) and me:IsAdmin()
+end)

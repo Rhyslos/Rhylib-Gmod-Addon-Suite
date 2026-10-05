@@ -694,7 +694,7 @@ Rhylib.Hook.Add("InitPostEntity", "gear.optics.setting", function()
     if Menus.AddControl then
         Menus.AddControl("Gear", "Mouse wheel", "Zoom (binoculars / rangefinder up)")
         Menus.AddControl("Gear", "{impulse 100}", "Night vision (binoculars / rangefinder up; the sun visor has it always on)")
-        Menus.AddControl("Gear", "Optics mode key", "Sun visor down: 3x zoom on / off")
+        Menus.AddControl("Gear", "[rhylib_optics_mode_key]", "Sun visor down: 3x zoom on / off")
     end
 end)
 

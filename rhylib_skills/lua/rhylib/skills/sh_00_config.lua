@@ -329,6 +329,13 @@ function K.Set(ply)
     if c and c.str == str then return c.set end
     local set = {}
     for id in string.gmatch(str, "[^,]+") do set[id] = true end
+    -- (client: when your own skills were learned, for the menu's undo hint)
+    if CLIENT and c and ply == LocalPlayer() then
+        K.learnedAt = K.learnedAt or {}
+        for id in pairs(set) do
+            if not c.set[id] then K.learnedAt[id] = CurTime() end
+        end
+    end
     ply.rhylibSkillCache = { str = str, set = set }
     return set
 end
@@ -480,4 +487,77 @@ function K.CanLearn(ply, set, id)
     end
     if K.Spent(set) + n.cost > K.Points(ply) then return false, "Not enough skill points" end
     return true
+end
+
+-- Is node id ruled out by a choice already made (another path, the other
+-- specialisation or branch, another skill of an exclusive group)? Returns
+-- the reason, or nil. The menu greys these out.
+function K.Excluded(ply, set, id)
+    local n = K.byId[id]
+    if not n or set[id] then return nil end
+    local cats, specs, branches = K.Commitments(set)
+    if K.Borrowed(set, id) and next(cats) ~= nil then return nil end   -- (Adaptable can still take it)
+    if K.Cfg("onePath") then
+        for c in pairs(cats) do
+            if c ~= n.cat then return "You're on the " .. (K.catById[c] and K.catById[c].name or c) .. " path" end
+        end
+    end
+    if n.spec and specs[n.cat] and specs[n.cat] ~= n.spec then
+        return "You chose " .. (K.specById[specs[n.cat]] and K.specById[specs[n.cat]].name or specs[n.cat])
+    end
+    if n.branch and branches[n.spec] and branches[n.spec] ~= n.branch then return "You chose the other branch" end
+    if n.exclusive then
+        for sid in pairs(set) do
+            local o = K.byId[sid]
+            if o and o.exclusive == n.exclusive then return "You chose " .. o.name .. " (one of these only)" end
+        end
+    end
+    return nil
+end
+
+-- Undo (right-click): would taking id out of the set leave every other
+-- learned skill valid? Returns ok, reason. (When it may be undone at all
+-- is the server's call: K.UndoAllowed.)
+function K.CanUnlearn(ply, set, id)
+    local n = K.byId[id]
+    if not (n and set[id]) then return false, "Not learned" end
+    if K.ClassOf and K.ClassOf(ply) then return false, "You're playing a class" end
+    local rest = {}
+    for sid in pairs(set) do
+        if sid ~= id then rest[sid] = true end
+    end
+    for sid in pairs(rest) do
+        local o = K.byId[sid]
+        if o then
+            local ok = true
+            -- (borrowed skills skip their own needs, as in K.CanLearn)
+            if not K.Borrowed(rest, sid) then
+            for _, r in ipairs(o.needs or EMPTY) do
+                if not rest[r] then ok = false end
+            end
+            if ok and o.needsGroups then
+                ok = false
+                for _, g in ipairs(o.needsGroups) do
+                    local all = true
+                    for _, r in ipairs(g) do
+                        if not rest[r] then all = false break end
+                    end
+                    if all then ok = true break end
+                end
+            end
+            end
+            -- (Adaptable going: the skills borrowed through it would be stranded)
+            if ok and K.Borrowed(set, sid) and not K.Borrowed(rest, sid) then ok = false end
+            if not ok then return false, o.name .. " needs it (undo that first)" end
+        end
+    end
+    return true
+end
+
+-- May this player undo id now? Any time while reset is allowed (freePoints),
+-- else within undoWindow seconds of learning it. learnedAt: id -> CurTime.
+function K.UndoAllowed(learnedAt, id)
+    if K.Cfg("freePoints") then return true end
+    local t = learnedAt and learnedAt[id]
+    return t ~= nil and CurTime() - t <= K.Cfg("undoWindow")
 end
