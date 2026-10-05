@@ -531,18 +531,9 @@ local function build(page)
             local function bottom(id) local p = L.pos[id] return p.y + L.sq + L.labelH + S(2) end
             Kit.SetCol(C.edgeLight, 150)
             for _, bus in ipairs(L.buses or {}) do
-                local lo, hi = math.huge, -math.huge
-                for _, id in ipairs(bus.parents) do
-                    local x = L.pos[id].cx
-                    lo, hi = math.min(lo, x), math.max(hi, x)
-                    vline(x, bottom(id), bus.y)
-                end
-                for _, id in ipairs(bus.children) do
-                    local x = L.pos[id].cx
-                    lo, hi = math.min(lo, x), math.max(hi, x)
-                    vline(x, bus.y, L.pos[id].y)
-                end
-                hline(lo, hi, bus.y)
+                for _, id in ipairs(bus.parents) do vline(L.pos[id].cx, bottom(id), bus.y) end
+                for _, id in ipairs(bus.children) do vline(L.pos[id].cx, bus.y, L.pos[id].y) end
+                if not bus.straight then hline(bus.lo, bus.hi, bus.y) end
             end
             Kit.SetCol(C.accent, 255)
             for _, bus in ipairs(L.buses or {}) do
@@ -669,25 +660,136 @@ local function build(page)
             for _, n in ipairs(nodes) do
                 local col = n.branch and cols.branch[n.branch] or (n.spec and cols.spec[n.spec]) or cols.shared
                 local key = n.tier .. "|" .. col[1] .. "|" .. col[2]
-                groups[key] = groups[key] or { col = col, list = {} }
+                if not groups[key] then
+                    groups[key] = { col = col, list = {}, tier = n.tier }
+                    groups[#groups + 1] = groups[key]
+                end
                 table.insert(groups[key].list, n)
             end
-            for _, g in pairs(groups) do
+            -- Top tier first: each skill sits under the skills it needs (in
+            -- the same column) where it can, so a one-parent link is one
+            -- straight line (owner: lines that jog a few pixels look wrong).
+            table.sort(groups, function(a, b) return a.tier < b.tier end)
+            local colOf, itemOf = {}, {}
+            for _, g in ipairs(groups) do
                 local gx0, gx1 = x0 + inner * g.col[1], x0 + inner * g.col[2]
                 local cnt = #g.list
                 -- Keep siblings fairly close (not at the far edges of wide columns).
                 local span = math.min(gx1 - gx0, cnt * S(150))
                 local sx = gx0 + (gx1 - gx0 - span) * 0.5
                 local cellW = span / cnt
+                local bw = math.floor(math.min(cellW - S(10), S(120)))
+                local minSep = bw + S(4)
+                -- Where each wants to be: over its parents, else its even spot.
+                local items = {}
                 for i, n in ipairs(g.list) do
-                    local cx = math.floor(sx + cellW * (i - 0.5))
-                    local y = math.floor(top + (n.tier - 1) * rowH)
-                    local bw = math.floor(math.min(cellW - S(6), S(130)))
-                    local b = self.byNode[n.id]
-                    b:SetPos(cx - math.floor(bw * 0.5), y)
-                    b:SetSize(bw, sq + labelH)
-                    L.pos[n.id] = { cx = cx, y = y }
+                    local sum, k = 0, 0
+                    for _, r in ipairs(reqsOf(n)) do
+                        if L.pos[r] and colOf[r] == g.col then sum, k = sum + L.pos[r].cx, k + 1 end
+                    end
+                    items[i] = { n = n, i = i, want = k > 0 and sum / k or (sx + cellW * (i - 0.5)), anchored = k > 0, single = k == 1 }
                 end
+                table.sort(items, function(a, b)
+                    if a.want ~= b.want then return a.want < b.want end
+                    return a.i < b.i
+                end)
+                -- Merge overlapping runs into blocks centred on their wants.
+                local blocks = {}
+                for _, it in ipairs(items) do
+                    local blk = { list = { it }, start = it.want }
+                    blocks[#blocks + 1] = blk
+                    while #blocks > 1 do
+                        local prev, cur = blocks[#blocks - 1], blocks[#blocks]
+                        if prev.start + #prev.list * cellW <= cur.start then break end
+                        for _, x in ipairs(cur.list) do prev.list[#prev.list + 1] = x end
+                        local sum = 0
+                        for j, x in ipairs(prev.list) do sum = sum + x.want - (j - 1) * cellW end
+                        prev.start = sum / #prev.list
+                        blocks[#blocks] = nil
+                    end
+                end
+                local order = {}
+                for _, blk in ipairs(blocks) do
+                    for j, x in ipairs(blk.list) do
+                        x.pos = blk.start + (j - 1) * cellW
+                        order[#order + 1] = x
+                    end
+                end
+                -- Inside the column, a cell apart.
+                local lo, hi = gx0 + cellW * 0.5, gx1 - cellW * 0.5
+                for j, x in ipairs(order) do
+                    x.pos = math.max(x.pos, lo, j > 1 and order[j - 1].pos + cellW or -math.huge)
+                end
+                for j = #order, 1, -1 do
+                    local x = order[j]
+                    x.pos = math.min(x.pos, hi, j < #order and order[j + 1].pos - cellW or math.huge)
+                end
+                -- Shift the whole row so as many one-parent skills as possible
+                -- sit exactly under their parent.
+                if #order > 0 then
+                    local best, bestN = 0, 0
+                    for _, x in ipairs(order) do
+                        if x.single then
+                            local sh = x.want - x.pos
+                            if order[1].pos + sh >= lo - 0.5 and order[#order].pos + sh <= hi + 0.5 then
+                                local nOK = 0
+                                for _, y in ipairs(order) do
+                                    if y.single and math.abs(y.pos + sh - y.want) < 1 then nOK = nOK + 1 end
+                                end
+                                if nOK > bestN or (nOK == bestN and math.abs(sh) < math.abs(best)) then best, bestN = sh, nOK end
+                            end
+                        end
+                    end
+                    for _, x in ipairs(order) do x.pos = x.pos + best end
+                end
+                -- Snap a near miss onto its parent line when the buttons still fit.
+                for j, x in ipairs(order) do
+                    if x.anchored and math.abs(x.pos - x.want) <= S(30) then
+                        local left = j > 1 and order[j - 1].pos or -math.huge
+                        local right = j < #order and order[j + 1].pos or math.huge
+                        if x.want - left >= minSep and right - x.want >= minSep then x.pos = x.want end
+                    end
+                end
+                for _, x in ipairs(order) do
+                    local n = x.n
+                    L.pos[n.id] = { cx = math.floor(x.pos + 0.5), y = math.floor(top + (n.tier - 1) * rowH) }
+                    colOf[n.id] = g.col
+                    x.row, x.minSep, x.bw = order, minSep, bw
+                    x.lo, x.hi = gx0 + S(32), gx1 - S(32)
+                    itemOf[n.id] = x
+                end
+            end
+            -- A parent that isn't lined up with anything above slides over its
+            -- only child (the child row may have had to spread out).
+            local kids = {}
+            for _, n in ipairs(nodes) do
+                local ps = {}
+                for _, r in ipairs(reqsOf(n)) do
+                    if L.pos[r] and colOf[r] == colOf[n.id] then ps[#ps + 1] = r end
+                end
+                if #ps == 1 then
+                    kids[ps[1]] = kids[ps[1]] or {}
+                    table.insert(kids[ps[1]], n.id)
+                end
+            end
+            for pid, ks in pairs(kids) do
+                local px = itemOf[pid]
+                if #ks == 1 and px and not (px.single and math.abs(L.pos[pid].cx - px.want) < 1) then
+                    local nx = L.pos[ks[1]].cx
+                    local d = nx - L.pos[pid].cx
+                    if d ~= 0 and math.abs(d) <= S(80) and nx >= px.lo and nx <= px.hi then
+                        local ok = true
+                        for _, o in ipairs(px.row) do
+                            if o ~= px and math.abs(L.pos[o.n.id].cx - nx) < px.minSep then ok = false end
+                        end
+                        if ok then L.pos[pid].cx = nx end
+                    end
+                end
+            end
+            for id, x in pairs(itemOf) do
+                local b = self.byNode[id]
+                b:SetPos(L.pos[id].cx - math.floor(x.bw * 0.5), L.pos[id].y)
+                b:SetSize(x.bw, sq + labelH)
             end
             -- Link buses: the skills in a row that need the same skills share
             -- one line (so six orders needing the same three draw one bus);
@@ -714,13 +816,46 @@ local function build(page)
                     bus.x = bus.x + L.pos[n.id].cx
                 end
             end
+            -- Heights: a bus that is one straight drop (parent right above its
+            -- only child) needs no height; the others share the gap's middle
+            -- unless their runs overlap, then they get clearly separate lanes.
             for tier, t in pairs(byTier) do
-                for _, bus in ipairs(t.list) do bus.x = bus.x / #bus.children end
-                table.sort(t.list, function(a, b) return a.x < b.x end)
-                local cnt = #t.list
-                local step = math.max(S(3), math.min(S(6), math.floor(L.busGap / cnt)))
-                for i, bus in ipairs(t.list) do
-                    bus.y = math.floor(L.rowY(tier) - L.busGap + (i - (cnt + 1) * 0.5) * step)
+                local lanes = {}   -- lanes[k] = list of { lo, hi }
+                local placed = {}
+                for _, bus in ipairs(t.list) do
+                    local lo, hi = math.huge, -math.huge
+                    for _, id in ipairs(bus.parents) do lo, hi = math.min(lo, L.pos[id].cx), math.max(hi, L.pos[id].cx) end
+                    for _, id in ipairs(bus.children) do lo, hi = math.min(lo, L.pos[id].cx), math.max(hi, L.pos[id].cx) end
+                    bus.lo, bus.hi = lo, hi
+                    bus.straight = hi - lo < 1
+                    if not bus.straight then placed[#placed + 1] = bus end
+                end
+                table.sort(placed, function(a, b) return (a.hi - a.lo) > (b.hi - b.lo) end)
+                for _, bus in ipairs(placed) do
+                    local pad = S(10)
+                    local k = 1
+                    while true do
+                        local free = true
+                        for _, r in ipairs(lanes[k] or {}) do
+                            if bus.lo - pad < r[2] and bus.hi + pad > r[1] then free = false break end
+                        end
+                        if free then break end
+                        k = k + 1
+                    end
+                    lanes[k] = lanes[k] or {}
+                    table.insert(lanes[k], { bus.lo, bus.hi })
+                    bus.lane = k
+                end
+                -- The gap between the row above's names and this row's squares.
+                local gapTop = L.rowY(tier - 1) + L.sq + L.labelH + S(4)
+                local gapBot = L.rowY(tier) - S(4)
+                local nl = #lanes
+                for _, bus in ipairs(t.list) do
+                    if bus.straight then
+                        bus.y = math.floor((gapTop + gapBot) * 0.5)
+                    else
+                        bus.y = math.floor(gapTop + (gapBot - gapTop) * bus.lane / (nl + 1))
+                    end
                     L.buses[#L.buses + 1] = bus
                 end
             end
@@ -756,6 +891,7 @@ local function addPage()
     if not (Menus and Menus.AddPage and Menus.Kit) then return end
     Menus.AddPage("skills", {
         title = "Skills",
+        wide = true,   -- (the trees get the full width)
         order = 22,
         group = "character",
         build = build,
