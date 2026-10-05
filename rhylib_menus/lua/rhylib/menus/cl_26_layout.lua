@@ -493,7 +493,6 @@ end
 
 Menus.AddPage("settings.layout", {
     title = "Layout",
-    wide = true,
     group = "settings",
     order = 100 + #Menus.SETTING_TABS + 1,   -- (right after Controls)
     build = build,

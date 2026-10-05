@@ -21,7 +21,6 @@ local K = Menus.Kit
 local C = K.C
 
 Menus.pages = Menus.pages or {}
--- page: { title, order, group, visible, build, wide (use the full width) }
 function Menus.AddPage(id, page)
     page.id = id
     Menus.pages[id] = page
@@ -225,11 +224,6 @@ function PANEL:ShowPage(id)
     Menus.lastPage = id
     self:BuildNav()
     self.page:Clear()
-    -- Pages with `wide = true` (skill trees, keyboard layout, profiler) use
-    -- the whole width right of the side bar; the rest stay at 980.
-    local avail = ScrW() - K.S(440)
-    self.page:SetWide(pg.wide and avail or math.min(avail, K.S(980)))
-    self.page:InvalidateLayout(true)
     local ok, err = pcall(pg.build, self.page)
     if not ok then Rhylib.Error("menus", "page %s: %s", id, tostring(err)) end
 end

@@ -177,7 +177,6 @@ end
 
 Menus.AddPage("profiler", {
     title = "Profiler",
-    wide = true,
     order = 70,
     group = "staff",
     visible = function()

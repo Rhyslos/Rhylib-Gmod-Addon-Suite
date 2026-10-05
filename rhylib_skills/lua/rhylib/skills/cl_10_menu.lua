@@ -419,6 +419,11 @@ local function build(page)
         stateText = Kit.Fit(stateText, Kit.Font(13, 700), w - pad * 2)
         draw.SimpleText(stateText, Kit.Font(13, 700), pad, y, state == "learned" and C.accent or (state == "open" and C.good or (state == "excluded" and C.textDim or C.warn)), TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
         y = y + S(26)
+        -- Command orders: a small yellow line above the text, not a repeat inside it.
+        if n.exclusive == "command" then
+            draw.SimpleText("Command order (you can only pick one)", Kit.Font(13, 700), pad, y, Color(236, 196, 70), TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+            y = y + S(20)
+        end
         for _, l in ipairs(wrap(n.desc or "", Kit.Font(14), w - pad * 2, 8)) do
             draw.SimpleText(l, Kit.Font(14), pad, y, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
             y = y + S(20)
@@ -453,17 +458,45 @@ local function build(page)
         end
     end
 
+    -- What the tree shows: once you've picked a specialisation (or an end
+    -- branch), the other ones are hidden and yours gets the whole width
+    -- (owner: tidier than squeezing two paths side by side). Returns a view
+    -- of the category and a key that changes when the pick does.
+    local function viewOf(full)
+        local _, specs, branches = K.Commitments(K.Set(me))
+        local spec = specs[full.id]
+        local branch = spec and branches[spec]
+        if not spec then return full, full.id end
+        local view = { id = full.id, name = full.name, desc = full.desc, specs = {} }
+        for _, s in ipairs(full.specs or {}) do
+            if s.id == spec then
+                local copy = { id = s.id, name = s.name, desc = s.desc, branches = {} }
+                for _, b in ipairs(s.branches or {}) do
+                    if not branch or b.id == branch then copy.branches[#copy.branches + 1] = b end
+                end
+                view.specs[1] = copy
+            end
+        end
+        return view, full.id .. "|" .. spec .. "|" .. (branch or ""), spec, branch
+    end
+
     local function fill()
         tree:Clear()
         hovered, picked = nil, nil
-        local cat = K.catById[cur]
+        local cat, viewKey, onlySpec, onlyBranch = viewOf(K.catById[cur])
         local cols = columns(cat)
         local nodes, maxTier = {}, 1
         for _, n in ipairs(K.NODES) do
-            if n.cat == cur then
+            if n.cat == cur and (not onlySpec or not n.spec or n.spec == onlySpec)
+                and (not onlyBranch or not n.branch or n.branch == onlyBranch) then
                 nodes[#nodes + 1] = n
                 maxTier = math.max(maxTier, n.tier)
             end
+        end
+        -- (learning or undoing the first skill of a path re-draws the tree)
+        function tree:Think()
+            local _, key = viewOf(K.catById[cur])
+            if key ~= viewKey then fill() end
         end
         tree.byNode = {}
         local L = {}   -- layout, filled in PerformLayout
@@ -891,7 +924,6 @@ local function addPage()
     if not (Menus and Menus.AddPage and Menus.Kit) then return end
     Menus.AddPage("skills", {
         title = "Skills",
-        wide = true,   -- (the trees get the full width)
         order = 22,
         group = "character",
         build = build,
