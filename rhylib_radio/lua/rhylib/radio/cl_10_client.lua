@@ -436,12 +436,20 @@ function R.OpenPage()
 end
 concommand.Add("rhylib_radio", R.OpenPage)
 
--- The page key replaces whatever game bind sits on the same key (T: spray).
-Rhylib.Hook.Add("PlayerBindPress", "radio.menukey", function(_, bind, pressed)
+-- The page key and the talk key replace whatever game bind sits on the
+-- same key (T: spray, B: the suit zoom). The talk key also swallows the
+-- release, so a held +bind (zoom) never starts.
+Rhylib.Hook.Add("PlayerBindPress", "radio.menukey", function(_, bind, pressed, code)
+    if string.find(bind, "messagemode", 1, true) then return end
+    -- (the key actually pressed; older builds without it: the bind's first key)
+    local b = code and code > 0 and input.GetKeyName(code) or input.LookupBinding(bind, true)
+    if not b then return end
+    b = string.lower(b)
+    local talk = string.lower(talkVar:GetString())
+    if talk ~= "" and b == talk then return true end
     local key = string.lower(menuVar:GetString())
     if key == "" or not pressed then return end
-    local b = input.LookupBinding(bind, true)
-    if b and string.lower(b) == key and not string.find(bind, "messagemode", 1, true) then return true end
+    if b == key then return true end
 end)
 
 local was = {}
