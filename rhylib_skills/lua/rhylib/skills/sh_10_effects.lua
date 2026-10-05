@@ -48,6 +48,7 @@ reg("steadySpread", 0.45, "Steady barrels: Z-6 spread multiplier")
 reg("steadyRecoil", 0.45, "Steady barrels: Z-6 view kick multiplier")
 reg("rapidFireRPM", 600, "Rapid fire: DC-15S fire rate")
 reg("pistolSpread", 0.8, "Pistol proficiency: DC-17 spread multiplier")
+reg("steadyGripRecoil", 0.5, "Steady grip: pistol view kick multiplier (DC-17, and the DC-15S in Sidearm mode)")
 reg("dualRate", 1, "Dual DC-17: fire rate multiplier (the gain is the second magazine)")
 reg("critChance", 0.1, "Critical hits: chance per hit")
 reg("critMult", 1.5, "Critical hits: damage multiplier")
@@ -155,6 +156,11 @@ end
 function K.RecoilMult(ply, wep)
     if not isPly(ply) then return 1 end
     local m = 1
+    -- Steady grip: pistols kick half as much (the DC-15S held as a sidearm too).
+    if K.Has(ply, "steady_grip") and (K.PISTOLS[K.GunClass(wep)]
+        or (wep.GetFireModeName and wep:GetFireModeName() == "sidearm")) then
+        m = m * cfg("steadyGripRecoil")
+    end
     if K.GunClass(wep) == K.Z6 then
         if K.Has(ply, "steady_barrels") and sprinting(ply, wep) then m = m * cfg("steadyRecoil") end
         if K.Has(ply, "planted") and ply:Crouching() then m = m * cfg("plantedMult") end

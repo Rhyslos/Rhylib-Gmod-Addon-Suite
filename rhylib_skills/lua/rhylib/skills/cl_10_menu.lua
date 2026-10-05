@@ -104,7 +104,7 @@ local ICONS = {
     quick_hands = "mag", run_gun = "run", point_blank = "target", full_auto = "rounds", ext_mags = "mag",
     droid_popper = "grenade", light_kit = "feather", rapid_fire = "bolt", momentum = "star",
     gun_runner = "barrels", steady_barrels = "aim", eff_cells = "cell", load_bearer = "weight", ammo_pack = "box",
-    pistol_prof = "pistol", carbine_sidearm = "pistol", dual_dc17 = "dual", crits = "star",
+    pistol_prof = "pistol", carbine_sidearm = "pistol", steady_grip = "pistol", dual_dc17 = "dual", crits = "star",
     hard_landings = "down", extended_tanks = "fuel", spring_legs = "spring", afterburner = "flame",
     combat_drop = "landing", blast_hardened = "shield", aerial_stability = "up", death_from_above = "burst",
     field_drag = "drag", hands_on = "heart", steady_hands = "clock", quick_revive = "cross", under_fire = "shield",

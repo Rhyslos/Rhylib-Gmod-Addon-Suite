@@ -123,10 +123,13 @@ Rhylib.Hook.Add("PlayerFootstep", "core.motion", function(ply, pos, foot, snd, v
     if k > 0 then ply:EmitSound(snd, 0, math.random(92, 100), math.min(volume * 0.6 * k, 1), CHAN_STATIC) end
 end)
 
--- 1, 3, 4, 6: the gun. Built on the gamemode's (and weapon's) own placement.
-Rhylib.Hook.Add("CalcViewModelView", "core.motion", function(wep, vm, oldPos, oldAng, pos, ang)
+-- The gun's sway right now: side and dip (view units) and pitch/yaw/roll
+-- turns (degrees), or nil when there's none. phaseShift / breathShift (radians)
+-- give the same sway at another point of the step and breath cycles (the
+-- dual pistols' mirrored left hand uses it so the hands don't move as mirror images).
+function M.Sway(wep, phaseShift, breathShift)
     local ply = LocalPlayer()
-    if not firstPerson(ply) then return end
+    if not firstPerson(ply) then return nil end
     -- (half the first version's sway: it mixes with footstep feel now)
     local gun = cvGun:GetBool() and M.amt * 0.5 * math.Clamp(cvGunScale:GetFloat(), 0, 2) or 0
     local st = M.steps or 0
@@ -136,11 +139,8 @@ Rhylib.Hook.Add("CalcViewModelView", "core.motion", function(wep, vm, oldPos, ol
         idle = M.idle * math.Clamp(cvGunScale:GetFloat(), 0, 2) * (1 + M.tired * 1.5)
             * (1 - 0.7 * aim) * (ply:Crouching() and 0.7 or 1)
     end
-    if gun < 0.01 and st < 0.01 and idle < 0.01 and math.abs(land[1]) < 0.01 then return end
-    local p, a = GAMEMODE:CalcViewModelView(wep, vm, oldPos, oldAng, pos, ang)
-    p, a = p or pos, a or ang
-    local s = math.sin(M.phase)
-    local right, up = a:Right(), a:Up()
+    if gun < 0.01 and st < 0.01 and idle < 0.01 and math.abs(land[1]) < 0.01 then return nil end
+    local s = math.sin(M.phase + (phaseShift or 0))
     -- Sway left/right once per two steps, dip on each step, a touch of turn.
     -- Footstep feel: the same curves, bigger, plus a soft roll with each
     -- step (continuous, so no jolts).
@@ -148,14 +148,24 @@ Rhylib.Hook.Add("CalcViewModelView", "core.motion", function(wep, vm, oldPos, ol
     local side = s * (0.45 * gun + 0.6 * st)
     local dip = -math.abs(s) * 0.55 * gun - s2 * 0.6 * st + land[1] * 0.9
     -- Idle: up/down with each breath, a slow figure-eight side to side.
-    local b = M.breath
+    local b = M.breath + (breathShift or 0)
     local bs, bh = math.sin(b), math.sin(b * 0.5)
     side = side + bh * 0.15 * idle
     dip = dip + bs * 0.12 * idle
-    p = p + right * side + up * dip
-    a = Angle(a.p + math.abs(s) * 0.5 * gun + s2 * 0.8 * st - land[1] * 1.2 - math.sin(b + 0.6) * 0.35 * idle,
-        a.y + s * 0.4 * gun + math.sin(b * 0.5 + 0.3) * 0.25 * idle,
-        a.r + s * 2 * st + bh * 0.4 * idle)
+    local dp = math.abs(s) * 0.5 * gun + s2 * 0.8 * st - land[1] * 1.2 - math.sin(b + 0.6) * 0.35 * idle
+    local dy = s * 0.4 * gun + math.sin(b * 0.5 + 0.3) * 0.25 * idle
+    local dr = s * 2 * st + bh * 0.4 * idle
+    return side, dip, dp, dy, dr
+end
+
+-- 1, 3, 4, 6: the gun. Built on the gamemode's (and weapon's) own placement.
+Rhylib.Hook.Add("CalcViewModelView", "core.motion", function(wep, vm, oldPos, oldAng, pos, ang)
+    local side, dip, dp, dy, dr = M.Sway(wep)
+    if not side then return end
+    local p, a = GAMEMODE:CalcViewModelView(wep, vm, oldPos, oldAng, pos, ang)
+    p, a = p or pos, a or ang
+    p = p + a:Right() * side + a:Up() * dip
+    a = Angle(a.p + dp, a.y + dy, a.r + dr)
     return p, a
 end, -50)
 

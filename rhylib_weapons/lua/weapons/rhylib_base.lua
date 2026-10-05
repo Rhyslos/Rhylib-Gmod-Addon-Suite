@@ -1270,6 +1270,11 @@ if CLIENT then
     end
 
     local ease = math.ease and math.ease.InOutSine or function(x) return x end
+    -- Pistols when lowered/sprinting: where they idle, muzzles tipped up a
+    -- little (owner: "just lifted a little up from where they are when aiming").
+    -- The tilt turns around the eyes, so the offset pulls them back down.
+    local PISTOL_LOWER = Vector(0, -1, -3)
+    local PISTOL_TILT = 12
 
     function SWEP:GetViewModelPosition(pos, ang)
         local ft = FrameTime()
@@ -1292,14 +1297,64 @@ if CLIENT then
             pos = pos + ang:Right() * off.x + ang:Forward() * off.y + ang:Up() * off.z
         end
 
-        -- On safety: gun lowered and turned inward.
+        -- On safety or sprinting: a rifle lowered and turned inward; pistols
+        -- (one or two) held muzzle-up instead (owner: dual pistols ran like a rifle).
         local sf = ease(self.safeFrac)
         if sf > 0 then
-            pos = pos - ang:Up() * (4 * sf) + ang:Right() * (1.5 * sf) - ang:Forward() * (2 * sf)
             ang = Angle(ang.p, ang.y, ang.r)
-            ang:RotateAroundAxis(ang:Right(), -20 * sf)
-            ang:RotateAroundAxis(ang:Up(), 18 * sf)
+            if self:LoweredHoldType() == "normal" then
+                -- (SWEP.PistolLowerPos: right, forward, up; SWEP.PistolLowerTilt: degrees up)
+                local lp = self.PistolLowerPos or PISTOL_LOWER
+                pos = pos + ang:Right() * (lp.x * sf) + ang:Forward() * (lp.y * sf) + ang:Up() * (lp.z * sf)
+                ang:RotateAroundAxis(ang:Right(), (self.PistolLowerTilt or PISTOL_TILT) * sf)
+            else
+                pos = pos - ang:Up() * (4 * sf) + ang:Right() * (1.5 * sf) - ang:Forward() * (2 * sf)
+                ang:RotateAroundAxis(ang:Right(), -20 * sf)
+                ang:RotateAroundAxis(ang:Up(), 18 * sf)
+            end
         end
+        -- (the mirrored left hand starts from here: its own reload dip and sway)
+        self.rhylibVMBase = self.rhylibVMBase or {}
+        self.rhylibVMBase[1], self.rhylibVMBase[2] = pos, Angle(ang.p, ang.y, ang.r)
+        local k = self:ReloadDip(false)
+        if k > 0 then pos, ang = self:ApplyReloadDip(pos, ang, k) end
+        return pos, ang
+    end
+
+    -- Reload with no reload animation on the viewmodel (Battlefront models
+    -- often have none): the gun dips down and tilts, then comes back. Dual
+    -- mirrored pistols take turns: right in the first half, left in the second.
+    -- Returns 0-1 for the right (left = true: the left hand).
+    function SWEP:ReloadDip(left)
+        if not self:IsReloading() then
+            self.rhylibDipLen = nil
+            return 0
+        end
+        local o = self:GetOwner()
+        local vm = IsValid(o) and o:IsPlayer() and o:GetViewModel()
+        if not IsValid(vm) then return 0 end
+        local mdl = vm:GetModel()
+        if self.rhylibDipModel ~= mdl then
+            self.rhylibDipModel = mdl
+            self.rhylibHasReload = vm:SelectWeightedSequence(self.ReloadAct or ACT_VM_RELOAD) >= 0
+        end
+        if self.rhylibHasReload and not self.DualMirror then return 0 end
+        local left0 = math.max(self:GetReloadEnd() - CurTime(), 0)
+        self.rhylibDipLen = self.rhylibDipLen or math.max(left0, 0.1)
+        local t = math.Clamp(1 - left0 / self.rhylibDipLen, 0, 1)
+        if self.DualMirror and self:GetFireModeName() == "dual" then
+            t = left and math.Clamp(t * 2 - 1, 0, 1) or math.Clamp(t * 2, 0, 1)
+        elseif left or self.rhylibHasReload then
+            return 0
+        end
+        return math.sin(math.pi * t) ^ 0.7
+    end
+
+    function SWEP:ApplyReloadDip(pos, ang, k)
+        pos = pos - ang:Up() * (4 * k) - ang:Forward() * (2 * k)
+        ang = Angle(ang.p, ang.y, ang.r)
+        ang:RotateAroundAxis(ang:Right(), -25 * k)
+        ang:RotateAroundAxis(ang:Forward(), 20 * k)
         return pos, ang
     end
 
@@ -1721,10 +1776,26 @@ if CLIENT then
         local mv = proxyModel(self, "rhylibMirrorVM", vm:GetModel(), true)
         if not mv then return end
         local vpos, vang = vm:GetPos(), vm:GetAngles()
+        -- Its own pose: the weapon's placement before the right hand's
+        -- reload dip and sway (rhylibVMBase), its own reload dip, and the
+        -- step/breath sway a quarter cycle off, so the hands don't move as
+        -- mirror images (owner: walking looked mirrored).
+        local base = self.rhylibVMBase
+        if base and base[1] then vpos, vang = base[1], base[2] end
+        local k = self:ReloadDip(true)
+        if k > 0 then vpos, vang = self:ApplyReloadDip(vpos, vang, k) end
         local right = vang:Right()
         -- Mirrored across the middle of the view (through the eyes).
         local eye = EyePos()
-        mv:SetPos(vpos - right * (2 * (vpos - eye):Dot(right)))
+        local mpos = vpos - right * (2 * (vpos - eye):Dot(right))
+        local Mo = Rhylib.Lying and Rhylib.Lying.motion
+        local side, dip, dp, dy, dr
+        if Mo and Mo.Sway then side, dip, dp, dy, dr = Mo.Sway(self, math.pi * 0.5, 1.3) end
+        if side then
+            mpos = mpos - right * side + vang:Up() * dip   -- (its right is the mirror's left)
+            vang = Angle(vang.p + dp, vang.y - dy, vang.r - dr)
+        end
+        mv:SetPos(mpos)
         mv:SetAngles(vang)
         -- Left shots kick this hand; the right gun's kick isn't copied (by
         -- its activity, or by time since its shot); draw/reload are.
@@ -1750,7 +1821,7 @@ if CLIENT then
         if not ent then return end
         -- (RenderMultiply may already be baked into the bone matrices: a
         -- left-handed matrix is unmirrored first, so it's reflected once)
-        local mpos = mv:GetPos()
+        mpos = mv:GetPos()
         local bp, ba = m:GetTranslation(), m:GetAngles()
         -- (columns read directly, so the sign of the determinant tells)
         local function col(c) return Vector(m:GetField(1, c), m:GetField(2, c), m:GetField(3, c)) end
