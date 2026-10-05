@@ -4,6 +4,14 @@
     rhylib_b2, rhylib_b2_cannon, rhylib_b1_<variant>, rhylib_b1_training,
     rhylib_b2_training).
 
+    Cover (B1 kinds, `cover`): hit coverHits times within coverWindow, or
+    suppressed (Z-6 skill, flash charge), it runs to a navmesh hiding spot
+    the shooter can't see (D.coverTaken: one droid per spot), blind fires
+    toward where it last saw them for coverTime, then fights again (not
+    again for coverCooldown). Below retreatFrac health it pulls back once
+    to a spot further from the shooter. Route and cover searches share
+    D.TakeBudget (pathPerTick per tick).
+
     Behaviour (one coroutine): look for a target a few times a second;
     with one, turn to it, wait the reaction time, then fire short bursts
     with pauses, advancing now and then if far. B1s may throw a grenade
@@ -109,6 +117,7 @@ if SERVER then
     function ENT:OnRemove()
         D.active[self] = nil
         D.commanders[self] = nil
+        self:LeaveCover()
     end
 
     --------------------------------------------------------------------------
@@ -132,7 +141,7 @@ if SERVER then
 
     local MAX_TRACES = 4
     local SWITCH = 0.49     -- (0.7 squared) a new target must be 30% closer
-    local REMEMBER = 2      -- seen this recently: no new reaction delay
+    local REMEMBER = 1      -- seen this recently: no new reaction delay (owner: re-peeking was punished at once)
     local cand, candD = {}, {}   -- scratch lists (Look never yields)
 
     -- A visible target in range: keeps the current one while it's in sight
@@ -193,6 +202,8 @@ if SERVER then
             -- Reaction delay only for a target not seen in the last 2 s.
             local seen = self.seenAt
             if not seen then seen = {} self.seenAt = seen end
+            -- (sight just started: aim settles in from here, see FireAt)
+            if self.target ~= best or now - (seen[best] or -100) > 0.8 then self.sightStart = now end
             if self.target ~= best and now - (seen[best] or -100) > REMEMBER then
                 local react = D.Cfg(k.reaction) * math.Rand(0.8, 1.3)
                 if D.Boosted(self) then react = react * D.Cfg("cmdReaction") end
@@ -213,10 +224,24 @@ if SERVER then
         return best
     end
 
-    -- Shot at by a player it hadn't seen: turn toward them.
+    -- Shot at by a player it hadn't seen: turn toward them. Hits are
+    -- counted for taking cover, and a bad one may make it pull back.
     function ENT:OnInjured(dmg)
         self.woken = true   -- ends an idle wait early
         local att = dmg:GetAttacker()
+        if IsValid(att) and att:IsPlayer() then
+            self.threatPos, self.threatAt = att:GetPos(), CurTime()
+            local hits = self.hits
+            if not hits then hits = {} self.hits = hits end
+            -- (old hits out first, so a full list never drops new ones)
+            local now, win = CurTime(), D.Cfg("coverWindow")
+            while hits[1] and now - hits[1] > win do table.remove(hits, 1) end
+            if #hits < 8 then hits[#hits + 1] = now end
+            local frac = D.Cfg("retreatFrac")
+            if frac > 0 and not self.retreated and self:Health() - dmg:GetDamage() < self:GetMaxHealth() * frac then
+                self.retreatPending = true
+            end
+        end
         if IsValid(att) and att:IsPlayer() and not IsValid(self.target) then
             self.lastSeen = att:GetPos()
             self.lastSeenAt = CurTime()
@@ -267,18 +292,41 @@ if SERVER then
         return pos + self:GetForward() * (self:Kind().gun and 18 or 10) + Vector(0, 0, 2)
     end
 
+    -- How many droids have shot at each player in the last 1.5 s.
+    D.focus = D.focus or setmetatable({}, { __mode = "k" })
+
+    -- Aimed fire at a target. Two softeners (owner: peeking a corner got
+    -- you killed before 4 shots): the aim settles in over settleTime after
+    -- first sight (cone x settleMult at first), and when more than
+    -- crowdFree droids fire at one player each extra one widens the cone.
     function ENT:FireAt(t)
+        local now = CurTime()
+        local settle = math.Clamp((now - (self.sightStart or 0)) / math.max(D.Cfg("settleTime"), 0.01), 0, 1)
+        local extra = Lerp(settle, D.Cfg("settleMult"), 1)
+        local f = D.focus[t]
+        if not f then f = setmetatable({}, { __mode = "k" }) D.focus[t] = f end
+        f[self] = now
+        local n = 0
+        for d, at in pairs(f) do
+            if now - at < 1.5 and IsValid(d) then n = n + 1 else f[d] = nil end
+        end
+        extra = extra * math.min(1 + D.Cfg("crowdMult") * math.max(0, n - D.Cfg("crowdFree")), D.Cfg("crowdMax"))
+        self:FireAtPos(t:WorldSpaceCenter() + Vector(0, 0, 8), t:GetVelocity():Length2D(), extra)   -- chest
+    end
+
+    -- A shot at a point; speed = how fast the target moves (worse aim),
+    -- extra = cone multiplier (blind fire from cover).
+    function ENT:FireAtPos(aim, speed, extra)
         local Bolts = Rhylib.Weapons and Rhylib.Weapons.Bolts
         if not Bolts then return end
         local k = self:Kind()
         local origin = self:Muzzle()
-        local aim = t:WorldSpaceCenter() + Vector(0, 0, 8)   -- chest
         local dir = aim - origin
         dir:Normalize()
         -- Inaccuracy: base cone, worse against moving targets.
-        local mult = D.SuppressMult(self)
+        local mult = D.SuppressMult(self) * (extra or 1)
         if D.Boosted(self) then mult = mult * D.Cfg("cmdSpread") end
-        local cone = math.rad((D.Cfg(k.spread) + t:GetVelocity():Length2D() * D.Cfg("moveSpread")) * mult)
+        local cone = math.rad((D.Cfg(k.spread) + (speed or 0) * D.Cfg("moveSpread")) * mult)
         local a = math.Rand(0, math.pi * 2)
         local r = math.tan(cone * math.sqrt(math.Rand(0, 1)))
         local ang = dir:Angle()
@@ -409,6 +457,12 @@ if SERVER then
             path:SetGoalTolerance(40)
             self.path = path
         end
+        -- (route searches are spread over ticks: D.TakeBudget)
+        local giveUp = CurTime() + 1
+        while not D.TakeBudget() do
+            if CurTime() > giveUp then return false end
+            coroutine.yield()
+        end
         if not path:Compute(self, pos) then return false end
         local stop = CurTime() + maxTime
         while path:IsValid() and CurTime() < stop do
@@ -432,6 +486,124 @@ if SERVER then
         end
     end
 
+    --------------------------------------------------------------------------
+    -- Cover (B1s): when hit a few times, suppressed or badly hurt
+    --------------------------------------------------------------------------
+
+    local IN_COVER = 1        -- NavArea:GetHidingSpots type
+    local MAX_AREAS = 16
+    local MAX_CHECKS = 6      -- sight traces per search
+
+    function ENT:LeaveCover()
+        if self.coverKey and D.coverTaken[self.coverKey] == self then D.coverTaken[self.coverKey] = nil end
+        self.coverKey = nil
+    end
+
+    function ENT:WantsCover()
+        if not self:Kind().cover or not self.threatPos or CurTime() < (self.coverReady or 0) then return false end
+        if CurTime() - (self.threatAt or 0) > 10 then return false end   -- (no recent threat to hide from)
+        if self.retreatPending or D.SuppressMult(self) > 1 then return true end
+        local hits = self.hits
+        if not hits then return false end
+        local now, win, n = CurTime(), D.Cfg("coverWindow"), 0
+        for i = #hits, 1, -1 do
+            if now - hits[i] <= win then n = n + 1 else table.remove(hits, i) end
+        end
+        return n >= D.Cfg("coverHits")
+    end
+
+    -- A hiding spot near it that the threat can't see (far: one that's
+    -- also further from the threat, for pulling back). Nil without a navmesh.
+    function ENT:FindCover(threat, far)
+        if not (navmesh and navmesh.Find) then return end
+        local pos = self:GetPos()
+        local areas = navmesh.Find(pos, D.Cfg("coverRadius"), 120, 120)
+        if not areas or #areas == 0 then return end
+        local myD = pos:DistToSqr(threat)
+        local spots, farArea, farD = {}, nil, math.huge
+        for i = 1, math.min(#areas, MAX_AREAS) do
+            local a = areas[i]
+            for _, v in ipairs(a:GetHidingSpots(IN_COVER) or {}) do
+                local td = v:DistToSqr(threat)
+                local holder = D.coverTaken[D.SpotKey(v)]
+                if td > 62500 and (not far or td > myD + 40000) and not (IsValid(holder) and holder ~= self) then
+                    spots[#spots + 1] = { v = v, d = v:DistToSqr(pos) }
+                end
+            end
+            -- (no spot: pulling back still moves away from the threat)
+            if far then
+                local c = a:GetCenter()
+                local d = c:DistToSqr(pos)
+                if c:DistToSqr(threat) > myD + 90000 and d < farD then farArea, farD = c, d end
+            end
+        end
+        table.sort(spots, function(x, y) return x.d < y.d end)
+        local eye = threat + Vector(0, 0, 60)
+        local tr = { mask = MASK_SOLID_BRUSHONLY }
+        for i = 1, math.min(#spots, MAX_CHECKS) do
+            local v = spots[i].v
+            tr.start, tr.endpos = eye, v + Vector(0, 0, 56)
+            if util.TraceLine(tr).Hit then return v end
+        end
+        return far and farArea or nil
+    end
+
+    -- Run to cover, blind fire from it for a while, then fight again.
+    function ENT:TakeCover(threat, far)
+        local k = self:Kind()
+        while not D.TakeBudget() do coroutine.yield() end
+        local spot = self:FindCover(threat, far)
+        if not spot then
+            self.coverReady = CurTime() + 3   -- (nothing near: try again later)
+            return false
+        end
+        local key = D.SpotKey(spot)
+        D.coverTaken[key] = self
+        self.coverKey = key
+        self.target = nil   -- (no aiming through the cover; Look picks it up after)
+        self.loco:SetDesiredSpeed(D.Cfg(k.speed) * 1.15)
+        local ok = self:Go(spot, far and 6 or 4, false)
+        self.loco:SetDesiredSpeed(D.Cfg(k.speed))
+        -- Didn't get there (no route, stuck): not in cover after all.
+        if not ok and self:GetPos():DistToSqr(spot) > 120 * 120 then
+            self:LeaveCover()
+            self.coverReady = CurTime() + 2
+            return false
+        end
+        local stop = CurTime() + D.Cfg("coverTime") * math.Rand(0.8, 1.3) * (far and 1.5 or 1)
+        local wait = 60 / math.max(D.Cfg(k.rpm), 1)
+        while CurTime() < stop and self:Health() > 0 do
+            local aim = self.lastSeen
+            if aim and CurTime() - (self.lastSeenAt or 0) < 8 and math.random() < 0.6 then
+                -- Blind fire toward where the enemy was.
+                self:Face(aim, 0.2)
+                for _ = 1, math.random(2, 3) do
+                    self:FireAtPos(aim + Vector(0, 0, 40), 0, D.Cfg("blindSpread"))
+                    self:Face(aim, wait)
+                end
+            end
+            self:Face(aim or (self:GetPos() + self:GetForward() * 100), math.Rand(0.8, 1.4))
+        end
+        self:LeaveCover()
+        self.hits = nil
+        self.coverReady = CurTime() + D.Cfg("coverCooldown")
+        self.nextLook = 0
+        return true
+    end
+
+    -- Pull back (once) or duck into cover if it should; true if it did.
+    function ENT:CoverCheck()
+        if not self:WantsCover() then return false end
+        local far = self.retreatPending
+        local ok = self:TakeCover(self.threatPos, far)
+        -- (the one pull-back only counts once it happened)
+        if far and ok then
+            self.retreatPending = nil
+            self.retreated = true
+        end
+        return ok
+    end
+
     local function valid(t)
         return IsValid(t) and t:Alive() and not t.rhylibDown and not t:GetNW2Bool("rhylib_simOut", false)
             and t:GetNW2Float("rhylib_knockEnd", 0) == 0
@@ -442,6 +614,7 @@ if SERVER then
         local t = self.target
         local bursts = 0
         while valid(t) do
+            if self:CoverCheck() then break end
             self:Look()
             if self.target ~= t then
                 t = self.target
@@ -476,6 +649,8 @@ if SERVER then
                 local pause = math.Rand(0.6, 1.3)
                 if D.Boosted(self) then pause = pause * D.Cfg("cmdPause") end
                 self:Face(IsValid(t) and t:GetPos() or self:GetPos(), pause)
+                if IsValid(t) and self.threatPos then self.threatPos = t:GetPos() end   -- (once shot at: cover from the one it's fighting)
+                if self:CoverCheck() then break end
                 -- Far away: walk a bit closer every few bursts.
                 if IsValid(t) and bursts % 3 == 0 and t:GetPos():DistToSqr(self:GetPos()) > ADVANCE_DIST * ADVANCE_DIST then
                     local toward = self:GetPos() + (t:GetPos() - self:GetPos()):GetNormalized() * 400
@@ -498,7 +673,9 @@ if SERVER then
 
     function ENT:RunBehaviour()
         while true do
-            if self:Look() then
+            if self:CoverCheck() then
+                -- (came out of cover: look again straight away)
+            elseif self:Look() then
                 self:Engage()
             elseif self.lastSeen and CurTime() - (self.lastSeenAt or 0) < 20 then
                 -- Go where the target was last seen (or where the shot came from).

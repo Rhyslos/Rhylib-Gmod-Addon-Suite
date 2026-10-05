@@ -96,6 +96,21 @@ function D.Rattle(cmd)
     end
 end
 
+-- Route / cover searches (Path:Compute, hiding spot lookups) share a small
+-- budget per tick, so a crowd of droids doesn't search all at once.
+local budgetTick, budgetUsed = -1, 0
+function D.TakeBudget()
+    local t = engine.TickCount()
+    if t ~= budgetTick then budgetTick, budgetUsed = t, 0 end
+    if budgetUsed >= D.Cfg("pathPerTick") then return false end
+    budgetUsed = budgetUsed + 1
+    return true
+end
+
+-- Cover spots in use: [key] = droid (two droids don't share one).
+D.coverTaken = D.coverTaken or {}
+function D.SpotKey(v) return math.floor(v.x / 16) .. ":" .. math.floor(v.y / 16) .. ":" .. math.floor(v.z / 16) end
+
 -- Droids don't shoot each other to pieces.
 Rhylib.Hook.Add("EntityTakeDamage", "droids.friendly", function(ent, dmg)
     if not ent.IsRhylibDroid then return end

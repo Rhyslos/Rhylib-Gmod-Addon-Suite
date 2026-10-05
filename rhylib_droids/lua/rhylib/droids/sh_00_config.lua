@@ -16,6 +16,10 @@
       Training B1 / B2 (rhylib_b1_training, rhylib_b2_training): like the
       B1 and B2 with orange-yellow bolts that only take sim health
       (rhylib_training).
+      Fewer but tougher (owner): B1s take cover when hit a few times
+      (or suppressed), blind fire from it, and pull back once when badly
+      hurt; B2s don't. Route and cover searches are spread over ticks
+      (pathPerTick).
       Spots players in sight within range (checked a few times a second,
       not every tick), turns, fires short inaccurate bursts, advances when
       far away, chases to where it last saw you, wanders near where it was
@@ -31,12 +35,12 @@ Rhylib.Droids = Rhylib.Droids or {}
 local D = Rhylib.Droids
 local Config = Rhylib.Config
 
-Config.Register("droids", "maxActive", 40, "Most droids alive at once (more are removed when spawned)")
-Config.Register("droids", "b1Health", 200, "B1 battle droid health")
+Config.Register("droids", "maxActive", 100, "Most droids alive at once (more are removed when spawned)")
+Config.Register("droids", "b1Health", 260, "B1 battle droid health")
 Config.Register("droids", "b1Speed", 170, "B1 run speed")
 Config.Register("droids", "b1Range", 3000, "How far a B1 sees and shoots")
-Config.Register("droids", "b1Reaction", 0.6, "Seconds before a B1 starts firing at a new target")
-Config.Register("droids", "e5Damage", 12, "E-5 damage per bolt")
+Config.Register("droids", "b1Reaction", 0.7, "Seconds before a B1 starts firing at a new target")
+Config.Register("droids", "e5Damage", 13, "E-5 damage per bolt")
 Config.Register("droids", "e5RPM", 300, "E-5 shots per minute within a burst")
 Config.Register("droids", "e5Spread", 1.2, "E-5 inaccuracy cone (degrees), more against moving targets")
 
@@ -48,10 +52,10 @@ Config.Register("droids", "b1NadeMax", 900, "B1: furthest target it throws a gre
 Config.Register("droids", "b1NadeDamage", 90, "B1 grenade: damage at the centre")
 Config.Register("droids", "b1NadeRadius", 260, "B1 grenade: blast radius")
 
-Config.Register("droids", "b2Health", 650, "B2 super battle droid health")
+Config.Register("droids", "b2Health", 800, "B2 super battle droid health")
 Config.Register("droids", "b2Speed", 115, "B2 walk speed")
 Config.Register("droids", "b2Range", 2800, "How far a B2 sees and shoots")
-Config.Register("droids", "b2Reaction", 0.8, "Seconds before a B2 starts firing at a new target")
+Config.Register("droids", "b2Reaction", 0.9, "Seconds before a B2 starts firing at a new target")
 Config.Register("droids", "b2Damage", 14, "B2 wrist blaster damage per bolt")
 Config.Register("droids", "b2RPM", 800, "B2 blasters (both arms) shots per minute within a burst")
 Config.Register("droids", "b2cRPM", 420, "B2 cannon: shots per minute within a burst")
@@ -63,15 +67,15 @@ Config.Register("droids", "b2RocketMin", 350, "B2 wrist rocket: closest target i
 Config.Register("droids", "b2RocketMax", 2600, "B2 wrist rocket: furthest target it fires at")
 Config.Register("droids", "b2RocketSpread", 70, "B2 wrist rocket: miss distance per 1000 units of range")
 
-Config.Register("droids", "heavyHealth", 260, "B1 heavy: health")
+Config.Register("droids", "heavyHealth", 340, "B1 heavy: health")
 Config.Register("droids", "heavySpeed", 140, "B1 heavy: run speed")
 Config.Register("droids", "heavyRPM", 800, "B1 heavy: shots per minute within a burst")
 Config.Register("droids", "heavySpread", 2.0, "B1 heavy: inaccuracy cone (degrees)")
 
-Config.Register("droids", "cmdHealth", 380, "B1 commander: health")
+Config.Register("droids", "cmdHealth", 480, "B1 commander: health")
 Config.Register("droids", "cmdRadius", 800, "B1 commander: droids this close get the boost")
-Config.Register("droids", "cmdSpread", 0.65, "B1 commander boost: aim cone multiplier")
-Config.Register("droids", "cmdReaction", 0.5, "B1 commander boost: reaction time multiplier")
+Config.Register("droids", "cmdSpread", 0.7, "B1 commander boost: aim cone multiplier")
+Config.Register("droids", "cmdReaction", 0.6, "B1 commander boost: reaction time multiplier")
 Config.Register("droids", "cmdPause", 0.6, "B1 commander boost: pause between bursts multiplier")
 Config.Register("droids", "cmdDeathTime", 6, "B1 commander killed: seconds nearby droids are rattled (0 = off)")
 Config.Register("droids", "cmdDeathMult", 1.8, "B1 commander killed: aim cone multiplier while rattled")
@@ -79,6 +83,27 @@ Config.Register("droids", "cmdDeathMult", 1.8, "B1 commander killed: aim cone mu
 Config.Register("droids", "moveSpread", 0.003, "Extra aim cone (degrees) per unit/s the target moves")
 Config.Register("droids", "flashSuppress", 3, "Flash charge: droid aim cone multiplier while dazzled")
 Config.Register("droids", "flashTime", 5, "Flash charge: seconds droids stay dazzled")
+
+-- Smarter B1s (2026-10-05as, owner: fewer but stronger droids): cover when
+-- under fire, blind fire from it, pull back once when badly hurt. B2s
+-- don't (they walk into fire). Needs a navmesh; without one they fight
+-- in the open like before.
+Config.Register("droids", "coverHits", 2, "B1: hits within coverWindow that send it to cover (Z-6 suppression and flash charges too)")
+Config.Register("droids", "coverWindow", 2.5, "B1: seconds the hits are counted over")
+Config.Register("droids", "coverTime", 4, "B1: seconds it stays in cover (blind firing) before fighting again")
+Config.Register("droids", "coverCooldown", 8, "B1: seconds after leaving cover before it takes cover again")
+Config.Register("droids", "coverRadius", 700, "B1: how far it looks for a cover spot")
+Config.Register("droids", "blindSpread", 4, "B1: aim cone multiplier when blind firing from cover")
+Config.Register("droids", "retreatFrac", 0.35, "Health share below which a B1 pulls back once (0 = never)")
+-- Peeking (2026-10-05at, owner: 5 B1s and a commander killed you before
+-- you got 4 shots off): aim settles in after first sight, and big groups
+-- focusing one player aim worse per extra shooter.
+Config.Register("droids", "settleTime", 0.8, "Seconds after first seeing a target before a droid aims at its best")
+Config.Register("droids", "settleMult", 1.6, "Aim cone multiplier at first sight (eases to 1 over settleTime)")
+Config.Register("droids", "crowdFree", 3, "Droids that can fire at one player at full accuracy")
+Config.Register("droids", "crowdMult", 0.12, "Extra aim cone per droid above crowdFree firing at the same player")
+Config.Register("droids", "crowdMax", 1.4, "Most the crowd rule widens the aim cone (multiplier)")
+Config.Register("droids", "pathPerTick", 4, "Most route and cover searches all droids start in one tick (spreads the cost)")
 
 function D.Cfg(k) return Config.Get("droids", k) end
 
@@ -97,7 +122,7 @@ D.B2T_MODEL = "models/aussiwozzi/cgi/b1droids/b2_battledroid_training.mdl"
 ]]
 D.KINDS = {
     b1 = { name = "B1 battle droid", model = D.B1_MODEL, health = "b1Health", speed = "b1Speed", range = "b1Range", reaction = "b1Reaction",
-        damage = "e5Damage", rpm = "e5RPM", spread = "e5Spread", burst = { 2, 3 }, color = 2, gun = D.E5_MODEL, nades = true },
+        damage = "e5Damage", rpm = "e5RPM", spread = "e5Spread", burst = { 2, 3 }, color = 2, gun = D.E5_MODEL, nades = true, cover = true },
     b2 = { name = "B2 super battle droid", model = D.B2_MODEL, health = "b2Health", speed = "b2Speed", range = "b2Range", reaction = "b2Reaction",
         damage = "b2Damage", rpm = "b2RPM", spread = "b2Spread", burst = { 5, 8 }, color = 2, big = true, dual = true },
 }
