@@ -14,8 +14,9 @@
       have ("you have to see it to wear it"); on a model without it, it
       stays worn but does nothing. Parts can be taken off and dropped.
 
-      Battalion kit (config gear kit) is given at spawn as job gear; the
-      cabinet hands out the rest, some only from a rank or qualification
+      Battalion kit (config gear kit, empty by default) is given at spawn
+      as job gear; the cabinet hands out the rest (kept: the inventory is
+      saved), some only from a rank or qualification
       (config gear unlocks). Helmet variants stay with the job model.
 
       Effects: kama = less blast damage to the legs and a lower chance of
@@ -130,8 +131,10 @@ G.ON_HELMET = { binos = true, rangefinder = true, light = true, visor = true }
 
 function G.HelmetOn(ply) return not ply:GetNW2Bool("rhylib_helmetOff", false) end
 
-Config.Register("gear", "kit", { ["*"] = { "rhylib_macrobinoculars" } },
-    "Battalion kit given at spawn as job gear: battalion (part of its name, * = everyone) -> item ids")
+-- (owner 2026-10-05: no kit by default; players keep what they take from
+-- the gear cabinet, since the inventory is saved.)
+Config.Register("gear", "kit", {},
+    "Battalion kit given at spawn as job gear: battalion (part of its name, * = everyone) -> item ids, e.g. { [\"*\"] = { \"rhylib_macrobinoculars\" } }. Empty by default")
 Config.Register("gear", "unlocks", {
     rhylib_kama = { rank = "SGT" }, rhylib_pauldron = { rank = "SGT" }, rhylib_rangefinder = { rank = "LT" },
     rhylib_kama_arc = { rank = "SGT" }, rhylib_pauldron_arc = { rank = "SGT" },

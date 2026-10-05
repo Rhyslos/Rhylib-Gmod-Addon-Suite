@@ -414,6 +414,7 @@ function Inv.Deposit(ply, uid, x, y, rot, single)
             inst.count = inst.count - n
             I.update(ply, st, inst)
         end
+        if inst.data.loadout then hook.Run("Rhylib.LoadoutDropped", ply, inst.id) end   -- (rhylib_gear)
         return
     end
 

@@ -84,6 +84,32 @@ function G.Apply(ply)
 
 end
 
+-- Kit parts the player handed back (dropped): not given again at spawn
+-- until they take one again (gear cabinet). Data "gear" "kitoff_"..sid.
+local function kitOff(ply)
+    if ply.rhylibKitOff then return ply.rhylibKitOff end
+    local d = not ply:IsBot() and Rhylib.Data.Get("gear", "kitoff_" .. ply:SteamID64())
+    ply.rhylibKitOff = istable(d) and d or {}
+    return ply.rhylibKitOff
+end
+local function saveKitOff(ply)
+    if ply:IsBot() then return end
+    if next(ply.rhylibKitOff) then
+        Rhylib.Data.Set("gear", "kitoff_" .. ply:SteamID64(), ply.rhylibKitOff)
+    else
+        Rhylib.Data.Delete("gear", "kitoff_" .. ply:SteamID64())
+    end
+end
+
+-- rhylib_inventory: job gear dropped (it just vanishes).
+Rhylib.Hook.Add("Rhylib.LoadoutDropped", "gear.kitoff", function(ply, id)
+    if not (IsValid(ply) and ply:Alive() and G.ITEMS[id] and G.KitFor(ply)[id]) then return end
+    local off = kitOff(ply)
+    if off[id] then return end
+    off[id] = true
+    saveKitOff(ply)
+end)
+
 -- Battalion kit: given as job gear; old kit from another battalion goes.
 function G.GiveKit(ply)
     local I = Inv()
@@ -101,8 +127,9 @@ function G.GiveKit(ply)
     for _, uid in ipairs(old) do
         if I.Remove then I.Remove(ply, uid) end
     end
+    local off = kitOff(ply)
     for id in pairs(kit) do
-        if Items().defs[id] and I.Count(ply, id) < 1 then I.AddItem(ply, id, 1, { issued = true, loadout = true }) end
+        if Items().defs[id] and not off[id] and I.Count(ply, id) < 1 then I.AddItem(ply, id, 1, { issued = true, loadout = true }) end
     end
 end
 
@@ -149,6 +176,15 @@ Rhylib.Hook.Add("PlayerSpawn", "gear.spawn", function(ply)
 end)
 
 Rhylib.Hook.Add("Rhylib.InventoryChanged", "gear.apply", function(ply)
+    -- Took a handed-back kit part again: it comes with the kit again.
+    local off = ply.rhylibKitOff
+    if off and next(off) and Inv() and Inv().Count then
+        local any = false
+        for id in pairs(off) do
+            if Inv().Count(ply, id) > 0 then off[id] = nil any = true end
+        end
+        if any then saveKitOff(ply) end
+    end
     checkUse(ply)
     G.Apply(ply)
 end)

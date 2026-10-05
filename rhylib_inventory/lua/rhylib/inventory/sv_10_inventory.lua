@@ -639,6 +639,7 @@ function Inv.Drop(ply, uid, single)
             removeInst(ply, st, uid)
         end
         Inv.Note(ply, "Job gear handed back")
+        hook.Run("Rhylib.LoadoutDropped", ply, inst.id)   -- (rhylib_gear: kit not given again)
         return
     end
     -- Issued gear drops too (someone may need it), but despawns after a while.
