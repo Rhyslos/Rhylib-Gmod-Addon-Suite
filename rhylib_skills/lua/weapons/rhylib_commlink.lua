@@ -91,7 +91,7 @@ if CLIENT then
         local o = K and K.OrderOf and K.OrderOf(me)
         if not o then return end
         local col = K.OrderCooldown(me) > 0 and GREY or o.col
-        local r = K.Cfg("commandRadius")
+        local r = K.OrderRadius and K.OrderRadius(me) or K.Cfg("commandRadius")
         local c = me:GetPos() + Vector(0, 0, 3)
         render.SetMaterial(beam)
         local prev = c + Vector(r, 0, 0)

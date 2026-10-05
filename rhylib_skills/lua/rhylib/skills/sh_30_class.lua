@@ -31,8 +31,10 @@ K.CLASSES = {
       desc = "Picks off priority targets with the DC-15X or a steady DC-15S, and marks them for the squad." },
     { id = "heavy", name = "Heavy", cat = "support", spec = "heavy", who = "Anyone",
       desc = "Z-6 and DP-24 anchor who soaks hits and suppresses droids." },
-    { id = "officer", name = "Officer", cat = "officer", who = "Anyone", orders = true,
-      desc = "Dual pistols, quick footwork and marking targets. Leads with one command order of your choice." },
+    { id = "officer", name = "Pistol officer", cat = "officer", spec = "pistol", who = "Anyone", orders = true,
+      desc = "Rex: dual pistols, quick footwork and marking targets. Leads with one command order of your choice." },
+    { id = "commander", name = "Commander", cat = "officer", spec = "commander", who = "Anyone", orders = true,
+      desc = "Cody, Gree, Fox: rifles, the sun visor's locks for the squad, and a stronger command order of your choice." },
     { id = "airborne", name = "Airborne", cat = "airborne", who = "Anyone",
       desc = "Jetpack trooper: long flights, hard landings, grenades from above and slamming into droids." },
     { id = "combat_medic", name = "Combat medic", cat = "medic", spec = "combat_medic", who = "Medics",
@@ -70,8 +72,11 @@ function K.ClassSet(cls, orderId)
             set[n.id] = true
         end
     end
-    if cls.orders and orderId and K.byId[orderId] and K.byId[orderId].exclusive == "command" then
-        set[orderId] = true
+    -- (orderId is the base order skill; each spec has its own copy of it)
+    if cls.orders and orderId then
+        for _, n in ipairs(K.NODES) do
+            if n.exclusive == "command" and n.order == orderId and n.spec == cls.spec then set[n.id] = true end
+        end
     end
     return set
 end

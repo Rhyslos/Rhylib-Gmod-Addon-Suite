@@ -10,8 +10,9 @@
         the client's zoomed fov, capped by markOpticsCone), in sight.
       - sun visor down: the enemy the client rings (visor bit + its index),
         checked here (enemy, in sight, within markVisorCone of the aim).
-    A Q mark is a LOCK: a new Q replaces that player's older locks (spots
-    stay). Locks give the marker's squad mates (not Marksmen) x
+    Tactical visor (Commander) makes a Q mark a LOCK (markLockTime s): a
+    new Q replaces that player's older locks (spots stay); without it a Q
+    mark is a plain mark (and also replaces the old ones). Locks give the marker's squad mates (not Marksmen) x
     markLockDamage on that target (K.LockMult, from K.DamageMult); the
     marker sees a red ring on it, the squad a red diamond. Spots (visor)
     and Called shot marks only show the target. Any live mark feeds
@@ -21,7 +22,11 @@
     skills.mark (marker 13, replace bit, quiet bit, lock bit, seconds 6,
     count 3, targets 13 each) goes to the marker and their squad only
     (rhylib_radio squads).
-    Sun visor (rhylib_gear) down + Mark target: every visorSpotEvery s up to
+    Also here: the Commander's squad skills (Field logistics, Steady the
+    line): every 0.5 s, holders mark themselves and radio squad mates within
+    squadSkillRange (p.rhylibLogi; NW2Bool rhylib_steadyLine, read by the
+    shared kick and stamina code). K.SquadMembers(ply) for Chain of command.
+    Sun visor (rhylib_gear) down + Tactical visor: every visorSpotEvery s up to
     markMax enemies in sight within visorSpotCone of the view are spotted
     for visorSpotTime s (quiet, added to the player's marks).
 ]]
@@ -36,6 +41,20 @@ K.marks = K.marks or {}   -- [marker] = { [target] = true }
 local function squadOf(p)
     local R = Rhylib.Radio
     return R and R.SquadOf and R.SquadOf(p) or 0
+end
+
+-- A player's radio squad, them included (alive or not).
+function K.SquadMembers(ply)
+    local out = { ply }
+    local R = Rhylib.Radio
+    local sq = squadOf(ply)
+    local s = sq > 0 and R and R.squads and R.squads[sq]
+    if s then
+        for p in pairs(s.members) do
+            if IsValid(p) and p ~= ply then out[#out + 1] = p end
+        end
+    end
+    return out
 end
 
 -- Who sees a player's marks: them and their squad.
@@ -99,7 +118,7 @@ Rhylib.Net.Receive("skills.markreq", function(ply)
     local G = Rhylib.Gear
     local optics = opticsReq and G and G.Looking and G.Looking(ply) or false
     local list
-    if visorIdx and ply:GetNW2Bool("rhylib_visorDown", false) then
+    if visorIdx and ply:GetNW2Bool("rhylib_visorDown", false) and K.Has(ply, "tactical_visor") then
         -- The enemy the visor rings (the client picked it from the spots).
         local e = Entity(visorIdx)
         list = {}
@@ -112,6 +131,10 @@ Rhylib.Net.Receive("skills.markreq", function(ply)
                 list[1] = e
             end
         end
+    end
+    -- (no visor pick, or it didn't check out: mark the normal way)
+    if list and #list > 0 then
+        -- (keep the visor's pick)
     elseif optics then
         -- (the client's zoomed view: the middle 60% of its half-width)
         local cone = math.Clamp(fov * 0.5 * 0.6, 1, K.Cfg("markOpticsCone"))
@@ -133,7 +156,10 @@ Rhylib.Net.Receive("skills.markreq", function(ply)
         end
         ply:LagCompensation(false)
     end
-    if #list > 0 then K.PlaceMarks(ply, list, K.Cfg("markTime"), true, false, true) end
+    if #list == 0 then return end
+    -- Tactical visor: Q locks (longer, red, squad damage); else a plain mark.
+    local lock = K.Has(ply, "tactical_visor")
+    K.PlaceMarks(ply, list, lock and K.Cfg("markLockTime") or K.Cfg("markTime"), true, false, lock)
 end, { rate = 4, burst = 4 })
 
 -- Mark these targets for ply and tell them and their squad. replace: drop
@@ -145,7 +171,8 @@ function K.PlaceMarks(ply, list, secs, replace, quiet, lock)
     if replace then
         for e in pairs(mine) do
             local mk = IsValid(e) and e.rhylibMarks and e.rhylibMarks[ply]
-            if not mk or mk.lock or mk.untilT <= now then
+            -- (locks go; a plain Q drops the old plain Q marks too, spots stay)
+            if not mk or mk.lock or mk.q or mk.untilT <= now then
                 if mk then e.rhylibMarks[ply] = nil end
                 mine[e] = nil
             end
@@ -159,11 +186,12 @@ function K.PlaceMarks(ply, list, secs, replace, quiet, lock)
         e.rhylibMarks = e.rhylibMarks or {}
         local old = e.rhylibMarks[ply]
         if old and old.untilT <= now then old = nil end
-        if lock then
-            e.rhylibMarks[ply] = { untilT = untilT, lock = true }
+        if lock or replace then
+            -- (a Q: a lock, or a plain mark that replaces the old one)
+            e.rhylibMarks[ply] = { untilT = untilT, lock = lock or nil, q = (not lock) or nil }
         else
             -- (a shorter spot never cuts a longer mark short, nor unlocks it)
-            e.rhylibMarks[ply] = { untilT = math.max(untilT, old and old.untilT or 0), lock = old and old.lock or nil }
+            e.rhylibMarks[ply] = { untilT = math.max(untilT, old and old.untilT or 0), lock = old and old.lock or nil, q = old and old.q or nil }
         end
     end
     Rhylib.Net.Start("skills.mark")
@@ -182,12 +210,45 @@ timer.Create("Rhylib.Skills.VisorSpot", 1, 0, function()
     local now = CurTime()
     for _, ply in ipairs(player.GetHumans()) do
         if ply:GetNW2Bool("rhylib_visorDown", false) and ply:Alive() and not ply.rhylibDown
-            and (ply.rhylibVisorSpot or 0) <= now and K.Has(ply, "mark_target") then
+            and (ply.rhylibVisorSpot or 0) <= now and K.Has(ply, "tactical_visor") then
             ply.rhylibVisorSpot = now + K.Cfg("visorSpotEvery")
             local list = inCone(ply, K.Cfg("visorSpotCone"), K.Cfg("markMax"))
             if #list > 0 then K.PlaceMarks(ply, list, K.Cfg("visorSpotTime"), false, true) end
         end
     end
+end)
+
+-- Field logistics / Steady the line: every 0.5 s, each holder (alive, not
+-- downed) covers themselves and radio squad mates within squadSkillRange.
+K.auraLine = K.auraLine or {}   -- [ply] = true while NW2 rhylib_steadyLine is on
+timer.Create("Rhylib.Skills.SquadAura", 0.5, 0, function()
+    local line, logi = {}, {}
+    local r2 = K.Cfg("squadSkillRange") ^ 2
+    for _, h in ipairs(player.GetHumans()) do
+        local hasLine, hasLogi = K.Has(h, "steady_line"), K.Has(h, "field_logistics")
+        if (hasLine or hasLogi) and h:Alive() and not h.rhylibDown then
+            local pos = h:GetPos()
+            for _, p in ipairs(K.SquadMembers(h)) do
+                if p:Alive() and p:GetPos():DistToSqr(pos) <= r2 then
+                    if hasLine then line[p] = true end
+                    if hasLogi then logi[p] = true end
+                end
+            end
+        end
+    end
+    for p in pairs(K.auraLine) do
+        if not line[p] then
+            if IsValid(p) then p:SetNW2Bool("rhylib_steadyLine", false) end
+            K.auraLine[p] = nil
+        end
+    end
+    for p in pairs(line) do
+        if not K.auraLine[p] then
+            p:SetNW2Bool("rhylib_steadyLine", true)
+            K.auraLine[p] = true
+        end
+    end
+    for _, p in ipairs(player.GetAll()) do p.rhylibLogi = logi[p] or nil end
 end)
 
 -- Called shot (Marksman): a headshot adds the target to your marks.

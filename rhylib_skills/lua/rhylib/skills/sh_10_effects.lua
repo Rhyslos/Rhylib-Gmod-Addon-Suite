@@ -67,7 +67,16 @@ reg("visorSpotEvery", 5, "Mark target + sun visor down: seconds between automati
 reg("visorSpotCone", 30, "Mark target + sun visor down: cone (degrees from the middle) the automatic spot searches")
 reg("visorSpotTime", 6, "Mark target + sun visor down: seconds an automatic spot lasts")
 reg("markAimCone", 3, "Mark target: without optics, the nearest enemy within this many degrees of the crosshair counts")
-reg("markLockDamage", 1.15, "Mark target: damage multiplier for the marker's squad mates (not Marksmen) on a locked target (a Q mark)")
+reg("markLockDamage", 1.15, "Tactical visor: damage multiplier for the marker's squad mates (not Marksmen) on a locked target")
+reg("markLockTime", 25, "Tactical visor: seconds a lock (a Q mark) lasts")
+reg("squadSkillRange", 600, "Field logistics / Steady the line: reach around the commander (units, 600 = about 15 m)")
+reg("logiReload", 0.85, "Field logistics: reload time multiplier near the commander")
+reg("lineKick", 0.85, "Steady the line: view kick multiplier near the commander")
+reg("lineRegen", 1.25, "Steady the line: stamina refill multiplier near the commander")
+reg("rifleDrillSpread", 0.8, "Rifle drill: aimed spread multiplier (rifles and carbines)")
+reg("vetRifle", 0.9, "Combat veteran: rifle spread, kick and reload time multiplier")
+reg("vetCarbineDamage", 1.08, "Combat veteran: carbine damage multiplier")
+reg("vetZ6Resist", 0.9, "Combat veteran: damage taken multiplier with the Z-6 in hand")
 reg("markVisorCone", 10, "Mark target: Q with the sun visor down locks the ringed enemy if it's within this many degrees of the aim")
 reg("undoWindow", 120, "Seconds after learning a skill in which right-click can undo it (any time while reset is allowed)")
 reg("rushDamage", 1.25, "Battle rush: damage multiplier")
@@ -160,12 +169,20 @@ function K.ItemGun(id)
 end
 K.PISTOLS = { rhylib_dc17 = true }
 
+-- Gun type from the weapon's InvGroup (rifle: DC-15A, Westar-M5; carbine:
+-- DC-15S, DP-23; training copies inherit it).
+function K.IsRifle(wep) return IsValid(wep) and wep.InvGroup == "rifle" end
+function K.IsCarbine(wep) return IsValid(wep) and wep.InvGroup == "carbine" and not wep.RiotShield end   -- (the shield is a DC-15S underneath)
+
 local function isPly(p) return IsValid(p) and p:IsPlayer() end
 
 function K.ModeAllowed(ply, wep, mode)
     local need = wep.SkillModes and wep.SkillModes[mode]
     if not need then return true end
-    return isPly(ply) and K.Has(ply, need)
+    if not isPly(ply) then return false end
+    -- Combat veteran: the DC-15A's full auto too.
+    if need == "full_auto" and K.Has(ply, "combat_veteran") then return true end
+    return K.Has(ply, need)
 end
 
 function K.ScopeAllowed(ply, wep)
@@ -197,6 +214,8 @@ function K.SpreadMult(ply, wep)
     local aiming = wep.GetAiming and wep:GetAiming()
     if set.steady_aim and aiming then m = m * cfg("steadyAimSpread") end
     if set.carbine_disc and aiming and class == K.DC15S then m = m * cfg("carbineSpread") end
+    if set.rifle_drill and aiming and (K.IsRifle(wep) or K.IsCarbine(wep)) then m = m * cfg("rifleDrillSpread") end
+    if set.combat_veteran and K.IsRifle(wep) then m = m * cfg("vetRifle") end
     if set.hover and K.Hovering(ply) then m = m * cfg("hoverSpread") end
     if set.first_shot and K.FirstShotReady(ply, wep) then m = m * cfg("firstShotSpread") end
     return m
@@ -213,6 +232,8 @@ function K.RecoilMult(ply, wep)
     if K.OrderIs(ply, "focus") then m = m * cfg("focusRecoil") end   -- (command order)
     if K.GunClass(wep) == K.DC15S and K.Has(ply, "carbine_disc") then m = m * cfg("carbineRecoil") end
     if K.Has(ply, "hover") and K.Hovering(ply) then m = m * cfg("hoverRecoil") end
+    if K.Has(ply, "combat_veteran") and K.IsRifle(wep) then m = m * cfg("vetRifle") end
+    if ply:GetNW2Bool("rhylib_steadyLine", false) then m = m * cfg("lineKick") end   -- (Steady the line)
     local mode = wep.GetFireModeName and wep:GetFireModeName()
     if mode == "overcharge" then m = m * cfg("overchargeKick") end
     -- Sustained fire: the kick eases down (smoothstep) the longer a DC-15A
@@ -288,6 +309,8 @@ function K.ReloadMult(ply, wep, cell)
     local m = 1
     if not cell and K.Has(ply, "quick_hands") then m = m * cfg("quickHandsMult") end
     if K.Has(ply, "speed_loader") and K.PISTOLS[K.GunClass(wep)] then m = m * cfg("speedLoaderMult") end
+    if K.Has(ply, "combat_veteran") and K.IsRifle(wep) then m = m * cfg("vetRifle") end
+    if ply.rhylibLogi then m = m * cfg("logiReload") end   -- (Field logistics, server)
     if (ply.rhylibMomentumReload or 0) > CurTime() then
         m = m * cfg("momentumReload")
         ply.rhylibMomentumReload = nil   -- (one reload)
@@ -397,8 +420,10 @@ function K.FreeSprint(ply)
 end
 
 function K.RegenMult(ply)
-    if K.OrderIs(ply, "wind") then return cfg("windRegen") end
-    return 1
+    local m = 1
+    if K.OrderIs(ply, "wind") then m = cfg("windRegen") end
+    if isPly(ply) and ply:GetNW2Bool("rhylib_steadyLine", false) then m = m * cfg("lineRegen") end   -- (Steady the line)
+    return m
 end
 
 -- Light kit: a little faster while lightly loaded. Before every limiter

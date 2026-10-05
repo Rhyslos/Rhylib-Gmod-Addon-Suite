@@ -53,6 +53,33 @@ function K.Stored(ply)
             end
         end
     end
+    -- The officer split (2026-10-05): a save with officer skills from both
+    -- specs (old saves had Adaptable in the pistol tree) keeps the spec
+    -- with more skills; losing Adaptable also drops what it borrowed.
+    local count = { pistol = 0, commander = 0 }
+    for id in pairs(set) do
+        local n = K.byId[id]
+        if n and n.cat == "officer" and count[n.spec] then count[n.spec] = count[n.spec] + 1 end
+    end
+    if count.pistol > 0 and count.commander > 0 then
+        local drop = count.pistol >= count.commander and "commander" or "pistol"
+        local hadAdapt = set.adapt_1
+        for id in pairs(set) do
+            local n = K.byId[id]
+            if n and n.cat == "officer" and n.spec == drop then set[id] = nil end
+        end
+        if hadAdapt and not set.adapt_1 then
+            for id in pairs(set) do
+                if K.byId[id].cat ~= "officer" then set[id] = nil end
+            end
+        end
+        if not ply:IsBot() then
+            local ids = {}
+            for id in pairs(set) do ids[#ids + 1] = id end
+            table.sort(ids)
+            Data.Set("skills", key(ply), { n = ids })
+        end
+    end
     ply.rhylibSkills = set
     ply.rhylibSkillsLoaded = true
     return set
@@ -284,6 +311,7 @@ function K.DamageMult(ply, bolt, ent, tr, group)
     if K.LockMult then m = m * K.LockMult(ply, ent, set) end   -- (a squad mate's locked mark)
     if next(set) == nil then return m, false end
     local wep = bolt.weapon
+    if set.combat_veteran and K.IsCarbine(wep) then m = m * K.Cfg("vetCarbineDamage") end   -- (Combat veteran)
     if set.carbine_sidearm and IsValid(wep) and wep.GetFireModeName and wep:GetFireModeName() == "sidearm" then
         m = m * K.Cfg("sidearmDamage")
     end
@@ -359,6 +387,10 @@ Rhylib.Hook.Add("EntityTakeDamage", "skills.resist", function(ent, dmg)
         end
         if set.combat_drop and (ent.rhylibDropUntil or 0) > CurTime() then m = m * K.Cfg("combatDropMult") end
         if set.juggernaut then m = m * K.Cfg("juggernautMult") end
+        if set.combat_veteran then
+            local aw = ent:GetActiveWeapon()
+            if IsValid(aw) and K.GunClass(aw) == K.Z6 then m = m * K.Cfg("vetZ6Resist") end
+        end
         if set.under_fire then
             local Med = Rhylib.Medical
             local a = Med and Med.acts and Med.acts[ent]

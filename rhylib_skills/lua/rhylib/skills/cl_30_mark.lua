@@ -3,8 +3,9 @@
     Rhylib.MarkKey from rhylib_menus), and marks sent to us (ours or a
     squad mate's) are drawn over the target until they run out or the
     target dies. Through optics, one Q marks several (sv_30_mark).
-    Q marks are locks: red diamonds for everyone who sees them (the squad
-    hits locked targets harder), spots and Called shot marks orange.
+    A Commander's (Tactical visor) Q marks are locks: red diamonds for
+    everyone who sees them (the squad hits locked targets harder); other
+    marks, spots and Called shot marks orange.
     Sun visor down: a white ring on the spotted enemy nearest the aim; Q
     locks that one. Your own locks get a red ring (only you see rings).
 ]]
@@ -45,7 +46,7 @@ Rhylib.Net.Receive("skills.mark", function()
     if replace then
         for t, per in pairs(K.clientMarks) do
             local mk = per[by]
-            if mk and (mk.lock or mk.untilT <= now) then per[by] = nil end
+            if mk and (mk.lock or mk.q or mk.untilT <= now) then per[by] = nil end
             if next(per) == nil then K.clientMarks[t] = nil end
         end
     end
@@ -56,11 +57,12 @@ Rhylib.Net.Receive("skills.mark", function()
         K.clientMarks[idx] = per
         local old = per[by]
         if old and old.untilT <= now then old = nil end
-        if lock then
-            per[by] = { untilT = untilT, lock = true }
+        if lock or replace then
+            -- (a Q: a lock, or a plain mark the next Q replaces)
+            per[by] = { untilT = untilT, lock = lock or nil, q = (not lock) or nil }
         else
             -- (a shorter spot never cuts a longer mark short, nor unlocks it)
-            per[by] = { untilT = math.max(untilT, old and old.untilT or 0), lock = old and old.lock or nil }
+            per[by] = { untilT = math.max(untilT, old and old.untilT or 0), lock = old and old.lock or nil, q = old and old.q or nil }
         end
     end
     if not quiet then surface.PlaySound(by == LocalPlayer():EntIndex() and "buttons/blip1.wav" or "buttons/blip2.wav") end
@@ -163,7 +165,7 @@ Rhylib.Hook.Add("HUDPaint", "skills.visorring", function()
     K.visorTarget = nil
     if next(K.clientMarks) == nil then return end
     local me = LocalPlayer()
-    if not (IsValid(me) and me:Alive() and K.Has(me, "mark_target")) then return end
+    if not (IsValid(me) and me:Alive() and K.Has(me, "tactical_visor")) then return end
     local myIdx = me:EntIndex()
     local now = CurTime()
     local s = ScrH() / 1080

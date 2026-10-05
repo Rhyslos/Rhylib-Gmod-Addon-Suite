@@ -45,9 +45,15 @@ function K.IssueOrder(ply)
     end
 
     local now = CurTime()
-    local untilT = now + cfg("commandTime")
+    local len = K.OrderTime(ply)
+    local untilT = now + len
     local from = ply:EyePos()
-    local r2 = cfg("commandRadius") ^ 2
+    local r2 = K.OrderRadius(ply) ^ 2
+    -- Chain of command: the whole radio squad, wherever they are.
+    local chain = {}
+    if K.Has(ply, "chain_command") and K.SquadMembers then
+        for _, p in ipairs(K.SquadMembers(ply)) do chain[p] = true end
+    end
     local hit = {}
     local Med, A = Rhylib.Medical, Rhylib.Armor
     for _, p in ipairs(player.GetAll()) do
@@ -58,8 +64,8 @@ function K.IssueOrder(ply)
             and not util.TraceLine({ start = from, endpos = p:GetPos() + Vector(0, 0, 20), mask = MASK_SOLID_BRUSHONLY }).Hit then
             Med.Revive(p, math.max(1, p:GetMaxHealth() * cfg("triageRevive")), ply)
         end
-        if near and canReceive(p)
-            and (p == ply or not util.TraceLine({ start = from, endpos = p:EyePos(), mask = MASK_SOLID_BRUSHONLY }).Hit) then
+        local reach = near and (p == ply or not util.TraceLine({ start = from, endpos = p:EyePos(), mask = MASK_SOLID_BRUSHONLY }).Hit)
+        if canReceive(p) and (reach or chain[p]) then
             -- Hold fast: armour back to full (it stays after the order).
             if o.key == "hold" then
                 local full = A and A.SpawnArmor and A.SpawnArmor(p) or 100
@@ -68,13 +74,15 @@ function K.IssueOrder(ply)
             hit[#hit + 1] = p
             p:SetNW2Int("rhylib_order", o.index)
             p:SetNW2Float("rhylib_orderEnd", untilT)
+            p:SetNW2Float("rhylib_orderLen", len)
             -- Field triage mutes afflictions; another order ends that.
             p:SetNW2Float("rhylib_afflMute", o.key == "triage" and untilT or 0)
             if o.key == "triage" then K.triage[p] = true else K.triage[p] = nil end
         end
     end
-    ply:SetNW2Float("rhylib_orderCd", now + cfg("commandCooldown"))
-    K.orderCd[ply:SteamID64() or ""] = now + cfg("commandCooldown")
+    local cdLen = K.OrderCooldownTime(ply)
+    ply:SetNW2Float("rhylib_orderCd", now + cdLen)
+    K.orderCd[ply:SteamID64() or ""] = now + cdLen
     ply:EmitSound("npc/combine_soldier/vo/on1.wav", 70, 110)
 
     Rhylib.Net.Start("skills.order")

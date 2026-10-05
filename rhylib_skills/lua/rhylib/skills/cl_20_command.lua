@@ -74,7 +74,7 @@ Rhylib.Hook.Add("HUDPaint", "skills.orderhud", function()
     if not o then return end
     local w, h = ScrW(), ScrH()
     local left = K.OrderLeft(me)
-    local total = math.max(K.Cfg("commandTime"), 0.1)
+    local total = math.max(me:GetNW2Float("rhylib_orderLen", 0) > 0 and me:GetNW2Float("rhylib_orderLen", 0) or K.Cfg("commandTime"), 0.1)
     local fade = math.Clamp(left / 0.6, 0, 1)
 
     -- Edge glow: a brighter pulse as the order lands, then a soft steady glow.

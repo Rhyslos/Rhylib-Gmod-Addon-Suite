@@ -137,7 +137,11 @@ local ICONS = {
     light_rounds = "rounds", adapt_1 = "swap", dp23_prof = "rounds", battle_rush = "burst", grenadier = "grenade", hover = "up",
     carbine_disc = "aim", called_shot = "eye", priority_target = "star", precision_rhythm = "stack",
     cmd_wind = "run", cmd_triage = "cross", cmd_hold = "shield", cmd_focus = "aim", cmd_open = "box", cmd_press = "charge",
+    rifle_drill = "crosshair", cmd_presence = "up", seasoned_cmd = "clock", standing_orders = "anchor", chain_command = "phalanx",
 }
+for _, o in ipairs({ "cmd_wind", "cmd_triage", "cmd_hold", "cmd_focus", "cmd_open", "cmd_press" }) do
+    ICONS[o .. "_c"] = ICONS[o]   -- (the Commander's copies of the orders)
+end
 
 local function iconOf(n) return n.icon or ICONS[n.id] or "star" end
 

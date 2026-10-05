@@ -1,5 +1,5 @@
 --[[
-    Command orders (Officer tier 6, pick one): a short buff the officer
+    Command orders (Officer, pick one: Pistol tier 6, Commander tier 3): a short buff the officer
     gives with the command comlink (weapons/rhylib_commlink.lua) to
     themselves and everyone within commandRadius in sight, for
     commandTime seconds, then commandCooldown before the next one.
@@ -12,7 +12,11 @@
 
         K.Order(ply)        the active order table, or nil
         K.OrderIs(ply, key) is this order active on ply?
-        K.OrderOf(ply)      the order this officer can give (from skills)
+        K.OrderOf(ply)      the order this officer can give (from skills:
+                            cmd_x in the Pistol spec, cmd_x_c in the Commander's)
+        K.OrderRadius(ply), K.OrderTime(ply), K.OrderCooldownTime(ply)
+                            with Command presence / Standing orders /
+                            Seasoned command (Commander)
 ]]
 
 local K = Rhylib.Skills
@@ -28,6 +32,9 @@ reg("triageRevive", 0.25, "Field triage: downed players in reach get up with thi
 reg("focusDamage", 1.2, "Focus fire: damage multiplier")
 reg("focusRecoil", 0.5, "Focus fire: view kick multiplier")
 reg("pressSprint", 1.2, "Press forward: sprint speed multiplier")
+reg("presenceMult", 1.5, "Command presence: order radius multiplier")
+reg("seasonedCooldown", 240, "Seasoned command: order cooldown (seconds)")
+reg("standingTime", 10, "Standing orders: seconds orders last")
 
 local function cfg(k) return Config.Get("skills", k) end
 
@@ -65,8 +72,22 @@ function K.OrderOf(ply)
     if not (IsValid(ply) and ply:IsPlayer()) then return nil end
     local set = K.Set(ply)
     for _, o in ipairs(K.ORDERS) do
-        if set[o.skill] then return o end
+        if set[o.skill] or set[o.skill .. "_c"] then return o end
     end
+end
+
+function K.OrderRadius(ply)
+    local r = cfg("commandRadius")
+    if K.Has(ply, "cmd_presence") then r = r * cfg("presenceMult") end
+    return r
+end
+
+function K.OrderTime(ply)
+    return K.Has(ply, "standing_orders") and cfg("standingTime") or cfg("commandTime")
+end
+
+function K.OrderCooldownTime(ply)
+    return K.Has(ply, "seasoned_cmd") and cfg("seasonedCooldown") or cfg("commandCooldown")
 end
 
 -- Seconds until this officer can give an order again (0 = ready).
