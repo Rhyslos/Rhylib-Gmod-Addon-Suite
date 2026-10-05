@@ -34,7 +34,8 @@ Config.Register("weapons", "breachReach", 80, "Breaching charge: how far you can
 
 SWEP.Base = "weapon_base"
 SWEP.PrintName = "Grenade"
-SWEP.Category = "Rhylib: Republic"
+SWEP.Category = "Rhylib: Grenades & charges"
+SWEP.InvGroup = "grenade"   -- (armoury shelf: rhylib_inventory Items.GroupOf)
 SWEP.Spawnable = false
 SWEP.Slot = 4
 SWEP.DrawAmmo = false

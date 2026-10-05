@@ -28,13 +28,14 @@ Rhylib.Config.Register("weapons", "riotShield", "tf2", "Riot shield model: tf2, 
 
 SWEP.Base = "rhylib_dc15s"
 SWEP.PrintName = "Riot shield (DC-15S)"
-SWEP.Category = "Rhylib: Republic"
+SWEP.Category = "Rhylib: Equipment"
 SWEP.Spawnable = true
 
 SWEP.RiotShield = true
 SWEP.NoAim = true
 SWEP.CarrySkill = "riot_shield"
 SWEP.HoldType = "pistol"
+SWEP.LoweredHold = "passive"   -- (keeps its old sprint pose; pistol grips otherwise lower to "normal")
 
 -- Arms: the HL2 stun stick viewmodel (ships with GMod), drawn invisible.
 SWEP.CarrierVM = "models/weapons/c_stunstick.mdl"

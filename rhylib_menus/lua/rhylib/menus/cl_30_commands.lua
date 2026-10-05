@@ -527,7 +527,8 @@ end
 
 Menus.AddPage("commands", {
     title = "Commands",
-    order = 20,
+    order = 50,
+    group = "staff",
     visible = isStaff,
     build = function(page)
         local mod = Menus.AdminMod()

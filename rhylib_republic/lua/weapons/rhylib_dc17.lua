@@ -11,7 +11,8 @@ AddCSLuaFile()
 
 SWEP.Base = "rhylib_base"
 SWEP.PrintName = "DC-17"
-SWEP.Category = "Rhylib: Republic"
+SWEP.Category = "Rhylib: Pistols"
+SWEP.InvGroup = "pistol"   -- (armoury shelf: rhylib_inventory Items.GroupOf)
 SWEP.Spawnable = true
 SWEP.AdminOnly = false
 
@@ -25,9 +26,11 @@ SWEP.UseHands = false
 SWEP.CarrierVM = "models/bf2017/c_scoutblaster.mdl"
 SWEP.CarrierBone = "v_scoutblaster_reference001"
 SWEP.CarrierBoneMove = Vector(0, -0.3, 0)
-SWEP.PropBonePos = Vector(-1.8, 12.6, 0.5)
-SWEP.PropBoneAng = Angle(0, 90, 0)
+SWEP.PropBonePos = Vector(-1.5, 13.2, 0.5)   -- (owner-tuned 2026-10-05, in dual)
+SWEP.PropBoneAng = Angle(-2, 89, 0)
 SWEP.PropBoneScale = 1
+SWEP.VMOffset = Vector(0, 0, 0)
+SWEP.CarrierFOV = 54
 SWEP.ReloadTime = 1.6       -- seconds, whatever the viewmodel's animation length
 SWEP.HoldType = "pistol"
 SWEP.Slot = 1
@@ -63,10 +66,14 @@ SWEP.DualHoldType = "duel"
 SWEP.DualPropVMPos = Vector(14, -9, -6)      -- floating at the left of the view
 SWEP.DualPropVMAng = Angle(0, 0, 0)
 SWEP.DualPropWMPos = Vector(3, 1.5, -1)      -- left hand
-SWEP.DualPropWMAng = Angle(0, 0, 180)
--- Dual in first person: GMod's Counter-Strike dual pistols with hands; both
--- of its guns are hidden and a DC-17 drawn on each (offsets are guesses;
--- rhylib_vm_bones lists the bones). Floats as above if the model is missing.
+SWEP.DualPropWMAng = Angle(0, 0, 0)       -- (owner: was upside down at roll 180)
+-- Dual in first person: the pistol viewmodel and hands drawn a second
+-- time, mirrored, as the left hand (owner: the Counter-Strike dual pistols
+-- model never showed a left hand). The CS:S model stays as the fallback.
+SWEP.DualMirror = true
+SWEP.DualSpread = 3                          -- (owner-tuned)
+SWEP.DualMirrorPos = Vector(-0.2, -2.6, -0.3)
+SWEP.DualMirrorAng = Angle(0, 1, 0)
 SWEP.DualCarrierVM = "models/weapons/cstrike/c_pist_elite.mdl"
 SWEP.DualBonePos = Vector(0, 0, 0)
 SWEP.DualBoneAng = Angle(0, 0, 0)

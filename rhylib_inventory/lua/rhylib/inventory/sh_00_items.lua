@@ -59,9 +59,11 @@ function Items.Get(id)
 end
 
 -- Groups for storage shelves (depots lay their stock out under headings).
--- def.group overrides; back-slot items are "back"; else def.category.
-Items.GROUP_ORDER = { "weapon", "training", "ammo", "medical", "back", "body", "helmet", "gear", "misc" }
-Items.GROUP_NAMES = { weapon = "Weapons", training = "Training", ammo = "Ammunition", medical = "Medical",
+-- def.group overrides (guns: SWEP.InvGroup rifle / carbine / pistol / heavy /
+-- shotgun / sniper / grenade); back-slot items are "back"; else def.category.
+Items.GROUP_ORDER = { "rifle", "carbine", "pistol", "heavy", "shotgun", "sniper", "weapon", "grenade", "training", "ammo", "medical", "back", "body", "helmet", "gear", "misc" }
+Items.GROUP_NAMES = { rifle = "Rifles", carbine = "Carbines", pistol = "Pistols", heavy = "Heavy", shotgun = "Shotguns",
+    sniper = "Snipers", grenade = "Grenades & charges", weapon = "Other weapons", training = "Training", ammo = "Ammunition", medical = "Medical",
     back = "Back", body = "Body armour & kit", helmet = "Helmet gear", gear = "Equipment", misc = "Other" }
 
 function Items.GroupOf(def)
@@ -128,6 +130,7 @@ function Items.RegisterWeapons()
                     h = full.InvH or 1,
                     model = full.WorldModel,
                     category = full.InvCategory or "weapon",
+                    group = full.InvGroup,
                     weapon = class,
                     large = full.InvLarge,
                     weight = full.InvWeight,
@@ -136,8 +139,11 @@ function Items.RegisterWeapons()
                     rounds = full.InvUses,
                     unit = full.InvUses and "uses" or nil,
                     carrySkill = full.CarrySkill,   -- (rhylib_skills: only players with it may carry it)
-                    -- Fits a holster: SWEP.Holster, or a small pistol.
-                    holster = full.Holster or (full.Holster == nil and full.HoldType == "pistol"
+                    -- Fits a holster: SWEP.InvHolster (true/false), or a small pistol.
+                    -- (Not SWEP.Holster: that's the weapon's holster function, so
+                    -- every gun had a function here and none fitted.)
+                    holster = (full.InvHolster ~= nil and full.InvHolster == true)
+                        or (full.InvHolster == nil and full.HoldType == "pistol"
                         and (full.InvW or 1) <= 2 and (full.InvH or 1) <= 1) or nil,
                 })
             end
@@ -196,13 +202,26 @@ Items.HIDE_MAX = 3   -- hidden items per player (data.hidden = their SteamID64)
 function Items.Weight(state)
     local total, cap = 0, Config.Get("inventory", "baseCarry")
     local packMult = Config.Get("inventory", "backpackWeightMult")
+    -- Worn items can lighten others (def.weightMults = { [id] = mult }: a
+    -- gun belt carries the DC-15A and RPS-6); the lightest applies.
+    local lighter
+    for wcid in pairs(Items.WORN) do
+        local wc = state.cont[wcid]
+        for _, o in pairs(wc and wc.items or {}) do
+            local d = Items.defs[o.id]
+            if d and d.weightMults then
+                lighter = lighter or {}
+                for id, m in pairs(d.weightMults) do lighter[id] = math.min(lighter[id] or 1, m) end
+            end
+        end
+    end
     for cid, c in pairs(state.cont) do
         if cid ~= Items.EXT then  -- an open locker isn't carried
             local mult = cid == Items.BACK and packMult or 1
             for _, o in pairs(c.items) do
                 local def = Items.defs[o.id]
                 if def then
-                    total = total + (def.weight or 0) * o.count * mult
+                    total = total + (def.weight or 0) * o.count * mult * (lighter and lighter[o.id] or 1)
                     if Items.WORN[cid] and def.carry then cap = cap + def.carry end
                 end
             end
@@ -313,7 +332,7 @@ end
 --   3  back slot: holds one item with slot = "back"
 --   5  cell rack: only power cells, opened by a skill (rhylib_skills)
 --   6  ammo belt (rhylib_skills)
---   7  holster: one pistol, while a holster is worn
+--   7  holster: pistols, while a holster is worn
 --   8-17 worn gear slots (kama, pauldron, binoculars, rangefinder, helmet
 --      light, holster, sun visor, forearm, shoulder antenna, belt pouches),
 --      one item each with that `slot` (rhylib_gear)
@@ -332,7 +351,9 @@ Items.SLOT_BACK = 3
 Items.EXT = 4
 Items.RACK = 5       -- cell rack (rhylib_skills Load bearer): power cells only
 Items.BELT = 6       -- ammo belt (rhylib_skills Ammo belt): no worn items, no 5-long guns
-Items.HOLSTER = 7    -- one pistol (def.holster), while a holster is worn
+Items.HOLSTER = 7    -- pistols (def.holster), while a holster is worn (2x2: both holsters)
+Items.POUCH = 18     -- belt pouches (worn belt pouches): like the ammo belt
+Items.CELLPACK = 19  -- ARC backpack's side pouch: power cells only
 Items.CONT_BITS = 5   -- (containers 0-31; gear slots 8-17)
 
 -- Worn slots: [cid] = { slot = def.slot, title }. GEAR_SLOTS in display order.
@@ -389,8 +410,8 @@ function Items.ContainerAllows(cid, def)
     if cid == Items.HOLSTER then return def.holster == true end
     if cid == Items.EXT then return true end  -- the storage itself decides (sv_30_storage.lua)
     if cid == Items.BACK then return not def.large and not def.grid end
-    if cid == Items.RACK then return def.id == "cell" end
-    if cid == Items.BELT then return not def.grid and not def.slot and not (def.weapon and def.w >= 5) end
+    if cid == Items.RACK or cid == Items.CELLPACK then return def.id == "cell" end
+    if cid == Items.BELT or cid == Items.POUCH then return not def.grid and not def.slot and not (def.weapon and def.w >= 5) end
     return true
 end
 
@@ -399,11 +420,6 @@ function Items.CanPlace(state, id, cid, x, y, rot, ignoreUid)
     local def = Items.defs[id]
     local c = state.cont[cid]
     if not def or not c or not Items.ContainerAllows(cid, def) then return false end
-    if cid == Items.HOLSTER then   -- (one pistol)
-        for uid in pairs(c.items) do
-            if uid ~= ignoreUid then return false end
-        end
-    end
     if Items.WORN[cid] then
         if x ~= 0 or y ~= 0 then return false end
         for uid in pairs(c.items) do
@@ -423,6 +439,13 @@ function Items.CanLeave(state, inst)
             local g = state.cont[def.gridCid or Items.BACK]
             if g and next(g.items) ~= nil then
                 return false, "Empty the " .. string.lower(def.gridName or "backpack") .. " first"
+            end
+        end
+        -- (def.extraGrids = { { cid, w, h, name } }: more containers it adds)
+        for _, eg in ipairs(def and def.extraGrids or {}) do
+            local g = state.cont[eg.cid]
+            if g and next(g.items) ~= nil then
+                return false, "Empty the " .. string.lower(eg.name or "pouch") .. " first"
             end
         end
     end

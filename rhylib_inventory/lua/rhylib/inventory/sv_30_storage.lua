@@ -569,7 +569,7 @@ function Inv.QuickTake(ply, suid, single)
     changedStorage(storage, ply)
 end
 
-local BULK_FROM = { Items.MAIN, Items.BACK, Items.RACK, Items.BELT, Items.HOLSTER }
+local BULK_FROM = { Items.MAIN, Items.BACK, Items.RACK, Items.BELT, Items.HOLSTER, Items.POUCH, Items.CELLPACK }
 
 -- Store all: everything you carry goes in, except job gear and the
 -- backpack you wear (its contents do go in).

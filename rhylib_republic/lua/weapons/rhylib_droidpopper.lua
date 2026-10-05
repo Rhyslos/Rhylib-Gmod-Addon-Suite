@@ -3,7 +3,8 @@
 AddCSLuaFile()
 SWEP.Base = "rhylib_grenade_base"
 SWEP.PrintName = "Droid popper"
-SWEP.Category = "Rhylib: Republic"
+SWEP.Category = "Rhylib: Grenades & charges"
+SWEP.InvGroup = "grenade"   -- (armoury shelf: rhylib_inventory Items.GroupOf)
 SWEP.Spawnable = true
 SWEP.GrenadeKind = "emp"
 SWEP.FuseTime = 2

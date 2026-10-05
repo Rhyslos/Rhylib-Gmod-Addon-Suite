@@ -234,7 +234,7 @@ end
 
 -- Wearing or removing a backpack or holster adds or removes its grid
 -- (a worn item's `grid`, in container gridCid, default the backpack grid).
-local GRID_CIDS = { BACK, HOLSTER }
+local GRID_CIDS = { BACK, HOLSTER, Items.POUCH, Items.CELLPACK }
 local function updateBackpack(ply, st, depth)
     local want = {}
     for wcid in pairs(Items.WORN) do
@@ -243,6 +243,7 @@ local function updateBackpack(ply, st, depth)
             for _, inst in pairs(c.items) do
                 local def = Items.defs[inst.id]
                 if def and def.grid then want[def.gridCid or BACK] = def.grid end
+                for _, eg in ipairs(def and def.extraGrids or {}) do want[eg.cid] = { eg.w, eg.h } end
             end
         end
     end
@@ -308,7 +309,7 @@ end
 -- First free spot for a new item: worn slot if it fits there, then the
 -- main grid, then the backpack.
 local ROTS_SQUARE, ROTS_BOTH = { false }, { false, true }
-local SEARCH = { RACK, HOLSTER, MAIN, BACK, BELT }   -- (the rack only takes cells, the holster pistols)
+local SEARCH = { RACK, Items.CELLPACK, HOLSTER, MAIN, BACK, BELT, Items.POUCH }   -- (the rack and cell pouch only take cells, the holster pistols)
 
 local function findSpot(st, id)
     local def = Items.defs[id]
@@ -428,7 +429,9 @@ end
 function Inv.Limit(ply, id)
     local def = Items.defs[id]
     if not Items.Unique(def) then return math.huge end
-    return tonumber(hook.Run("Rhylib.CarryLimit", ply, id, def)) or 1
+    -- (kept in a local: tonumber() with no value at all is an error)
+    local n = hook.Run("Rhylib.CarryLimit", ply, id, def)
+    return tonumber(n) or 1
 end
 
 -- "You already carry one" / "... 2".
@@ -830,7 +833,7 @@ end
 
 local function partials(st)
     local groups, n = {}, 0
-    for _, cid in ipairs({ MAIN, BACK, RACK, BELT }) do
+    for _, cid in ipairs({ MAIN, BACK, RACK, BELT, Items.POUCH, Items.CELLPACK }) do
         local c = st.cont[cid]
         if c then
             for _, o in pairs(c.items) do

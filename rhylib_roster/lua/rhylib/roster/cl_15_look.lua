@@ -243,6 +243,42 @@ end
 
 concommand.Add("rhylib_look", function() R.OpenLook() end)
 
+-- The same as a pause menu page: Character > Appearance.
+local function addLookPage()
+    local Menus = Rhylib.Menus
+    if not (Menus and Menus.AddPage and K()) then return end
+    Menus.AddPage("looks", {
+        title = "Appearance",
+        order = 21,
+        group = "character",
+        visible = function() return LocalPlayer():GetNW2Bool("rhylib_char", false) end,
+        build = function(page)
+            local k = K()
+            local s = k.S
+            local me = LocalPlayer()
+            Menus.pages.looks.sub = "Shown with the helmet off"
+            local look = { hair = me:GetNW2String("rhylib_hair", "hair_reg"), fhair = me:GetNW2String("rhylib_fhair", ""),
+                hcol = me:GetNW2Int("rhylib_haircol", 0), skin = me:GetNW2Int("rhylib_skin", 0) }
+            local prev = R.LookPreview(page, function() return look end)
+            prev:Dock(LEFT)
+            prev:SetWide(s(300))
+            prev:DockMargin(0, 0, s(16), 0)
+            R.LookControls(page, look)
+            local save = k.Button(page, "Save", function()
+                Rhylib.Net.Start("roster.look")
+                R.WriteLook(look)
+                net.SendToServer()
+                notification.AddLegacy("Looks saved", NOTIFY_GENERIC, 2)
+            end, { accent = true })
+            save:Dock(TOP)
+            save:SetTall(s(36))
+            save:DockMargin(0, s(10), 0, 0)
+        end,
+    })
+end
+addLookPage()
+Rhylib.Hook.Add("InitPostEntity", "roster.lookpage", addLookPage)
+
 -- Hair colour check: your model's materials, which one is the hair, and
 -- what's swapped (paste the output when a colour lands on the wrong part).
 concommand.Add("rhylib_hair_debug", function()

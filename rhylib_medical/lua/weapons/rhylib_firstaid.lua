@@ -3,7 +3,7 @@ AddCSLuaFile()
 SWEP.Base = "rhylib_med_base"
 SWEP.PrintName = "First aid kit"
 SWEP.Spawnable = true
-SWEP.Category = "Rhylib Medical"  -- the spawn menu reads it from this file, not the base
+SWEP.Category = "Rhylib: Medical"  -- the spawn menu reads it from this file, not the base
 SWEP.CanSelf = true
 SWEP.OpensMenu = true
 SWEP.Hint = "LMB  treat someone / revive the downed   ·   RMB  treat yourself"

@@ -21,6 +21,7 @@
 
     Fire modes and safety:
       - E + R cycles through the weapon's FireModes ("semi", "auto", "burst").
+        Any mode but "auto" fires once per trigger pull (e.g. "sidearm").
       - Shift + E + R toggles safety: the weapon is lowered (passive hold),
         can't fire or aim, and the crosshair hides.
       Semi and burst need a fresh trigger pull for each shot or burst.
@@ -79,11 +80,22 @@ SWEP.BurstDelay = 0.25              -- extra pause after a burst
 SWEP.BurstFireRate = nil            -- rounds per minute inside a burst (nil = FireRate)
 SWEP.SkillModes = nil               -- { [mode] = skill id }: modes that need a skill (rhylib_skills)
 SWEP.DualHoldType = nil             -- hold type for the "dual" fire mode
+SWEP.ModeHoldTypes = nil            -- { mode = hold type } for other modes (DC-15S "sidearm": revolver = two-handed pistol grip)
+SWEP.ModeReplaces = nil             -- { mode = other mode }: while mode is allowed, the other one isn't (sidearm replaces semi)
+SWEP.ModeCarriers = nil             -- { mode = { CarrierVM, CarrierBone, CarrierBoneMove, PropBonePos, PropBoneAng,
+                                    --   PropBoneScale, VMOffset, CarrierFOV, AimPos } }: another first-person
+                                    --   viewmodel in that mode (only with the normal carrier in use)
 SWEP.DualPropVMPos = nil            -- "dual" mode: a second prop floating at the left (forward, right, up)
 SWEP.DualPropVMAng = Angle(0, 0, 0)
 SWEP.DualPropWMPos = nil            -- "dual" mode: a second prop on the left hand (forward, right, up)
 SWEP.DualPropWMAng = Angle(0, 0, 0)
 SWEP.DualCarrierVM = nil            -- "dual" mode viewmodel with two guns and hands (their gun bones hidden, props drawn on them)
+SWEP.DualMirror = nil               -- "dual" mode, first person: the left pistol is the normal viewmodel and hands
+                                    --   drawn mirrored (no second viewmodel needed; wins over DualCarrierVM)
+SWEP.DualSpread = 0                 -- DualMirror: how far each hand moves out from the middle (units)
+SWEP.DualMirrorPos = nil            -- DualMirror: left pistol nudge from its mirrored place (forward, right, up)
+SWEP.DualMirrorAng = nil
+SWEP.ModeFireGestures = nil         -- { mode = ACT_ } third-person firing gesture for a mode (sidearm: the short pistol one)
 SWEP.DualBonePos = Vector(0, 0, 0)  -- prop offset on each of its gun bones (forward, right, up)
 SWEP.DualBoneAng = Angle(0, 0, 0)
 SWEP.DualMags = 2                   -- "dual" mode holds this many magazines (one per pistol)
@@ -221,25 +233,111 @@ function SWEP:SetupDataTables()
     self:NetworkVarNotify("FireMode", self.OnFireModeChanged)
 end
 
--- Hold type for the current fire mode (dual pistols hold both).
-function SWEP:ActiveHoldType(modeIndex)
-    local m = modeIndex or self:GetFireMode()
-    if self.DualHoldType and self.FireModes[m] == "dual" then return self.DualHoldType end
+-- Player animations from the hold type; a mode can swap the firing
+-- gesture (ModeFireGestures: the revolver hold's recoil is long and slow).
+-- Same as weapon_base otherwise.
+local FIRE_ACTS = { [ACT_MP_ATTACK_STAND_PRIMARYFIRE] = true, [ACT_MP_ATTACK_CROUCH_PRIMARYFIRE] = true }
+function SWEP:TranslateActivity(act)
+    if self.ModeFireGestures and FIRE_ACTS[act] then
+        local g = self.ModeFireGestures[self:GetFireModeName()]
+        if g then return g end
+    end
+    if self.ActivityTranslate and self.ActivityTranslate[act] ~= nil then return self.ActivityTranslate[act] end
+    return -1
+end
+
+-- Hold type while lowered or sprinting: pistol grips (one or two pistols)
+-- hang the guns at the sides ("normal"), not across the chest like a rifle
+-- ("passive"; owner: dual pistols sprinted like a DC-15). SWEP.LoweredHold overrides.
+local SIDEARM_HOLDS = { pistol = true, duel = true, revolver = true }
+function SWEP:LoweredHoldType()
+    if self.LoweredHold then return self.LoweredHold end
+    return SIDEARM_HOLDS[self:ActiveHoldType()] and "normal" or "passive"
+end
+
+-- Hold type for the current fire mode (dual pistols hold both). mode: an
+-- index or a mode name (nil = the current one).
+function SWEP:ActiveHoldType(mode)
+    local name
+    if isnumber(mode) then name = self:ModeNameAt(mode) else name = mode or self:GetFireModeName() end
+    if self.DualHoldType and name == "dual" then return self.DualHoldType end
+    if self.ModeHoldTypes and name and self.ModeHoldTypes[name] then return self.ModeHoldTypes[name] end
     return self.HoldType
 end
 
 function SWEP:OnFireModeChanged(_, _, new)
-    self:ApplyDualViewModel(self.FireModes[new] == "dual")
+    -- (the stored mode isn't updated yet inside this notify: work from new)
+    local name = self:ModeNameAt(new)
+    self.rhylibModeCache = nil
+    self:ApplyDualViewModel(name == "dual")
+    self:ApplyModeCarrier(name, true)
     if SERVER then
         -- Out of dual: a second pistol's worth of rounds goes back to the pouch.
         timer.Simple(0, function() if IsValid(self) and self.TrimClip then self:TrimClip() end end)
     end
     if self:IsLowered() then return end
-    self:SetHoldType(self:ActiveHoldType(new))
+    self:SetHoldType(self:ActiveHoldType(name))
+end
+
+-- A fire mode's proxy viewmodel (SWEP.ModeProxies = { mode = { model, bone,
+-- PropBonePos, PropBoneAng, PropBoneScale, VMOffset } }), when in that mode
+-- with the normal carrier in use and the model installed; else nil.
+function SWEP:ActiveProxy()
+    local p = self.ModeProxies and self.rhylibCarrier and self.ModeProxies[self:GetFireModeName()]
+    if not p then return nil end
+    if p.ok == nil then p.ok = util.IsValidModel(p.model or "") end
+    return p.ok and p or nil
+end
+
+-- Mode carriers (SWEP.ModeCarriers): the mode's viewmodel values are put
+-- on the weapon (its own values saved and put back after), and the
+-- viewmodel model swapped. swap = also change the viewmodel model.
+local MODE_KEYS = { "CarrierVM", "CarrierBone", "CarrierBoneMove", "PropBonePos", "PropBoneAng", "PropBoneScale",
+    "VMOffset", "CarrierFOV", "AimPos", "SafePose" }
+function SWEP:ApplyModeCarrier(name, swap)
+    if not (self.ModeCarriers and self.rhylibCarrier) then return end
+    name = name or self:GetFireModeName()
+    local mc = self.ModeCarriers[name]
+    if mc and mc.ok == nil then mc.ok = util.IsValidModel(mc.CarrierVM or "") end
+    if mc and not mc.ok then mc = nil end
+    local key = mc and name or false
+    if self.rhylibModeCarrier ~= key then
+        -- Back to the weapon's own values first.
+        local saved = self.rhylibModeSaved
+        if saved then
+            for _, k in ipairs(MODE_KEYS) do self[k] = saved[k] end
+            self.ViewModel = saved.ViewModel
+            self.ViewModelFOV = saved.ViewModelFOV
+            self.rhylibModeSaved = nil
+        end
+        if mc then
+            saved = {}
+            for _, k in ipairs(MODE_KEYS) do saved[k] = self[k] end
+            saved.ViewModel, saved.ViewModelFOV = self.ViewModel, self.ViewModelFOV
+            self.rhylibModeSaved = saved
+            for _, k in ipairs(MODE_KEYS) do
+                if mc[k] ~= nil then self[k] = mc[k] end
+            end
+            self.SafePose = mc.SafePose or false
+            self.ViewModel = mc.CarrierVM
+            if mc.CarrierFOV then self.ViewModelFOV = mc.CarrierFOV end
+        end
+        self.rhylibModeCarrier = key
+    end
+    if not swap then return end
+    local o = self:GetOwner()
+    if not (IsValid(o) and o:IsPlayer() and o:GetActiveWeapon() == self) then return end
+    local vm = o:GetViewModel()
+    local want = self.ViewModel
+    if IsValid(vm) and want and vm:GetModel() ~= want and not self:DualViewModelOn() then
+        vm:SetWeaponModel(want, self)
+        self:SendWeaponAnim(ACT_VM_DRAW)
+    end
 end
 
 -- Is the two-gun viewmodel usable? (checked once)
 function SWEP:HasDualCarrier()
+    if self.DualMirror then return false end
     if self.dualCarrierOK == nil then
         self.dualCarrierOK = self.DualCarrierVM and self.PropModel and util.IsValidModel(self.DualCarrierVM) or false
     end
@@ -279,7 +377,7 @@ end
 function SWEP:OnLoweredChanged(name, _, on)
     local safety = name == "Safety" and on or (name ~= "Safety" and self:GetSafety())
     local lowered = name == "Lowered" and on or (name ~= "Lowered" and self:GetLowered())
-    self:SetHoldType((safety or lowered) and "passive" or self:ActiveHoldType())
+    self:SetHoldType((safety or lowered) and self:LoweredHoldType() or self:ActiveHoldType())
 end
 
 -- Test mode (rhylib_infammo, admins): firing uses nothing, reloads are free.
@@ -302,7 +400,7 @@ function SWEP:Initialize()
         self.CarrierFOV = self.ViewModelFOV
         self.rhylibCarrier = true
     end
-    self:SetHoldType(self:IsLowered() and "passive" or self:ActiveHoldType())
+    self:SetHoldType(self:IsLowered() and self:LoweredHoldType() or self:ActiveHoldType())
     if self.UsesCell then self:SetCell(1) end
     if self:GetFireMode() == 0 then self:SetFireMode(1) end
     if self:GetMagType() == 0 then
@@ -313,11 +411,44 @@ function SWEP:Initialize()
 end
 
 -- The grapple mode sits after the weapon's own modes (index #FireModes + 1).
+-- The mode name used at index i: the grapple slot, the mode itself if
+-- allowed, the mode that replaces it (sidearm for semi), else the first
+-- allowed one (a skill since lost or gained).
+function SWEP:ModeNameAt(i)
+    if self.Grapple and i == #self.FireModes + 1 then return "grapple" end
+    if not self:ModeAllowed(i) then i = self:ReplacementFor(i) or self:FirstAllowedMode() end
+    return self.FireModes[i] or self.FireModes[1] or "semi"
+end
+
+-- (asked many times a frame and per shot: worked out once per tick per mode)
 function SWEP:GetFireModeName()
-    local m = self:GetFireMode()
-    if self.Grapple and m == #self.FireModes + 1 then return "grapple" end
-    if not self:ModeAllowed(m) then m = 1 end   -- (a skill since lost)
-    return self.FireModes[m] or self.FireModes[1] or "semi"
+    local m, t = self:GetFireMode(), CurTime()
+    local c = self.rhylibModeCache
+    if c and c[1] == m and c[2] == t then return c[3] end
+    local name = self:ModeNameAt(m)
+    self.rhylibModeCache = { m, t, name }
+    return name
+end
+
+-- Index of an allowed mode that replaces mode i (ModeReplaces), or nil.
+function SWEP:ReplacementFor(i)
+    local name = self.FireModes[i]
+    if not (name and self.ModeReplaces) then return nil end
+    for other, replaced in pairs(self.ModeReplaces) do
+        if replaced == name then
+            for j, n in ipairs(self.FireModes) do
+                if n == other and self:ModeAllowedBase(j) then return j end
+            end
+        end
+    end
+end
+
+-- The first mode the owner may use (1 if none).
+function SWEP:FirstAllowedMode()
+    for i = 1, #self.FireModes do
+        if self:ModeAllowed(i) then return i end
+    end
+    return 1
 end
 
 -- How many of this gun the owner carries (rhylib_inventory; without it, 2).
@@ -335,8 +466,15 @@ function SWEP:CarriedCount()
     return n
 end
 
--- Is fire mode i usable by the owner (SkillModes; dual needs two of the gun)?
+-- Is fire mode i usable by the owner (SkillModes; dual needs two of the
+-- gun; not while a mode that replaces it is allowed, e.g. sidearm for semi)?
 function SWEP:ModeAllowed(i)
+    if self.ModeReplaces and self:ReplacementFor(i) then return false end
+    return self:ModeAllowedBase(i)
+end
+
+-- The same without replacements (one level, so no loops).
+function SWEP:ModeAllowedBase(i)
     local name = self.FireModes[i]
     if not name then return true end
     if name == "dual" and self:CarriedCount() < 2 then return false end
@@ -353,7 +491,7 @@ end
 function SWEP:FixFireMode()
     local m = self:GetFireMode()
     if self.FireModes[m] and not self:ModeAllowed(m) then
-        self:SetFireMode(1)
+        self:SetFireMode(self:ReplacementFor(m) or self:FirstAllowedMode())
         self:SetBurstLeft(0)
     end
 end
@@ -433,7 +571,9 @@ end
 
 function SWEP:Deploy()
     self:SetAiming(false)
+    self:FixFireMode()
     if self:GetFireModeName() == "dual" then self:ApplyDualViewModel(true) end
+    self:ApplyModeCarrier(nil, true)
     return true
 end
 
@@ -608,8 +748,15 @@ function SWEP:FireShot()
     if CLIENT and IsFirstTimePredicted() then self.rhylibLeftShot = self:Clip1() % 2 == 1 end
     if self:DualViewModelOn() and self:Clip1() % 2 == 1 then
         self:SendWeaponAnim(ACT_VM_SECONDARYATTACK)
+    elseif self.DualMirror and self:Clip1() % 2 == 1 and self:GetFireModeName() == "dual" then
+        -- (mirrored dual: a left shot kicks only the mirrored hand, drawMirror)
+        if CLIENT and IsFirstTimePredicted() then self.rhylibMirrorShot = RealTime() end
     elseif self.FireAct ~= false then
         self:SendWeaponAnim(self.FireAct or ACT_VM_PRIMARYATTACK)
+        -- (mirrored dual: a right shot; the mirrored hand stays still, drawMirror)
+        if CLIENT and self.DualMirror and IsFirstTimePredicted() then self.rhylibMainShot = RealTime() end
+        -- (a proxy viewmodel plays its own fire animation, drawProxy)
+        if CLIENT and self.ModeProxies and IsFirstTimePredicted() then self.rhylibProxyShot = RealTime() end
     end
     -- The third-person firing gesture (SWEP.PlayerFireAnim = false turns it
     -- off, for guns whose hold type's gesture looks wrong).
@@ -1132,10 +1279,15 @@ if CLIENT then
         local dual = self:DualViewModelOn()
         local o = dual and self.DualVMOffset or (not dual and self.rhylibCarrier and self:CarrierPose("VMOffset"))
         if o then pos = pos + ang:Right() * o.x + ang:Forward() * o.y + ang:Up() * o.z end
+        -- (mirrored dual pistols: the right hand out to the side; the left is its mirror image)
+        if self.DualMirror and (self.DualSpread or 0) ~= 0 and self:GetFireModeName() == "dual" then
+            pos = pos + ang:Right() * self.DualSpread
+        end
         if self.rhylibCarrier and self.SafePose then self.ViewModelFOV = self:CarrierPose("CarrierFOV") end
 
         local f = ease(self.aimFrac)
-        if f > 0 then
+        -- (dual pistols: aiming only tightens the spread; owner: both guns slid left)
+        if f > 0 and not dual and self:GetFireModeName() ~= "dual" then
             local off = self.AimPos * f
             pos = pos + ang:Right() * off.x + ang:Forward() * off.y + ang:Up() * off.z
         end
@@ -1159,7 +1311,7 @@ if CLIENT then
         local v = self[key]
         if v == nil and POSE_DEFAULT[key] then v = POSE_DEFAULT[key](self) end
         local safe = self.SafePose and self.SafePose[key]
-        local sf = safe ~= nil and ease(self.safeFrac or 0) or 0
+        local sf = safe and ease(self.safeFrac or 0) or 0   -- (SafePose false = a fire mode without one, ApplyModeCarrier)
         if sf <= 0 or v == nil then return v end
         if sf >= 1 then return safe end
         if isangle(v) then return LerpAngle(sf, v, safe) end
@@ -1460,8 +1612,211 @@ if CLIENT then
         self.propMuzzleVM = ent:LocalToWorld(self.PropMuzzle * (scale or self.PropScale) / self.PropScale)
     end
 
+    -- Proxy viewmodels: a clientside copy of a viewmodel plus the player's
+    -- hands, animated by us, so a gun can show other hands without swapping
+    -- the real (networked) viewmodel. Used two ways:
+    --   DualMirror: the left hand and pistol of dual pistols, the viewmodel
+    --     drawn again mirrored (the left-handed viewmodel trick: scale -1 on
+    --     the model's left axis, back faces culled the other way).
+    --   ModeProxies: a fire mode held with another viewmodel (DC-15S sidearm
+    --     on the DC-17's pistol hands); the real viewmodel and hands are hidden.
+    -- Each proxy plays its own fire animation from its own shot time, and
+    -- its gun is drawn on ITS gun bone, so it moves with its own hand.
+    local MIRROR = Matrix()
+    MIRROR:Scale(Vector(1, -1, 1))
+
+    local function proxyModel(self, key, model, mirrored)
+        local ent = self[key]
+        if IsValid(ent) and ent:GetModel() == model and ent.rhylibMirrored == mirrored then return ent end
+        if IsValid(ent) then ent:Remove() end
+        ent = ClientsideModel(model, RENDERGROUP_VIEWMODEL)
+        if not IsValid(ent) then return nil end
+        ent:SetNoDraw(true)
+        if mirrored then ent:EnableMatrix("RenderMultiply", MIRROR) end
+        ent.rhylibMirrored = mirrored
+        self[key] = ent
+        return ent
+    end
+
+    -- A sequence to rest on: the idle activity, one named "idle", or the
+    -- last one it showed at rest (Battlefront viewmodels often have no activities).
+    local function restSeq(ent)
+        local idle = ent:SelectWeightedSequence(ACT_VM_IDLE)
+        if not idle or idle < 0 then idle = ent:LookupSequence("idle") end
+        if (not idle or idle < 0) and ent.rhylibRest then idle = ent.rhylibRest end
+        return idle
+    end
+
+    local function playSeq(ent, seq, cyc)
+        if ent:GetSequence() ~= seq then ent:SetSequence(seq) end
+        ent:SetCycle(math.Clamp(cyc, 0, 1))
+    end
+
+    -- Animate a proxy: its fire animation for a while after `shot`, else
+    -- follow (seq, cyc) when given, else rest. True if it fired.
+    local function animate(ent, shot, followSeq, followCyc)
+        local fireSeq = ent:SelectWeightedSequence(ACT_VM_PRIMARYATTACK)
+        local fireLen = (fireSeq and fireSeq >= 0) and ent:SequenceDuration(fireSeq) or 0
+        if shot and fireLen > 0 and RealTime() - shot < fireLen then
+            playSeq(ent, fireSeq, (RealTime() - shot) / fireLen)
+            return true
+        end
+        if followSeq then
+            playSeq(ent, followSeq, followCyc)
+            -- (remembered to rest on only if it's an idle, not a draw or reload)
+            if ent:GetSequenceActivity(followSeq) == ACT_VM_IDLE or string.find(string.lower(ent:GetSequenceName(followSeq) or ""), "idle", 1, true) then
+                ent.rhylibRest = followSeq
+            end
+            return false
+        end
+        local idle = restSeq(ent)
+        if idle and idle >= 0 then
+            local len = math.max(ent:SequenceDuration(idle), 0.1)
+            playSeq(ent, idle, (RealTime() % len) / len)
+        end
+        return false
+    end
+
+    -- The player's hands on a proxy (bonemerged), drawn now.
+    local function drawProxyHands(self, key, parent, mirrored)
+        local hands = LocalPlayer():GetHands()
+        if not (IsValid(hands) and hands:GetModel()) then return end
+        local mh = proxyModel(self, key, hands:GetModel(), mirrored)
+        if not mh then return end
+        if mh:GetParent() ~= parent then
+            mh:SetParent(parent)
+            mh:AddEffects(EF_BONEMERGE)
+            mh:SetLocalPos(vector_origin)     -- (lighting is sampled at the origin)
+            mh:SetLocalAngles(angle_zero)
+            -- (battalion colours: the PlayerColor material proxy asks the entity)
+            mh.GetPlayerColor = function()
+                local p = LocalPlayer()
+                return IsValid(p) and p:GetPlayerColor() or Vector(1, 1, 1)
+            end
+        end
+        if mh:GetSkin() ~= hands:GetSkin() then mh:SetSkin(hands:GetSkin()) end
+        for i = 0, (hands:GetNumBodyGroups() or 1) - 1 do
+            local v = hands:GetBodygroup(i)
+            if mh:GetBodygroup(i) ~= v then mh:SetBodygroup(i, v) end
+        end
+        mh:DrawModel()
+    end
+
+    -- Bones fresh for this frame's sequence, its gun bone hidden.
+    local function proxyBones(ent, boneName, move)
+        local b = ent:LookupBone(boneName or "")
+        if b and ent.rhylibShrunkB ~= b then
+            ent:ManipulateBoneScale(b, SHRINK)
+            ent:ManipulateBonePosition(b, move or ZERO)
+            ent.rhylibShrunkB = b
+        end
+        ent:InvalidateBoneCache()
+        ent:SetupBones()
+        return b
+    end
+
+    local function mirrorVec(v, right) return v - right * (2 * v:Dot(right)) end
+
+    local function drawMirror(self, vm)
+        local mv = proxyModel(self, "rhylibMirrorVM", vm:GetModel(), true)
+        if not mv then return end
+        local vpos, vang = vm:GetPos(), vm:GetAngles()
+        local right = vang:Right()
+        -- Mirrored across the middle of the view (through the eyes).
+        local eye = EyePos()
+        mv:SetPos(vpos - right * (2 * (vpos - eye):Dot(right)))
+        mv:SetAngles(vang)
+        -- Left shots kick this hand; the right gun's kick isn't copied (by
+        -- its activity, or by time since its shot); draw/reload are.
+        local seq = vm:GetSequence()
+        local rightKick = vm:GetSequenceActivity(seq) == ACT_VM_PRIMARYATTACK
+            or (self.rhylibMainShot and RealTime() - self.rhylibMainShot < 0.4)
+        if rightKick then
+            animate(mv, self.rhylibMirrorShot)
+        else
+            animate(mv, self.rhylibMirrorShot, seq, vm:GetCycle())
+        end
+        local b = proxyBones(mv, self.CarrierBone, self.CarrierBoneMove)
+        render.CullMode(MATERIAL_CULLMODE_CW)
+        mv:DrawModel()
+        drawProxyHands(self, "rhylibMirrorHands", mv, true)
+        render.CullMode(MATERIAL_CULLMODE_CCW)
+        -- The left pistol on the mirrored hand's own gun bone: its pose is
+        -- worked out unmirrored, then reflected like the model is drawn.
+        local m = b and mv:GetBoneMatrix(b)
+        if not m then return end
+        local scale = self:CarrierPose("PropBoneScale")
+        local ent = self:GetPropEntity("propVML", scale)
+        if not ent then return end
+        -- (RenderMultiply may already be baked into the bone matrices: a
+        -- left-handed matrix is unmirrored first, so it's reflected once)
+        local mpos = mv:GetPos()
+        local bp, ba = m:GetTranslation(), m:GetAngles()
+        -- (columns read directly, so the sign of the determinant tells)
+        local function col(c) return Vector(m:GetField(1, c), m:GetField(2, c), m:GetField(3, c)) end
+        local bf, bl, bu = col(1), col(2), col(3)
+        if bf:Cross(bl):Dot(bu) < 0 then
+            bp = bp - right * (2 * (bp - mpos):Dot(right))
+            bf:Normalize()
+            bu:Normalize()
+            ba = mirrorVec(bf, right):AngleEx(mirrorVec(bu, right))
+        end
+        local pos, ang = offsetTransform(bp, ba, self:CarrierPose("PropBonePos"), self:CarrierPose("PropBoneAng") or angle_zero)
+        local lp = pos - right * (2 * (pos - mpos):Dot(right))
+        local la = mirrorVec(ang:Forward(), right):AngleEx(mirrorVec(ang:Up(), right))
+        if self.DualMirrorPos or self.DualMirrorAng then
+            lp, la = offsetTransform(lp, la, self.DualMirrorPos or vector_origin, self.DualMirrorAng or angle_zero)
+        end
+        ent:SetPos(lp)
+        ent:SetAngles(la)
+        ent:SetupBones()
+        ent:DrawModel()
+        self.propMuzzleVML = ent:LocalToWorld(self.PropMuzzle * (scale or self.PropScale) / self.PropScale)
+    end
+
+    -- A fire mode's proxy viewmodel (ModeProxies): its hands, its fire and
+    -- reload animations, the gun on its gun bone.
+    local function drawProxy(self, vm, px)
+        local ent = proxyModel(self, "rhylibProxyVM", px.model, false)
+        if not ent then return end
+        local ang = vm:GetAngles()
+        local pos = vm:GetPos()
+        local o = px.VMOffset
+        if o then pos = pos + ang:Right() * o.x + ang:Forward() * o.y + ang:Up() * o.z end
+        ent:SetPos(pos)
+        ent:SetAngles(ang)
+        -- Reload: its reload animation stretched over the gun's reload time.
+        if self:IsReloading() then
+            -- (stretched over the real reload, skills included: ReloadEnd)
+            local left = math.max(self:GetReloadEnd() - CurTime(), 0)
+            self.rhylibProxyReload = self.rhylibProxyReload or math.max(left, 0.1)
+            local rs = ent:SelectWeightedSequence(ACT_VM_RELOAD)
+            if rs and rs >= 0 then
+                playSeq(ent, rs, 1 - left / self.rhylibProxyReload)
+            else
+                animate(ent, nil)
+            end
+        else
+            self.rhylibProxyReload = nil
+            animate(ent, self.rhylibProxyShot)
+        end
+        local b = proxyBones(ent, px.bone, px.boneMove)
+        ent:DrawModel()
+        drawProxyHands(self, "rhylibProxyHands", ent, false)
+        local m = b and ent:GetBoneMatrix(b)
+        if not m then return end
+        local ppos, pang = offsetTransform(m:GetTranslation(), m:GetAngles(), px.PropBonePos or vector_origin, px.PropBoneAng or angle_zero)
+        drawProp(self, ppos, pang, px.PropBoneScale or self.PropScale)
+    end
+
+    -- The real hands stay hidden while a proxy stands in for them.
+    Rhylib.Hook.Add("PreDrawPlayerHands", "weapons.proxyhands", function(hands, vm, ply, wep)
+        if IsValid(wep) and wep.ActiveProxy and wep:ActiveProxy() then return true end
+    end)
+
     -- "dual" mode: the second gun, floating at the left of the view.
     local function drawDualVM(self, vm)
+        if self.DualMirror and self:UsesCarrier() then return end   -- (mirrored instead, below)
         if not self.DualPropVMPos or self:GetFireModeName() ~= "dual" then return end
         local ent = self:GetPropEntity("propVML", self.PropBoneScale or self.PropScale)
         if not ent then return end
@@ -1511,7 +1866,14 @@ if CLIENT then
     end)
 
     function SWEP:PreDrawViewModel(vm)
+        if self.ModeCarriers then self:ApplyModeCarrier() end
         if self:Scoped() then return true end   -- looking through the scope: no gun, no hands
+        if self:ActiveProxy() then
+            -- (another viewmodel stands in, PostDrawViewModel: this one hidden)
+            if vm.rhylibShrunk then unshrink(vm) end
+            blendOff(vm)
+            return
+        end
         if not self.PropModel or self.PropFirstPerson == false then return end
         if self:DualViewModelOn() then
             -- The two-gun model is only guns (the hands are their own
@@ -1533,6 +1895,8 @@ if CLIENT then
     end
 
     function SWEP:PostDrawViewModel(vm)
+        local px = self.PropModel and not self:Scoped() and self:ActiveProxy()
+        if px then drawProxy(self, vm, px) return end
         if self.PropModel and not self:Scoped() and self:DualViewModelOn() then
             local info = dualBones(vm, self)
             for side, b in pairs({ right = info.right, left = info.left }) do
@@ -1570,6 +1934,7 @@ if CLIENT then
             pos, ang = offsetTransform(vm:GetPos(), vm:GetAngles(), self.PropVMPos, self.PropVMAng)
         end
         drawProp(self, pos, ang, self:CarrierPose("PropBoneScale"))
+        if self.DualMirror and self:GetFireModeName() == "dual" then drawMirror(self, vm) end
         if m and (self.VMOffset == nil or self.rhylibRematch) then self:MatchFloatOffset(vm, pos) end
     end
 
@@ -1595,7 +1960,7 @@ if CLIENT then
         best = Angle(math.Round(best.p, 2), math.Round(best.y, 2), math.Round(best.r, 2))
         self.PropBoneAng = best
         self.rhylibRealign = nil
-        local st = weapons.GetStored(self:GetClass())
+        local st = not self.rhylibModeCarrier and weapons.GetStored(self:GetClass())   -- (not a fire mode's own values)
         if st then st.PropBoneAng = Angle(best) end
         print(string.format("[Rhylib] %s: SWEP.PropBoneAng = Angle(%g, %g, %g)", self:GetClass(), best.p, best.y, best.r))
     end
@@ -1612,7 +1977,7 @@ if CLIENT then
         v = Vector(math.Round(v.x, 2), math.Round(v.y, 2), math.Round(v.z, 2))
         self.VMOffset = v
         self.rhylibRematch = nil
-        local st = weapons.GetStored(self:GetClass())
+        local st = not self.rhylibModeCarrier and weapons.GetStored(self:GetClass())   -- (not a fire mode's own values)
         if st then st.VMOffset = Vector(v) end
         print(string.format("[Rhylib] %s: SWEP.VMOffset = Vector(%g, %g, %g)", self:GetClass(), v.x, v.y, v.z))
     end
@@ -1691,8 +2056,18 @@ if CLIENT then
     -- Copy puts the lines for the weapon file on the clipboard.
     local editor
 
-    local function editorLines(w, safe)
+    local function editorLines(w, safe, px)
         local out = {}
+        if px and not safe then
+            local mode = w:GetFireModeName()
+            out[1] = "-- in SWEP.ModeProxies (the " .. mode .. " block):"
+            out[2] = string.format("        PropBonePos = Vector(%g, %g, %g),", px.PropBonePos:Unpack())
+            out[3] = string.format("        PropBoneAng = Angle(%g, %g, %g),", px.PropBoneAng:Unpack())
+            out[4] = string.format("        PropBoneScale = %g,", px.PropBoneScale or w.PropScale)
+            out[5] = string.format("        VMOffset = Vector(%g, %g, %g),", (px.VMOffset or Vector()):Unpack())
+            out[6] = string.format("-- and for the gun: SWEP.AimPos = Vector(%g, %g, %g)", w.AimPos.x, w.AimPos.y, w.AimPos.z)
+            return table.concat(out, "\n")
+        end
         if safe then
             out[1] = "SWEP.SafePose = {"
             out[2] = string.format("    PropBonePos = Vector(%g, %g, %g),", safe.PropBonePos:Unpack())
@@ -1702,6 +2077,9 @@ if CLIENT then
             out[6] = string.format("    CarrierFOV = %g,", safe.CarrierFOV)
             out[7] = "}"
             return table.concat(out, "\n")
+        end
+        if w.rhylibModeCarrier then
+            out[#out + 1] = "-- (fire mode \"" .. w.rhylibModeCarrier .. "\": these go in SWEP.ModeCarriers." .. w.rhylibModeCarrier .. ")"
         end
         local function v(name, x) out[#out + 1] = string.format("SWEP.%s = Vector(%g, %g, %g)", name, x.x, x.y, x.z) end
         local function a(name, x) out[#out + 1] = string.format("SWEP.%s = Angle(%g, %g, %g)", name, x.p, x.y, x.r) end
@@ -1715,6 +2093,11 @@ if CLIENT then
             a("PropVMAng", w.PropVMAng)
         end
         v("AimPos", w.AimPos)
+        if w.DualMirror and w.DualMirrorPos then
+            out[#out + 1] = string.format("SWEP.DualSpread = %g", w.DualSpread or 0)
+            v("DualMirrorPos", w.DualMirrorPos)
+            a("DualMirrorAng", w.DualMirrorAng or Angle())
+        end
         out[#out + 1] = w:UsesCarrier() and ("SWEP.CarrierFOV = " .. tostring(w.CarrierFOV)) or ("SWEP.ViewModelFOV = " .. tostring(w.ViewModelFOV))
         return table.concat(out, "\n")
     end
@@ -1856,8 +2239,19 @@ if CLIENT then
             w.SafePose = safe
         end
         local t = safe or w
+        -- A fire mode drawn on another viewmodel (ModeProxies): edit that one.
+        local px
+        if carrier and not safe and w.ActiveProxy and w:ActiveProxy() then
+            w.ModeProxies = table.Copy(w.ModeProxies)
+            px = w:ActiveProxy()
+            px.PropBonePos = Vector((px.PropBonePos or Vector()):Unpack())
+            px.PropBoneAng = Angle((px.PropBoneAng or Angle()):Unpack())
+            px.PropBoneScale = px.PropBoneScale or w.PropScale
+            px.VMOffset = Vector((px.VMOffset or Vector()):Unpack())
+            t = px
+        end
 
-        local f, label, field, rows = editorFrame("Viewmodel: " .. w:GetClass() .. (safe and " (safety pose)" or carrier and " (in hands)" or " (floating)"), 640, w)
+        local f, label, field, rows = editorFrame("Viewmodel: " .. w:GetClass() .. (px and (" (" .. w:GetFireModeName() .. " hands)") or safe and " (safety pose)" or carrier and " (in hands)" or " (floating)"), 640, w)
         editor = f
         local list = f.list
         f.OnRemove = function() if IsValid(w) then w.rhylibAimPreview = nil end end
@@ -1876,7 +2270,7 @@ if CLIENT then
             field("Right", 0.1, -R, R, function() return t.VMOffset.x end, function(v) t.VMOffset.x = v end)
             field("Forward", 0.1, -R, R, function() return t.VMOffset.y end, function(v) t.VMOffset.y = v end)
             field("Up", 0.1, -R, R, function() return t.VMOffset.z end, function(v) t.VMOffset.z = v end)
-            if not safe then
+            if not safe and not px then
             local align = list:Add("DButton")
             align:SetText("Point the gun straight ahead")
             align:SetTall(24)
@@ -1905,6 +2299,18 @@ if CLIENT then
             end
             end
         end
+        if w.DualMirror and carrier and not safe then
+            w.DualMirrorPos = Vector((w.DualMirrorPos or Vector()):Unpack())
+            w.DualMirrorAng = Angle((w.DualMirrorAng or Angle()):Unpack())
+            label("Dual pistols (switch to dual to see them)")
+            field("Spread", 0.1, -R, R, function() return w.DualSpread or 0 end, function(v) w.DualSpread = v end)
+            field("L forward", 0.1, -R, R, function() return w.DualMirrorPos.x end, function(v) w.DualMirrorPos.x = v end)
+            field("L right", 0.1, -R, R, function() return w.DualMirrorPos.y end, function(v) w.DualMirrorPos.y = v end)
+            field("L up", 0.1, -R, R, function() return w.DualMirrorPos.z end, function(v) w.DualMirrorPos.z = v end)
+            field("L pitch", 1, -180, 180, function() return w.DualMirrorAng.p end, function(v) w.DualMirrorAng.p = v end)
+            field("L yaw", 1, -180, 180, function() return w.DualMirrorAng.y end, function(v) w.DualMirrorAng.y = v end)
+            field("L roll", 1, -180, 180, function() return w.DualMirrorAng.r end, function(v) w.DualMirrorAng.r = v end)
+        end
         label("Aiming (tick Preview aim to see it)")
         field("Right", 0.1, -R, R, function() return w.AimPos.x end, function(v) w.AimPos.x = v end)
         field("Forward", 0.1, -R, R, function() return w.AimPos.y end, function(v) w.AimPos.y = v end)
@@ -1929,7 +2335,7 @@ if CLIENT then
         copy:DockMargin(4, 10, 4, 4)
         copy.DoClick = function()
             if not IsValid(w) then return end
-            local text = editorLines(w, safe)
+            local text = editorLines(w, safe, px)
             SetClipboardText(text)
             print(text)
             chat.AddText(Color(120, 200, 255), "Copied (also printed in the console).")
@@ -2061,7 +2467,7 @@ if CLIENT then
         w.PropScale = w.PropScale or 1
         w.PropWMPos = Vector(w.PropWMPos:Unpack())
         w.PropWMAng = Angle(w.PropWMAng:Unpack())
-        local f, label, field = editorFrame("Third person: " .. w:GetClass(), 560, w)
+        local f, label, field = editorFrame("Third person: " .. w:GetClass(), w.DualPropWMPos and 760 or 560, w)
         wmEditor = f
         local R = 30
         label("Gun from the right hand")
@@ -2072,9 +2478,27 @@ if CLIENT then
         field("Yaw", 1, -180, 180, function() return w.PropWMAng.y end, function(v) w.PropWMAng.y = v end)
         field("Roll", 1, -180, 180, function() return w.PropWMAng.r end, function(v) w.PropWMAng.r = v end)
         field("Size", 0.05, 0.1, 3, function() return w.PropScale end, function(v) w.PropScale = v end)
+        -- Dual pistols: the second one, from the left hand (switch to dual first to see it).
+        local dual = w.DualPropWMPos ~= nil
+        if dual then
+            w.DualPropWMPos = Vector(w.DualPropWMPos:Unpack())
+            w.DualPropWMAng = Angle((w.DualPropWMAng or Angle()):Unpack())
+            label("Left pistol from the left hand (dual mode)")
+            field("L forward", 0.1, -R, R, function() return w.DualPropWMPos.x end, function(v) w.DualPropWMPos.x = v end)
+            field("L right", 0.1, -R, R, function() return w.DualPropWMPos.y end, function(v) w.DualPropWMPos.y = v end)
+            field("L up", 0.1, -R, R, function() return w.DualPropWMPos.z end, function(v) w.DualPropWMPos.z = v end)
+            field("L pitch", 1, -180, 180, function() return w.DualPropWMAng.p end, function(v) w.DualPropWMAng.p = v end)
+            field("L yaw", 1, -180, 180, function() return w.DualPropWMAng.y end, function(v) w.DualPropWMAng.y = v end)
+            field("L roll", 1, -180, 180, function() return w.DualPropWMAng.r end, function(v) w.DualPropWMAng.r = v end)
+        end
         f.copyButton(function()
-            return string.format("SWEP.PropScale = %g\nSWEP.PropWMPos = Vector(%g, %g, %g)\nSWEP.PropWMAng = Angle(%g, %g, %g)",
+            local t = string.format("SWEP.PropScale = %g\nSWEP.PropWMPos = Vector(%g, %g, %g)\nSWEP.PropWMAng = Angle(%g, %g, %g)",
                 w.PropScale, w.PropWMPos.x, w.PropWMPos.y, w.PropWMPos.z, w.PropWMAng.p, w.PropWMAng.y, w.PropWMAng.r)
+            if dual then
+                t = t .. string.format("\nSWEP.DualPropWMPos = Vector(%g, %g, %g)\nSWEP.DualPropWMAng = Angle(%g, %g, %g)",
+                    w.DualPropWMPos.x, w.DualPropWMPos.y, w.DualPropWMPos.z, w.DualPropWMAng.p, w.DualPropWMAng.y, w.DualPropWMAng.r)
+            end
+            return t
         end)
         addOrbit(f, label)
     end)
@@ -2226,6 +2650,10 @@ if CLIENT then
         if IsValid(self.propWM) then self.propWM:Remove() end
         if IsValid(self.propVML) then self.propVML:Remove() end
         if IsValid(self.propWML) then self.propWML:Remove() end
+        if IsValid(self.rhylibMirrorHands) then self.rhylibMirrorHands:Remove() end
+        if IsValid(self.rhylibMirrorVM) then self.rhylibMirrorVM:Remove() end
+        if IsValid(self.rhylibProxyHands) then self.rhylibProxyHands:Remove() end
+        if IsValid(self.rhylibProxyVM) then self.rhylibProxyVM:Remove() end
         for _, e in ipairs(self.ExtraProps or {}) do
             for _, side in ipairs({ "vm", "wm" }) do
                 local x = self["rhylibExtra_" .. e.key .. side]

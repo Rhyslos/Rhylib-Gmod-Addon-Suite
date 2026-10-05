@@ -22,7 +22,8 @@
       spawned when idle. Walking needs a navmesh (nav_generate); without
       one droids stand and shoot.
 
-    Spawn menu: NPCs tab, "Rhylib Droids" and "Rhylib Training Droids"
+    Spawn menu: NPCs tab, "Rhylib: B1 battle droids", "Rhylib: B2 super
+    battle droids" and "Rhylib: Training droids"
     (admins). Droids don't hurt each other. At most maxActive droids exist at once.
 ]]
 
@@ -147,7 +148,8 @@ for kind, class in pairs(D.CLASSES) do
     list.Set("NPC", class, {
         Name = D.KINDS[kind].name,
         Class = class,
-        Category = D.KINDS[kind].training and "Rhylib Training Droids" or "Rhylib Droids",
+        -- (owner: split up so they're easier to find)
+        Category = D.KINDS[kind].training and "Rhylib: Training droids" or (string.sub(kind, 1, 2) == "b2" and "Rhylib: B2 super battle droids" or "Rhylib: B1 battle droids"),
         AdminOnly = true,
     })
     if CLIENT then language.Add(class, D.KINDS[kind].name) end

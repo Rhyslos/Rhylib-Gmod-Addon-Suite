@@ -246,6 +246,8 @@ local function gearShown(cid)
     return G.ModelHas(LocalPlayer(), Items.WORN[cid].slot)
 end
 
+local function dims(c) return c and (c.w .. "x" .. c.h) or "-" end
+
 function PANEL:LayoutKey()
     local m, b, e, r, bl, ho = Inv.cont[MAIN], Inv.cont[BACK], Inv.cont[EXT], Inv.cont[RACK], Inv.cont[BELT], Inv.cont[HOLSTER]
     local gear = {}
@@ -254,6 +256,7 @@ function PANEL:LayoutKey()
         .. "|" .. (e and (e.w .. "x" .. e.h) or "-") .. "|" .. (r and (r.w .. "x" .. r.h) or "-")
         .. "|" .. (bl and (bl.w .. "x" .. bl.h) or "-") .. "|" .. (ho and (ho.w .. "x" .. ho.h) or "-")
         .. "|" .. table.concat(gear) .. "|" .. (LocalPlayer():GetModel() or "")
+        .. "|" .. dims(Inv.cont[Items.POUCH]) .. "|" .. dims(Inv.cont[Items.CELLPACK])
 end
 
 -- Works out where every region sits and sizes the window.
@@ -301,12 +304,15 @@ function PANEL:Relayout()
         gridsH = gridsH + label + self:SpanPx(belt.h)
         gridsW = math.max(gridsW, self:SpanPx(belt.w))
     end
-    -- The holster (a worn holster), under that.
-    local holster = Inv.cont[HOLSTER]
-    if holster then
-        self.regions[#self.regions + 1] = { cid = HOLSTER, x = gridX, y = top + gridsH + label, gw = holster.w, gh = holster.h, title = "Holster" }
-        gridsH = gridsH + label + self:SpanPx(holster.h)
-        gridsW = math.max(gridsW, self:SpanPx(holster.w))
+    -- Grids from worn gear, under that: holster, belt pouches, the ARC
+    -- backpack's cell pouch.
+    for _, g in ipairs({ { HOLSTER, "Holster" }, { Items.POUCH, "Belt pouches" }, { Items.CELLPACK, "Cell pouch" } }) do
+        local c = Inv.cont[g[1]]
+        if c then
+            self.regions[#self.regions + 1] = { cid = g[1], x = gridX, y = top + gridsH + label, gw = c.w, gh = c.h, title = g[2] }
+            gridsH = gridsH + label + self:SpanPx(c.h)
+            gridsW = math.max(gridsW, self:SpanPx(c.w))
+        end
     end
     self.rightX = gridX
 
@@ -339,7 +345,7 @@ function PANEL:Relayout()
     -- Tallest a column may be: the main grid plus a backpack, and never
     -- off the screen. Anything longer scrolls (mouse wheel).
     local bp = Items.defs.backpack
-    local bpH = bp and bp.grid and bp.grid[2] or 3
+    local bpH = math.max(bp and bp.grid and bp.grid[2] or 3, Inv.cont[BACK] and Inv.cont[BACK].h or 0)
     local maxH = self:SpanPx(main.h) + label + self:SpanPx(bpH)
     maxH = math.max(self:SpanPx(2), math.min(maxH, ScrH() - top - label - self.cell - self.footer - pad * 3 - self.gap * 4))
     local ownView = math.min(gridsH, maxH)
@@ -588,7 +594,7 @@ function PANEL:PaintRegion(r, dragUid)
             draw.SimpleText("Empty", self:Font(14), r.x + r.pw * 0.5, r.y + r.ph * 0.5, UI.Colors.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         end
     else
-        local isBack, isExt = r.cid == BACK or r.cid == RACK or r.cid == BELT or r.cid == HOLSTER, r.cid == EXT
+        local isBack, isExt = r.cid == BACK or r.cid == RACK or r.cid == BELT or r.cid == HOLSTER or r.cid == Items.POUCH or r.cid == Items.CELLPACK, r.cid == EXT
         local cellCol = isExt and COL_EXT_CELL or (isBack and COL_BACK_CELL or COL_CELL)
         local borderCol = isExt and COL_EXT_BORDER or (isBack and COL_BACK_BORDER or COL_BORDER)
         for y = 0, r.gh - 1 do
@@ -611,6 +617,10 @@ function PANEL:PaintRegion(r, dragUid)
             label(self, "Ammo belt · no rifles or launchers", r.x, r.y - self.label * 0.5)
         elseif r.cid == HOLSTER then
             label(self, "Holster · pistols only", r.x, r.y - self.label * 0.5)
+        elseif r.cid == Items.POUCH then
+            label(self, "Belt pouches · no rifles or launchers", r.x, r.y - self.label * 0.5)
+        elseif r.cid == Items.CELLPACK then
+            label(self, "Cell pouch · power cells only", r.x, r.y - self.label * 0.5)
         end
         ticks(r.x - 3, r.y - 3, self:SpanPx(r.gw) + 6, self:SpanPx(r.gh) + 6, self.s)
     end

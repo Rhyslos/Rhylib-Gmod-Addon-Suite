@@ -3,7 +3,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "rhylib_item_base"
 ENT.PrintName = "Grapple hook"
-ENT.Category = "Rhylib"
+ENT.Category = "Rhylib: Items & ammo"
 ENT.Spawnable = true
 ENT.Model = "models/props_junk/meathook001a.mdl"  -- placeholder
 ENT.Kind = "grapple"

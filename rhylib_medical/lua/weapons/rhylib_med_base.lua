@@ -12,7 +12,7 @@ AddCSLuaFile()
 
 SWEP.PrintName = "Medical kit"
 SWEP.Author = "Rhylib"
-SWEP.Category = "Rhylib Medical"
+SWEP.Category = "Rhylib: Medical"
 SWEP.Spawnable = false
 SWEP.Slot = 4
 SWEP.SlotPos = 1

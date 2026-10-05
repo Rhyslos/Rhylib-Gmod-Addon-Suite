@@ -4,7 +4,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "rhylib_armoury_base"
 ENT.PrintName = "Specialist armoury"
-ENT.Category = "Rhylib"
+ENT.Category = "Rhylib: Armoury & storage"
 ENT.Spawnable = true
 ENT.AdminOnly = true
 ENT.ArmouryKind = "spec"

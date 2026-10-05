@@ -23,7 +23,10 @@
       rangefinder = optics (zoom, range, night vision, flip down while
       used; sh_30_optics.lua); helmet lights = two forward beams on the
       flashlight key (cl_40_lights.lua); holster = a pistol slot
-      (Items.HOLSTER); ARC / comms backpack = a backpack. The rest are
+      (Items.HOLSTER, two pistols); belt pouches = 5 slots (Items.POUCH);
+      ARC backpack = 4x4 backpack + a cell pouch for two power cells
+      (Items.CELLPACK); comms backpack = a backpack; gun belts = the
+      DC-15A and RPS-6 weigh half (def.weightMults). The rest are
       cosmetic for now.
 
     rhylib_gear_scan (sv_10_scan.lua) lists every job model's bodygroups.
@@ -65,31 +68,33 @@ G.ITEMS = {
     rhylib_sunvisor = { slot = "visor", name = "Sun visor", desc = "Worn on the helmet (not with macrobinoculars on models where they share a mount)",
         groups = { "sunvisor", "binos" }, on = { "sunvisor" },
         w = 1, h = 1, weight = 0.1, model = "models/props_lab/binderblue.mdl" },
-    rhylib_holster = { slot = "holster", name = "Holster", desc = "Worn: a holster for one pistol",
+    rhylib_holster = { slot = "holster", name = "Holster", desc = "Worn: holsters for two pistols",
         groups = { "holster_left", "holster_right" }, on = { "co_holster_left_reference", "co_holster_right_reference" },
-        w = 1, h = 1, weight = 0.4, model = "models/props_junk/garbage_bag001a.mdl", grid = { 2, 1 }, gridName = "holster", gridCid = "HOLSTER" },
+        w = 1, h = 1, weight = 0.4, model = "models/props_junk/garbage_bag001a.mdl", grid = { 2, 2 }, gridName = "holster", gridCid = "HOLSTER" },   -- (owner: two pistols, one per holster)
     rhylib_forearm_arc = { slot = "forearm", name = "ARC forearm guard", desc = "Worn on the right forearm",
         groups = { "forearms" }, on = { "arc2_arc_forearm_right_reference" },
         w = 1, h = 1, weight = 0.5, model = "models/props_junk/garbage_metalcan002a.mdl" },
     rhylib_shoulder_antenna = { slot = "comms", name = "Shoulder antenna", desc = "Worn on the shoulder",
         groups = { "shoulderantenna" }, on = { "s_ant" },
         w = 1, h = 1, weight = 0.4, model = "models/props_lab/reciever01d.mdl" },
-    rhylib_belt_pouches = { slot = "belt", name = "Belt pouches", desc = "Worn on the belt",
+    rhylib_belt_pouches = { slot = "belt", name = "Belt pouches", desc = "Worn on the belt: 5 more slots (no rifles or launchers)",
         groups = { "belt" }, on = { "arc2_arc_belt_pouches_reference" },
-        w = 2, h = 1, weight = 0.6, model = "models/props_junk/garbage_bag001a.mdl" },
+        w = 2, h = 1, weight = 0.6, model = "models/props_junk/garbage_bag001a.mdl",
+        grid = { 5, 1 }, gridName = "belt pouches", gridCid = "POUCH" },
     -- Back slot (instead of a backpack or jetpack).
-    rhylib_arc_backpack = { slot = "back", name = "ARC backpack", desc = "Worn on the back: a backpack",
+    rhylib_arc_backpack = { slot = "back", name = "ARC backpack", desc = "Worn on the back: a 4x4 backpack and a side pouch for two power cells",
         groups = { "backpack", "back" }, on = { "arc2_arc_backpack_reference" },
-        w = 2, h = 2, weight = 1.5, carry = 6, grid = { 5, 2 }, gridName = "backpack", model = "models/props_c17/suitcase001a.mdl" },
+        w = 2, h = 2, weight = 2, carry = 6, grid = { 4, 4 }, gridName = "backpack", model = "models/props_c17/suitcase001a.mdl",
+        extraGrids = { { cid = "CELLPACK", w = 2, h = 2, name = "cell pouch" } } },
     rhylib_comms_backpack = { slot = "back", name = "Comms backpack", desc = "Worn on the back: a radio pack with a little room",
         groups = { "backpack", "back" }, on = { "comms_backpackcomms_2" },
         w = 2, h = 2, weight = 3, carry = 4, grid = { 3, 2 }, gridName = "backpack", model = "models/props_lab/reciever01b.mdl" },
-    rhylib_gunbelt = { slot = "back", name = "Gun belt", desc = "Worn on the back",
+    rhylib_gunbelt = { slot = "back", name = "Gun belt", desc = "Worn on the back: the DC-15A and RPS-6 weigh half",
         groups = { "backpack", "back" }, on = { "gunbelt" },
-        w = 2, h = 1, weight = 0.5, model = "models/props_junk/garbage_bag001a.mdl" },
-    rhylib_gunbelt_rifle = { slot = "back", name = "Rifle gun belt", desc = "Worn on the back",
+        w = 2, h = 1, weight = 0.5, model = "models/props_junk/garbage_bag001a.mdl", weightMults = { rhylib_dc15a = 0.5, rhylib_dc15a_training = 0.5, rhylib_rps6 = 0.5, rhylib_rps6_training = 0.5 } },
+    rhylib_gunbelt_rifle = { slot = "back", name = "Rifle gun belt", desc = "Worn on the back: the DC-15A and RPS-6 weigh half",
         groups = { "backpack", "back" }, on = { "gunbelt_rifle" },
-        w = 2, h = 1, weight = 0.6, model = "models/props_junk/garbage_bag001a.mdl" },
+        w = 2, h = 1, weight = 0.6, model = "models/props_junk/garbage_bag001a.mdl", weightMults = { rhylib_dc15a = 0.5, rhylib_dc15a_training = 0.5, rhylib_rps6 = 0.5, rhylib_rps6_training = 0.5 } },
     rhylib_strap = { slot = "back", name = "Chest strap", desc = "Worn on the back",
         groups = { "backpack", "back" }, on = { "strap" },
         w = 1, h = 1, weight = 0.3, model = "models/props_junk/garbage_bag001a.mdl" },
@@ -289,6 +294,17 @@ function G.Unlocked(ply, id)
     return true
 end
 
+-- Extra containers of an item, with container names turned into ids.
+local function extraGrids(it)
+    if not it.extraGrids then return nil end
+    local out = {}
+    for _, g in ipairs(it.extraGrids) do
+        local cid = Rhylib.Items[g.cid]
+        if cid then out[#out + 1] = { cid = cid, w = g.w, h = g.h, name = g.name } end
+    end
+    return out
+end
+
 -- Items go in once the inventory module exists (it loads after this one).
 local function registerItems()
     local Items = Rhylib.Items
@@ -297,7 +313,7 @@ local function registerItems()
         Items.Register(id, {
             name = it.name, desc = it.desc, w = it.w, h = it.h, weight = it.weight, model = it.model,
             category = "gear", slot = it.slot, grid = it.grid, gridCid = it.gridCid and Items[it.gridCid] or nil, gridName = it.gridName,
-            carry = it.carry,
+            carry = it.carry, weightMults = it.weightMults, extraGrids = extraGrids(it),
             group = it.slot ~= "back" and (G.ON_HELMET[it.slot] and "helmet" or "body") or nil,
         })
     end

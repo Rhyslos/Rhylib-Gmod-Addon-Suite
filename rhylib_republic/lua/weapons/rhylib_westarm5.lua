@@ -12,7 +12,8 @@ AddCSLuaFile()
 
 SWEP.Base = "rhylib_base"
 SWEP.PrintName = "Westar-M5"
-SWEP.Category = "Rhylib: Republic"
+SWEP.Category = "Rhylib: Rifles"
+SWEP.InvGroup = "rifle"   -- (armoury shelf: rhylib_inventory Items.GroupOf)
 SWEP.Spawnable = true
 SWEP.AdminOnly = false
 

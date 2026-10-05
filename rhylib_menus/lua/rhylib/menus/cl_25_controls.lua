@@ -142,9 +142,9 @@ end
 -- Open the pause menu on Settings > Controls.
 function Menus.OpenControls()
     Menus.settingsTab = "Controls"
-    Menus.lastPage = "settings"
+    Menus.lastPage = Menus.SettingsPageId("Controls")
     if IsValid(Menus.pause) then
-        Menus.pause:ShowPage("settings")
+        Menus.pause:ShowPage(Menus.SettingsPageId("Controls"))
     else
         Menus.OpenPause()
     end

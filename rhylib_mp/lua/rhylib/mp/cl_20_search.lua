@@ -8,6 +8,8 @@ local MP = Rhylib.MP
 
 local CONT_NAMES = { [1] = "Carried", [2] = "Backpack", [3] = "Back slot", [5] = "Cell rack", [6] = "Ammo belt", [7] = "Holster" }
 for i = 8, 17 do CONT_NAMES[i] = "Worn gear" end
+CONT_NAMES[18] = "Belt pouches"
+CONT_NAMES[19] = "Cell pouch"
 
 function MP.OpenSearch(target)
     Rhylib.Net.Start("mp.search")

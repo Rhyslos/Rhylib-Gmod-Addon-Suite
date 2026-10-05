@@ -2,7 +2,8 @@
 AddCSLuaFile()
 SWEP.Base = "rhylib_grenade_base"
 SWEP.PrintName = "Thermal detonator"
-SWEP.Category = "Rhylib: Republic"
+SWEP.Category = "Rhylib: Grenades & charges"
+SWEP.InvGroup = "grenade"   -- (armoury shelf: rhylib_inventory Items.GroupOf)
 SWEP.Spawnable = true
 SWEP.GrenadeKind = "fuse"
 SWEP.FuseTime = 3

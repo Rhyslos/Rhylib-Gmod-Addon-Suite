@@ -9,7 +9,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Armoury base"
-ENT.Category = "Rhylib"
+ENT.Category = "Rhylib: Armoury & storage"
 ENT.Spawnable = false
 ENT.AdminOnly = true
 

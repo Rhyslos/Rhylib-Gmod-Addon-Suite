@@ -137,6 +137,8 @@ K.NODES = {
       desc = "Small magazines hold 50 rounds instead of 30 when you load them.", needs = { "pistol_prof" } },
     { id = "sidestep", cat = "officer", tier = 2, cost = 2, name = "Sidestep", icon = "dodge",
       desc = "Sprint + left, right or back + Jump (or Alt + any direction): a quick step aside from the ground. Costs stamina, 2.5 s cooldown.", needs = { "pistol_prof" } },
+    { id = "carbine_sidearm", cat = "officer", tier = 2, cost = 1, name = "Carbine sidearm",
+      desc = "DC-15S: semi-auto becomes Sidearm: held like a pistol in both hands, in first and third person.", needs = { "pistol_prof" } },
     { id = "dual_dc17", cat = "officer", tier = 3, cost = 3, name = "Dual DC-17",
       desc = "Draw a second DC-17 (E + R): two magazines loaded, shots alternate between hands.", needs = { "light_mags" } },
     { id = "crits", cat = "officer", tier = 3, cost = 3, name = "Critical hits",

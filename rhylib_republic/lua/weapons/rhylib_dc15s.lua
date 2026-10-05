@@ -10,7 +10,8 @@ AddCSLuaFile()
 
 SWEP.Base = "rhylib_base"
 SWEP.PrintName = "DC-15S"
-SWEP.Category = "Rhylib: Republic"
+SWEP.Category = "Rhylib: Carbines"
+SWEP.InvGroup = "carbine"   -- (armoury shelf: rhylib_inventory Items.GroupOf)
 SWEP.Spawnable = true
 SWEP.AdminOnly = false
 
@@ -60,7 +61,26 @@ SWEP.FireSound = "weapons/airboat/airboat_gun_energy1.wav"
 SWEP.Mags = { "mag_medium", "mag_small" }
 
 SWEP.Grapple = true     -- grapple fire mode while carrying a grapple hook
-SWEP.FireModes = { "semi", "auto", "stun" }   -- (stun: military police only)
+SWEP.FireModes = { "semi", "auto", "sidearm", "stun" }   -- (stun: military police only)
+-- Sidearm (Officer skill): semi-auto only, and it takes the place of semi
+-- (owner: mainly for looks). Third person: two-handed pistol grip. First
+-- person: held on the DC-17's pistol hands, a proxy viewmodel drawn by us
+-- (the real one isn't swapped: that glitched when firing). Values are first
+-- guesses: tune with rhylib_vm_editor in sidearm mode; its Copy gives the block.
+SWEP.SkillModes = { sidearm = "carbine_sidearm" }
+SWEP.ModeHoldTypes = { sidearm = "revolver" }
+SWEP.ModeFireGestures = { sidearm = ACT_HL2MP_GESTURE_RANGE_ATTACK_PISTOL }   -- (owner: the revolver recoil lasted too long)
+SWEP.ModeReplaces = { sidearm = "semi" }
+SWEP.ModeProxies = {
+    sidearm = {
+        model = "models/bf2017/c_scoutblaster.mdl",
+        bone = "v_scoutblaster_reference001",
+        PropBonePos = Vector(-1.5, 9, 0.5),
+        PropBoneAng = Angle(-2, 89, 0),
+        PropBoneScale = 0.8,
+        VMOffset = Vector(-0.7, 0, 0),   -- (undoes the carbine's own offset)
+    },
+}
 
 SWEP.UsesCell = false
 SWEP.StartMags = 8

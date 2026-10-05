@@ -13,7 +13,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Bacta tank"
-ENT.Category = "Rhylib Medical"
+ENT.Category = "Rhylib: Medical"
 ENT.Spawnable = true
 ENT.AdminOnly = true
 ENT.IsRhylibMedBay = true

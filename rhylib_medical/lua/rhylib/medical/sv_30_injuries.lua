@@ -139,7 +139,8 @@ local function canBreak(ply, limb)
         if K and K.Has and K.Has(ply, "hard_landings") then return false end
     end
     if hook.Run("Rhylib.CanFracture", ply, limb) == false then return false end
-    local chance = tonumber(hook.Run("Rhylib.FractureChance", ply, limb))
+    local chance = hook.Run("Rhylib.FractureChance", ply, limb)   -- (a local: tonumber() of no value errors)
+    chance = tonumber(chance)
     if chance and math.random() >= chance then return false end
     return true
 end
@@ -183,7 +184,11 @@ Rhylib.Hook.Add("PostEntityTakeDamage", "medical.injuries", function(ply, dmg, t
     elseif bit.band(dtype, bit.bor(DMG_BLAST, DMG_BURN, DMG_SLOWBURN, DMG_PLASMA)) ~= 0 then
         for limb, share in pairs(SPREAD) do
             -- (hook Rhylib.BlastPartMult(ply, limb): rhylib_gear's kama shields the legs)
-            local m = bit.band(dtype, DMG_BLAST) ~= 0 and tonumber(hook.Run("Rhylib.BlastPartMult", ply, limb)) or 1
+            local m = 1
+            if bit.band(dtype, DMG_BLAST) ~= 0 then
+                local hm = hook.Run("Rhylib.BlastPartMult", ply, limb)
+                m = tonumber(hm) or 1
+            end
             hurt(ply, t, limb, amount * share * m, false, now)
             t[limb].burn = math.min(100, t[limb].burn + amount * share * m)
         end

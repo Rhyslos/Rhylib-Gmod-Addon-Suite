@@ -488,10 +488,11 @@ local function sub()
     return job .. "   ·   " .. money(myMoney())
 end
 
-local function page(id, title, order, fn)
+local function page(id, title, order, fn, group)
     Menus.AddPage(id, {
         title = title,
         order = order,
+        group = group,
         visible = isDarkRP,
         build = function(p)
             Menus.pages[id].sub = sub()
@@ -499,9 +500,9 @@ local function page(id, title, order, fn)
         end,
     })
 end
-page("jobs", "Jobs", 1, buildJobs)
-page("shop", "Shop", 2, buildShop)
-page("character", "Character", 6, buildCharacter)
+page("jobs", "Jobs", 1, buildJobs, "play")
+page("shop", "Shop", 2, buildShop, "play")
+page("character", "Profile", 20, buildCharacter, "character")
 
 function Menus.ToggleF4()
     if not isDarkRP() then return end

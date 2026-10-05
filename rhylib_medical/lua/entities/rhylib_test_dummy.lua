@@ -23,7 +23,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Test dummy"
-ENT.Category = "Rhylib Medical"
+ENT.Category = "Rhylib: Medical"
 ENT.Spawnable = true
 ENT.AdminOnly = true
 

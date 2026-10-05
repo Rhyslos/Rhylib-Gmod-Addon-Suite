@@ -13,7 +13,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Chemistry bench"
-ENT.Category = "Rhylib Medical"
+ENT.Category = "Rhylib: Medical"
 ENT.Spawnable = true
 ENT.AdminOnly = true
 ENT.RhylibWheel = true   -- (E opens the interaction wheel on it)

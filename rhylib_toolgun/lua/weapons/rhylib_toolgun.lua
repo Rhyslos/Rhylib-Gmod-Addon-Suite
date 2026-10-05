@@ -13,7 +13,7 @@ AddCSLuaFile()
 
 SWEP.Base = "rhylib_base"
 SWEP.PrintName = "Toolgun"
-SWEP.Category = "Rhylib"
+SWEP.Category = "Rhylib: Staff tools"
 SWEP.Spawnable = true
 SWEP.AdminOnly = true
 SWEP.NoArmoury = true

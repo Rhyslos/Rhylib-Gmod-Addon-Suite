@@ -167,31 +167,24 @@ local function fill(sp, tab)
     end
 end
 
-Menus.AddPage("settings", {
-    title = "Settings",
-    order = 10,
-    build = function(page)
-        -- Tab row.
-        local bar = vgui.Create("DPanel", page)
-        bar:Dock(TOP)
-        bar:SetTall(K.S(34))
-        bar:DockMargin(0, 0, K.S(10), K.S(8))
-        bar.Paint = nil
-        local sp = K.Scroll(page)
-        sp:Dock(FILL)
-        for _, tab in ipairs(Menus.SETTING_TABS) do
-            local b = K.Button(bar, tab, function()
-                Menus.settingsTab = tab
-                fill(sp, tab)
-            end, { selected = function() return Menus.settingsTab == tab end })
-            b:Dock(LEFT)
-            surface.SetFont(K.Font(13, 700))
-            b:SetWide(math.max(K.S(120), surface.GetTextSize(string.upper(tab)) + K.S(36)))
-            b:DockMargin(0, 0, K.S(6), 0)
-        end
-        fill(sp, Menus.settingsTab)
-    end,
-})
+-- One page per tab, in the Settings submenu of the pause menu.
+function Menus.SettingsPageId(tab)
+    return "settings." .. string.lower(string.gsub(tab or "Interface", "[^%w]+", ""))
+end
+for i, tab in ipairs(Menus.SETTING_TABS) do
+    Menus.AddPage(Menus.SettingsPageId(tab), {
+        title = tab,
+        group = "settings",
+        order = 100 + i,
+        build = function(page)
+            Menus.settingsTab = tab
+            local sp = K.Scroll(page)
+            sp:Dock(FILL)
+            fill(sp, tab)
+        end,
+    })
+end
+Menus.pages.settings = nil   -- (the old single page)
 
 --------------------------------------------------------------------------
 -- The settings Rhylib's addons have

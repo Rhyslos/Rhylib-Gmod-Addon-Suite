@@ -68,7 +68,8 @@ Rhylib.Hook.Add("EntityTakeDamage", "armor.mitigate", function(ent, dmg)
     local amount = dmg:GetDamage()
     if armor > 0 and amount > 0 and bit.band(dmg:GetDamageType(), cfgNum("bypass", 0)) == 0 then
         -- (hook Rhylib.ArmorDrainMult(ply): rhylib_gear's pauldron)
-        local dm = tonumber(hook.Run("Rhylib.ArmorDrainMult", ent)) or 1
+        local dm = hook.Run("Rhylib.ArmorDrainMult", ent)   -- (a local: tonumber() of no value errors)
+        dm = tonumber(dm) or 1
         cost = math.min(armor, math.ceil(amount * math.max(0, cfgNum("drain", 1)) * dm))
         dmg:ScaleDamage(1 - A.Mitigation(armor, ent:GetMaxArmor()))
     elseif not p then

@@ -9,7 +9,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Battalion computer"
-ENT.Category = "Rhylib"
+ENT.Category = "Rhylib: Terminals"
 ENT.Spawnable = true
 ENT.AdminOnly = true
 ENT.ModelKey = "battalion"
