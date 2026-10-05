@@ -73,7 +73,7 @@ SWEP.StartCells = 0
 SWEP.InvW = 5
 SWEP.InvH = 1
 SWEP.InvLarge = true
-SWEP.InvWeight = 6.5         -- kg
+SWEP.InvWeight = 7         -- kg
 
 -- Wild from the hip, exact through the scope.
 SWEP.Spread = {

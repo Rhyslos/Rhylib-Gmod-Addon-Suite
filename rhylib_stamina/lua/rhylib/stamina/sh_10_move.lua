@@ -74,6 +74,13 @@ Rhylib.Hook.Add("SetupMove", "stamina.move", function(ply, mv)
         end
     end
 
+    -- Heavy (over heavyFrom of the cap): a little slower.
+    local slow = S.LoadSpeedMult(ply)
+    if slow < 1 then
+        mv:SetMaxClientSpeed(mv:GetMaxClientSpeed() * slow)
+        mv:SetMaxSpeed(mv:GetMaxSpeed() * slow)
+    end
+
     -- Over the carry cap: slower walk.
     if over then
         mv:SetMaxClientSpeed(math.min(mv:GetMaxClientSpeed(), ply:GetWalkSpeed() * cfg("overloadWalkMult")))

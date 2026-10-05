@@ -43,9 +43,11 @@ Config.Register("stamina", "jumpCost", 8, "Stamina per jump")
 Config.Register("stamina", "regen", 20, "Stamina per second while resting, with no load")
 Config.Register("stamina", "regenDelay", 1, "Seconds after sprinting or jumping before stamina comes back")
 Config.Register("stamina", "exhaustedUntil", 25, "After running dry, no sprinting until stamina is back to this")
-Config.Register("stamina", "maxPenalty", 0.6, "Penalty at a full load without a backpack")
-Config.Register("stamina", "maxPenaltyPack", 0.45, "Penalty at a full load with a backpack worn")
-Config.Register("stamina", "penaltyCurve", 1.5, "Higher = light loads cost less, the last kilos cost more")
+Config.Register("stamina", "maxPenalty", 0.8, "Penalty at a full load without a backpack")
+Config.Register("stamina", "maxPenaltyPack", 0.6, "Penalty at a full load with a backpack worn")
+Config.Register("stamina", "penaltyCurve", 1.2, "Higher = light loads cost less, the last kilos cost more")
+Config.Register("stamina", "heavyFrom", 0.75, "Above this share of your carry cap you also move slower")
+Config.Register("stamina", "heavySlow", 0.1, "Speed lost at a full load (0.1 = 10% slower walk and sprint); grows from heavyFrom")
 Config.Register("stamina", "overloadWalkMult", 0.8, "Walk speed multiplier while over the carry cap")
 Config.Register("stamina", "lowAimBelow", 20, "Below this stamina, spread starts to grow")
 Config.Register("stamina", "lowAimSpread", 0.5, "Extra spread at zero stamina, as a fraction of the weapon's resting cone")
@@ -101,6 +103,15 @@ function S.Penalty(ply)
     local K = Rhylib.Skills
     if K and K.WeightPenaltyMult then maxPen = maxPen * K.WeightPenaltyMult(ply) end   -- (Load bearer)
     return maxPen * math.min(load, 1) ^ cfg("penaltyCurve"), load > 1
+end
+
+-- Speed multiplier from weight: 1 up to heavyFrom of the cap, then down
+-- to 1 - heavySlow at a full load.
+function S.LoadSpeedMult(ply)
+    local load = S.Load(ply)
+    local from = cfg("heavyFrom") or 0.75
+    if load <= from then return 1 end
+    return 1 - (cfg("heavySlow") or 0) * math.min((load - from) / math.max(1 - from, 0.01), 1)
 end
 
 -- Extra spread in degrees for a weapon whose owner is low on stamina.

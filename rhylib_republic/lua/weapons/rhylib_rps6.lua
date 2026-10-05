@@ -73,7 +73,7 @@ SWEP.StartCells = 0
 SWEP.InvW = 5
 SWEP.InvH = 1
 SWEP.InvLarge = true
-SWEP.InvWeight = 9           -- kg
+SWEP.InvWeight = 8           -- kg
 
 SWEP.Spread = {
     hip = 0.8,

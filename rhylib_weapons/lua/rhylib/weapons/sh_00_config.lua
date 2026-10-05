@@ -43,10 +43,10 @@ Config.Register("weapons", "maxCells", 4, "Without rhylib_inventory: spare power
 ]]
 local W = Rhylib.Weapons
 W.MagTypes = {
-    mag_small  = { index = 1, name = "Small magazine",  short = "Small",  rounds = 30,  w = 1, h = 1, stack = 2, weight = 0.30, model = "models/items/boxsrounds.mdl" },
-    mag_medium = { index = 2, name = "Medium magazine", short = "Medium", rounds = 60,  w = 1, h = 2, stack = 2, weight = 0.55, model = "models/items/boxmrounds.mdl" },
-    mag_large  = { index = 3, name = "Large magazine",  short = "Large",  rounds = 250, w = 1, h = 3, stack = 1, weight = 2.0,  model = "models/items/boxbuckshot.mdl" },
-    rocket     = { index = 4, name = "Rocket",          short = "Rocket", rounds = 1,   w = 1, h = 2, stack = 1, weight = 2.5,  model = "models/weapons/w_missile_closed.mdl" },
+    mag_small  = { index = 1, name = "Small magazine",  short = "Small",  rounds = 30,  w = 1, h = 1, stack = 2, weight = 0.5, model = "models/items/boxsrounds.mdl" },
+    mag_medium = { index = 2, name = "Medium magazine", short = "Medium", rounds = 60,  w = 1, h = 2, stack = 2, weight = 0.9, model = "models/items/boxmrounds.mdl" },
+    mag_large  = { index = 3, name = "Large magazine",  short = "Large",  rounds = 250, w = 1, h = 3, stack = 1, weight = 3.0,  model = "models/items/boxbuckshot.mdl" },
+    rocket     = { index = 4, name = "Rocket",          short = "Rocket", rounds = 1,   w = 1, h = 2, stack = 1, weight = 3.5,  model = "models/weapons/w_missile_closed.mdl" },
 }
 -- Training copies (rhylib_training): same sizes, yellow bolts that only
 -- hit "sim health". Training guns take only these; normal guns never do.
@@ -75,7 +75,7 @@ function W.TrainingMag(id)
 end
 
 W.CELL = "cell"
-W.CELL_WEIGHT = 1.2
+W.CELL_WEIGHT = 1.5
 
 -- Reload request sent by the client: 0 = best magazine, 1-14 = that
 -- magazine type (index), 15 = power cell.

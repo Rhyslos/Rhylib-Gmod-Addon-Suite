@@ -180,9 +180,9 @@ Items.Register("backpack", {
 --------------------------------------------------------------------------
 
 local Config = Rhylib.Config
-Config.Register("inventory", "baseCarry", 20, "Carry cap in kg without a backpack")
+Config.Register("inventory", "baseCarry", 18, "Carry cap in kg without a backpack")
 Config.Register("inventory", "giveRange", 130, "How close you must be to give someone an item")
-Config.Register("inventory", "backpackWeightMult", 0.7, "Items inside a backpack count at this fraction of their weight")
+Config.Register("inventory", "backpackWeightMult", 0.8, "Items inside a backpack count at this fraction of their weight")
 Config.Register("inventory", "contraband", {}, "Contraband item ids: players can hide up to 3 of them from searches, and they're never returned from jail")
 
 -- Contraband (config list), cached per change of the list.
