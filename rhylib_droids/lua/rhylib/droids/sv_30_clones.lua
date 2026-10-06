@@ -94,6 +94,7 @@ function D.CallSquad(leader, kinds, life)
                 made = made + 1
                 c.leader = leader
                 c.leaderSid = leader:SteamID64()
+                c:SetNW2Entity("rhylib_lead", leader)   -- (the command wheel counts followers by it)
                 c.reinfOf = c.leaderSid   -- (pulled out when this officer leaves)
                 c.followSlot = SLOTS[(i - 1) % #SLOTS + 1]
                 c.mode = "follow"
@@ -531,7 +532,13 @@ function D.SpawnPreset(name, origin, yaw, mode)
             end
         end
     end
-    -- Mortar squad: the rest stay with the mortars (owner: defend them).
+    -- Mortar squad: the mortars are artillery (long range, mostly rockets),
+    -- the rest stay with them (owner: defend them).
+    for _, m in ipairs(wards) do
+        m.artillery = true
+        -- (they stay where they're set up, whatever marker or tool mode)
+        D.SetMode(m, "guard", m:GetPos())
+    end
     if #wards > 0 then
         for i, g in ipairs(guards) do
             local m = wards[(i - 1) % #wards + 1]
@@ -589,10 +596,120 @@ function D.AssignFollow(ply, target)
             c.reinfOf, c.recallAt = nil, nil   -- (handed over: stays until killed or re-ordered)
             c.followSlot = SLOTS[(i - 1) % #SLOTS + 1]
             c:SetNW2String("rhylib_dmode", "follow")
+            c:SetNW2Entity("rhylib_lead", target)
             c.planAt, c.woken, c.redirect = 0, true, true
             c:SetNW2Entity("rhylib_pickBy", NULL)
         end
     end
     ply.rhylibPicks = nil
     return i
+end
+
+-- Artillery spotting: an enemy some droid (not training) saw in the last
+-- 3 s, within range of the mortar and not too close; nearest first.
+function D.SpottedTarget(mortar, range)
+    local pos = mortar:GetPos()
+    local r2, min2 = range * range, D.Cfg("b2RocketMin") ^ 2
+    local now = CurTime()
+    local ok = {}   -- (only what droids may target now: no noclip, knocked down, ...)
+    for _, t in ipairs(D.DroidTargets()) do ok[t] = true end
+    local best, bestD
+    for d in pairs(D.active) do
+        if IsValid(d) and not d.Training and d:Health() > 0 then
+            local t = d.target
+            if IsValid(t) and ok[t] and now - (d.lastSeenAt or 0) < 3 and not t.rhylibDown and (t:IsPlayer() and t:Alive() or not t:IsPlayer() and t:Health() > 0) then
+                local dist = t:GetPos():DistToSqr(pos)
+                if dist < r2 and dist > min2 and (not bestD or dist < bestD) then best, bestD = t, dist end
+            end
+        end
+    end
+    return best
+end
+
+--------------------------------------------------------------------------
+-- Command wheel (2026-10-06be, owner): a commander's own squad of clones
+--------------------------------------------------------------------------
+
+D.SQUAD_OPS = { "follow", "hold", "move", "aggroUp", "aggroDown", "dismiss", "regroup" }
+
+-- Clones following this player.
+function D.Followers(ply)
+    local out = {}
+    for c in pairs(D.clones) do
+        if IsValid(c) and c:Health() > 0 and c.leader == ply and not c.leaderNpc then out[#out + 1] = c end
+    end
+    return out
+end
+
+-- Give the order; returns a line for the commander.
+function D.SquadOrder(ply, op)
+    local list = D.Followers(ply)
+    local level = ply.rhylibSquadAggro or 3
+    if op == "follow" or op == "regroup" then
+        -- Regroup on me, and (follow) take in free clones nearby (up to the
+        -- cap). Regroup: only the clones already following.
+        local cap = D.Cfg("cmdMaxFollowers")
+        local r2 = D.Cfg("cmdFollowRadius") ^ 2
+        local pos = ply:GetPos()
+        local free = {}
+        for c in pairs(D.clones) do
+            if IsValid(c) and c:Health() > 0 and not c.leader and not c.guardDowned and not c.reviveTarget and c.mode ~= "roam" then   -- (roam pairs: given an order)
+                local d = c:GetPos():DistToSqr(pos)
+                if d < r2 then free[#free + 1] = { c = c, d = d } end
+            end
+        end
+        table.sort(free, function(a, b) return a.d < b.d end)
+        if op == "follow" then
+            for i = 1, math.min(#free, cap - #list) do list[#list + 1] = free[i].c end
+        end
+        if #list == 0 then return op == "follow" and "No clones nearby to follow you" or "No clones are following you" end
+        for i, c in ipairs(list) do
+            if c.leader ~= ply then
+                D.SetMode(c, "guard", c:GetPos())
+                c.mode = "follow"
+                c.leader, c.leaderSid = ply, ply:SteamID64()
+                c:SetNW2String("rhylib_dmode", "follow")
+                c:SetNW2Entity("rhylib_lead", ply)
+            end
+            c.holdAt = nil
+            c.followSlot = SLOTS[(i - 1) % #SLOTS + 1]
+            c.orderAggro = level ~= 3 and level or nil
+            c.planAt, c.woken, c.redirect = 0, true, true
+        end
+        return string.format("%d clone%s: %s", #list, #list == 1 and "" or "s", op == "follow" and "follow me" or "regroup on me")
+    end
+    if #list == 0 then return "No clones are following you" end
+    if op == "hold" or op == "move" then
+        local spot = ply:GetPos()
+        if op == "move" then
+            local tr = util.TraceLine({ start = ply:EyePos(), endpos = ply:EyePos() + ply:GetAimVector() * 6000, filter = ply, mask = MASK_SOLID_BRUSHONLY })
+            spot = (tr.Hit and not tr.HitSky) and ground(tr.HitPos) or nil
+            if not spot then return "No ground to move to there" end
+        end
+        for i, c in ipairs(list) do
+            local p = c:GetPos()
+            if op == "move" then
+                local a = (i / #list) * math.pi * 2
+                p = ground(spot + Vector(math.cos(a), math.sin(a), 0) * (60 + #list * 10)) or spot
+            end
+            c.holdAt = p
+            c.advanceTo, c.reinforceTo = nil, nil
+            c.planAt, c.woken, c.redirect = 0, true, true
+        end
+        return op == "hold" and "Hold this position" or "Move up there and hold"
+    end
+    if op == "aggroUp" or op == "aggroDown" then
+        level = math.Clamp(level + (op == "aggroUp" and 1 or -1), 1, 5)
+        ply.rhylibSquadAggro = level
+        ply:SetNW2Int("rhylib_squadAggro", level)
+        for _, c in ipairs(list) do
+            c.orderAggro = level ~= 3 and level or nil
+            c.doctrine, c.planAt = nil, 0
+        end
+        return "Aggression: " .. (D.SQUAD_AGGRO_NAMES[level] or level)
+    end
+    if op == "dismiss" then
+        for _, c in ipairs(list) do D.SetMode(c, "guard", c:GetPos()) end
+        return "Dismissed: they hold where they are"
+    end
 end

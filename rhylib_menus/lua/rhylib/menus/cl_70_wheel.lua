@@ -20,7 +20,8 @@
     own wheel at once on E: hook Rhylib.WheelEntityOptions(ent, me, add).
 
     W.OpenList(title, list, code) opens a wheel with no target: list =
-    { { label, run, sub } }, held while button code is down (the toolgun's
+    { { label, run, sub, disabled, col } } (col: a Color for a wider strip
+    on the left edge), held while button code is down (the toolgun's
     R menu uses it); let go on an option to run it.
 
     Menus.WheelProgress(text, secs) shows a short progress bar under the
@@ -235,10 +236,11 @@ Rhylib.Hook.Add("HUDPaint", "menus.wheel", function()
     end
 
     local w, h = 210 * s, 58 * s
+    local ring = RING * (#W.list > 6 and 1.32 or 1)   -- (7+ options: wider, so they don't overlap)
     local HUD = Rhylib.HUD
     for _, o in ipairs(W.list) do
         local a = math.rad(o.angle)
-        local ox, oy = cx + math.cos(a) * RING * s, cy + math.sin(a) * RING * s
+        local ox, oy = cx + math.cos(a) * ring * s, cy + math.sin(a) * ring * s
         local bx, by = ox - w * 0.5, oy - h * 0.5
         local isPick = pick == o
         if HUD and HUD.Frame then
@@ -250,8 +252,14 @@ Rhylib.Hook.Add("HUDPaint", "menus.wheel", function()
             surface.SetDrawColor(COL_PICK)
             surface.DrawRect(bx + 1, by + 1, w - 2, h - 2)
         end
-        surface.SetDrawColor(o.disabled and UI.Colors.bad or (isPick and UI.Colors.accent or UI.Colors.border))
-        surface.DrawRect(bx + 1, by + 1, 3, h - 2)
+        if o.col then
+            -- (colour-coded option: a wider strip in its colour, faded when unavailable)
+            surface.SetDrawColor(o.disabled and ColorAlpha(o.col, 70) or o.col)
+            surface.DrawRect(bx + 1, by + 1, math.max(4, math.floor(6 * s)), h - 2)
+        else
+            surface.SetDrawColor(o.disabled and UI.Colors.bad or (isPick and UI.Colors.accent or UI.Colors.border))
+            surface.DrawRect(bx + 1, by + 1, 3, h - 2)
+        end
         local sub = o.disabled or o.sub
         draw.SimpleText(o.label, UI.Font(17, 600), ox, sub and oy - 9 * s or oy, o.disabled and UI.Colors.textDim or UI.Colors.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         if sub then

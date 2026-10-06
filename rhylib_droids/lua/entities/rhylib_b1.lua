@@ -42,6 +42,10 @@ local CHOICES = {
     shoot = { ACT_HL2MP_GESTURE_RANGE_ATTACK_AR2, ACT_HL2MP_GESTURE_RANGE_ATTACK_SMG1, ACT_GESTURE_RANGE_ATTACK_SMG1, ACT_GESTURE_RANGE_ATTACK_AR2 },
     throw = { ACT_HL2MP_GESTURE_RANGE_ATTACK_GRENADE, ACT_GESTURE_RANGE_ATTACK_THROW },
     crouch = { ACT_HL2MP_IDLE_CROUCH_AR2, ACT_HL2MP_IDLE_CROUCH_SMG1, ACT_COVER_LOW, ACT_CROUCHIDLE, ACT_RANGE_AIM_SMG1_LOW },
+    -- weapon on safety (clones roaming with nothing in sight; none = the normal set)
+    idleSafe = { ACT_HL2MP_IDLE_PASSIVE, ACT_IDLE_RELAXED },
+    walkSafe = { ACT_HL2MP_WALK_PASSIVE, ACT_WALK_RELAXED },
+    runSafe = { ACT_HL2MP_RUN_PASSIVE, ACT_RUN_RELAXED },
 }
 local anims = {}
 
@@ -210,6 +214,7 @@ if SERVER then
     -- Aggression 1-5: droids follow the GMs' live level, clones their config.
     function ENT:Aggro()
         if self.IsRhylibClone then
+            if self.orderAggro then return self.orderAggro end   -- (their commander's aggression, command wheel)
             if self.doctrine then return self.doctrine end   -- (the odds decide: fall back / hold / charge)
             return math.Clamp(math.Round(tonumber(D.Cfg("cloneAggro")) or 3), 1, 5)
         end
@@ -229,7 +234,7 @@ if SERVER then
         local now = CurTime()
         if now < self.nextLook then return self.target end
         local k = self:Kind()
-        local range = D.Cfg(k.range)
+        local range = self.artillery and D.Cfg("artyRange") or D.Cfg(k.range)
         local pos = self:GetPos()
         local cur = self.target
         -- Targets in range, sorted nearest first (insertion sort, few).
@@ -535,26 +540,58 @@ if SERVER then
         local dist = from:Distance(pos)
         local g = math.abs(physenv.GetGravity().z)
         -- Lead a moving target a little; miss more at range.
-        if IsValid(mover) then pos = pos + mover:GetVelocity() * 0.4 end
-        local miss = VectorRand() * D.Cfg("b2RocketSpread") * dist / 1000
+        local arty = self.artillery
+        local t = math.Clamp(dist / 650, 1.2, arty and D.Cfg("artyMaxFlight") or 3.0)
+        if IsValid(mover) then pos = pos + mover:GetVelocity() * (arty and math.min(t * 0.5, 1.5) or 0.4) end
+        local spread = D.Cfg(arty and "artySpread" or "b2RocketSpread")
+        -- Artillery walks its rounds in: shots at the same target tighten.
+        if arty then
+            if IsValid(mover) and mover == self.artyLast and CurTime() - (self.artyLastAt or 0) < 20 then
+                self.artyWalk = math.max(0.35, (self.artyWalk or 1) * 0.75)
+            else
+                self.artyWalk = 1
+            end
+            self.artyLast, self.artyLastAt = mover, CurTime()
+            spread = spread * self.artyWalk
+        end
+        local miss = VectorRand() * spread * dist / 1000
         miss.z = 0
         pos = pos + miss
         -- High arc (apex = g t^2 / 8), flatter under a low ceiling.
-        local t = math.Clamp(dist / 650, 1.2, 3.0)
         local apex = g * t * t / 8
         local up = util.TraceLine({ start = from, endpos = from + Vector(0, 0, apex + 40), mask = MASK_SOLID_BRUSHONLY })
-        if up.Hit then t = math.Clamp(math.sqrt(math.max(up.HitPos.z - from.z - 40, 0) * 8 / g), 0.4, t) end
+        if up.Hit then
+            local low = math.Clamp(math.sqrt(math.max(up.HitPos.z - from.z - 40, 0) * 8 / g), 0.4, t)
+            -- (artillery under a roof: no near-flat map-crossing shot)
+            if arty and low < t * 0.5 then
+                self.nextRocket = CurTime() + 2
+                return false
+            end
+            t = low
+        end
         local r = ents.Create("rhylib_b2_rocket")
-        if not IsValid(r) then return end
+        if not IsValid(r) then return false end
         r:SetPos(from)
         r.vel = lob(from, pos, t, g)
         r.owner = self
         r.training = self.Training
         r:SetOwner(self)
         r:Spawn()
-        self:EmitSound("weapons/stinger_fire1.wav", 80, 115)
+        self:EmitSound("weapons/stinger_fire1.wav", arty and 95 or 80, 115)
         if self.anims.shoot then self:RestartGesture(self.anims.shoot, true, true) end
-        self.nextRocket = CurTime() + D.Cfg("b2RocketCooldown") * math.Rand(0.8, 1.3)
+        self.nextRocket = CurTime() + D.Cfg(arty and "artyCooldown" or "b2RocketCooldown") * math.Rand(0.8, 1.3)
+    return true
+    end
+
+    -- Artillery (mortar squad, 2026-10-06be): a rocket at an enemy any droid
+    -- has in sight within artyRange (spotters), when off cooldown. True if fired.
+    function ENT:ArtilleryShot()
+        if not self.artillery or CurTime() < (self.nextRocket or 0) then return false end
+        local t = D.SpottedTarget and D.SpottedTarget(self, D.Cfg("artyRange"))
+        if not IsValid(t) then return false end
+        self:Face(t:GetPos(), 0.4)
+        if not IsValid(t) then return false end
+        return self:FireRocket(t:GetPos(), t) == true
     end
 
     -- Something to throw at a target out of sight (where it was last seen).
@@ -581,6 +618,32 @@ if SERVER then
     -- Moving
     --------------------------------------------------------------------------
 
+    -- Doors (2026-10-06bh, owner: clones didn't open doors): clones open an
+    -- unlocked door in front of them while walking (droids don't: doors keep
+    -- them out). Checked every 0.3 s, one short hull trace.
+    local DOORS = { prop_door_rotating = true, func_door = true, func_door_rotating = true }
+    local DOOR_MINS, DOOR_MAXS = Vector(-10, -10, -10), Vector(10, 10, 10)
+    function ENT:OpenDoors()
+        if not self.IsRhylibClone then return end
+        local now = CurTime()
+        if now < (self.doorAt or 0) then return end
+        self.doorAt = now + 0.3
+        local dir = self.loco:GetVelocity()
+        dir.z = 0
+        if dir:LengthSqr() < 100 then dir = self:GetForward() else dir:Normalize() end
+        local from = self:GetPos() + Vector(0, 0, 40)
+        local tr = util.TraceHull({ start = from, endpos = from + dir * 70, mins = DOOR_MINS, maxs = DOOR_MAXS, filter = self, mask = MASK_SOLID })
+        local e = tr.Entity
+        if not (IsValid(e) and DOORS[e:GetClass()]) then return end
+        if e:GetInternalVariable("m_bLocked") == true then return end
+        if e:GetClass() == "prop_door_rotating" then
+            e:Fire("OpenAwayFrom", "!activator", 0, self, self)
+        else
+            e:Fire("Open", "", 0, self, self)
+        end
+        self.doorAt = now + 1
+    end
+
     -- Walk a path for up to maxTime; stop early when a target shows up (watch).
     function ENT:Go(pos, maxTime, watch)
         local path = self.path   -- one per droid (Go never nests)
@@ -601,6 +664,7 @@ if SERVER then
         local stop = CurTime() + maxTime
         while path:IsValid() and CurTime() < stop do
             path:Update(self)
+            self:OpenDoors()
             if self.loco:IsStuck() then
                 self:HandleStuck()
                 return false
@@ -807,6 +871,8 @@ if SERVER then
 
     -- Where to fall back to (aggression 1): a fallback marker, else home.
     function ENT:FallbackPoint()
+        -- (a player's followers fall back to them)
+        if (self.doctrine == 1 or self.orderAggro == 1) and self.leader and not self.leaderNpc and self.home then return self.home end
         if self.doctrine == 1 and self.doctrineFallback then return self.doctrineFallback end
         return self.fallback or self.home
     end
@@ -818,7 +884,7 @@ if SERVER then
         local now = CurTime()
         if (self.doctrineAt or 0) > now then return end
         self.doctrineAt = now + 1
-        if self.guarding or self.reviveTarget or self.leader and not self.leaderNpc or not IsValid(self.target) then
+        if self.guarding or self.reviveTarget or self.orderAggro or not IsValid(self.target) then
             self.doctrine = nil   -- (guards, medics and followers keep to their job)
             return
         end
@@ -846,6 +912,7 @@ if SERVER then
     function ENT:PlanMove(t)
         self:UpdateHome()
         self:UpdateDoctrine()
+        if self.artillery then return nil end   -- (artillery stays where it's set up)
         local pos, tp = self:GetPos(), t:GetPos()
         -- A friend in the line of fire: a step to the side for a clear shot.
         if self.blockedUntil and CurTime() < self.blockedUntil then
@@ -985,6 +1052,7 @@ if SERVER then
         end
         if self.pathGoal and path:IsValid() then
             path:Update(self)
+            self:OpenDoors()
             -- Falling back / retreating keeps the gun on the enemy.
             if self:Aggro() <= 2 then self.loco:FaceTowards(t:GetPos()) end
             if self.loco:IsStuck() then
@@ -1052,9 +1120,13 @@ if SERVER then
                 if burstLeft <= 0 then
                     local d = t:GetPos():Distance(self:GetPos())
                     -- B2 mortar / rocket droid: now and then a rocket instead of a burst.
-                    if k.rockets and now >= self.nextRocket and d > D.Cfg("b2RocketMin") and d < D.Cfg("b2RocketMax") and math.random() < 0.5 then
+                    local arty = self.artillery
+                    if k.rockets and now >= self.nextRocket and d > D.Cfg("b2RocketMin")
+                        and d < (arty and D.Cfg("artyRange") or D.Cfg("b2RocketMax")) and (arty or math.random() < 0.5) then
                         self:FireRocket(t:GetPos(), t)
                         nextShot = now + 0.6 + math.Rand(0.6, 1.3)
+                    elseif arty and d > D.Cfg("artyBlasterRange") then
+                        nextShot = now + 0.5   -- (artillery: only rockets at range)
                     else
                         burstLeft = math.random(k.burst[1], k.burst[2])
                     end
@@ -1139,6 +1211,10 @@ if SERVER then
             self.leader, self.leaderNpc, self.buddyRoam = nil, nil, nil
             -- (a roaming pair's second roams on alone; others guard here)
             if D.SetMode then D.SetMode(self, roam and "roam" or "guard", self:GetPos()) end
+            return
+        end
+        if self.holdAt then   -- (command wheel: hold / move up there)
+            self.home = self.holdAt
             return
         end
         if l.rhylibDown then return end
@@ -1258,7 +1334,7 @@ if SERVER then
             elseif L == 1 and fb and self:GetPos():DistToSqr(fb) > 200 * 200 then
                 self:SetPace(false)
                 self:GoOrWait(fb, 8, true)
-            elseif L >= 3 and self.lastSeen and CurTime() - (self.lastSeenAt or 0) < 20 then
+            elseif L >= 3 and not self.artillery and self.lastSeen and CurTime() - (self.lastSeenAt or 0) < 20 then
                 -- Go where the target was last seen (or where the shot came
                 -- from); guards and patrols only within their area.
                 local pos = self:InArea(self.lastSeen)
@@ -1298,6 +1374,10 @@ if SERVER then
                 -- player (runs to catch up).
                 self:SetPace((follow or self.guarding) and self:GetPos():DistToSqr(self.home) > (self.guarding and 250 or 500) ^ 2)
                 self:GoOrWait(self.home, (follow or self.guarding) and 3 or 8, true)
+            elseif self.artillery and self:ArtilleryShot() then
+                -- (fired at a target the spotters see)
+            elseif self.artillery then
+                self:Idle(1)   -- (artillery stays put and checks the spotters often)
             elseif self.guarding then
                 -- Over the body: watch, check again soon.
                 self:Idle(math.Rand(0.5, 1))
@@ -1335,6 +1415,12 @@ if SERVER then
         local A = self.anims
         if not A then return end   -- removed at once (over the cap)
         local want = speed > 10 and (speed > 110 and A.run or A.walk) or ((self.crouching or (self.crouchUntil or 0) > CurTime()) and A.crouch) or A.idle
+        -- Roaming clones with no enemy about carry the gun on safety (lowered).
+        if self.IsRhylibClone and (self.mode == "roam" or self.buddyRoam) and not IsValid(self.target)
+            and CurTime() - (self.lastSeenAt or -100) > 8 and not self.crouching then
+            local safe = speed > 10 and (speed > 110 and (A.runSafe or A.walkSafe) or A.walkSafe) or (speed <= 10 and A.idleSafe)
+            if safe then want = safe end
+        end
         if self:GetActivity() ~= want then self:StartActivity(want) end
 
         -- Aim the gun at the target. Sent only on a 3 degree change, or
@@ -1364,9 +1450,37 @@ if CLIENT then
     -- One shared gun model per kind, moved to each droid's hand when drawn.
     local guns = {}
     local handBone = {}
-    local POS, ANG = Vector(5, 1, -3), Angle(-10, 0, 180)   -- like the clone guns
+    -- Hand placement (2026-10-06bg, owner: the guns floated): the players'
+    -- third-person values (PropWMPos / PropWMAng / PropScale / PropBodygroups)
+    -- of the Rhylib weapon using the same model, read from the SWEP, so
+    -- tuning a player gun (rhylib_wm_editor) moves the NPC one too. Models no
+    -- player weapon uses (the droids' E5) keep the old values (owner: fine).
+    local DEFAULT = { pos = Vector(5, 1, -3), ang = Angle(-10, 0, 180), scale = 1 }
+    local placeOf = {}
 
-    local function place(pos, ang)
+    local function fromSwep(w)
+        if not (w and w.PropWMPos and w.PropWMAng) then return nil end
+        return { pos = w.PropWMPos, ang = w.PropWMAng, scale = w.PropScale or 1, bg = w.PropBodygroups }
+    end
+
+    local function placement(mdl)
+        local pl = placeOf[mdl]
+        if pl then return pl end
+        for _, w in ipairs(weapons.GetList()) do
+            if w.PropModel == mdl and w.ClassName and string.StartWith(w.ClassName, "rhylib_") then
+                pl = fromSwep(weapons.Get(w.ClassName))
+                if pl then break end
+            end
+        end
+        pl = pl or DEFAULT
+        placeOf[mdl] = pl
+        return pl
+    end
+    -- (re-read after a Lua refresh)
+    Rhylib.Hook.Add("OnReloaded", "droids.gunplace", function() placeOf = {} end)
+
+    local function place(pos, ang, pl)
+        local POS, ANG = pl.pos, pl.ang
         local p = pos + ang:Forward() * POS.x + ang:Right() * POS.y + ang:Up() * POS.z
         local a = Angle(ang.p, ang.y, ang.r)
         a:RotateAroundAxis(a:Up(), ANG.y)
@@ -1385,6 +1499,13 @@ if CLIENT then
             if not IsValid(gun) then return end
             gun:SetNoDraw(true)
             guns[mdlName] = gun
+            gun.rhylibPlace = nil
+        end
+        local pl = placement(mdlName)
+        if gun.rhylibPlace ~= pl then
+            gun.rhylibPlace = pl
+            gun:SetModelScale(pl.scale, 0)
+            for i, v in pairs(pl.bg or {}) do gun:SetBodygroup(i, v) end
         end
         local mdl = self:GetModel()
         local b = handBone[mdl]
@@ -1394,7 +1515,7 @@ if CLIENT then
         end
         local m = b and self:GetBoneMatrix(b)
         if not m then return end
-        local p, a = place(m:GetTranslation(), m:GetAngles())
+        local p, a = place(m:GetTranslation(), m:GetAngles(), pl)
         gun:SetPos(p)
         gun:SetAngles(a)
         gun:SetupBones()

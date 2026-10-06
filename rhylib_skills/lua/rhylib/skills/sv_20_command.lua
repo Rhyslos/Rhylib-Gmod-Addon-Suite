@@ -123,6 +123,55 @@ function K.CallReinforcements(ply)
     return true, made
 end
 
+-- Squad orders (comlink R wheel, 2026-10-06be): Commander officers order
+-- the clones following them (rhylib_droids D.SquadOrder). Each order also
+-- runs its hand-signal chat command (config squadSignals, 2026-10-06bf).
+-- Default mode "hooks" calls the PlayerSay hooks but not the gamemode's own
+-- PlayerSay (DarkRP's prints the line in local chat: owner, 2026-10-06bh).
+local function signal(ply, op)
+    local map = cfg("squadSignals")
+    local cmd = istable(map) and map[op]
+    if not isstring(cmd) or cmd == "" then return end
+    local mode = cfg("squadSignalMode")
+    if mode == "say" then
+        ply:ConCommand("say " .. cmd)
+    elseif mode == "gamemode" then
+        hook.Run("PlayerSay", ply, cmd, false)
+    else
+        for name, fn in pairs(hook.GetTable().PlayerSay or {}) do
+            if isstring(name) then
+                local ok, err = pcall(fn, ply, cmd, false)
+                if not ok then ErrorNoHalt("[Rhylib] squad signal hook " .. name .. ": " .. tostring(err) .. "\n") end
+            elseif IsValid(name) then
+                pcall(fn, name, ply, cmd, false)
+            end
+        end
+    end
+end
+
+Rhylib.Net.Receive("skills.squad", function(ply)
+    local op = K.SQUAD_OPS[net.ReadUInt(3)]
+    if not op then return end
+    if (ply.rhylibSquadNext or 0) > CurTime() then return end
+    ply.rhylibSquadNext = CurTime() + 0.4
+    local w = ply:GetActiveWeapon()
+    if not (IsValid(w) and w:GetClass() == "rhylib_commlink") then return end
+    if not canReceive(ply) then return K.Note(ply, "You can't give orders right now", true) end
+    local MP = Rhylib.MP
+    if MP and MP.IsCuffed and (MP.IsCuffed(ply) or (MP.IsStunned and MP.IsStunned(ply))) then
+        return K.Note(ply, "You can't give orders right now", true)
+    end
+    local D = Rhylib.Droids
+    if not (D and D.SquadOrder) then return end
+    if not K.IsCommanderSpec(ply) then return K.Note(ply, "Only Commander officers give squad orders", true) end
+    local ok, why = K.RankOk(ply, "commandRank")
+    if not ok then return K.Note(ply, why, true) end
+    local msg = D.SquadOrder(ply, op)
+    local failed = msg and string.sub(msg, 1, 3) == "No "
+    if msg then K.Note(ply, msg, failed) end
+    if not failed then signal(ply, op) end
+end)
+
 -- Field triage: triageHeal health a second, in quarter-second steps.
 timer.Create("Rhylib.Skills.Triage", 0.25, 0, function()
     if next(K.triage) == nil then return end

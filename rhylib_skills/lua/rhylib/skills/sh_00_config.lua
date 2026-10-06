@@ -421,6 +421,17 @@ function K.Borrowed(set, id)
     return n.spec ~= nil and own ~= nil and n.spec ~= own
 end
 
+-- A Commander officer (any skill of the commander specialisation that
+-- isn't borrowed)? Only they give clone squad orders (comlink R wheel).
+function K.IsCommanderSpec(ply)
+    local set = K.Set(ply)
+    for id in pairs(set) do
+        local n = K.byId[id]
+        if n and n.spec == "commander" and not K.Borrowed(set, id) then return true end
+    end
+    return false
+end
+
 -- A skill made pointless by another one you have (redundantWith)? Reason or nil.
 function K.Redundant(set, n)
     if n and n.redundantWith and set[n.redundantWith] then

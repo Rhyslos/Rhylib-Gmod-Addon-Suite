@@ -73,6 +73,16 @@ Config.Register("droids", "b2DirectSpeed", 1300, "B2 rocket droid: rocket speed 
 Config.Register("droids", "b2SlowTime", 1, "B2 rocket droid: seconds before the dive over which the rocket slows down")
 Config.Register("droids", "b2SlowMult", 0.65, "B2 rocket droid: speed share it slows to by the dive (kept through the curve)")
 Config.Register("droids", "b2DiveDist", 220, "B2 rocket droid: how far before its target the rocket starts curving down into the floor")
+-- Artillery (2026-10-06be, owner: genuine artillery to fight against):
+-- the mortar squad's mortars fire mostly rockets, at anything any droid
+-- sees within artyRange, walking their shots in on a target.
+Config.Register("droids", "cmdFollowRadius", 900, "Command wheel Follow me: free clones this close join you")
+Config.Register("droids", "cmdMaxFollowers", 8, "Command wheel: most clones following one commander")
+Config.Register("droids", "artyRange", 8000, "Mortar squad artillery: how far its mortars fire (any droid spotting a target is enough)")
+Config.Register("droids", "artyCooldown", 4.5, "Mortar squad artillery: seconds between one mortar's rockets")
+Config.Register("droids", "artySpread", 35, "Mortar squad artillery: miss distance per 1000 units (tightens on repeated shots at one target)")
+Config.Register("droids", "artyMaxFlight", 5.5, "Mortar squad artillery: longest rocket flight time (higher arcs at long range)")
+Config.Register("droids", "artyBlasterRange", 1500, "Mortar squad artillery: closer than this it also uses its blaster")
 
 Config.Register("droids", "heavyHealth", 340, "B1 heavy: health")
 Config.Register("droids", "heavySpeed", 140, "B1 heavy: run speed")
@@ -259,6 +269,8 @@ end
 D.MODES = { "guard", "patrol", "attack" }   -- (index 1-3 on the wire)
 D.MODE_NAMES = { guard = "Guard", patrol = "Patrol", attack = "Attack", follow = "Follow", roam = "Spread out" }
 D.AGGRO_NAMES = { "Fall back", "Slow retreat", "Moderate", "March", "Charge" }
+-- A commander's own clones (command wheel): 3 = by the odds (their doctrine).
+D.SQUAD_AGGRO_NAMES = { "Fall back to me", "Slow retreat", "By the odds", "March", "Charge" }
 
 -- Aggression 1-5 (server: config, live; clients: Global2Int).
 function D.Aggro()

@@ -39,7 +39,31 @@ reg("reinfCooldown", 900, "Reinforcements (Commander capstone): seconds between 
 reg("reinfLife", 600, "Reinforcements: seconds the squad stays before pulling out (0 = until killed)")
 reg("reinfSquad", { "ct_trooper", "ct_medic", "ct_rifleman", "ct_heavy" }, "Reinforcements: the clone kinds that come (ct_trooper, ct_rifleman, ct_heavy, ct_medic, ct_commander)")
 
+reg("squadSignals", { follow = "/group", regroup = "/come", hold = "/stop", move = "/advance", aggroUp = "/advance", aggroDown = "/group", dismiss = "" },
+    "Squad wheel: hand-signal chat command each order runs (for a hand-signal animation addon; \"\" = none)")
+reg("squadSignalMode", "hooks", "Squad wheel: how signals reach the animation addon: hooks (PlayerSay hooks only, nothing in chat), gamemode (also the gamemode's chat, e.g. DarkRP chat commands), say (a real chat line)")
+
 local function cfg(k) return Config.Get("skills", k) end
+
+-- Squad wheel options in network order (the index is sent): the clone
+-- orders (rhylib_droids D.SquadOrder).
+K.SQUAD_OPS = { "follow", "hold", "move", "aggroUp", "aggroDown", "dismiss", "regroup" }
+
+-- Hand-signal chat commands hidden from chat (typed or from the wheel; owner:
+-- they showed as plain text). Plus every squadSignals value.
+K.SIGNAL_WORDS = { ["/advance"] = true, ["/stop"] = true, ["/group"] = true, ["/come"] = true, ["/yes"] = true, ["/no"] = true }
+function K.IsSignalText(text)
+    if not isstring(text) then return false end
+    local t = string.lower(string.Trim(text))
+    if K.SIGNAL_WORDS[t] then return true end
+    local map = Config.Get("skills", "squadSignals")
+    if istable(map) then
+        for _, v in pairs(map) do
+            if isstring(v) and v ~= "" and string.lower(v) == t then return true end
+        end
+    end
+    return false
+end
 
 K.ORDERS = {
     { key = "wind", skill = "cmd_wind", name = "Second wind", col = Color(242, 209, 75), text = "No stamina drain, fast refill" },

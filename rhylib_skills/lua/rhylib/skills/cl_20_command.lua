@@ -94,3 +94,102 @@ Rhylib.Hook.Add("HUDPaint", "skills.orderhud", function()
     surface.DrawRect(x, y, math.floor(bw * math.Clamp(left / total, 0, 1)), bh)
     draw.SimpleText(o.text, UI.Font(13), w * 0.5, y + bh + 4, Color(230, 230, 225, 200 * fade), TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
 end, 10000)
+
+--------------------------------------------------------------------------
+-- Squad orders (2026-10-06be): hold R with the comlink for a wheel of
+-- orders to the clones following you. Commander officers only; Follow me
+-- (top) takes in free clones nearby, everything else needs followers.
+--------------------------------------------------------------------------
+
+-- Index into K.SQUAD_OPS (sh_20_command) is what's sent.
+local OP = {}
+for i, op in ipairs(K.SQUAD_OPS) do OP[op] = i end
+
+-- Colour strip on each option's left edge (owner: follow yellow, attack red).
+local SQ_COL = {
+    follow = Color(242, 209, 75),     -- yellow
+    regroup = Color(250, 235, 150),   -- pale yellow
+    hold = Color(79, 143, 232),       -- blue
+    move = Color(240, 150, 60),       -- orange
+    aggroUp = Color(232, 70, 60),     -- red (attack)
+    aggroDown = Color(70, 200, 200),  -- teal
+    dismiss = Color(150, 155, 165),   -- grey
+}
+
+local function sendOp(op)
+    Rhylib.Net.Start("skills.squad")
+    net.WriteUInt(OP[op], 3)
+    net.SendToServer()
+end
+
+-- Followers and free clones near me (the server decides for real).
+local function countClones(me)
+    local D = Rhylib.Droids
+    local r = (D and D.Cfg and D.Cfg("cmdFollowRadius")) or 900
+    local r2, pos = r * r, me:GetPos()
+    local mine, free = 0, 0
+    for _, c in ipairs(ents.FindByClass("rhylib_ct_*")) do
+        if c.IsRhylibClone and c:Health() > 0 then
+            local lead = c:GetNW2Entity("rhylib_lead")
+            if lead == me then
+                mine = mine + 1
+            elseif not IsValid(lead) and c:GetNW2String("rhylib_dmode", "") ~= "roam" and c:GetPos():DistToSqr(pos) < r2 then
+                free = free + 1
+            end
+        end
+    end
+    return mine, free
+end
+
+local function squadList(me)
+    local D = Rhylib.Droids
+    local names = (D and D.SQUAD_AGGRO_NAMES) or {}
+    local mine, free = countClones(me)
+    local lock
+    if not K.IsCommanderSpec(me) then
+        lock = "Commander officers only"
+    else
+        local ok, why = K.RankOk(me, "commandRank")
+        if not ok then lock = why end
+    end
+    local none = mine == 0 and "No clones following" or nil
+    local level = me:GetNW2Int("rhylib_squadAggro", 3)
+    if level < 1 or level > 5 then level = 3 end
+    local followSub = mine > 0 and string.format("%d following · %d nearby", mine, free)
+        or (free > 0 and string.format("%d clone%s nearby", free, free == 1 and "" or "s"))
+    local list = {
+        { label = "Follow me", sub = followSub, op = "follow", run = function() sendOp("follow") end,
+            disabled = lock or ((mine == 0 and free == 0) and "No clones nearby" or nil) },
+        { label = "Regroup", sub = "Your squad back on you", op = "regroup", run = function() sendOp("regroup") end, disabled = lock or none },
+        { label = "Hold position", sub = "Stay where you are", op = "hold", run = function() sendOp("hold") end, disabled = lock or none },
+        { label = "Move up there", sub = "Hold where I'm aiming", op = "move", run = function() sendOp("move") end, disabled = lock or none },
+        { label = "More aggressive", sub = names[level] and ("Now: " .. names[level]),
+            op = "aggroUp", run = function() sendOp("aggroUp") end, disabled = lock or none or (level >= 5 and "Already charging" or nil) },
+        { label = "Less aggressive", sub = names[level] and ("Now: " .. names[level]),
+            op = "aggroDown", run = function() sendOp("aggroDown") end, disabled = lock or none or (level <= 1 and "Already falling back" or nil) },
+        { label = "Dismiss", sub = "They guard where they stand", op = "dismiss", run = function() sendOp("dismiss") end, disabled = lock or none },
+    }
+    for _, o in ipairs(list) do o.col = SQ_COL[o.op] end
+    return list
+end
+
+Rhylib.Hook.Add("PlayerBindPress", "skills.squadwheel", function(ply, bind, pressed, code)
+    if not pressed or not string.find(bind, "+reload", 1, true) then return end
+    local W = Rhylib.Menus and Rhylib.Menus.Wheel
+    if not (W and W.OpenList) then return end
+    if W.open then return true end
+    local w = ply:GetActiveWeapon()
+    if not (IsValid(w) and w:GetClass() == "rhylib_commlink") or not ply:Alive() then return end
+    if not (code and code > 0) then
+        local key = input.LookupBinding("+reload")
+        code = key and input.GetKeyCode(key)
+    end
+    if not (code and code > 0) then return end
+    if W.OpenList("Squad", squadList(ply), code) then return true end
+end)
+
+-- Hand-signal commands (/advance, /group, ...) never show in chat, typed
+-- or from the wheel (DarkRP calls OnPlayerChat for its chat lines too).
+Rhylib.Hook.Add("OnPlayerChat", "skills.signals", function(ply, text)
+    if K.IsSignalText(text) then return true end
+end)

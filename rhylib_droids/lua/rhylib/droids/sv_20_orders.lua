@@ -33,6 +33,8 @@ function D.SetMode(droid, mode, center)
     if mode ~= "guard" and mode ~= "patrol" and mode ~= "attack" and mode ~= "roam" then mode = "guard" end
     droid.leader, droid.advanceTo, droid.leaderNpc = nil, nil, nil   -- (a new mode ends following an officer / buddy)
     droid.roamGoal, droid.reinforceTo = nil, nil
+    droid.holdAt, droid.orderAggro = nil, nil   -- (command wheel orders end with the follow)
+    if droid.IsRhylibClone then droid:SetNW2Entity("rhylib_lead", NULL) end
     droid.mode = mode
     if center then droid.home = center end
     if mode ~= "attack" then droid.objective, droid.objectiveMarker = nil, nil end

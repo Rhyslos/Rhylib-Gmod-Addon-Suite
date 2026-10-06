@@ -123,6 +123,9 @@ if CLIENT then
     function SWEP:DrawHUD()
         local K, me = Rhylib.Skills, LocalPlayer()
         if not (K and K.OrderOf) then return end
+        -- (hidden under the squad wheel: it overlapped the bottom option)
+        local W = Rhylib.Menus and Rhylib.Menus.Wheel
+        if W and W.open then return end
         local o = K.OrderOf(me)
         local w, h = ScrW(), ScrH()
         local y = h * 0.7
@@ -157,6 +160,10 @@ if CLIENT then
                 rl = "Right click: call reinforcements"
             end
             if rl then draw.SimpleText(rl, Rhylib.UI.Font(15), w * 0.5, y + h * 0.052, rc <= 0 and C.text or C.textDim, TEXT_ALIGN_CENTER) end
+        end
+        -- Squad orders (Commander officers, cl_20_command.lua)
+        if ok and K.IsCommanderSpec and K.IsCommanderSpec(me) then
+            draw.SimpleText("Hold R: squad orders", Rhylib.UI.Font(15), w * 0.5, y + h * 0.076, C.textDim, TEXT_ALIGN_CENTER)
         end
     end
 end
