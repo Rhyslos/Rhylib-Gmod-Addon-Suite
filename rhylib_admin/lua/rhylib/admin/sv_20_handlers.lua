@@ -39,7 +39,22 @@ function Admin.SetCloak(ply, on)
     end
     ply:SetRenderMode(on and RENDERMODE_TRANSALPHA or RENDERMODE_NORMAL)
     Admin.SetNoTarget(ply, on or ply.rhylibAdminNoTargetOwn)
+    -- (the gun is its own entity: hide it on the server too, or others see
+    -- it float where the hidden player is; owner 2026-10-07)
+    local w = ply:GetActiveWeapon()
+    if IsValid(w) then w:SetNoDraw(on and true or false) end
 end
+
+-- A cloaked player switching weapons: hide the new one (deploy clears it).
+Rhylib.Hook.Add("PlayerSwitchWeapon", "admin.cloak", function(ply, old, new)
+    if not ply.rhylibCloak then return end
+    timer.Simple(0, function()
+        if not (IsValid(ply) and ply.rhylibCloak) then return end
+        if IsValid(old) and old ~= ply:GetActiveWeapon() then old:SetNoDraw(true) end   -- (holstered: stays hidden anyway)
+        local w = ply:GetActiveWeapon()
+        if IsValid(w) then w:SetNoDraw(true) end
+    end)
+end)
 
 function Admin.SetNoTarget(ply, on)
     ply.rhylibAdminNoTarget = on or nil
@@ -81,9 +96,23 @@ Rhylib.Hook.Add("PlayerCanHearPlayersVoice", "admin.gag", function(listener, tal
     if Admin.gagged[talker] then return false, false end
 end, -50)
 
+-- God mode also means no stuns (EMP, stun bolts, baton, flash) and no
+-- explosion knockdowns (owner 2026-10-07: EMP spam on a god-moded admin).
+Rhylib.Hook.Add("Rhylib.CanStun", "admin.god", function(ply)
+    if IsValid(ply) and ply:HasGodMode() then return false end
+end)
+Rhylib.Hook.Add("Rhylib.CanKnockDown", "admin.god", function(ply)
+    if IsValid(ply) and ply:IsPlayer() and ply:HasGodMode() then return false end
+end)
+
 -- The Rhylib chat box asks this before sending (rhylib_chat).
-Rhylib.Hook.Add("Rhylib.CanChat", "admin.mute", function(ply)
-    if Admin.muted[ply] then return false, "You are muted" end
+-- Muted players can still reach staff (owner 2026-10-07): the admin
+-- channel, and private messages to anyone who reads it.
+Rhylib.Hook.Add("Rhylib.CanChat", "admin.mute", function(ply, chId, _, target)
+    if not Admin.muted[ply] then return end
+    if chId == "admin" then return end
+    if chId == "pm" and IsValid(target) and target:IsPlayer() and Admin.Has(target, "rhylib.chat.admin", "admin") then return end
+    return false, "You are muted (you can still use /admin or PM staff)"
 end)
 
 -- Spawning again keeps powers that should last (cloak, god, notarget).

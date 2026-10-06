@@ -270,3 +270,28 @@ Rhylib.Net.Receive("admin.list", function()
     local cb = Admin.listCb[which]
     if cb then cb(rows) end
 end)
+
+-- Cloak (2026-10-07, owner: others saw the cloaked admin's gun floating):
+-- Rhylib weapons skip drawing for a cloaked owner (DrawWorldModel); any
+-- other weapon in a cloaked player's hands is hidden on this client here
+-- (re-applied, since the server's effect flags overwrite it on a switch).
+local hiddenWeps = {}
+timer.Create("Rhylib.Admin.CloakWeapons", 0.1, 0, function()
+    local me = LocalPlayer()
+    if not IsValid(me) then return end
+    local now = {}
+    for _, p in ipairs(player.GetAll()) do
+        if p ~= me and p:GetNW2Bool("rhylib_cloak") and not p:IsDormant() then
+            local w = p:GetActiveWeapon()
+            if IsValid(w) then
+                now[w] = p
+                w:SetNoDraw(true)
+            end
+        end
+    end
+    -- Cloak over (or switched away): show it again if it's still in hand.
+    for w, p in pairs(hiddenWeps) do
+        if not now[w] and IsValid(w) and IsValid(p) and p:GetActiveWeapon() == w then w:SetNoDraw(false) end
+    end
+    hiddenWeps = now
+end)

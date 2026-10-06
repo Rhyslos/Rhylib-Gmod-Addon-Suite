@@ -145,8 +145,8 @@ Rhylib.Net.Receive("chat.send", function(ply)
         note(ply, whyNot)
         return
     end
-    -- rhylib_admin (mutes) and others can stop it.
-    local can, why = hook.Run("Rhylib.CanChat", ply, ch.id, text)
+    -- rhylib_admin (mutes) and others can stop it (target: a PM's receiver).
+    local can, why = hook.Run("Rhylib.CanChat", ply, ch.id, text, target)
     if can == false then
         note(ply, why or "You can't chat right now")
         return

@@ -74,11 +74,32 @@ function Spread.GetState(wep, t)
     return b * bd, k1 * kd, k2 * kd, k3 * kd
 end
 
--- Skills (rhylib_skills): sprint-firing, Z-6 and pistol handling.
+-- Crouching (2026-10-07, owner: show on the crosshair that crouching is
+-- more accurate): weapons crouchSpread, eased in with the eyes going down
+-- (the current view offset is predicted, so server, client and crosshair
+-- agree and the arcs close smoothly as you duck). Only on the ground.
+function Spread.StanceMult(owner)
+    if not (IsValid(owner) and owner:IsPlayer() and owner:IsOnGround()) then return 1 end
+    local m = Rhylib.Config.Get("weapons", "crouchSpread") or 1
+    if m == 1 then return 1 end
+    local stand, duck = owner:GetViewOffset().z, owner:GetViewOffsetDucked().z
+    local f
+    if stand - duck > 1 and owner.GetCurrentViewOffset then
+        f = math.Clamp((stand - owner:GetCurrentViewOffset().z) / (stand - duck), 0, 1)
+    else
+        f = owner:Crouching() and 1 or 0
+    end
+    return 1 + (m - 1) * f
+end
+
+-- Skills (rhylib_skills): sprint-firing, Z-6 and pistol handling; and the
+-- crouch bonus above.
 function Spread.SkillMult(wep)
+    local owner = wep:GetOwner()
+    local m = Spread.StanceMult(owner)
     local K = Rhylib.Skills
-    if not (K and K.SpreadMult) then return 1 end
-    return K.SpreadMult(wep:GetOwner(), wep)
+    if not (K and K.SpreadMult) then return m end
+    return K.SpreadMult(owner, wep) * m
 end
 
 -- Resting cone size (the arc radius).

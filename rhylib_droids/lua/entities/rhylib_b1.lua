@@ -618,13 +618,12 @@ if SERVER then
     -- Moving
     --------------------------------------------------------------------------
 
-    -- Doors (2026-10-06bh, owner: clones didn't open doors): clones open an
-    -- unlocked door in front of them while walking (droids don't: doors keep
-    -- them out). Checked every 0.3 s, one short hull trace.
+    -- Doors (2026-10-06bh, owner: clones didn't open doors; droids too since
+    -- 2026-10-06bi): every NPC opens an unlocked door in front of it while
+    -- walking. Checked every 0.3 s, one short hull trace.
     local DOORS = { prop_door_rotating = true, func_door = true, func_door_rotating = true }
     local DOOR_MINS, DOOR_MAXS = Vector(-10, -10, -10), Vector(10, 10, 10)
     function ENT:OpenDoors()
-        if not self.IsRhylibClone then return end
         local now = CurTime()
         if now < (self.doorAt or 0) then return end
         self.doorAt = now + 0.3
@@ -1250,8 +1249,8 @@ if SERVER then
         if self.leader then self:FollowLeader() end
     end
 
-    -- Medic: go to a downed (or just dead) player, crouch on the body and
-    -- get them up (owner). sv_30_clones picks the patient; D.PatientPending,
+    -- Medic: go to a downed player, crouch on the body and
+    -- get them up (owner; downed only since 2026-10-07). sv_30_clones picks the patient; D.PatientPending,
     -- D.BodyPos and D.NpcRevive live there too.
     function ENT:DoRevive()
         local p = self.reviveTarget
@@ -1283,6 +1282,7 @@ if SERVER then
             end
             if far(body) then
                 self.reviveFails = (self.reviveFails or 0) + 1
+                D.MedicLog("%s: medic %s couldn't reach the body (try %d)", p:Nick(), tostring(self), self.reviveFails)
                 if self.reviveFails >= 4 then   -- (can't get there: give up on them for a while)
                     p.rhylibNoMedicUntil = CurTime() + 20
                     self.reviveTarget, self.reviveFails = nil, nil
@@ -1291,12 +1291,16 @@ if SERVER then
             end
         end
         self.reviveFails = nil
+        D.MedicLog("%s: medic %s reached the body, reviving", p:Nick(), tostring(self))
         self.loco:SetDesiredSpeed(0)
         self.crouching = true
         local done = CurTime() + D.Cfg("ctMedicReviveTime")
         while CurTime() < done and D.PatientPending(p) do
             local b = D.BodyPos(p)
-            if not b or self:GetPos():DistToSqr(b) > 120 * 120 then break end   -- (dragged away)
+            if not b or self:GetPos():DistToSqr(b) > 120 * 120 then   -- (dragged away)
+                D.MedicLog("%s: body moved away from the medic", p:Nick())
+                break
+            end
             self.loco:FaceTowards(b)
             coroutine.yield()
         end

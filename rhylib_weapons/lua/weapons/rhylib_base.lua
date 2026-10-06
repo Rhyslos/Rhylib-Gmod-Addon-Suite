@@ -2757,6 +2757,8 @@ if CLIENT then
 
     function SWEP:DrawWorldModel(flags)
         local owner = self:GetOwner()
+        -- (admin cloak: others don't see the gun float, rhylib_admin)
+        if IsValid(owner) and owner ~= LocalPlayer() and owner:GetNW2Bool("rhylib_cloak") then return end
         if not self.PropModel or not IsValid(owner) then
             self:DrawModel(flags)
             return

@@ -6,6 +6,7 @@ Config.Register("weapons", "handsModel", "models/aussiwozzi/cgi/base/trooper_arm
 Config.Register("weapons", "lagCompMax", 0.35, "Max seconds (ping + interpolation) covered by lag compensation on a bolt's first leg")
 Config.Register("weapons", "boltSpeedMult", 1.3, "Multiplies every gun's bolt speed (faster = less leading)")
 Config.Register("weapons", "recoilMult", 1, "Multiplies every gun's view recoil (SWEP.Recoil)")
+Config.Register("weapons", "crouchSpread", 0.8, "Spread while crouched on the ground, as a share of the standing cone (the crosshair tightens with it; 1 = no bonus)")
 Config.Register("weapons", "firstShotMult", 0.35, "Spread of a first shot from rest, as a share of the normal cone")
 Config.Register("weapons", "shotRange", 6000, "Players further than this from a shot don't receive it")
 Config.Register("weapons", "boltRange", 0, "Bolts stop (no damage, no impact) after this many units; 0 = off, they fly their full life. Scoped guns and rockets never stop early. Admins change it live with rhylib_boltrange")

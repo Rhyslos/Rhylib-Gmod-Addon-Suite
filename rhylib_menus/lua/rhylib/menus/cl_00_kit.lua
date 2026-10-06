@@ -180,9 +180,15 @@ function K.Button(parent, text, fn, opts)
         surface.DrawOutlinedRect(0, 0, w, h)
         setCol(C.edgeLight)
         surface.DrawLine(1, 1, w - 1, 1)
-        local stripe = self.opts.danger and C.bad or C.accent
-        setCol(stripe, on and (self.opts.accent and 255 or 200) or 60)
-        surface.DrawRect(1, 1, math.max(2, K.S(3)), h - 2)
+        -- opts.col: a colour-coded button (a faint wash and a wider strip)
+        local cc = self.opts.col
+        if cc then
+            setCol(cc, on and 18 or 8)
+            surface.DrawRect(1, 1, w - 2, h - 2)
+        end
+        local stripe = self.opts.danger and C.bad or (cc or C.accent)
+        setCol(stripe, on and ((self.opts.accent or cc) and 255 or 200) or 60)
+        surface.DrawRect(1, 1, math.max(2, K.S(cc and 5 or 3)), h - 2)
         local label = isfunction(self.label) and self.label() or self.label
         local font = K.Font(self.opts.small and 12 or 13, 700)
         local tc = on and C.text or C.textDim
@@ -213,13 +219,22 @@ function K.Label(parent, text, size, weight, col)
 end
 
 -- A section heading: caps text with a rule under it.
-function K.Heading(parent, text)
+-- col (optional): a colour-coded section (a chip before the title, the
+-- title and rule in that colour).
+function K.Heading(parent, text, col)
     local p = vgui.Create("DPanel", parent)
     p:SetTall(K.S(32))
     function p:Paint(w, h)
-        draw.SimpleText(string.upper(text), K.Font(14, 700), 0, h * 0.5, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-        setCol(C.accent, 120)
-        surface.DrawRect(0, h - 2, w, 1)
+        local x = 0
+        if col then
+            local c = K.S(10)
+            setCol(col)
+            surface.DrawRect(0, h * 0.5 - c * 0.5, c, c)
+            x = c + K.S(8)
+        end
+        draw.SimpleText(string.upper(text), K.Font(14, 700), x, h * 0.5, col or C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        setCol(col or C.accent, col and 160 or 120)
+        surface.DrawRect(0, h - 2, w, col and 2 or 1)
     end
     return p
 end

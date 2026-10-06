@@ -77,7 +77,7 @@ local function make(ply)
 end
 
 local function lit(ply)
-    return IsValid(ply) and ply:Alive() and ply:GetNW2Bool("rhylib_lights", false) and not ply:IsDormant()
+    return IsValid(ply) and ply:Alive() and ply:GetNW2Bool("rhylib_lights", false) and not ply:IsDormant() and not ply:GetNW2Bool("rhylib_cloak")
 end
 
 -- Who gets real beams is worked out 4 times a second: you always, plus

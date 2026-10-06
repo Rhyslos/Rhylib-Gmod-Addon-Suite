@@ -16,7 +16,7 @@ local Config = Rhylib.Config
 
 -- Head bone id per model, so LookupBone runs once per model, not per frame.
 local headBone = {}
-local UP16, UP28 = Vector(0, 0, 16), Vector(0, 0, 28)
+local UP_PLATE, UP28 = Vector(0, 0, 14), Vector(0, 0, 28)
 
 local function headPos(ply)
     local mdl = ply:GetModel() or ""
@@ -56,7 +56,9 @@ Rhylib.Hook.Add("HUDPaint", "hud.target", function()
     fade = math.Approach(fade, visible and 1 or 0, FrameTime() * 6)
     if fade <= 0 or not IsValid(target) then return end
 
-    local scr = (headPos(target) + UP16):ToScreen()
+    -- (anchored on the interpolated eye position: the head bone's cached
+    -- matrix trailed behind moving players and the plate lagged, owner 2026-10-07)
+    local scr = (target:EyePos() + UP_PLATE):ToScreen()
     if not scr.visible then return end
 
     local s = HUD.Scale()

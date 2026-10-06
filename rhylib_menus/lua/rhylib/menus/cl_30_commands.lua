@@ -216,9 +216,18 @@ local function buildPlayers(parent)
     grid:Dock(FILL)
     grid:SetVisible(false)
 
+    -- Colour per section (owner 2026-10-07: all-blue buttons made it hard to
+    -- see what belongs together).
+    local SECTION_COL = {
+        ["Info & messages"] = Color(120, 170, 235), ["Move"] = Color(80, 200, 200), ["Health"] = Color(91, 201, 122),
+        ["Restrain"] = Color(240, 150, 60), ["Chat & voice"] = Color(190, 140, 230), ["Powers"] = Color(242, 209, 75),
+        ["Event fun"] = Color(235, 120, 190), ["Job & money"] = Color(165, 205, 90), ["Roster & staff rank"] = Color(140, 160, 255),
+        ["Punish"] = Color(232, 70, 60), ["Actions"] = Color(120, 170, 235), ["Other"] = Color(160, 165, 170), ["Steam"] = Color(100, 140, 190),
+    }
     local function block(title, buttons)
         if #buttons == 0 then return end
-        local h = K.Heading(grid, title)
+        local col = SECTION_COL[title]
+        local h = K.Heading(grid, title, col)
         h:Dock(TOP)
         h:DockMargin(0, 0, s(8), s(4))
         local lay = vgui.Create("DIconLayout", grid)
@@ -228,7 +237,7 @@ local function buildPlayers(parent)
         lay:SetSpaceY(s(6))
         if lay.SetStretchHeight then lay:SetStretchHeight(true) end
         for _, def in ipairs(buttons) do
-            local b = K.Button(lay, def[1], def[2], { small = true, danger = def.danger })
+            local b = K.Button(lay, def[1], def[2], { small = true, danger = def.danger, col = col, tooltip = def.tip })
             b:SetSize(s(150), s(30))
         end
         lay:Layout()
@@ -261,7 +270,7 @@ local function buildPlayers(parent)
                         table.insert(words, 1, Admin.TargetWord(p))
                         Admin.Run(cmd.id, words)
                     end)
-                end, danger = DANGER[cmd.id] }
+                end, danger = DANGER[cmd.id], tip = cmd.desc }
             end
             local placed = {}
             for _, sec in ipairs(Admin.SECTIONS and Admin.SECTIONS.player or {}) do

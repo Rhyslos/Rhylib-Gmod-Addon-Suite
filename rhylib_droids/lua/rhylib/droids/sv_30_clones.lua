@@ -121,69 +121,38 @@ function D.CallSquad(leader, kinds, life)
 end
 
 --------------------------------------------------------------------------
--- Medics: patients (downed, or dead a short while), afflictions, revives
+-- Medics: patients (downed and bleeding out), afflictions, revives
+-- (2026-10-07, owner: medics never bring back the dead, only the downed)
 --------------------------------------------------------------------------
 
--- Where and when players died (a dead player's entity may be moved by the
--- death camera).
-Rhylib.Hook.Add("PlayerDeath", "droids.clones", function(ply)
-    local corpse = ply:GetNW2Entity("rhylib_corpse")
-    ply.rhylibDeathPos = IsValid(corpse) and corpse:GetPos() or ply:GetPos()
-    ply.rhylibDeathAt = CurTime()
-end)
-Rhylib.Hook.Add("PlayerSpawn", "droids.clones", function(ply) ply.rhylibDeathAt = nil end)
+-- Debug (owner: medics seemed to skip other players): rhylib_medic_debug 1
+-- prints each step to the server console.
+local medicDebug = CreateConVar("rhylib_medic_debug", "0", FCVAR_ARCHIVE, "Print clone medic revive steps to the server console")
+function D.MedicLog(fmt, ...)
+    if medicDebug:GetBool() then print("[Rhylib medic] " .. string.format(fmt, ...)) end
+end
 
--- Can a medic NPC still get this player up?
+-- Can a medic NPC still get this player up? Downed only.
 function D.PatientPending(p)
-    if not IsValid(p) or not p:IsPlayer() then return false end
-    if p:Alive() then return p.rhylibDown == true end
-    local win = D.Cfg("ctMedicDeadWindow")
-    return win > 0 and p.rhylibDeathAt ~= nil and CurTime() - p.rhylibDeathAt < win
-        and p:GetObserverMode() ~= OBS_MODE_ROAMING   -- (not spectating somewhere else)
+    return IsValid(p) and p:IsPlayer() and p:Alive() and p.rhylibDown == true
 end
 
 -- Where the body is.
 function D.BodyPos(p)
-    if p:Alive() then
-        local L = Rhylib.Lying
-        return L and L.BodyPos and L.BodyPos(p) or p:GetPos()
-    end
-    local corpse = p:GetNW2Entity("rhylib_corpse")
-    if IsValid(corpse) then return corpse:GetPos() end
-    return p.rhylibDeathPos
+    local L = Rhylib.Lying
+    return L and L.BodyPos and L.BodyPos(p) or p:GetPos()
 end
 
--- Up again: downed = medical revive; dead = back on their feet where
--- they fell (like the admin !revive), with ctMedicReviveHealth.
+-- Up again with ctMedicReviveHealth.
 function D.NpcRevive(p)
-    local frac = D.Cfg("ctMedicReviveHealth")
     local Med = Rhylib.Medical
-    if p:Alive() then
-        if Med and Med.Revive and p.rhylibDown then
-            Med.Revive(p, math.max(1, p:GetMaxHealth() * frac), nil)   -- (no "by": stats are for players)
-            D.ReviveShield(p)
-        end
+    if not (Med and Med.Revive and p:Alive() and p.rhylibDown) then
+        D.MedicLog("%s: revive skipped (not downed any more)", p:Nick())
         return
     end
-    local pos = D.BodyPos(p)
-    local ang = p:EyeAngles()
-    p:Spawn()
-    -- (after the spawn point code's own timer(0), like !revive)
-    timer.Simple(0, function()
-        if not (IsValid(p) and p:Alive()) then return end
-        if pos then
-            local spot = pos
-            for i = 0, 7 do
-                local a = i / 8 * math.pi * 2
-                local q = pos + (i == 0 and vector_origin or Vector(math.cos(a) * 40, math.sin(a) * 40, 0))
-                if free(q + Vector(0, 0, 4)) then spot = q + Vector(0, 0, 4) break end
-            end
-            p:SetPos(spot)
-        end
-        p:SetEyeAngles(Angle(0, ang.y, 0))
-        p:SetHealth(math.max(1, math.floor(p:GetMaxHealth() * frac)))
-        D.ReviveShield(p)
-    end)
+    Med.Revive(p, math.max(1, p:GetMaxHealth() * D.Cfg("ctMedicReviveHealth")), nil)   -- (no "by": stats are for players)
+    D.MedicLog("%s: revived", p:Nick())
+    D.ReviveShield(p)
 end
 
 -- Just got up by a medic NPC (owner: they were killed again at once):
@@ -201,7 +170,7 @@ Rhylib.Hook.Add("KeyPress", "droids.reviveshield", function(p, key)
     if key == IN_ATTACK and p.rhylibReviveShield then p.rhylibReviveShield = nil end
 end)
 Rhylib.Hook.Add("PlayerSpawn", "droids.reviveshield", function(p)
-    -- (a medic's dead-revive sets it a tick after the spawn)
+    -- (a respawn ends it)
     p.rhylibReviveShield = nil
 end)
 
@@ -240,7 +209,11 @@ local function assignMedics(players)
                         end
                     end
                 end
+                if not best then
+                    D.MedicLog("%s: downed, no free medic within range", p:Nick())
+                end
                 if best then
+                    D.MedicLog("%s: medic %s sent (%d units away)", p:Nick(), tostring(best), math.sqrt(bestD))
                     best.reviveTarget = p
                     best.reviveFails = nil
                     best.redirect = true

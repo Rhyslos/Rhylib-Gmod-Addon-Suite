@@ -239,7 +239,7 @@ if SERVER then
         local r2 = self.FlashRadius * self.FlashRadius
         local MP = Rhylib.MP
         for _, p in ipairs(player.GetAll()) do
-            if p:Alive() then
+            if p:Alive() and not p:HasGodMode() then   -- (admin god mode: no flash, no stun)
                 local eye = p:EyePos()
                 if eye:DistToSqr(pos) <= r2 and not util.TraceLine({ start = pos, endpos = eye, mask = MASK_SOLID_BRUSHONLY }).Hit then
                     p:ScreenFade(SCREENFADE.IN, Color(255, 255, 255, 240), 1.5, 0.5)

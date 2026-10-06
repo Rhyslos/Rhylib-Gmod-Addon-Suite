@@ -400,6 +400,7 @@ if CLIENT then
     function SWEP:DrawWorldModel(flags)
         local o = self:GetOwner()
         if not IsValid(o) then self:DrawModel(flags) return end
+        if o ~= LocalPlayer() and o:GetNW2Bool("rhylib_cloak") then return end   -- (admin cloak)
         if self:GetNeedDraw() then return end   -- just thrown
         local b = o:LookupBone("ValveBiped.Bip01_R_Hand")
         local m = b and o:GetBoneMatrix(b)

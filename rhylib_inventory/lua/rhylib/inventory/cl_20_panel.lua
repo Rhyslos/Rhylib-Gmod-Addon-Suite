@@ -210,10 +210,10 @@ end
 
 local PANEL = {}
 
-function PANEL:Init()
-    -- Everything is sized from the cell size (64 was the original design size).
-    self.k = math.Clamp(sizeVar:GetFloat(), 48, 128) / 64  -- 128 still fits a 16:9 screen
-    local s = ScrH() / 1080 * self.k
+-- Everything is sized from the cell size (64 was the original design size).
+function PANEL:SetScaleK(k)
+    self.k = k
+    local s = ScrH() / 1080 * k
     self.s = s
     self.cell = math.floor(64 * s)
     self.gap = math.floor(4 * s)
@@ -222,6 +222,11 @@ function PANEL:Init()
     self.header = math.floor(40 * s)
     self.label = math.floor(24 * s)
     self.footer = math.floor(28 * s)
+end
+
+function PANEL:Init()
+    self.baseK = math.Clamp(sizeVar:GetFloat(), 48, 128) / 64  -- 128 still fits a 16:9 screen
+    self:SetScaleK(self.baseK)
     self.drag = nil
     self.rDown = false
     self.model = createModelPanel(self)
@@ -259,8 +264,22 @@ function PANEL:LayoutKey()
         .. "|" .. dims(Inv.cont[Items.POUCH]) .. "|" .. dims(Inv.cont[Items.CELLPACK])
 end
 
--- Works out where every region sits and sizes the window.
+-- Works out where every region sits and sizes the window; shrinks the
+-- cells when that would run off the screen (owner 2026-10-07: at 2560x1440
+-- with a storage open the far right column was cut off).
 function PANEL:Relayout()
+    if self.baseK and self.k ~= self.baseK then self:SetScaleK(self.baseK) end
+    self:LayoutOnce()
+    local maxW, maxH = ScrW() * 0.98, ScrH() * 0.98
+    local w, h = self:GetWide(), self:GetTall()
+    if w > maxW or h > maxH then
+        local f = math.min(maxW / w, maxH / h)
+        self:SetScaleK(math.max(0.4, self.k * f * 0.99))
+        self:LayoutOnce()
+    end
+end
+
+function PANEL:LayoutOnce()
     self.layoutKey = self:LayoutKey()
     local pad, label = self.pad, self.label
     local main = Inv.cont[MAIN] or { w = 5, h = 3 }

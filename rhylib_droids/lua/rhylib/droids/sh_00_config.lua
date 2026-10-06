@@ -184,7 +184,6 @@ Config.Register("droids", "ctCrouchSpread", 0.8, "Clones: aim cone multiplier wh
 Config.Register("droids", "ctMedicShield", 0.8, "Clone medic: damage reduction while crouched reviving someone (0.8 = takes 20%)")
 Config.Register("droids", "reviveShield", 0.6, "Players got up by a clone medic: damage reduction for reviveShieldTime (ends when they fire; an escape tool)")
 Config.Register("droids", "reviveShieldTime", 5, "Players got up by a clone medic: seconds the damage reduction lasts")
-Config.Register("droids", "ctMedicDeadWindow", 60, "Clone medic: dead players can be brought back this many seconds after dying (0 = downed players only)")
 Config.Register("droids", "ctDownRadius", 1500, "Clones this close to a downed player can be sent to guard them")
 
 function D.Cfg(k) return Config.Get("droids", k) end
