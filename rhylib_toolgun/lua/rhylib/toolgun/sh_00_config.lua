@@ -48,11 +48,20 @@ local ALL = {
     { id = "ct_heavy", name = "Clone heavy", cat = "Clone NPCs", class = "rhylib_ct_heavy", count = true },
     { id = "ct_medic", name = "Clone medic", cat = "Clone NPCs", class = "rhylib_ct_medic", count = true },
     { id = "ct_commander", name = "Clone commander", cat = "Clone NPCs", class = "rhylib_ct_commander", count = true },
+    -- Preset squads (2026-10-06bd): placed in a grid facing you.
+    { id = "ps_clone_squad", name = "Clone squad (8)", cat = "Clone NPCs", preset = "clone_squad" },
+    { id = "ps_clone_company", name = "Clone company (22)", cat = "Clone NPCs", preset = "clone_company" },
+    { id = "ps_droid_small", name = "Droid squad, small (10)", cat = "Droid NPCs", preset = "droid_small" },
+    { id = "ps_droid_medium", name = "Droid squad, medium (16)", cat = "Droid NPCs", preset = "droid_medium" },
+    { id = "ps_droid_large", name = "Droid squad, large (31)", cat = "Droid NPCs", preset = "droid_large" },
+    { id = "ps_droid_b2", name = "B2 squad (8)", cat = "Droid NPCs", preset = "droid_b2" },
+    { id = "ps_droid_mortar", name = "Mortar squad (9)", cat = "Droid NPCs", preset = "droid_mortar" },
     -- Droid orders (rhylib_droids sv_20_orders): a brush that sets the mode
     -- of droids near where you aim, and admin-only markers.
     { id = "ord_guard", name = "Order: guard here", cat = "Droid orders", order = "guard" },
     { id = "ord_patrol", name = "Order: patrol here", cat = "Droid orders", order = "patrol" },
     { id = "ord_attack", name = "Order: attack", cat = "Droid orders", order = "attack" },
+    { id = "ord_roam", name = "Order: spread out (roam the map, in twos)", cat = "Droid orders", order = "roam" },
     { id = "mk_attack", name = "Marker: attack here", cat = "Droid orders", class = "rhylib_droid_marker", marker = 1 },
     { id = "mk_defend", name = "Marker: defend this", cat = "Droid orders", class = "rhylib_droid_marker", marker = 2 },
     { id = "mk_fallback", name = "Marker: fall back here", cat = "Droid orders", class = "rhylib_droid_marker", marker = 3 },
@@ -60,6 +69,8 @@ local ALL = {
     { id = "cord_guard", name = "Clones: guard here", cat = "Clone orders", order = "guard", side = 1 },
     { id = "cord_patrol", name = "Clones: patrol here", cat = "Clone orders", order = "patrol", side = 1 },
     { id = "cord_attack", name = "Clones: attack", cat = "Clone orders", order = "attack", side = 1 },
+    { id = "cord_roam", name = "Clones: spread out (roam the map, in twos)", cat = "Clone orders", order = "roam", side = 1 },
+    { id = "cord_follow", name = "Clones: follow (LMB pick clones, RMB: follow you / the player you aim at)", cat = "Clone orders", follow = true },
     { id = "cmk_attack", name = "Clone marker: attack here", cat = "Clone orders", class = "rhylib_droid_marker", marker = 1, side = 1 },
     { id = "cmk_defend", name = "Clone marker: defend this", cat = "Clone orders", class = "rhylib_droid_marker", marker = 2, side = 1 },
     { id = "spawn", name = "Spawn point (set battalion with E)", cat = "Spawns", class = "rhylib_spawn_point", named = true, save = SPAWNS },
@@ -100,7 +111,7 @@ function Tool.Entries()
     local list = {}
     for _, e in ipairs(ALL) do
         -- (orders need rhylib_droids, the rest their entity)
-        if (e.order and Rhylib.Droids) or (e.class and scripted_ents.GetStored(e.class)) then list[#list + 1] = e end
+        if ((e.order or e.preset or e.follow) and Rhylib.Droids) or (e.class and scripted_ents.GetStored(e.class)) then list[#list + 1] = e end
     end
     hook.Run("Rhylib.ToolEntries", list)
     for i, e in ipairs(list) do e.index = i end

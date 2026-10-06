@@ -138,7 +138,9 @@ local function buildTab(body)
             local sp = e.class and ents[e.class] or {}
             items[#items + 1] = {
                 cat = e.cat, name = e.name, extra = e.class or e.id,
-                tip = e.order and "Click: pick it; LMB sets the mode of every droid near where you aim"
+                tip = e.order and "Click: pick it; LMB sets the mode of every NPC of that side near where you aim"
+                    or e.follow and "LMB: pick a clone (or all near the spot); RMB: they follow you, or the player you aim at"
+                    or e.preset and "LMB: places the whole squad in a grid facing you (front row where you aim, commander and B2s at the back)"
                     or (e.class .. "\nClick: pick it for the toolgun (LMB places)"),
                 mat = SP.IconMat({ sp.IconOverride, "entities/" .. (e.class or e.id) .. ".png" }),
                 selected = function() return cvEntry:GetString() == e.id end,
@@ -255,7 +257,8 @@ end)
 function Tool.Click(wep, which)
     if which == "3" then return end   -- (R is read from the key, above)
     if which == "2" then
-        Rhylib.Net.Start("tool.remove")
+        local f = Tool.Chosen()
+        Rhylib.Net.Start(f and f.follow and "tool.follow" or "tool.remove")
         net.SendToServer()
         return
     end
@@ -325,7 +328,7 @@ Rhylib.Hook.Add("PostDrawTranslucentRenderables", "toolgun.aim", function(depth,
     -- An order brush: the area it reaches.
     local e = Tool.Chosen()
     local D = Rhylib.Droids
-    if e and e.order and D then
+    if e and (e.order or e.follow) and D then
         local r = D.Cfg("brushRadius") or 400
         render.DrawQuadEasy(tr.HitPos + tr.HitNormal * 2, tr.HitNormal, r * 2, r * 2, ColorAlpha(COL, 90), 0)
     end
@@ -333,7 +336,8 @@ end)
 
 -- With the toolgun out: each droid's mode over its head (staff only see
 -- this, since only they hold the toolgun).
-local MODE_COL = { guard = Color(110, 170, 255), patrol = Color(120, 230, 140), attack = Color(255, 100, 80), follow = Color(240, 220, 120) }
+local MODE_COL = { guard = Color(110, 170, 255), patrol = Color(120, 230, 140), attack = Color(255, 100, 80), follow = Color(240, 220, 120), roam = Color(200, 140, 255) }
+local PICKED = Color(255, 255, 120)
 local droidList, droidListAt = {}, 0
 Rhylib.Hook.Add("HUDPaint", "toolgun.droidmodes", function()
     local ply = LocalPlayer()
@@ -355,6 +359,10 @@ Rhylib.Hook.Add("HUDPaint", "toolgun.droidmodes", function()
             local sp = (d:GetPos() + Vector(0, 0, 90)):ToScreen()
             if sp.visible then
                 draw.SimpleTextOutlined(string.upper(mode), font, sp.x, sp.y, MODE_COL[mode] or color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, color_black)
+                -- (picked with the follow tool)
+                if d:GetNW2Entity("rhylib_pickBy") == ply then
+                    draw.SimpleTextOutlined("PICKED", font, sp.x, sp.y - 14, PICKED, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, color_black)
+                end
             end
         end
     end

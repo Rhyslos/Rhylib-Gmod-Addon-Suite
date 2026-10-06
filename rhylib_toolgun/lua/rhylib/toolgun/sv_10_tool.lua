@@ -57,6 +57,32 @@ local function place(ply, e, count, name, mode)
         ply:EmitSound("buttons/button14.wav", 60, n > 0 and 120 or 80)
         return
     end
+    -- Preset squad (rhylib_droids D.SpawnPreset): a grid facing you, front row where you aim.
+    if e.preset then
+        if not (D and D.SpawnPreset) then return end
+        local list, want = D.SpawnPreset(e.preset, tr.HitPos, (ply:GetPos() - tr.HitPos):Angle().y, mode)
+        if #list > 0 then
+            undo.Create(e.name)
+            for _, ent in ipairs(list) do
+                ent.rhylibToolPlaced = true
+                if ent.CPPISetOwner then ent:CPPISetOwner(ply) end
+                undo.AddEntity(ent)
+            end
+            undo.SetPlayer(ply)
+            undo.Finish()
+            ply:EmitSound("buttons/button14.wav", 60, 110)
+        end
+        if #list < want then ply:ChatPrint(string.format("Placed %d of %d (limit reached or no room).", #list, want)) end
+        return
+    end
+    -- Follow tool: LMB picks clones (one you aim at, else all near the spot).
+    if e.follow then
+        if not (D and D.ToggleFollowPick) then return end
+        local n = D.ToggleFollowPick(ply, tr)
+        ply:ChatPrint(string.format("[Clones] %d picked. RMB: they follow you, or the player you aim at.", n))
+        ply:EmitSound("buttons/button14.wav", 60, 120)
+        return
+    end
     local yaw = (ply:GetPos() - tr.HitPos):Angle().y   -- facing you
     local made = 0
     -- Droids and clones: stop at the cap instead of creating ones Initialize removes.
@@ -260,6 +286,23 @@ Rhylib.Net.Receive("tool.remove", function(ply)
         ply:EmitSound("buttons/button15.wav", 60, 100)
     end)
 end, { rate = 20, burst = 20 })
+
+-- Follow tool RMB: the picked clones follow the player aimed at, else you.
+Rhylib.Net.Register("tool.follow")
+Rhylib.Net.Receive("tool.follow", function(ply)
+    allowed(ply, function()
+        local D = Rhylib.Droids
+        if not (D and D.AssignFollow) then return end
+        local tr = aim(ply)
+        local target = IsValid(tr.Entity) and tr.Entity:IsPlayer() and tr.Entity or ply
+        local L = Rhylib.Lying
+        if IsValid(tr.Entity) and L and L.Owner and IsValid(L.Owner(tr.Entity)) then target = L.Owner(tr.Entity) end
+        local n = D.AssignFollow(ply, target)
+        ply:ChatPrint(n > 0 and string.format("[Clones] %d now follow %s.", n, target == ply and "you" or target:Nick())
+            or "[Clones] Pick clones first (LMB).")
+        ply:EmitSound("buttons/button14.wav", 60, n > 0 and 110 or 80)
+    end)
+end, { rate = 10, burst = 10 })
 
 Rhylib.Net.Receive("tool.save", function(ply)
     allowed(ply, function()

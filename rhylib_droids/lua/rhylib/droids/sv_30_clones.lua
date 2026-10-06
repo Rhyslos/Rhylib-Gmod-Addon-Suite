@@ -94,6 +94,7 @@ function D.CallSquad(leader, kinds, life)
                 made = made + 1
                 c.leader = leader
                 c.leaderSid = leader:SteamID64()
+                c.reinfOf = c.leaderSid   -- (pulled out when this officer leaves)
                 c.followSlot = SLOTS[(i - 1) % #SLOTS + 1]
                 c.mode = "follow"
                 c:SetNW2String("rhylib_dmode", "follow")
@@ -159,6 +160,7 @@ function D.NpcRevive(p)
     if p:Alive() then
         if Med and Med.Revive and p.rhylibDown then
             Med.Revive(p, math.max(1, p:GetMaxHealth() * frac), nil)   -- (no "by": stats are for players)
+            D.ReviveShield(p)
         end
         return
     end
@@ -179,8 +181,42 @@ function D.NpcRevive(p)
         end
         p:SetEyeAngles(Angle(0, ang.y, 0))
         p:SetHealth(math.max(1, math.floor(p:GetMaxHealth() * frac)))
+        D.ReviveShield(p)
     end)
 end
+
+-- Just got up by a medic NPC (owner: they were killed again at once):
+-- reviveShield less damage for reviveShieldTime, to get away. It ends
+-- the moment they fire: an escape tool, not a combat bonus.
+function D.ReviveShield(p)
+    local secs = D.Cfg("reviveShieldTime")
+    if secs <= 0 or D.Cfg("reviveShield") <= 0 then return end
+    p.rhylibReviveShield = CurTime() + secs
+    p:ChatPrint(string.format("A clone medic got you up: %d%% less damage for %d s to get to safety (firing ends it).",
+        math.Round(D.Cfg("reviveShield") * 100), secs))
+end
+
+Rhylib.Hook.Add("KeyPress", "droids.reviveshield", function(p, key)
+    if key == IN_ATTACK and p.rhylibReviveShield then p.rhylibReviveShield = nil end
+end)
+Rhylib.Hook.Add("PlayerSpawn", "droids.reviveshield", function(p)
+    -- (a medic's dead-revive sets it a tick after the spawn)
+    p.rhylibReviveShield = nil
+end)
+
+-- Less damage: medics crouched on a body, players just got up.
+-- (before armour 100 and the medical down hook 150)
+Rhylib.Hook.Add("EntityTakeDamage", "droids.shields", function(ent, dmg)
+    if ent.IsRhylibClone then
+        if ent.crouching and ent.reviveTarget then dmg:ScaleDamage(1 - math.Clamp(D.Cfg("ctMedicShield"), 0, 1)) end
+    elseif ent:IsPlayer() and ent.rhylibReviveShield then
+        if CurTime() < ent.rhylibReviveShield then
+            dmg:ScaleDamage(1 - math.Clamp(D.Cfg("reviveShield"), 0, 1))
+        else
+            ent.rhylibReviveShield = nil
+        end
+    end
+end, 60)
 
 -- Send free medics to patients (nearest medic per patient).
 local function assignMedics(players)
@@ -281,7 +317,7 @@ local function assignGuards(players)
                     c.guardDowned = p
                     c.guardOldHome = c.home
                     c.guardSide = (have + i) % 2 == 0 and -1 or 1
-                    c.advanceTo = nil
+                    c.advanceTo, c.reinforceTo = nil, nil
                     c.planAt = 0
                     c.woken = true   -- (ends an idle wait)
                     c.redirect = true   -- (ends a walk elsewhere)
@@ -332,6 +368,231 @@ end)
 Rhylib.Hook.Add("PlayerDisconnected", "droids.clones", function(ply)
     local sid = ply:SteamID64()
     for c in pairs(D.clones) do
-        if IsValid(c) and c.leaderSid and c.leaderSid == sid then c:Remove() end
+        if IsValid(c) and c.reinfOf and c.reinfOf == sid then c:Remove() end
     end
 end)
+
+--------------------------------------------------------------------------
+-- Spread out, calls for help, odds, presets, follow picks (2026-10-06bd)
+--------------------------------------------------------------------------
+
+D.GroundAt = ground
+
+-- b walks beside lead (a roaming pair). When lead dies, b roams alone.
+function D.Buddy(b, lead)
+    if not (IsValid(b) and IsValid(lead)) then return end
+    b.mode = "follow"
+    b.leader, b.leaderNpc, b.buddyRoam = lead, true, true
+    b.followSlot = Vector(-50, 90, 0)
+    b:SetNW2String("rhylib_dmode", "roam")
+end
+
+-- A random navmesh spot for roaming: within roamRadius, at least 600 away.
+-- (The area list is fetched once per map; empty = no navmesh yet, retried.)
+local areas, areasRetry = nil, 0
+function D.RoamPoint(from)
+    if not (navmesh and navmesh.GetAllNavAreas) then return nil end
+    if not areas then
+        if CurTime() < areasRetry then return nil end
+        areas = navmesh.GetAllNavAreas() or {}
+        if #areas == 0 then areas, areasRetry = nil, CurTime() + 10 return nil end
+    end
+    local r2 = D.Cfg("roamRadius") ^ 2
+    -- (nearby areas first: on a big map few of all areas are in range)
+    local near = navmesh.Find and navmesh.Find(from, D.Cfg("roamRadius"), 200, 200)
+    local pool = (near and #near > 0) and near or areas
+    for _ = 1, 16 do
+        local a = pool[math.random(#pool)]
+        if IsValid(a) and a:GetSizeX() >= 48 and a:GetSizeY() >= 48 and not a:IsUnderwater() then
+            local d = a:GetCenter():DistToSqr(from)
+            if d < r2 and d > 600 * 600 then return a:GetRandomPoint() end
+        end
+    end
+    return nil
+end
+
+-- A clone spotted droids: up to ctCallHelpers idle clones within
+-- ctCallRadius come to it (guards/patrols take up the new spot).
+function D.CloneCall(caller, enemy)
+    local now = CurTime()
+    if (caller.callReady or 0) > now then return end
+    caller.callReady = now + D.Cfg("ctCallCooldown")
+    local from = caller:GetPos()
+    local r2 = D.Cfg("ctCallRadius") ^ 2
+    local free = {}
+    for c in pairs(D.clones) do
+        if c ~= caller and IsValid(c) and c:Health() > 0 and not IsValid(c.target) and not c.leader
+            and not c.guardDowned and not c.reviveTarget and c.mode ~= "attack" then
+            local d = c:GetPos():DistToSqr(from)
+            if d < r2 then free[#free + 1] = { c = c, d = d } end
+        end
+    end
+    if #free == 0 then return end
+    table.sort(free, function(a, b) return a.d < b.d end)
+    for i = 1, math.min(D.Cfg("ctCallHelpers"), #free) do
+        local c = free[i].c
+        if c.mode == "roam" then
+            c.roamGoal, c.roamUntil = from, now + 30
+        else
+            c.reinforceTo, c.reinforceUntil = from, now + 20
+            if c.mode == "guard" or c.mode == "patrol" then c.home = from end
+        end
+        c.redirect, c.woken, c.planAt = true, true, 0
+    end
+    caller:EmitSound("npc/combine_soldier/vo/on1.wav", 65, 110)
+end
+
+-- The odds around a clone: friends (clones and players) within
+-- ctOddsFriends, enemies (B2s count double) within ctOddsEnemies, and
+-- where the enemies are (their middle).
+function D.CloneOdds(c)
+    local pos = c:GetPos()
+    local fr2, er2 = D.Cfg("ctOddsFriends") ^ 2, D.Cfg("ctOddsEnemies") ^ 2
+    local f, e = 1, 0
+    local sum = Vector(0, 0, 0)
+    for o in pairs(D.clones) do
+        if o ~= c and IsValid(o) and o:Health() > 0 and o:GetPos():DistToSqr(pos) < fr2 then f = f + 1 end
+    end
+    for _, p in ipairs(player.GetAll()) do
+        if p:Alive() and not p.rhylibDown and p:GetPos():DistToSqr(pos) < fr2 then f = f + 1 end
+    end
+    for _, d in ipairs(D.CloneTargets()) do
+        if IsValid(d) then
+            local dp = d:GetPos()
+            if dp:DistToSqr(pos) < er2 then
+                local w = d:Kind().big and 2 or 1
+                e = e + w
+                sum:Add(dp * w)
+            end
+        end
+    end
+    return f, e, e > 0 and sum / e or nil
+end
+
+-- Preset squads: rows from the front (where you aim) back toward you.
+-- Each entry: { kinds..., width = n }. "defend" makes the first kinds
+-- named follow (guard) the given kind (mortar squad).
+local PRESETS = {
+    clone_squad = { side = 1, rows = {
+        { "ct_trooper", "ct_rifleman", "ct_heavy", "ct_rifleman", "ct_trooper" },
+        { "ct_medic", "ct_commander", "ct_medic" } } },
+    clone_company = { side = 1, rows = {
+        { "ct_trooper", "ct_rifleman", "ct_trooper", "ct_rifleman", "ct_trooper", "ct_rifleman" },
+        { "ct_rifleman", "ct_trooper", "ct_heavy", "ct_heavy", "ct_trooper", "ct_rifleman" },
+        { "ct_trooper", "ct_rifleman", "ct_trooper", "ct_rifleman", "ct_trooper", "ct_rifleman" },
+        { "ct_medic", "ct_medic", "ct_commander", "ct_medic" } } },
+    droid_small = { rows = {
+        { "b1", "b1", "b1", "b1", "b1" }, { "b1", "b1", "b1", "b1", "b1" } } },
+    droid_medium = { rows = {
+        { "b1", "b1", "b1", "b1", "b1" }, { "b1", "b1", "b1", "b1", "b1" },
+        { "b2", "b2", "b2", "b1_commander", "b2", "b2" } } },
+    droid_large = { rows = {
+        { "b1", "b1", "b1", "b1", "b1", "b1", "b1" }, { "b1", "b1", "b1", "b1", "b1", "b1", "b1" },
+        { "b1", "b1", "b1", "b1", "b1", "b1" },
+        { "b2", "b2", "b2_rocket", "b1_commander", "b2_rocket", "b2", "b2" },
+        { "b2", "b2", "b2_rocket", "b2" } } },
+    droid_b2 = { rows = { { "b2", "b2", "b2", "b2" }, { "b2", "b2", "b2", "b2" } } },
+    droid_mortar = { rows = { { "b1", "b1", "b1" }, { "b1", "b1", "b1" }, { "b2_cannon", "b1_commander", "b2_cannon" } },
+        defend = "b2_cannon" },
+}
+D.PRESETS = PRESETS
+
+-- Returns the spawned list and how many the preset has.
+function D.SpawnPreset(name, origin, yaw, mode)
+    local pr = PRESETS[name]
+    if not pr then return {}, 0 end
+    local ang = Angle(0, yaw, 0)
+    local fwd, right = ang:Forward(), ang:Right()
+    local want, made = 0, {}
+    local guards, wards = {}, {}
+    for r, row in ipairs(pr.rows) do
+        local w = #row
+        for c, kind in ipairs(row) do
+            want = want + 1
+            local clone = D.KINDS[kind] and D.KINDS[kind].side == "republic"
+            local room = clone and D.CloneCount() < D.Cfg("cloneMax") or not clone and D.Count() < D.Cfg("maxActive")
+            local p = origin - fwd * ((r - 1) * 85) + right * ((c - (w + 1) / 2) * 75)
+            local g = ground(p) or p
+            if room and free(g + Vector(0, 0, 4)) then
+                local e = ents.Create(D.CLASSES[kind] or "")
+                if IsValid(e) then
+                    e:SetPos(g + Vector(0, 0, 4))
+                    e:SetAngles(Angle(0, yaw, 0))
+                    e:Spawn()
+                    e:Activate()
+                    if IsValid(e) and not e.overCap then
+                        made[#made + 1] = e
+                        if D.ToolPlaced then D.ToolPlaced(e, mode) end
+                        if pr.defend then
+                            if kind == pr.defend then wards[#wards + 1] = e else guards[#guards + 1] = e end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    -- Mortar squad: the rest stay with the mortars (owner: defend them).
+    if #wards > 0 then
+        for i, g in ipairs(guards) do
+            local m = wards[(i - 1) % #wards + 1]
+            g.mode = "follow"
+            g.leader, g.leaderNpc = m, true
+            g.followSlot = SLOTS[(i - 1) % #SLOTS + 1] * 0.8 + Vector(120, 0, 0)   -- (in front of and beside it)
+            g:SetNW2String("rhylib_dmode", "follow")
+        end
+    end
+    return made, want
+end
+
+-- Follow tool: LMB picks (a clone aimed at, else every clone near the
+-- spot); RMB hands them to a player. Picks show as NW2Entity rhylib_pickBy.
+function D.ToggleFollowPick(ply, tr)
+    ply.rhylibPicks = ply.rhylibPicks or {}
+    local picks = ply.rhylibPicks
+    local e = tr.Entity
+    if IsValid(e) and e.IsRhylibClone then
+        if picks[e] then
+            picks[e] = nil
+            e:SetNW2Entity("rhylib_pickBy", NULL)
+        else
+            picks[e] = true
+            e:SetNW2Entity("rhylib_pickBy", ply)
+        end
+    else
+        local r2 = D.Cfg("brushRadius") ^ 2
+        for c in pairs(D.clones) do
+            local by = IsValid(c) and c:GetNW2Entity("rhylib_pickBy")
+            if IsValid(c) and c:Health() > 0 and c:GetPos():DistToSqr(tr.HitPos) < r2
+                and not (IsValid(by) and by ~= ply) then   -- (not another player's pick)
+                picks[c] = true
+                c:SetNW2Entity("rhylib_pickBy", ply)
+            end
+        end
+    end
+    local n = 0
+    for c in pairs(picks) do
+        if IsValid(c) then n = n + 1 else picks[c] = nil end
+    end
+    return n
+end
+
+function D.AssignFollow(ply, target)
+    local picks = ply.rhylibPicks
+    if not picks or not IsValid(target) then return 0 end
+    local i = 0
+    for c in pairs(picks) do
+        if IsValid(c) and c:Health() > 0 then
+            i = i + 1
+            D.SetMode(c, "guard", c:GetPos())
+            c.mode = "follow"
+            c.leader, c.leaderSid, c.leaderNpc, c.buddyRoam = target, target:SteamID64(), nil, nil
+            c.reinfOf, c.recallAt = nil, nil   -- (handed over: stays until killed or re-ordered)
+            c.followSlot = SLOTS[(i - 1) % #SLOTS + 1]
+            c:SetNW2String("rhylib_dmode", "follow")
+            c.planAt, c.woken, c.redirect = 0, true, true
+            c:SetNW2Entity("rhylib_pickBy", NULL)
+        end
+    end
+    ply.rhylibPicks = nil
+    return i
+end

@@ -133,21 +133,21 @@ Config.Register("droids", "cloneFollowRadius", 600, "Clones following an officer
 Config.Register("droids", "ctModel", "models/hazo/npc/ct_trp/npc_ct_trp_f.mdl", "Clone trooper NPC model (troopers, riflemen, heavies; the _h version works too)")
 Config.Register("droids", "ctMedicModel", "models/hazo/npc/ct_medic/npc_ct_medic_f.mdl", "Clone medic NPC model")
 Config.Register("droids", "ctCmdModel", "models/hazo/npc/ct_cmd/npc_ct_cmd_f.mdl", "Clone commander NPC model")
-Config.Register("droids", "ctHealth", 220, "Clone trooper / rifleman / medic: health")
+Config.Register("droids", "ctHealth", 300, "Clone trooper / rifleman / medic: health")
 Config.Register("droids", "ctSpeed", 190, "Clone run speed")
 Config.Register("droids", "ctRange", 3000, "How far a clone sees and shoots")
-Config.Register("droids", "ctReaction", 0.5, "Seconds before a clone starts firing at a new target")
-Config.Register("droids", "ctDamage", 14, "Clone DC-15S damage per bolt")
+Config.Register("droids", "ctReaction", 0.35, "Seconds before a clone starts firing at a new target")
+Config.Register("droids", "ctDamage", 18, "Clone DC-15S damage per bolt")
 Config.Register("droids", "ctRPM", 360, "Clone DC-15S shots per minute within a burst")
-Config.Register("droids", "ctSpread", 1.3, "Clone inaccuracy cone (degrees), more against moving targets")
-Config.Register("droids", "ctRifleDamage", 20, "Clone rifleman / commander DC-15A damage per bolt")
+Config.Register("droids", "ctSpread", 0.9, "Clone inaccuracy cone (degrees), more against moving targets")
+Config.Register("droids", "ctRifleDamage", 26, "Clone rifleman / commander DC-15A damage per bolt")
 Config.Register("droids", "ctRifleRPM", 300, "Clone DC-15A shots per minute within a burst")
-Config.Register("droids", "ctHeavyHealth", 300, "Clone heavy: health")
+Config.Register("droids", "ctHeavyHealth", 420, "Clone heavy: health")
 Config.Register("droids", "ctHeavySpeed", 160, "Clone heavy: run speed")
-Config.Register("droids", "ctHeavyDamage", 11, "Clone heavy Z-6 damage per bolt")
+Config.Register("droids", "ctHeavyDamage", 14, "Clone heavy Z-6 damage per bolt")
 Config.Register("droids", "ctHeavyRPM", 900, "Clone heavy Z-6 shots per minute within a burst")
-Config.Register("droids", "ctHeavySpread", 2.2, "Clone heavy inaccuracy cone (degrees)")
-Config.Register("droids", "ctCmdHealth", 400, "Clone commander: health (boosts clones near it like a B1 commander boosts droids)")
+Config.Register("droids", "ctHeavySpread", 1.6, "Clone heavy inaccuracy cone (degrees)")
+Config.Register("droids", "ctCmdHealth", 500, "Clone commander: health (boosts clones near it like a B1 commander boosts droids)")
 Config.Register("droids", "ctMedicHeal", 2, "Clone medic: health a second for players and clones near it")
 Config.Register("droids", "ctMedicRadius", 300, "Clone medic: healing radius")
 Config.Register("droids", "ctPopperChance", 0.15, "Clone trooper: chance after each burst to throw a droid popper at a droid in sight (doubled at a group)")
@@ -158,6 +158,22 @@ Config.Register("droids", "ctMedicRepair", 4, "Clone medic: injury damage and bu
 Config.Register("droids", "ctMedicReviveRadius", 1500, "Clone medic: goes to downed or just-dead players this close")
 Config.Register("droids", "ctMedicReviveTime", 5, "Clone medic: seconds crouched on the body to get someone up")
 Config.Register("droids", "ctMedicReviveHealth", 0.3, "Clone medic: share of max health a revived player gets up with")
+-- Spread out / doctrine (2026-10-06bd, owner): roaming in twos; clones
+-- call for help, fall back when outnumbered, hold when even, charge when
+-- they outnumber the droids, and crouch when there's no cover.
+Config.Register("droids", "roamRadius", 4000, "Spread out (roam): how far a roaming NPC picks its next spot")
+Config.Register("droids", "ctCallRadius", 2000, "Clones: how far a clone's call for help reaches")
+Config.Register("droids", "ctCallHelpers", 4, "Clones: most clones that come when one calls for help")
+Config.Register("droids", "ctCallCooldown", 12, "Clones: seconds between one clone's calls for help")
+Config.Register("droids", "ctOddsFriends", 900, "Clones: friends (clones and players) this close count for the odds")
+Config.Register("droids", "ctOddsEnemies", 1500, "Clones: droids this close count for the odds (B2s count double)")
+Config.Register("droids", "ctFallBackOdds", 0.8, "Clones fall back when friends are fewer than this share of the enemies")
+Config.Register("droids", "ctChargeOdds", 1.25, "Clones charge when friends are more than this many times the enemies (in between they hold the line)")
+Config.Register("droids", "ctCrouchTime", 4, "Clones: seconds they crouch when hit with no cover to reach")
+Config.Register("droids", "ctCrouchSpread", 0.8, "Clones: aim cone multiplier while crouched")
+Config.Register("droids", "ctMedicShield", 0.8, "Clone medic: damage reduction while crouched reviving someone (0.8 = takes 20%)")
+Config.Register("droids", "reviveShield", 0.6, "Players got up by a clone medic: damage reduction for reviveShieldTime (ends when they fire; an escape tool)")
+Config.Register("droids", "reviveShieldTime", 5, "Players got up by a clone medic: seconds the damage reduction lasts")
 Config.Register("droids", "ctMedicDeadWindow", 60, "Clone medic: dead players can be brought back this many seconds after dying (0 = downed players only)")
 Config.Register("droids", "ctDownRadius", 1500, "Clones this close to a downed player can be sent to guard them")
 
@@ -241,7 +257,7 @@ for _, v in ipairs({ "aat", "commander", "geonosis", "heavy", "marine", "securit
 end
 
 D.MODES = { "guard", "patrol", "attack" }   -- (index 1-3 on the wire)
-D.MODE_NAMES = { guard = "Guard", patrol = "Patrol", attack = "Attack", follow = "Follow" }
+D.MODE_NAMES = { guard = "Guard", patrol = "Patrol", attack = "Attack", follow = "Follow", roam = "Spread out" }
 D.AGGRO_NAMES = { "Fall back", "Slow retreat", "Moderate", "March", "Charge" }
 
 -- Aggression 1-5 (server: config, live; clients: Global2Int).
@@ -276,3 +292,9 @@ for kind, class in pairs(D.CLASSES) do
     })
     if CLIENT then language.Add(class, D.KINDS[kind].name) end
 end
+
+-- Players and clone NPCs don't collide (2026-10-06bc): friendlies never
+-- block a doorway or a way out. Bolts still pass by their own rule.
+Rhylib.Hook.Add("ShouldCollide", "droids.clones", function(a, b)
+    if (a.IsRhylibClone and b:IsPlayer()) or (b.IsRhylibClone and a:IsPlayer()) then return false end
+end)

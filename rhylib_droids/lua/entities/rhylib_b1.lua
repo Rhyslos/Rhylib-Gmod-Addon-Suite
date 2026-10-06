@@ -87,6 +87,9 @@ function ENT:Initialize()
     local mdl = D.KindModel(k)
     self:SetModel(util.IsValidModel(mdl or "") and mdl or (self.IsRhylibClone and D.CLONE_FALLBACK or D.B1_MODEL))
     self.Training = k.training
+    -- Clones: players walk through them (owner: a medic on the body blocked
+    -- the way out). Both realms, see sh_00_config ShouldCollide.
+    if self.IsRhylibClone then self:SetCustomCollisionCheck(true) end
     if CLIENT then return end
 
     -- Over the cap: don't add another (clones have their own cap).
@@ -152,7 +155,14 @@ if SERVER then
         return t:WorldSpaceCenter() + Vector(0, 0, 12)
     end
 
+    local EYE_CROUCH = Vector(0, 0, 40)
+    -- Clones crouched in place (no cover to reach): lower and steadier.
+    function ENT:Crouched()
+        return (self.crouching or (self.crouchUntil or 0) > CurTime()) and self.loco:GetVelocity():Length2DSqr() < 400
+    end
+
     function ENT:Eye()
+        if self.IsRhylibClone and self:Crouched() then return self:GetPos() + EYE_CROUCH end
         return self:GetPos() + (self:Kind().big and Vector(0, 0, 74) or EYE)
     end
 
@@ -199,7 +209,10 @@ if SERVER then
 
     -- Aggression 1-5: droids follow the GMs' live level, clones their config.
     function ENT:Aggro()
-        if self.IsRhylibClone then return math.Clamp(math.Round(tonumber(D.Cfg("cloneAggro")) or 3), 1, 5) end
+        if self.IsRhylibClone then
+            if self.doctrine then return self.doctrine end   -- (the odds decide: fall back / hold / charge)
+            return math.Clamp(math.Round(tonumber(D.Cfg("cloneAggro")) or 3), 1, 5)
+        end
         return D.Aggro()
     end
 
@@ -279,6 +292,8 @@ if SERVER then
                 end
             end
             seen[best] = now
+            -- Clones: fresh contact, call nearby clones over (sv_30_clones).
+            if self.IsRhylibClone and not IsValid(cur) and D.CloneCall then D.CloneCall(self, best) end
             self.target = best
             self.lastSeen = best:GetPos()
             self.lastSeenAt = now
@@ -294,6 +309,8 @@ if SERVER then
         self.woken = true   -- ends an idle wait early
         local att = dmg:GetAttacker()
         local foe = self:IsFoe(att)
+        -- Clones that don't take cover (heavies): crouch where they stand.
+        if foe and self.IsRhylibClone and not self:Kind().cover then self.crouchUntil = CurTime() + D.Cfg("ctCrouchTime") end
         if foe then
             self.threatPos, self.threatAt = att:GetPos(), CurTime()
             local hits = self.hits
@@ -394,6 +411,7 @@ if SERVER then
         dir:Normalize()
         -- Inaccuracy: base cone, worse against moving targets.
         local mult = D.SuppressMult(self) * (extra or 1)
+        if self.IsRhylibClone and self:Crouched() then mult = mult * D.Cfg("ctCrouchSpread") end
         -- (firing on the move is a little less accurate)
         if self.loco:GetVelocity():Length2DSqr() > 400 then mult = mult * D.Cfg(self.running and "runSpread" or "walkSpread") end
         if D.Boosted(self) then mult = mult * D.Cfg("cmdSpread") end
@@ -721,6 +739,8 @@ if SERVER then
         if not self:WantsCover() then return false end
         local far = self.retreatPending
         local ok = self:TakeCover(self.threatPos, far)
+        -- Clones with no cover to reach crouch where they are (owner).
+        if not ok and self.IsRhylibClone then self.crouchUntil = CurTime() + D.Cfg("ctCrouchTime") end
         -- (the one pull-back only counts once it happened)
         if far and ok then
             self.retreatPending = nil
@@ -741,7 +761,7 @@ if SERVER then
     -- The area a guard / patrol droid stays in (nil = attack: anywhere).
     function ENT:AreaRadius()
         if self.mode == "patrol" then return D.Cfg("patrolRadius") end
-        if self.mode == "attack" then return nil end
+        if self.mode == "attack" or self.mode == "roam" then return nil end
         if self.guarding then return 250 end
         if self.mode == "follow" then return D.Cfg("cloneFollowRadius") end
         return D.Cfg("guardRadius")
@@ -787,12 +807,45 @@ if SERVER then
 
     -- Where to fall back to (aggression 1): a fallback marker, else home.
     function ENT:FallbackPoint()
+        if self.doctrine == 1 and self.doctrineFallback then return self.doctrineFallback end
         return self.fallback or self.home
+    end
+
+    -- Clones' doctrine (owner): outnumbered → fall back, even → hold the
+    -- line, outnumbering → charge. Once a second while fighting.
+    function ENT:UpdateDoctrine()
+        if not self.IsRhylibClone or not D.CloneOdds then return end
+        local now = CurTime()
+        if (self.doctrineAt or 0) > now then return end
+        self.doctrineAt = now + 1
+        if self.guarding or self.reviveTarget or self.leader and not self.leaderNpc or not IsValid(self.target) then
+            self.doctrine = nil   -- (guards, medics and followers keep to their job)
+            return
+        end
+        local f, e, mid = D.CloneOdds(self)
+        if e <= 0 then self.doctrine = nil return end
+        local r = f / e
+        if r < D.Cfg("ctFallBackOdds") then
+            if self.doctrine ~= 1 or not self.doctrineFallback then
+                local away = self:GetPos() - (mid or self.target:GetPos())
+                away.z = 0
+                if away:LengthSqr() < 1 then away = -self:GetForward() end
+                away:Normalize()
+                local to = self:GetPos() + away * 600
+                self.doctrineFallback = D.GroundAt and D.GroundAt(to) or to
+            end
+            self.doctrine = 1
+        elseif r > D.Cfg("ctChargeOdds") then
+            self.doctrine = 5
+        else
+            self.doctrine = 3
+        end
     end
 
     -- Where to move while fighting t, and whether to run (nil = stay).
     function ENT:PlanMove(t)
         self:UpdateHome()
+        self:UpdateDoctrine()
         local pos, tp = self:GetPos(), t:GetPos()
         -- A friend in the line of fire: a step to the side for a clear shot.
         if self.blockedUntil and CurTime() < self.blockedUntil then
@@ -833,6 +886,8 @@ if SERVER then
             end
         end
         local L = self:Aggro()
+        -- Crouched clones holding the line stay down.
+        if L == 3 and self.IsRhylibClone and (self.crouchUntil or 0) > CurTime() then return nil end
         local d = pos:Distance(tp)
         local goal, run
         if L == 1 then
@@ -1035,6 +1090,7 @@ if SERVER then
         self.target = nil
         self.moveGoal, self.pathGoal = nil, nil
         self.popRush = nil   -- (a charge that didn't end in a throw is dropped)
+        self.doctrine = nil
     end
 
     -- Any target within 1.5x range (distance only, no traces).
@@ -1076,13 +1132,17 @@ if SERVER then
     -- The officer dead or gone: guard where it stands; downed: stay put.
     function ENT:FollowLeader()
         local l = self.leader
-        if not (IsValid(l) and l:Alive()) then
-            self.leader = nil
-            if D.SetMode then D.SetMode(self, "guard", self:GetPos()) end
+        local npc = self.leaderNpc
+        local up = IsValid(l) and (npc and l:Health() > 0 or not npc and l:IsPlayer() and l:Alive())
+        if not up then
+            local roam = self.buddyRoam
+            self.leader, self.leaderNpc, self.buddyRoam = nil, nil, nil
+            -- (a roaming pair's second roams on alone; others guard here)
+            if D.SetMode then D.SetMode(self, roam and "roam" or "guard", self:GetPos()) end
             return
         end
         if l.rhylibDown then return end
-        local yaw = Angle(0, l:EyeAngles().y, 0)
+        local yaw = Angle(0, npc and l:GetAngles().y or l:EyeAngles().y, 0)
         local s = self.followSlot or Vector(-120, 0, 0)
         self.home = l:GetPos() + yaw:Forward() * s.x + yaw:Right() * s.y
     end
@@ -1184,6 +1244,11 @@ if SERVER then
                 -- (came out of cover: look again straight away)
             elseif self:Look() then
                 self:Engage()
+            elseif self.reinforceTo and CurTime() < (self.reinforceUntil or 0) and not self.guarding and not self.leader
+                and self:GetPos():DistToSqr(self.reinforceTo) > 250 * 250 then
+                -- Called by a clone in a fight: run over.
+                self:SetPace(true)
+                self:GoOrWait(self.reinforceTo, 6, true)
             elseif self.advanceTo then
                 -- Reinforcements: a few steps toward the enemy first.
                 local to = self.advanceTo
@@ -1209,6 +1274,23 @@ if SERVER then
                     self.objective = nil   -- (reached: hunt from here on)
                     local p = self:NearestTarget(6000)
                     if p then self:GoOrWait(p:GetPos(), 5, true) else self:Idle(math.Rand(1, 2)) end
+                end
+            elseif self.mode == "roam" and not self.guarding then
+                -- Spread out: wander the map to a new spot, then the next.
+                local now = CurTime()
+                if not self.roamGoal or now > (self.roamUntil or 0) or self:GetPos():DistToSqr(self.roamGoal) < 200 * 200 then
+                    self.roamGoal = D.RoamPoint and D.RoamPoint(self:GetPos()) or nil
+                    self.roamUntil = now + 45
+                end
+                if self.roamGoal then
+                    self:SetPace(false)
+                    -- (no route there: pick another spot next time)
+                    if self:Go(self.roamGoal, 8, true) == false then
+                        self.roamGoal = nil
+                        if not self.target then self:Idle(math.Rand(1, 2)) end
+                    end
+                else
+                    self:Idle(math.Rand(2, 4))
                 end
             elseif self.mode ~= "attack" and self.home
                 and self:GetPos():DistToSqr(self.home) > (self.guarding and 60 or self.mode == "patrol" and D.Cfg("patrolRadius") or follow and 150 or 250) ^ 2 then
@@ -1252,7 +1334,7 @@ if SERVER then
         local speed = self.loco:GetVelocity():Length2D()
         local A = self.anims
         if not A then return end   -- removed at once (over the cap)
-        local want = speed > 10 and (speed > 110 and A.run or A.walk) or (self.crouching and A.crouch) or A.idle
+        local want = speed > 10 and (speed > 110 and A.run or A.walk) or ((self.crouching or (self.crouchUntil or 0) > CurTime()) and A.crouch) or A.idle
         if self:GetActivity() ~= want then self:StartActivity(want) end
 
         -- Aim the gun at the target. Sent only on a 3 degree change, or

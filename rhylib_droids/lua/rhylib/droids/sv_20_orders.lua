@@ -30,8 +30,9 @@ D.MARKER_KINDS = KIND_NAMES
 -- Mode for a droid (and where its area is).
 function D.SetMode(droid, mode, center)
     if not (IsValid(droid) and (droid.IsRhylibDroid or droid.IsRhylibClone)) then return end
-    if mode ~= "guard" and mode ~= "patrol" and mode ~= "attack" then mode = "guard" end
-    droid.leader, droid.advanceTo = nil, nil   -- (a new mode ends following an officer)
+    if mode ~= "guard" and mode ~= "patrol" and mode ~= "attack" and mode ~= "roam" then mode = "guard" end
+    droid.leader, droid.advanceTo, droid.leaderNpc = nil, nil, nil   -- (a new mode ends following an officer / buddy)
+    droid.roamGoal, droid.reinforceTo = nil, nil
     droid.mode = mode
     if center then droid.home = center end
     if mode ~= "attack" then droid.objective, droid.objectiveMarker = nil, nil end
@@ -128,6 +129,7 @@ end
 function D.PaintMode(pos, mode, side)
     local r = D.Cfg("brushRadius")
     local n = 0
+    local picked = {}
     for _, list in ipairs({ sideList(side) }) do
         for d in pairs(list) do
             if IsValid(d) and d:GetPos():DistToSqr(pos) < r * r then
@@ -135,8 +137,15 @@ function D.PaintMode(pos, mode, side)
                 D.SetMode(d, mode, d:GetPos())
                 d.nextLook = 0
                 n = n + 1
+                picked[#picked + 1] = d
             end
         end
+    end
+    -- Spread out (owner: alone or two and two): pair them up; the second
+    -- of each pair walks beside the first (D.Buddy).
+    if mode == "roam" and D.Buddy then
+        table.sort(picked, function(a, b) return a:EntIndex() < b:EntIndex() end)
+        for i = 2, #picked, 2 do D.Buddy(picked[i], picked[i - 1]) end
     end
     return n
 end
