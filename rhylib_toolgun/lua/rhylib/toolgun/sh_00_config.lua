@@ -27,6 +27,7 @@ local MP = "rhylib_mp_save"
 local PAD = "rhylib_datapad_save"
 local TRAIN = "rhylib_training_save"
 local SPAWNS = "rhylib_spawns_save"
+local RADIO = "rhylib_radio_save"
 
 local ALL = {
     { id = "b1", name = "B1 battle droid", cat = "Droid NPCs", class = "rhylib_b1", count = true },
@@ -97,6 +98,10 @@ local ALL = {
     { id = "cell", name = "Jail cell", cat = "Base", class = "rhylib_jail_cell", save = MP },
     { id = "terminal", name = "Jail terminal", cat = "Base", class = "rhylib_jail_terminal", save = MP },
     { id = "property", name = "Property locker", cat = "Base", class = "rhylib_property_locker", save = MP },
+    { id = "jammer", name = "Comms jammer (small)", cat = "Base", class = "rhylib_comms_jammer", save = RADIO },
+    { id = "jammer_m", name = "Comms jammer (medium)", cat = "Base", class = "rhylib_comms_jammer_medium", save = RADIO },
+    { id = "jammer_l", name = "Comms jammer (large)", cat = "Base", class = "rhylib_comms_jammer_large", save = RADIO },
+    { id = "jammer_map", name = "Comms jammer (whole map)", cat = "Base", class = "rhylib_comms_jammer_map", save = RADIO },
     { id = "dummy", name = "Test dummy", cat = "Testing", class = "rhylib_test_dummy" },
     { id = "dummyt", name = "Test dummy (tough)", cat = "Testing", class = "rhylib_test_dummy_tough" },
 }

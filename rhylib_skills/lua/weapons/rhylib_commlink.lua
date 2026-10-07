@@ -151,8 +151,11 @@ if CLIENT then
         if K.Has(me, "reinforcements") and K.ReinfCooldown then
             local rc = K.ReinfCooldown(me)
             local rl
+            local jammed = Rhylib.Radio and Rhylib.Radio.Jammed and Rhylib.Radio.Jammed(me)
             if not ok then
                 rl = nil
+            elseif jammed then
+                rl = "Comms jammed: no reinforcements"
             elseif rc > 0 then
                 local s = math.ceil(rc)
                 rl = string.format("Reinforcements in %d:%02d", math.floor(s / 60), s % 60)

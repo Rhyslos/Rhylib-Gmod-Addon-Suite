@@ -32,7 +32,85 @@ Config.Register("radio", "maxChannels", 200, "Most custom channels on the server
 Config.Register("radio", "hailTime", 30, "Seconds a hail rings before it counts as missed")
 Config.Register("radio", "squadNames", { "Aurek", "Besh", "Cresh", "Dorn", "Esk", "Forn", "Grek", "Herf", "Isk", "Jenth" }, "Squad name suggestions (with a number after)")
 
+-- Radio sound (2026-10-07, owner): GMod can't filter voice audio itself,
+-- so radio voices get squelch clicks, tiny drop-outs and the odd burst of
+-- interference instead (cl_25_fx.lua).
+Config.Register("radio", "fxDropEvery", 7, "Radio voice: average seconds between tiny drop-outs per talker (0 = none)")
+Config.Register("radio", "fxDropLen", 0.08, "Radio voice: length of a drop-out (seconds; keep it tiny so nothing is lost)")
+Config.Register("radio", "fxNoiseEvery", 20, "Radio voice: average seconds between interference bursts while someone talks on the radio (0 = none)")
+Config.Register("radio", "fxSquelchOn", "npc/combine_soldier/vo/on1.wav", "Radio voice: click when someone starts talking on your radio")
+Config.Register("radio", "fxSquelchOff", "npc/combine_soldier/vo/off1.wav", "Radio voice: click when they stop")
+Config.Register("radio", "fxCrackle", { "ambient/energy/zap1.wav", "ambient/energy/zap2.wav", "ambient/energy/zap3.wav" }, "Radio voice: crackles at a drop-out")
+Config.Register("radio", "fxNoise", { "ambient/levels/prison/radio_random1.wav", "ambient/levels/prison/radio_random2.wav", "ambient/levels/prison/radio_random3.wav", "ambient/levels/prison/radio_random4.wav", "ambient/levels/prison/radio_random5.wav" }, "Radio voice: interference bursts")
+
+-- Comms jammer (2026-10-07, owner): inside its range the radio is dead
+-- (static when you try, only local voice), and the radio text channels
+-- (squad, battalion, command, comms) can't be used.
+-- Four sizes (2026-10-07, owner): small, medium (twice the range), large
+-- (four times), and one that covers the whole map. Health: destroyed until
+-- the next map change or cleanup (0 = can't be destroyed). A model that
+-- isn't installed falls back to jammerFallbackModel.
+Config.Register("radio", "jammerRange", 1800, "Small comms jammer: radius it jams (units, 1800 = 34 m)")
+Config.Register("radio", "jammerHealth", 400, "Small comms jammer: health (0 = can't be destroyed)")
+Config.Register("radio", "jammerModel", "models/props/starwars/weapons/hoth_bomb.mdl", "Small comms jammer: model")
+Config.Register("radio", "jammerRangeMedium", 3600, "Medium comms jammer: radius it jams (units)")
+Config.Register("radio", "jammerHealthMedium", 800, "Medium comms jammer: health (0 = can't be destroyed)")
+Config.Register("radio", "jammerModelMedium", "models/lordtrilobite/starwars/props/barrel_scarif2c_phys.mdl", "Medium comms jammer: model")
+Config.Register("radio", "jammerRangeLarge", 7200, "Large comms jammer: radius it jams (units; meant to cover about a quarter of the map)")
+Config.Register("radio", "jammerHealthLarge", 1600, "Large comms jammer: health (0 = can't be destroyed)")
+Config.Register("radio", "jammerModelLarge", "models/starwars/syphadias/props/sw_tor/bioware_ea/props/neutral/neu_industrial_tower.mdl", "Large comms jammer: model")
+Config.Register("radio", "jammerHealthMap", 3000, "Map-wide comms jammer: health (0 = can't be destroyed); it jams everyone on the map")
+Config.Register("radio", "jammerModelMap", "models/props/starwars/tech/imperial_deflector.mdl", "Map-wide comms jammer: model")
+Config.Register("radio", "jammerFallbackModel", "models/props_lab/reciever01a.mdl", "Comms jammers: model used when a jammer's own model isn't installed")
+Config.Register("radio", "jammerFringe", 0.35, "Comms jammers: interference zone outside the range, as a part of the range (0.35 = 35% further out; the compass breaks up and radio gets static as you get closer)")
+Config.Register("radio", "jamReconnect", 4, "Comms jammers: seconds the radio stays jammed and reconnects after leaving the range")
+Config.Register("radio", "jamStatic", "ambient/energy/electric_loop.wav", "Comms jammer: the static loop you hear when you key the radio while jammed")
+
 function R.Cfg(k) return Config.Get("radio", k) end
+
+-- Jammer sizes: class -> config key suffix and name. range nil = whole map.
+R.JAMMER_SIZES = {
+    rhylib_comms_jammer = { key = "", name = "Comms jammer (small)" },
+    rhylib_comms_jammer_medium = { key = "Medium", name = "Comms jammer (medium)" },
+    rhylib_comms_jammer_large = { key = "Large", name = "Comms jammer (large)" },
+    rhylib_comms_jammer_map = { key = "Map", name = "Comms jammer (whole map)", wholeMap = true },
+}
+
+function R.JammerSize(ent)
+    return R.JAMMER_SIZES[isstring(ent) and ent or ent:GetClass()] or R.JAMMER_SIZES.rhylib_comms_jammer
+end
+
+-- Radius a jammer covers (math.huge for the map-wide one).
+function R.JammerRange(ent)
+    local s = R.JammerSize(ent)
+    if s.wholeMap then return math.huge end
+    return R.Cfg("jammerRange" .. s.key) or 1800
+end
+
+-- Is this player inside an active jammer's range? (NW2Bool set by the server.)
+function R.Jammed(ply)
+    return IsValid(ply) and ply:GetNW2Bool("rhylib_jammed", false)
+end
+
+-- Jammed but out of range again, reconnecting: seconds left (or nil).
+function R.Reconnecting(ply)
+    if not R.Jammed(ply) then return nil end
+    local t = ply:GetNW2Float("rhylib_jamUntil", 0)
+    if t <= 0 then return nil end
+    return math.max(0, t - CurTime())
+end
+
+-- How strong the jamming is for this player, 0-1: 1 inside a jammer,
+-- falling over the reconnect time after leaving, the fringe level outside.
+function R.JamLevel(ply)
+    if not IsValid(ply) then return 0 end
+    local fringe = ply:GetNW2Float("rhylib_jamLevel", 0)
+    if not R.Jammed(ply) then return fringe end
+    local left = R.Reconnecting(ply)
+    if not left then return 1 end
+    local total = math.max(0.1, R.Cfg("jamReconnect") or 4)
+    return math.max(fringe, math.Clamp(left / total, 0, 1))
+end
 
 R.ID_BITS = 9
 R.MAX_ID = 511

@@ -43,10 +43,10 @@ Chat.CHANNELS = {
     { id = "pm", name = "PM", color = Color(190, 150, 255), cmds = { "pm", "w", "msg" }, desc = "Private message: /pm name text", private = true },
     { id = "rp", name = "RP", color = Color(120, 190, 230), cmds = { "rp" }, desc = "Roleplay actions, everyone sees them", action = true },
     { id = "event", name = "Event", color = Color(255, 205, 80), cmds = { "event", "ev" }, desc = "Event announcements to everyone (staff)", staff = "rhylib.chat.event" },
-    { id = "squad", name = "Squad", color = Color(110, 220, 200), cmds = { "squad", "sq" }, desc = "Your radio squad", needs = "squad" },
-    { id = "battalion", name = "Battalion", color = Color(140, 170, 255), cmds = { "battalion", "bn" }, desc = "Your battalion", needs = "battalion" },
-    { id = "command", name = "Command", color = Color(235, 185, 120), cmds = { "command", "cmd" }, desc = "Officers and commanders", needs = "command" },
-    { id = "comms", name = "Comms", color = Color(130, 205, 235), cmds = { "comms", "co" }, desc = "Everyone, as radio comms" },
+    { id = "squad", name = "Squad", color = Color(110, 220, 200), cmds = { "squad", "sq" }, desc = "Your radio squad", needs = "squad", jammable = true },
+    { id = "battalion", name = "Battalion", color = Color(140, 170, 255), cmds = { "battalion", "bn" }, desc = "Your battalion", needs = "battalion", jammable = true },
+    { id = "command", name = "Command", color = Color(235, 185, 120), cmds = { "command", "cmd" }, desc = "Officers and commanders", needs = "command", jammable = true },
+    { id = "comms", name = "Comms", color = Color(130, 205, 235), cmds = { "comms", "co" }, desc = "Everyone, as radio comms", jammable = true },
 }  -- 15 channels max with 4 bits; add new ones at the end
 Chat.byId, Chat.byCmd = {}, {}
 for i, c in ipairs(Chat.CHANNELS) do
@@ -90,6 +90,10 @@ end
 
 -- ok, reason
 function Chat.CanUse(ply, ch)
+    -- (rhylib_radio comms jammer: the radio-carried channels go dead)
+    if ch.jammable and IsValid(ply) and ply:GetNW2Bool("rhylib_jammed", false) then
+        return false, "Comms are jammed here: only local, public and admin chat work"
+    end
     if ch.needs == "squad" then
         if Chat.SquadOf(ply) == 0 then return false, "You're not in a radio squad" end
     elseif ch.needs == "battalion" then

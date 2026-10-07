@@ -150,6 +150,8 @@ local function inLevel()
     local mine = R.Mine()
     if mine.off then return 0, R.COL.off, "track" end
     if mine.deaf then return 0, R.COL.red, "track" end
+    -- Comms jammer: the meter goes haywire.
+    if R.Jammed(LocalPlayer()) then return 1, R.COL.red, "jam" end
     local best, col = 0, nil
     for p in pairs(R.speaking) do
         if IsValid(p) and p ~= LocalPlayer() and not p:IsSpeaking() then
@@ -254,15 +256,38 @@ local function barLevel(i, level, t)
     return math.Clamp(level * f * 1.25, 0.04, 1)
 end
 
+-- Jammed meter: random bar heights, re-rolled ~20 times a second, with
+-- the odd full spike and a red/white flicker.
+local jamH, jamAt, jamFlash = {}, 0, false
+local JAM_WHITE = Color(240, 235, 230)
+local function jamRoll()
+    local now = RealTime()
+    if now < jamAt then return end
+    jamAt = now + math.Rand(0.03, 0.07)
+    jamFlash = math.random() < 0.18
+    local spike = math.random() < 0.25
+    for i = 1, 64 do
+        jamH[i] = (spike and math.random() < 0.3) and 1 or math.Rand(0.04, 0.85)
+    end
+end
+local function jamBar(i) return jamH[(i - 1) % 64 + 1] or 0.5 end
+local function jamCol(i, col) return (jamFlash and i % 2 == 0) and JAM_WHITE or col end
+
 local function drawMeter(bars, bw, YB, side, level, col, mode)
     local W = ScrW()
-    draw.NoTexture()
     local t = RealTime()
     draw.NoTexture()
+    if mode == "jam" then jamRoll() end
     for i, b in ipairs(bars) do
         local x = side < 0 and b.x or (W - b.x - bw)
         local h = YB - b.top
-        if mode == "track" then
+        if mode == "jam" then
+            setCol(color_white, 14)
+            rect(x, b.top, x + bw, YB)
+            local bh = math.max(2, h * jamBar(i))
+            setCol(jamCol(i, col), math.random(150, 240))
+            rect(x, YB - bh, x + bw, YB)
+        elseif mode == "track" then
             setCol(col, 150)
             rect(x, b.top, x + bw, YB)
         else
@@ -325,9 +350,16 @@ local function drawPlate()
     local nb = math.floor((half + bg) / (bw + bg))
     local function meter(mx, level, col, mode)
         local t = RealTime()
+        if mode == "jam" then jamRoll() end
         for i = 1, nb do
             local bx = mx + (i - 1) * (bw + bg)
-            if mode == "track" then
+            if mode == "jam" then
+                setCol(color_white, 14)
+                rect(bx, my, bx + bw, my + mh)
+                local bh = math.max(2, mh * jamBar(i))
+                setCol(jamCol(i, col), math.random(150, 240))
+                rect(bx, my + mh - bh, bx + bw, my + mh)
+            elseif mode == "track" then
                 setCol(col, 150)
                 rect(bx, my, bx + bw, my + mh)
             else
@@ -381,7 +413,151 @@ end
 local discPts = {}
 for i = 1, 32 do discPts[i] = { x = 0, y = 0 } end
 
-function R.DrawRadar(cx, cy, r, names)
+-- Jammer status on the compass (owner 2026-10-07): inside a jammer the
+-- compass "desyncs" (horizontal slices slide back and forth, pop out and
+-- jump, with ghost copies and glitch bars) and a red JAMMED blinks 3
+-- times, then stays; leaving it a green UPLINK ACTIVE blinks 3 times.
+local BLINKS, BLINK = 3, 0.5
+local JAM_RED, UPLINK_GREEN = Color(235, 70, 60), Color(110, 220, 120)
+local function blinkOn(t) return (t % BLINK) < BLINK * 0.6 end
+
+local function drawBanner(cx, cy, r, lines, col)
+    local font = UI.Font(r >= 60 and 14 or (r >= 42 and 11 or 9), 800)
+    surface.SetFont(font)
+    local w, h = 0, 0
+    for _, l in ipairs(lines) do
+        local lw, lh = surface.GetTextSize(l)
+        w, h = math.max(w, lw), h + lh
+    end
+    local pad = 4
+    draw.NoTexture()
+    surface.SetDrawColor(8, 10, 12, 220)
+    surface.DrawRect(cx - w * 0.5 - pad, cy - h * 0.5 - pad * 0.5, w + pad * 2, h + pad)
+    surface.SetDrawColor(col.r, col.g, col.b, 200)
+    surface.DrawOutlinedRect(cx - w * 0.5 - pad, cy - h * 0.5 - pad * 0.5, w + pad * 2, h + pad)
+    local y = cy - h * 0.5
+    for _, l in ipairs(lines) do
+        local _, lh = surface.GetTextSize(l)
+        draw.SimpleText(l, font, cx, y, col, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
+        y = y + lh
+    end
+end
+
+-- The JAMMED / RECONNECTING / UPLINK ACTIVE banner.
+local RECON_AMBER = Color(235, 170, 60)
+local function jamBanner(cx, cy, r, jammed)
+    local b = R.jamBanner
+    if jammed and R.Reconnecting(LocalPlayer()) then
+        -- (a slow pulse, not a blink: it stays up until the link is back)
+        local a = 0.65 + 0.35 * math.abs(math.sin(RealTime() * 2.5))
+        RECON_AMBER.a = math.floor(255 * a)
+        drawBanner(cx, cy, r, { "RECONNECTING" }, RECON_AMBER)
+        return
+    end
+    if jammed then
+        local t = b and b.jammed and (RealTime() - b.at) or 0
+        if t >= BLINKS * BLINK or blinkOn(t) then drawBanner(cx, cy, r, { "JAMMED" }, JAM_RED) end
+        return
+    end
+    if b and not b.jammed then
+        local t = RealTime() - b.at
+        if t < BLINKS * BLINK then
+            if blinkOn(t) then drawBanner(cx, cy, r, { "UPLINK", "ACTIVE" }, UPLINK_GREEN) end
+        else
+            R.jamBanner = nil
+        end
+    end
+end
+
+-- Desync slices. One shared state: every compass on screen glitches alike.
+-- (sizes are fractions of the radius, so compasses of any size share it)
+local DS = { bands = {}, bars = {}, rebuildAt = 0, barsAt = 0, last = 0 }
+local BAR_COLS = { Color(240, 240, 240), Color(235, 70, 60), Color(90, 200, 220) }
+
+local function rebuildBands()
+    local bands, y = {}, -1.02
+    while y < 1.02 do
+        local h = math.Rand(0.07, 0.3)
+        bands[#bands + 1] = { y = y, h = h, off = 0, target = 0, nextAt = 0, gone = false, ghost = false }
+        y = y + h
+    end
+    DS.bands = bands
+end
+
+local function updateDesync(k)
+    local now = RealTime()
+    local dt = math.Clamp(now - DS.last, 0, 0.1)
+    DS.last = now
+    -- the slicing itself pops to a new pattern now and then
+    if now >= DS.rebuildAt then
+        rebuildBands()
+        DS.rebuildAt = now + math.Rand(0.3, 0.9)
+    end
+    local maxOff = 0.32
+    for _, b in ipairs(DS.bands) do
+        if now >= b.nextAt then
+            b.nextAt = now + math.Rand(0.05, 0.3)
+            local roll = math.random()
+            if roll < 0.2 then
+                b.target = 0                                   -- slide back in line
+            elseif roll < 0.7 then
+                b.target = math.Rand(-1, 1) * maxOff           -- slide out
+            elseif roll < 0.85 then
+                b.target = math.Rand(-1, 1) * maxOff * 1.4     -- jump
+                b.off = b.target
+            end
+            b.gone = math.random() < 0.1 * k                   -- pop out
+            b.ghost = not b.gone and math.random() < 0.18 * k  -- doubled
+        end
+        b.off = Lerp(math.min(1, dt * 18), b.off, b.target)
+    end
+    if now >= DS.barsAt then
+        DS.barsAt = now + math.Rand(0.06, 0.16)
+        DS.bars = {}
+        for i = 1, math.random(0, math.Round(4 * k)) do
+            DS.bars[i] = {
+                y = math.Rand(-1, 1), h = math.random(1, 2),
+                x = math.Rand(-1.1, 0.4), w = math.Rand(0.4, 1.5),
+                col = BAR_COLS[math.random(#BAR_COLS)], a = math.random(60, 150),
+            }
+        end
+    end
+end
+
+-- Draws drawCore(x, ...) sliced into the bands. ox/oy = screen offset of
+-- the drawing origin (panels), since the scissor rect is in screen pixels.
+-- k = strength 0-1 (the fringe outside a jammer, fading while reconnecting).
+local function drawDesync(drawCore, cx, cy, r, names, ox, oy, k)
+    ox, oy = ox or 0, oy or 0
+    updateDesync(k)
+    local x1, x2 = math.floor(ox + cx - r * 1.2), math.ceil(ox + cx + r * 1.2)
+    for _, b in ipairs(DS.bands) do
+        local by, bh = math.floor(cy + b.y * r), math.max(1, math.ceil(b.h * r))
+        local off = b.off * r * k
+        if b.gone then
+            render.SetScissorRect(0, 0, 0, 0, false)
+            draw.NoTexture()
+            surface.SetDrawColor(6, 8, 10, 150)
+            surface.DrawRect(cx - r, by, r * 2, bh)
+        else
+            render.SetScissorRect(x1, oy + by, x2, oy + by + bh, true)
+            drawCore(cx + off, cy, r, names)
+            if b.ghost then
+                surface.SetAlphaMultiplier(0.35)
+                drawCore(cx + off + (off >= 0 and -1 or 1) * r * 0.14, cy, r, names)
+                surface.SetAlphaMultiplier(1)
+            end
+        end
+    end
+    render.SetScissorRect(0, 0, 0, 0, false)
+    draw.NoTexture()
+    for _, g in ipairs(DS.bars) do
+        surface.SetDrawColor(g.col.r, g.col.g, g.col.b, g.a)
+        surface.DrawRect(cx + g.x * r, cy + g.y * r, g.w * r, g.h)
+    end
+end
+
+local function drawCore(cx, cy, r, names)
     local s = ScrH() / 1080
     draw.NoTexture()
     local d = disc(r)
@@ -435,6 +611,33 @@ function R.DrawRadar(cx, cy, r, names)
             end
         end
     end
+end
+
+-- ox, oy: screen position of the drawing origin when drawn inside a panel.
+-- Shown jamming strength, eased so the fringe steps and the reconnect
+-- fade look smooth (once per frame, shared by every compass).
+local shownK, shownFrame = 0, -1
+function R.JamShown()
+    local f = FrameNumber()
+    if f ~= shownFrame then
+        shownFrame = f
+        local target = R.JamLevel(LocalPlayer())
+        shownK = Lerp(math.min(1, FrameTime() * 4), shownK, target)
+        if target >= 1 then shownK = 1 end
+        if shownK < 0.005 then shownK = 0 end
+    end
+    return shownK
+end
+
+function R.DrawRadar(cx, cy, r, names, ox, oy)
+    local jammed = R.Jammed(LocalPlayer())
+    local k = R.JamShown()
+    if k > 0.03 then
+        drawDesync(drawCore, cx, cy, r, names, ox, oy, k)
+    else
+        drawCore(cx, cy, r, names)
+    end
+    jamBanner(cx, cy, r, jammed)
 end
 
 local function drawMarkers(s)

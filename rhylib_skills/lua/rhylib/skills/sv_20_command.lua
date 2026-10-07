@@ -105,6 +105,8 @@ function K.CallReinforcements(ply)
     if not ok then return false, why end
     local MP = Rhylib.MP
     if MP and MP.IsCuffed and (MP.IsCuffed(ply) or MP.IsStunned(ply)) then return false, "You can't call reinforcements right now" end
+    -- (comms jammer, rhylib_radio: the call can't get out)
+    if ply.rhylibJammed then return false, "Comms are jammed here: you can't call reinforcements" end
     local cd = K.ReinfCooldown(ply)
     if cd > 0 then
         local s = math.ceil(cd)

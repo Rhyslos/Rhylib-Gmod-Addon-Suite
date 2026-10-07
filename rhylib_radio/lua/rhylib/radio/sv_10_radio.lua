@@ -364,6 +364,7 @@ Rhylib.Net.Receive("radio.tx", function(ply)
     end
     local t = R.State(ply)
     if t.off or t.muted or not ply:Alive() then return end
+    if ply.rhylibJammed then return end   -- (jammer: static only, heard as local voice)
     local p = R.P(ply)
     if p.call and R.CallLive and R.CallLive(p.call) then
         R.SetTx(ply, R.TX_CALL, p.call)
@@ -409,6 +410,7 @@ local function snap(p)
         s.tick = tick
         s.alive = p:Alive()
         s.rv = p:GetNW2Int("rhylib_radio", 0)
+        s.jam = p.rhylibJammed == true
         local pos = p:GetPos()
         s.x, s.y, s.z = pos.x, pos.y, pos.z
     end
@@ -421,7 +423,7 @@ Rhylib.Hook.Add("PlayerCanHearPlayersVoice", "radio.voice", function(listener, t
     if not ts.alive then return false, false end
     local tv = ts.rv
     local kind = band(rshift(tv, 3), 3)
-    if kind ~= 0 and band(tv, 3) == 0 then
+    if kind ~= 0 and band(tv, 3) == 0 and not ts.jam and not snap(listener).jam then   -- (comms jammer: local only)
         local lv = snap(listener).rv
         if band(lv, 5) == 0 then
             local id = band(rshift(tv, 5), 511)
@@ -492,4 +494,134 @@ end)
 -- Dying lets go of the radio key.
 Rhylib.Hook.Add("PlayerDeath", "radio.death", function(ply)
     R.SetTx(ply, 0, 0)
+end)
+
+--------------------------------------------------------------------------
+-- Comms jammers (2026-10-07): who is inside one, twice a second
+--------------------------------------------------------------------------
+
+R.jammers = R.jammers or {}
+
+-- Per player: inside a jammer's range = jammed. In the fringe outside it
+-- (radio jammerFringe × range) NW2Float rhylib_jamLevel rises from 0 at the
+-- outer edge towards 1 at the range (the client breaks up the compass and
+-- adds static). Leaving the range keeps the radio jammed for
+-- jamReconnect seconds (NW2Float rhylib_jamUntil = when it reconnects).
+local function setLevel(p, lvl)
+    lvl = math.floor(lvl * 20 + 0.5) / 20   -- (5% steps: no NW2 spam)
+    if p.rhylibJamLevel ~= lvl then
+        p.rhylibJamLevel = lvl
+        p:SetNW2Float("rhylib_jamLevel", lvl)
+    end
+end
+
+local function setJammed(p, jam)
+    if (p.rhylibJammed == true) == jam then return end
+    p.rhylibJammed = jam or nil
+    p:SetNW2Bool("rhylib_jammed", jam)
+    if jam then R.SetTx(p, 0, 0) end   -- (drop a radio key already held)
+end
+
+timer.Create("Rhylib.Radio.Jam", 0.5, 0, function()
+    local list, wholeMap = {}, false
+    for j in pairs(R.jammers) do
+        if not IsValid(j) then
+            R.jammers[j] = nil
+        elseif j:GetActive() then
+            local r = R.JammerRange(j)
+            if r == math.huge then wholeMap = true else list[#list + 1] = { j:GetPos(), r } end
+        end
+    end
+    local fringe = math.max(0, R.Cfg("jammerFringe") or 0.35)
+    local reconnect = math.max(0, R.Cfg("jamReconnect") or 4)
+    local now = CurTime()
+    for _, p in ipairs(player.GetAll()) do
+        local inside, lvl = false, 0
+        if p:Alive() then
+            if wholeMap then
+                inside = true
+            elseif #list > 0 then
+                local pos = p:GetPos()
+                for _, e in ipairs(list) do
+                    local d = e[1]:Distance(pos)
+                    if d <= e[2] then inside = true break end
+                    local band = e[2] * fringe
+                    if band > 0 and d < e[2] + band then
+                        lvl = math.max(lvl, 1 - (d - e[2]) / band)
+                    end
+                end
+            end
+        end
+        if inside then
+            p.rhylibJamUntil = nil
+            if p:GetNW2Float("rhylib_jamUntil", 0) ~= 0 then p:SetNW2Float("rhylib_jamUntil", 0) end
+            setJammed(p, true)
+            setLevel(p, 1)
+        elseif p.rhylibJammed and p:Alive() and reconnect > 0 then
+            -- left the range: reconnecting, still jammed until it's done
+            if not p.rhylibJamUntil then
+                p.rhylibJamUntil = now + reconnect
+                p:SetNW2Float("rhylib_jamUntil", p.rhylibJamUntil)
+            end
+            if now >= p.rhylibJamUntil then
+                p.rhylibJamUntil = nil
+                p:SetNW2Float("rhylib_jamUntil", 0)
+                setJammed(p, false)
+            end
+            setLevel(p, lvl)
+        else
+            if p.rhylibJamUntil then
+                p.rhylibJamUntil = nil
+                p:SetNW2Float("rhylib_jamUntil", 0)
+            end
+            setJammed(p, false)
+            setLevel(p, lvl)
+        end
+    end
+end)
+
+-- Saved per map with rhylib_radio_save (toolgun entries jammer*).
+local JAMMER = "rhylib_comms_jammer"
+
+function R.SaveJammers()
+    local rows = {}
+    for _, j in ipairs(ents.FindByClass(JAMMER .. "*")) do
+        if R.JAMMER_SIZES[j:GetClass()] then
+            local p, a = j:GetPos(), j:GetAngles()
+            -- (a shot-up jammer is saved as it was before: it's back next map)
+            local on = j.destroyed and j.wasOn or j:GetActive()
+            rows[#rows + 1] = { pos = { p.x, p.y, p.z }, ang = { a.p, a.y, a.r }, on = on, class = j:GetClass() }
+        end
+    end
+    Rhylib.Data.Set("radio_jammers", game.GetMap(), rows)
+    return #rows
+end
+
+function R.SpawnJammers()
+    local rows = Rhylib.Data.Get("radio_jammers", game.GetMap())
+    if not istable(rows) then return end
+    for _, row in ipairs(rows) do
+        local class = R.JAMMER_SIZES[row.class or ""] and row.class or JAMMER
+        local j = ents.Create(class)
+        if IsValid(j) then
+            j:SetPos(Vector(row.pos[1], row.pos[2], row.pos[3]))
+            j:SetAngles(Angle(row.ang[1], row.ang[2], row.ang[3]))
+            j.startOff = row.on == false
+            j:Spawn()
+        end
+    end
+end
+
+Rhylib.Hook.Add("InitPostEntity", "radio.jammers", function() timer.Simple(1, R.SpawnJammers) end)
+Rhylib.Hook.Add("PostCleanupMap", "radio.jammers", R.SpawnJammers)
+Rhylib.PLACEMENT_CLASSES = Rhylib.PLACEMENT_CLASSES or {}
+for class in pairs(R.JAMMER_SIZES) do Rhylib.PLACEMENT_CLASSES[class] = true end
+
+Rhylib.Perms.Register("rhylib.radio.admin", "admin", "Place, switch and save comms jammers")
+concommand.Add("rhylib_radio_save", function(ply)
+    local function reply(m) if IsValid(ply) then ply:ChatPrint(m) else print(m) end end
+    Rhylib.Perms.Check(ply, "rhylib.radio.admin", function(ok)
+        if not ok then return reply("You don't have permission for rhylib_radio_save") end
+        reply("Saved " .. R.SaveJammers() .. " comms jammers for " .. game.GetMap())
+    end)
 end)

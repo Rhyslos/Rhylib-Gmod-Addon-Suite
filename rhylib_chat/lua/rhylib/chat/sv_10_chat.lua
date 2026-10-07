@@ -17,6 +17,14 @@ Rhylib.Perms.Register("rhylib.chat.event", "admin", "Post in the Event chat chan
 local lastAdvert = setmetatable({}, { __mode = "k" })
 
 local function send(recipients, ch, sender, text, target)
+    -- Radio text doesn't reach anyone inside a comms jammer (rhylib_radio).
+    if ch.jammable then
+        local kept = {}
+        for _, p in ipairs(recipients) do
+            if not p.rhylibJammed then kept[#kept + 1] = p end
+        end
+        recipients = kept
+    end
     if #recipients == 0 then return end
     Rhylib.Net.Start("chat.msg")
     net.WriteUInt(ch.index, Chat.CHANNEL_BITS)
