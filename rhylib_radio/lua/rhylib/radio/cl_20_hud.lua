@@ -611,6 +611,8 @@ local function drawCore(cx, cy, r, names)
             end
         end
     end
+    -- Squad pings (cl_40_pings).
+    if R.DrawPingsOnRadar then R.DrawPingsOnRadar(cx, cy, r, mp, fx, fy, k) end
 end
 
 -- ox, oy: screen position of the drawing origin when drawn inside a panel.
