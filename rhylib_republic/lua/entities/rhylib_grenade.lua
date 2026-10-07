@@ -19,6 +19,8 @@
 AddCSLuaFile()
 
 local Config = Rhylib.Config
+-- (2026-10-07, owner: halved from 380, it was too strong)
+Config.Register("weapons", "empRadius", 190, "Droid popper (EMP): radius it kills droids and stuns players in (units)")
 
 ENT.Type = "anim"
 ENT.Base = "base_anim"
@@ -32,7 +34,12 @@ ENT.FlashRadius = 450   -- flash charge: players and droids within this
 
 ENT.Radius = 300        -- frag: blast radius
 ENT.Damage = 140        -- frag: damage at the centre
-ENT.EmpRadius = 380     -- EMP: droids within this
+ENT.EmpRadius = nil     -- EMP: droids within this (nil = weapons empRadius)
+
+-- EMP radius: set on this grenade (Grenadier skill), else the config.
+function ENT:EmpR()
+    return self.EmpRadius or Config.Get("weapons", "empRadius") or 190
+end
 
 -- Where the grenade really is: the ball's centre.
 function ENT:Centre()
@@ -163,6 +170,13 @@ if SERVER then
             util.ScreenShake(pos, 6, 120, 0.8, self.Radius * 2)
             util.Decal("Scorch", pos + Vector(0, 0, 8), pos - Vector(0, 0, 40), self)
         end
+        -- Comms jammers (rhylib_radio): any grenade a player sets off is
+        -- strength 1, a breaching charge 2. (training ones never count)
+        if not self.training and IsValid(self.thrower) and self.thrower:IsPlayer() then
+            local reach = k == 5 and Config.Get("weapons", "breachRadius")
+                or (k == 3 or k == 4) and self:EmpR() * 0.6 or math.min(self.Radius or 300, 300) * 0.5
+            hook.Run("Rhylib.Explosion", pos, reach, k == 5 and 2 or 1, self.thrower, self, k == 5 and "breach" or "grenade")
+        end
         self:Remove()
     end
 
@@ -263,14 +277,14 @@ if SERVER then
     function ENT:Emp(pos, attacker)
         local ed = EffectData()
         ed:SetOrigin(pos)
-        ed:SetRadius(self.EmpRadius)
+        ed:SetRadius(self:EmpR())
         ed:SetFlags(0)
         ed:SetColor(self.training and 2 or 0)   -- (training: orange)
         util.Effect("rhylib_emp", ed, true, true)
         sound.Play("ambient/energy/whiteflash.wav", pos, 85, 110)
         sound.Play("ambient/energy/zap" .. math.random(1, 9) .. ".wav", pos, 80, 100)
 
-        local r2 = self.EmpRadius * self.EmpRadius
+        local r2 = self:EmpR() ^ 2
         -- Players in range and in sight are stunned (rhylib_mp's stun,
         -- thrower included), with a zap on them. Not from clone NPCs'
         -- poppers (noStun: they're on your side).

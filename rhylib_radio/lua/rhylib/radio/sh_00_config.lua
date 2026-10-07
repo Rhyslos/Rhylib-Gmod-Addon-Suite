@@ -47,19 +47,26 @@ Config.Register("radio", "fxNoise", { "ambient/levels/prison/radio_random1.wav",
 -- (static when you try, only local voice), and the radio text channels
 -- (squad, battalion, command, comms) can't be used.
 -- Four sizes (2026-10-07, owner): small, medium (twice the range), large
--- (four times), and one that covers the whole map. Health: destroyed until
--- the next map change or cleanup (0 = can't be destroyed). A model that
--- isn't installed falls back to jammerFallbackModel.
+-- (four times), and one that covers the whole map. A model that isn't
+-- installed falls back to jammerFallbackModel. Only explosives destroy
+-- them (until the next map change or cleanup): small = any grenade,
+-- medium = an RPS-6 rocket or a breaching charge, large = jammerPointsLarge
+-- damage points (HE 6, rocket 3, breaching charge 2, adding up), whole map
+-- = jammerChargesMap HE charges going off together.
 Config.Register("radio", "jammerRange", 1800, "Small comms jammer: radius it jams (units, 1800 = 34 m)")
-Config.Register("radio", "jammerHealth", 400, "Small comms jammer: health (0 = can't be destroyed)")
 Config.Register("radio", "jammerModel", "models/props/starwars/weapons/hoth_bomb.mdl", "Small comms jammer: model")
 Config.Register("radio", "jammerRangeMedium", 3600, "Medium comms jammer: radius it jams (units)")
-Config.Register("radio", "jammerHealthMedium", 800, "Medium comms jammer: health (0 = can't be destroyed)")
 Config.Register("radio", "jammerModelMedium", "models/lordtrilobite/starwars/props/barrel_scarif2c_phys.mdl", "Medium comms jammer: model")
 Config.Register("radio", "jammerRangeLarge", 7200, "Large comms jammer: radius it jams (units; meant to cover about a quarter of the map)")
-Config.Register("radio", "jammerHealthLarge", 1600, "Large comms jammer: health (0 = can't be destroyed)")
+-- Large jammer (2026-10-07, owner): damage points add up: 1 HE charge,
+-- 2 rockets, 3 breaching charges or a mix (2 charges + 1 rocket).
+Config.Register("radio", "jammerPointsLarge", 6, "Large comms jammer: damage points to destroy it (they add up; see jamPoints*)")
+Config.Register("radio", "jamPointsHE", 6, "Comms jammers: damage points of a high explosive charge (large jammer)")
+Config.Register("radio", "jamPointsRocket", 3, "Comms jammers: damage points of an RPS-6 rocket (large jammer)")
+Config.Register("radio", "jamPointsBreach", 2, "Comms jammers: damage points of a breaching charge (large jammer)")
 Config.Register("radio", "jammerModelLarge", "models/starwars/syphadias/props/sw_tor/bioware_ea/props/neutral/neu_industrial_tower.mdl", "Large comms jammer: model")
-Config.Register("radio", "jammerHealthMap", 3000, "Map-wide comms jammer: health (0 = can't be destroyed); it jams everyone on the map")
+Config.Register("radio", "jammerChargesMap", 4, "Map-wide comms jammer: high explosive charges needed to destroy it")
+Config.Register("radio", "jammerChargeWindow", 3, "Comms jammers needing several HE charges: seconds within which they must all go off (0 = any time)")
 Config.Register("radio", "jammerModelMap", "models/props/starwars/tech/imperial_deflector.mdl", "Map-wide comms jammer: model")
 Config.Register("radio", "jammerFallbackModel", "models/props_lab/reciever01a.mdl", "Comms jammers: model used when a jammer's own model isn't installed")
 Config.Register("radio", "jammerFringe", 0.35, "Comms jammers: interference zone outside the range, as a part of the range (0.35 = 35% further out; the compass breaks up and radio gets static as you get closer)")
@@ -69,12 +76,19 @@ Config.Register("radio", "jamStatic", "ambient/energy/electric_loop.wav", "Comms
 function R.Cfg(k) return Config.Get("radio", k) end
 
 -- Jammer sizes: class -> config key suffix and name. range nil = whole map.
+-- tier = explosive strength needed (R.JAMMER_TIERS); points = config key
+-- of the damage points it takes (they add up); charges = config key for
+-- how many HE charges it takes (all together); need = what to tell players.
 R.JAMMER_SIZES = {
-    rhylib_comms_jammer = { key = "", name = "Comms jammer (small)" },
-    rhylib_comms_jammer_medium = { key = "Medium", name = "Comms jammer (medium)" },
-    rhylib_comms_jammer_large = { key = "Large", name = "Comms jammer (large)" },
-    rhylib_comms_jammer_map = { key = "Map", name = "Comms jammer (whole map)", wholeMap = true },
+    rhylib_comms_jammer = { key = "", name = "Comms jammer (small)", tier = 1 },
+    rhylib_comms_jammer_medium = { key = "Medium", name = "Comms jammer (medium)", tier = 2 },
+    rhylib_comms_jammer_large = { key = "Large", name = "Comms jammer (large)", tier = 2, points = "jammerPointsLarge",
+        need = "a high explosive charge, 2 RPS-6 rockets, 3 breaching charges or a mix" },
+    rhylib_comms_jammer_map = { key = "Map", name = "Comms jammer (whole map)", wholeMap = true, tier = 3, charges = "jammerChargesMap" },
 }
+-- Explosive strengths (hook Rhylib.Explosion): 1 any grenade, 2 RPS-6
+-- rocket / breaching charge, 3 high explosive charge.
+R.JAMMER_TIERS = { "any grenade", "an RPS-6 rocket or a breaching charge", "a high explosive charge" }
 
 function R.JammerSize(ent)
     return R.JAMMER_SIZES[isstring(ent) and ent or ent:GetClass()] or R.JAMMER_SIZES.rhylib_comms_jammer

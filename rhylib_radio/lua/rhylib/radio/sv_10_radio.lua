@@ -580,6 +580,20 @@ timer.Create("Rhylib.Radio.Jam", 0.5, 0, function()
     end
 end)
 
+-- Explosions (hook Rhylib.Explosion from rhylib_republic grenades and HE
+-- charges, rhylib_weapons rockets): jammers within reach (nearest point of
+-- the model) get hit. Only players' explosions count.
+Rhylib.Hook.Add("Rhylib.Explosion", "radio.jammers", function(pos, reach, tier, attacker, inflictor, kind)
+    local byPlayer = IsValid(attacker) and attacker:IsPlayer()
+    if not byPlayer and not (IsValid(inflictor) and inflictor.rhylibPlayerCharge) then return end
+    local r2 = (reach or 0) ^ 2
+    for j in pairs(R.jammers) do
+        if IsValid(j) and not j.destroyed and j.ExplosiveHit and j:NearestPoint(pos):DistToSqr(pos) <= r2 then
+            j:ExplosiveHit(tier or 1, IsValid(attacker) and attacker or nil, kind)
+        end
+    end
+end)
+
 -- Saved per map with rhylib_radio_save (toolgun entries jammer*).
 local JAMMER = "rhylib_comms_jammer"
 

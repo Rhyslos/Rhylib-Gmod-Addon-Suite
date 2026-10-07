@@ -6,9 +6,10 @@
     Their incoming radio meter goes haywire.
 
     Staff (rhylib.radio.admin) press E on it to switch it on or off.
-    It can be shot to pieces (radio jammerHealth; 0 = can't be destroyed):
-    it goes dark and stops jamming until the next map change or cleanup,
-    and the map save keeps it as it was.
+    Only explosives destroy it (hook Rhylib.Explosion, sv_10_radio; size
+    rules in R.JAMMER_SIZES): it goes dark and stops jamming until the
+    next map change or cleanup, and the map save keeps it as it was.
+    Gunfire only sparks.
     Place with the toolgun; rhylib_radio_save keeps them on the map.
 
     This is the small one and the base of the others (R.JAMMER_SIZES):
@@ -54,8 +55,6 @@ if SERVER then
         local phys = self:GetPhysicsObject()
         if IsValid(phys) then phys:EnableMotion(false) end
         self:SetActive(not self.startOff)
-        local hp = R and R.Cfg("jammerHealth" .. key) or 400
-        self.hp = hp > 0 and hp or nil
         if R then R.jammers[self] = true end
         self.hum = CreateSound(self, "ambient/machines/combine_terminal_loop1.wav")
         if self.hum and self:GetActive() then self.hum:PlayEx(0.35, 140) end
@@ -80,26 +79,122 @@ if SERVER then
         end)
     end
 
-    function ENT:OnTakeDamage(dmg)
-        if not self.hp or self.destroyed then return end
-        self.hp = self.hp - dmg:GetDamage()
+    local function note(self, ply, text)
+        if not (IsValid(ply) and ply:IsPlayer()) then return end
+        self.noted = self.noted or {}
+        if (self.noted[ply] or 0) > CurTime() then return end
+        self.noted[ply] = CurTime() + 3
+        local R = Rhylib.Radio
+        if R and R.Note then R.Note(ply, text) else ply:ChatPrint(text) end
+    end
+
+    local function sparks(pos)
         local e = EffectData()
-        e:SetOrigin(dmg:GetDamagePosition())
+        e:SetOrigin(pos)
         e:SetMagnitude(1)
         e:SetScale(1)
         util.Effect("Sparks", e)
-        if self.hp <= 0 then
-            -- Wrecked, not removed: a later save must still keep it on the map.
-            self.wasOn = self:GetActive()
-            self.destroyed = true
-            local b = EffectData()
-            b:SetOrigin(self:WorldSpaceCenter())
-            util.Effect("Explosion", b)
-            if self.hum then self.hum:Stop() end
-            self:SetActive(false)
-            self:SetNoDraw(true)
-            self:SetNotSolid(true)
-            self:DrawShadow(false)
+    end
+
+    -- Gunfire and the like: sparks and a hint, no harm. (explosions come
+    -- through ExplosiveHit)
+    function ENT:OnTakeDamage(dmg)
+        if self.destroyed then return end
+        sparks(dmg:GetDamagePosition())
+        if dmg:IsDamageType(DMG_BLAST) then return end
+        local R = Rhylib.Radio
+        local size = R and R.JammerSize(self)
+        local text = size and (size.need or R.JAMMER_TIERS[size.tier or 1]) or "explosives"
+        note(self, dmg:GetAttacker(), "That won't do it: the " .. string.lower(self.PrintName) .. " needs " .. text)
+    end
+
+    -- Wrecked, not removed: a later save must still keep it on the map.
+    function ENT:Destroy(by)
+        if self.destroyed then return end
+        self.wasOn = self:GetActive()
+        self.destroyed = true
+        local b = EffectData()
+        b:SetOrigin(self:WorldSpaceCenter())
+        util.Effect("Explosion", b)
+        util.Effect("HelicopterMegaBomb", b)
+        self:EmitSound("ambient/explosions/explode_4.wav", 100)
+        if self.hum then self.hum:Stop() end
+        self:SetActive(false)
+        self:SetNoDraw(true)
+        self:SetNotSolid(true)
+        self:DrawShadow(false)
+        local ph = self:GetPhysicsObject()
+        if IsValid(ph) then ph:EnableCollisions(false) end
+        if IsValid(by) and by:IsPlayer() then
+            local R = Rhylib.Radio
+            if R and R.Note then R.Note(by, self.PrintName .. " destroyed") end
+        end
+    end
+
+    -- An explosion of strength tier (R.JAMMER_TIERS) reached it. kind:
+    -- "grenade", "breach", "rocket" or "he".
+    local POINTS = { he = "jamPointsHE", rocket = "jamPointsRocket", breach = "jamPointsBreach" }
+    function ENT:ExplosiveHit(tier, by, kind)
+        if self.destroyed then return end
+        local R = Rhylib.Radio
+        local size = R and R.JammerSize(self) or { tier = 1 }
+        sparks(self:WorldSpaceCenter())
+        local needText = size.need or R.JAMMER_TIERS[size.tier]
+        if tier < (size.tier or 1) then
+            note(self, by, "The " .. string.lower(self.PrintName) .. " held: it needs " .. needText)
+            return
+        end
+        -- Damage points that add up (large: HE 6, rocket 3, breaching charge 2).
+        if size.points then
+            local need = math.max(1, R.Cfg(size.points) or 6)
+            local add = POINTS[kind] and (R.Cfg(POINTS[kind]) or 0) or (tier >= 3 and need or 0)
+            if add <= 0 then
+                note(self, by, "The " .. string.lower(self.PrintName) .. " held: it needs " .. needText)
+                return
+            end
+            self.jamDamage = (self.jamDamage or 0) + add
+            if self.jamDamage >= need then self:Destroy(by) return end
+            if not self.notePending then
+                self.notePending = true
+                timer.Simple(0.2, function()
+                    if not IsValid(self) then return end
+                    self.notePending = nil
+                    if self.destroyed then return end
+                    self.noted = nil
+                    note(self, by, string.format("The %s is damaged (%d of %d): finish it with %s",
+                        string.lower(self.PrintName), self.jamDamage, need, needText))
+                end)
+            end
+            return
+        end
+        local need = size.charges and math.max(1, math.floor(R.Cfg(size.charges) or 1)) or 1
+        if need <= 1 then self:Destroy(by) return end
+        -- Several HE charges: only high explosive counts, all within the window.
+        if tier < 3 then
+            note(self, by, "The " .. string.lower(self.PrintName) .. " held: it needs " .. need .. " high explosive charges")
+            return
+        end
+        local now, win = CurTime(), R.Cfg("jammerChargeWindow") or 3
+        local hits = {}
+        for _, t in ipairs(self.heHits or {}) do
+            if win <= 0 or now - t <= win then hits[#hits + 1] = t end
+        end
+        hits[#hits + 1] = now
+        self.heHits = hits
+        if #hits >= need then self:Destroy(by) return end
+        -- (one note after the charges going off together have all landed)
+        if not self.notePending then
+            self.notePending = true
+            timer.Simple(0.2, function()
+                if not IsValid(self) then return end
+                self.notePending = nil
+                if self.destroyed then return end
+                local n = #(self.heHits or {})
+                local text = n .. " of " .. need .. " charges: the " .. string.lower(self.PrintName) .. " is damaged but still running"
+                if win > 0 then text = text .. ". Set " .. need .. " off together (sync them)" end
+                self.noted = nil
+                note(self, by, text)
+            end)
         end
     end
 

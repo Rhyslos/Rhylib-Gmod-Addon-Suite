@@ -1,6 +1,6 @@
 --[[
     Comms jammer (medium) (rhylib_radio, 2026-10-07, owner): the comms jammer
-    (rhylib_comms_jammer.lua) with radio jammerRangeMedium / jammerHealthMedium / jammerModelMedium (twice the small one's range).
+    (rhylib_comms_jammer.lua) with radio jammerRangeMedium / jammerModelMedium (twice the small one's range).
 ]]
 
 AddCSLuaFile()

@@ -249,7 +249,7 @@ function SWEP:Throw(force, lift)
         force = force * math.sqrt(range)
         g.Damage = g.Damage * dmg
         g.Radius = g.Radius * rad
-        g.EmpRadius = g.EmpRadius * rad
+        g.EmpRadius = (g.EmpRadius or Config.Get("weapons", "empRadius") or 190) * rad
         g.FlashRadius = g.FlashRadius * rad
     end
     g:Spawn()

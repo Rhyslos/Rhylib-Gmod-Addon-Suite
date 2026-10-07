@@ -151,6 +151,8 @@ local function explode(bolt, pos, normal)
         W.TrainingBlast(at, ex.radius, ex.damage, attacker, inflictor)
     else
         util.BlastDamage(inflictor, attacker, at, ex.radius, ex.damage)
+        -- (comms jammers, rhylib_radio: a rocket is strength 2)
+        hook.Run("Rhylib.Explosion", at, ex.radius, ex.tier or 2, attacker, inflictor, "rocket")
     end
 
     local ed = EffectData()

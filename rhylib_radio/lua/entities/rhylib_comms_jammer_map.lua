@@ -1,6 +1,6 @@
 --[[
     Comms jammer (whole map) (rhylib_radio, 2026-10-07, owner): the comms jammer
-    (rhylib_comms_jammer.lua) with radio jammerHealthMap / jammerModelMap: it jams everyone on the map.
+    (rhylib_comms_jammer.lua) with radio jammerModelMap / jammerChargesMap: it jams everyone on the map.
 ]]
 
 AddCSLuaFile()
