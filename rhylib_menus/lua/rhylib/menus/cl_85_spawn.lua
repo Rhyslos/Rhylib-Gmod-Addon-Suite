@@ -50,8 +50,8 @@ local function iconMat(paths)
 end
 SP.IconMat = iconMat
 
--- The window's background: solid medium grey (owner 2026-10-07: not see-through).
-SP.BG = Color(70, 73, 76, 255)
+-- The window's background: solid dark grey (owner 2026-10-07: not see-through; 2026-10-08: a little darker, closer to the rest of the UI).
+SP.BG = Color(44, 47, 49, 255)
 
 function SP.AddTab(id, def)
     def.id = id
