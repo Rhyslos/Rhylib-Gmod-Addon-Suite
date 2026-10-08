@@ -86,7 +86,7 @@ SWEP.StartMags = 8
 SWEP.StartCells = 1
 
 -- Inventory size in cells
-SWEP.InvW = 5
+SWEP.InvW = 6   -- (long guns are 6 long, the inventory is 6 wide; owner 2026-10-07)
 SWEP.InvH = 1
 SWEP.InvLarge = true
 SWEP.InvWeight = 5.5         -- kg

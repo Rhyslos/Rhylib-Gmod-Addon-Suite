@@ -327,7 +327,7 @@ end
 -- Containers
 --
 -- A player has up to four containers, each with its own items table:
---   1  main grid (5 x 3)
+--   1  main grid (6 x 3, config inventory width / height)
 --   2  backpack grid, only while a backpack is worn (size from the backpack)
 --   3  back slot: holds one item with slot = "back"
 --   5  cell rack: only power cells, opened by a skill (rhylib_skills)
@@ -350,7 +350,7 @@ Items.BACK = 2
 Items.SLOT_BACK = 3
 Items.EXT = 4
 Items.RACK = 5       -- cell rack (rhylib_skills Load bearer): power cells only
-Items.BELT = 6       -- ammo belt (rhylib_skills Ammo belt): no worn items, no 5-long guns
+Items.BELT = 6       -- ammo belt (rhylib_skills Ammo belt): no worn items, no long guns (5+ cells)
 Items.HOLSTER = 7    -- pistols (def.holster), while a holster is worn (2x2: both holsters)
 Items.POUCH = 18     -- belt pouches (worn belt pouches): like the ammo belt
 Items.CELLPACK = 19  -- ARC backpack's side pouch: power cells only

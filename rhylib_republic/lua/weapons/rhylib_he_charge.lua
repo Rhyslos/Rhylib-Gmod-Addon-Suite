@@ -8,7 +8,8 @@
     (rhylib_menus): set the timer (default heFuse 30 s) or "Sync" (no
     timer). A synced charge waits. Placing a charge with a timer starts
     its countdown and every synced charge of yours takes the same timer,
-    so any number of charges go off together (rhylib_he_charge entity).
+    so any number of charges go off together (rhylib_he_planted entity;
+    it can't share the weapon's class name: ents.Create would make the weapon).
     The setting is the weapon's NetworkVar FuseSet (0 = sync) and is kept
     on the player for the next charge (ply.rhylibHeFuse).
 ]]
@@ -94,8 +95,11 @@ function SWEP:PlaceCharge()
     self:SendWeaponAnim(ACT_VM_THROW)
     o:SetAnimation(PLAYER_ATTACK1)
     if CLIENT then return end
-    local c = ents.Create("rhylib_he_charge")
-    if not IsValid(c) then return end
+    local c = ents.Create("rhylib_he_planted")
+    if not IsValid(c) then
+        o:ChatPrint("The charge entity is missing on the server (rhylib_republic entities/rhylib_he_planted.lua)")
+        return
+    end
     -- lying flat on the surface (the SLAM's top facing out)
     local ang = tr.HitNormal:Angle()
     ang:RotateAroundAxis(ang:Right(), -90)

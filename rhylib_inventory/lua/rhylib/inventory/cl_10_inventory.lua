@@ -12,7 +12,7 @@ local Inv = Rhylib.Inventory
 local Items = Rhylib.Items
 
 -- (gear slots come with the server's full copy)
-Inv.cont = Inv.cont or { [Items.MAIN] = { w = 5, h = 3, items = {} }, [Items.SLOT_BACK] = { w = 1, h = 1, items = {} } }
+Inv.cont = Inv.cont or { [Items.MAIN] = { w = 6, h = 3, items = {} }, [Items.SLOT_BACK] = { w = 1, h = 1, items = {} } }
 Inv.byUid = Inv.byUid or {}
 
 local EXT = Items.EXT

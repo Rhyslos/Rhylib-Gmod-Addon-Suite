@@ -37,7 +37,7 @@ local Config = Rhylib.Config
 local MAIN, BACK, SLOT_BACK, RACK, BELT, HOLSTER = Items.MAIN, Items.BACK, Items.SLOT_BACK, Items.RACK, Items.BELT, Items.HOLSTER
 local IsWorn = Items.IsWorn
 
-Config.Register("inventory", "width", 5, "Personal inventory width in cells")
+Config.Register("inventory", "width", 6, "Personal inventory width in cells (owner 2026-10-07: 6, and the long guns are 6 long)")
 Config.Register("inventory", "height", 3, "Personal inventory height in cells")
 Config.Register("inventory", "saveInterval", 2, "Seconds between saves of changed inventories")
 Config.Register("inventory", "worldItemLife", 600, "Seconds before a dropped item on the ground is removed (0 = never)")
@@ -353,8 +353,9 @@ local function load(ply, st)
                 if Items.defs[id] and Items.CanPlace(st, id, cid, x, y, rot) then
                     local inst = { uid = nextUid(st), id = id, count = count, data = istable(row[6]) and row[6] or {}, hb = tonumber(row[8]) }
                     place(ply, st, inst, cid, x, y, rot)
-                elseif Items.defs[id] and cid ~= MAIN and cid ~= BACK then
-                    -- The rack, belt, holster or a gear slot is gone or taken: anywhere else.
+                elseif Items.defs[id] then
+                    -- Its spot is gone or taken (a smaller grid, a removed rack or
+                    -- slot, an item that grew): anywhere else, never lost.
                     local c2, x2, y2, r2 = findSpot(st, id)
                     local data = istable(row[6]) and row[6] or {}
                     if c2 then

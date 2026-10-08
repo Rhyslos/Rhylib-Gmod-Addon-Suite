@@ -39,15 +39,10 @@ local sizeVar = CreateClientConVar("rhylib_inventory_cellsize", "100", true, fal
 
 -- Same look as the HUD and the chat: dark plates, black outlines, a faint
 -- light line along the top, small corner ticks, caps labels.
--- Items: a dark body with a stripe in their category's colour.
-local CATEGORY_COLORS = {
-    weapon = { body = Color(30, 37, 46), stripe = Color(96, 140, 196) },
-    ammo = { body = Color(42, 36, 25), stripe = Color(206, 152, 62) },
-    medical = { body = Color(25, 40, 31), stripe = Color(96, 186, 126) },
-    gear = { body = Color(38, 35, 30), stripe = Color(168, 146, 112) },
-    misc = { body = Color(34, 34, 33), stripe = Color(136, 136, 130) },
-    training = { body = Color(44, 40, 20), stripe = Color(236, 200, 60) },   -- (rhylib_training gear)
-}
+-- Items: a dark body with a stripe in their category's colour and the
+-- item's picture (cl_15_icons).
+local CATEGORY_COLORS = Inv.CATEGORY_COLORS
+local Icons = Inv.Icons
 local COL_BG = Color(14, 16, 15, 242)
 local COL_HEADER = Color(22, 25, 23, 255)
 local COL_EDGE_DARK = Color(0, 0, 0, 230)
@@ -69,6 +64,7 @@ local COL_EXT_BORDER = Color(46, 66, 86)
 local COL_BUTTON = Color(26, 29, 27)
 local COL_BUTTON_HOVER = Color(38, 50, 64)
 local COL_HILITE = Color(255, 255, 255, 14)
+local COL_TEXT_EDGE = Color(0, 0, 0, 200)   -- (counts and badges over the pictures)
 
 -- Corner ticks on a box (bottom corners, or all four).
 local function ticks(x, y, w, h, s, all)
@@ -282,7 +278,7 @@ end
 function PANEL:LayoutOnce()
     self.layoutKey = self:LayoutKey()
     local pad, label = self.pad, self.label
-    local main = Inv.cont[MAIN] or { w = 5, h = 3 }
+    local main = Inv.cont[MAIN] or { w = 6, h = 3 }
     local back = Inv.cont[BACK]
     local top = self.header + label   -- row labels ("Back", "Backpack") sit above this
 
@@ -525,8 +521,25 @@ function PANEL:DrawItemBox(inst, x, y, pw, ph, alpha, endless)
 
     local cat = CATEGORY_COLORS[def.category] or CATEGORY_COLORS.misc
     local body, stripe = cat.body, cat.stripe
+    -- The picture (its 3D model, cl_15_icons), under the name. Its tile is
+    -- opaque body colour, so while faded (dragged, ghost) the body goes
+    -- around it rather than under it (no darker box).
+    local pad = math.floor(5 * s)
+    local nameH = math.floor(18 * s)
+    local ax, ay = x + pad * 2, y + pad + nameH
+    local aw, ah = pw - pad * 3, ph - pad * 2 - nameH
+    local ix, iy, iw, ih
+    if aw > 6 and ah > 6 then ix, iy, iw, ih = Icons.Fit(def, ax, ay, aw, ah, inst.rot) end
     surface.SetDrawColor(body.r, body.g, body.b, alpha)
-    surface.DrawRect(x, y, pw, ph)
+    if ix and alpha < 255 then
+        surface.DrawRect(x, y, pw, iy - y)
+        surface.DrawRect(x, iy + ih, pw, y + ph - iy - ih)
+        surface.DrawRect(x, iy, ix - x, ih)
+        surface.DrawRect(ix + iw, iy, x + pw - ix - iw, ih)
+    else
+        surface.DrawRect(x, y, pw, ph)
+    end
+    if ix then Icons.Draw(def, ax, ay, aw, ah, inst.rot, alpha) end
     surface.SetDrawColor(COL_HILITE.r, COL_HILITE.g, COL_HILITE.b, COL_HILITE.a * alpha / 255)
     surface.DrawRect(x, y, pw, math.floor(ph * 0.35))  -- a faint sheen on the top part
     surface.SetDrawColor(stripe.r, stripe.g, stripe.b, alpha)
@@ -541,11 +554,10 @@ function PANEL:DrawItemBox(inst, x, y, pw, ph, alpha, endless)
     end
 
     local font = self:Font(14)
-    local pad = math.floor(5 * s)
     draw.SimpleText(fitText(def.name, font, pw - pad * 3), font, x + pad * 2, y + pad, UI.Colors.text)
     if inst.hb and inst.c ~= EXT and inst.c then
         -- Hotbar slot badge, bottom-left.
-        draw.SimpleText("[" .. inst.hb .. "]", self:Font(12, 700), x + pad * 2, y + ph - pad, UI.Colors.accent, TEXT_ALIGN_LEFT, TEXT_ALIGN_BOTTOM)
+        draw.SimpleTextOutlined("[" .. inst.hb .. "]", self:Font(12, 700), x + pad * 2, y + ph - pad, UI.Colors.accent, TEXT_ALIGN_LEFT, TEXT_ALIGN_BOTTOM, 1, COL_TEXT_EDGE)
     end
 
     local corner
@@ -559,10 +571,10 @@ function PANEL:DrawItemBox(inst, x, y, pw, ph, alpha, endless)
         corner = math.ceil((inst.data.fill or 1) * 100) .. "%"
     end
     if corner then
-        draw.SimpleText(corner, font, x + pw - pad, y + ph - pad, UI.Colors.text, TEXT_ALIGN_RIGHT, TEXT_ALIGN_BOTTOM)
+        draw.SimpleTextOutlined(corner, font, x + pw - pad, y + ph - pad, UI.Colors.text, TEXT_ALIGN_RIGHT, TEXT_ALIGN_BOTTOM, 1, COL_TEXT_EDGE)
     end
     if inst.data and inst.data.hidden and inst.c ~= EXT then
-        draw.SimpleText("HIDDEN", self:Font(11, 700), x + pw - pad, y + ph * 0.5, UI.Colors.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+        draw.SimpleTextOutlined("HIDDEN", self:Font(11, 700), x + pw - pad, y + ph * 0.5, UI.Colors.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER, 1, COL_TEXT_EDGE)
     end
 end
 
@@ -1173,6 +1185,10 @@ function PANEL:OnMousePressed(code)
             end
         end
         hook.Run("Rhylib.ItemMenu", inst, menu)   -- (other addons add options; return nothing)
+        if LocalPlayer():IsAdmin() and Icons.OpenEditor then
+            -- (staff: tune this item's picture for everyone, cl_15_icons)
+            menu:AddOption("Adjust picture", function() Icons.OpenEditor(inst.id) end)
+        end
         menu:AddOption("Drop", function() Inv.RequestDrop(inst) end)
         menu:Open()
     end

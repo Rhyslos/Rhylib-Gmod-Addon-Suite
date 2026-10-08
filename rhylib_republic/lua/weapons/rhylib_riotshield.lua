@@ -77,6 +77,8 @@ local SHIELDS = {
         wmPos = Vector(4, 2, 0), wmAng = Angle(0, 90, 90), wmScale = 0.92 },
 }
 local ORDER = { "tf2", "riot", "heavy", "hevy" }
+-- Inventory picture: the shield itself (rhylib_inventory cl_15_icons, first installed).
+SWEP.InvIconModels = { SHIELDS.riot.model, SHIELDS.heavy.model, SHIELDS.hevy.model, SHIELDS.tf2.model }
 
 local function shieldProp()
     local want = Rhylib.Config.Get("weapons", "riotShield")

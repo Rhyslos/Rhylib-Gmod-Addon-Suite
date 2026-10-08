@@ -70,7 +70,7 @@ SWEP.UsesCell = false
 SWEP.StartMags = 2
 SWEP.StartCells = 0
 
-SWEP.InvW = 5
+SWEP.InvW = 6   -- (long guns are 6 long, the inventory is 6 wide; owner 2026-10-07)
 SWEP.InvH = 1
 SWEP.InvLarge = true
 SWEP.InvWeight = 7         -- kg

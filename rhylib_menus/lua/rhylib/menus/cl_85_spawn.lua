@@ -50,6 +50,9 @@ local function iconMat(paths)
 end
 SP.IconMat = iconMat
 
+-- The window's background: solid medium grey (owner 2026-10-07: not see-through).
+SP.BG = Color(70, 73, 76, 255)
+
 function SP.AddTab(id, def)
     def.id = id
     if not SP.tabs[id] then SP.dirty = true end   -- (a re-add of the same tab needs no rebuild)
@@ -97,6 +100,11 @@ function SP.Tile(parent, it)
         surface.PlaySound("ui/buttonclickrelease.wav")
         if it.run then it.run() end
     end
+    local entered = b.OnCursorEntered
+    function b:OnCursorEntered(...)
+        if entered then entered(self, ...) end
+        SP.Preview(self, { model = SP.ModelOf(it), mat = it.mat, title = name, sub = it.extra or (it.spec and it.spec.name) })
+    end
     function b:DoRightClick()
         if not (it.menu or (it.spec and SP.PickForTool)) then return end
         local m = K.Menu()
@@ -136,7 +144,155 @@ function SP.ModelTile(parent, model, skin, body, run)
         surface.SetDrawColor(self:IsHovered() and C.accent or C.edgeDark)
         surface.DrawOutlinedRect(0, 0, w, h)
     end
+    local entered = ic.OnCursorEntered
+    function ic:OnCursorEntered(...)
+        if entered then entered(self, ...) end
+        SP.Preview(self, { model = model, skin = skin, body = body, title = string.GetFileFromFilename(model), sub = model })
+    end
     return ic
+end
+
+--------------------------------------------------------------------------
+-- Hover preview (owner 2026-10-07: helps find the right model): after a
+-- short hover, a big turning view of the model under the mouse (or the
+-- tile's icon, enlarged, when there's no model) next to the cursor.
+-- One panel, drawn on top, never takes the mouse; a Think hook exists
+-- only while something is hovered.
+--------------------------------------------------------------------------
+
+local PREVIEW_DELAY = 0.18
+
+-- The model behind a tile, if we can find one (weapons, NPCs, vehicles,
+-- entities that name a model).
+function SP.ModelOf(it)
+    if it.model then return it.model end
+    local sp = it.spec
+    if not sp then return nil end
+    local m
+    if sp.kind == "weapon" then
+        local w = weapons.Get(sp.name)
+        m = w and (w.PropModel or w.WorldModel)
+    elseif sp.kind == "npc" then
+        m = sp.npc and sp.npc.Model
+    elseif sp.kind == "vehicle" then
+        local v = (list.Get("Vehicles") or {})[sp.name]
+        m = v and v.Model
+    elseif sp.kind == "entity" then
+        local e = scripted_ents.GetStored(sp.name)
+        m = e and e.t and e.t.Model
+    end
+    if isstring(m) and m ~= "" and util.IsValidModel(m) then return m end
+    return nil
+end
+
+local function previewPanel()
+    if IsValid(SP.pv) then return SP.pv end
+    local S = K.S
+    local p = vgui.Create("DPanel")
+    p:SetDrawOnTop(true)
+    p:SetMouseInputEnabled(false)
+    p:SetKeyboardInputEnabled(false)
+    p:SetVisible(false)
+    p:SetSize(S(340), S(392))
+    local view = S(328)
+    local mdl = vgui.Create("DModelPanel", p)
+    mdl:SetMouseInputEnabled(false)
+    mdl:SetPos(S(6), S(6))
+    mdl:SetSize(view, view)
+    mdl:SetFOV(35)
+    -- the camera circles the model (turning the model would swing it
+    -- about its origin, off centre)
+    function mdl:LayoutEntity(ent)
+        local c, d = p.center, p.dist
+        if not c then return end
+        local a = math.rad((RealTime() - (p.shownAt or 0)) * 40 + 35)
+        self:SetCamPos(c + Vector(math.cos(a), math.sin(a), 0.45):GetNormalized() * d)
+        self:SetLookAt(c)
+    end
+    p.mdl = mdl
+    function p:Paint(w, h)
+        K.Plate(0, 0, w, h, { bg = SP.BG, ticks = "all" })
+        surface.SetDrawColor(C.row)
+        surface.DrawRect(S(6), S(6), view, view)
+        local info = self.info
+        if not info then return end
+        if not info.model and info.mat then
+            surface.SetDrawColor(255, 255, 255, 255)
+            surface.SetMaterial(info.mat)
+            surface.DrawTexturedRect(S(6) + S(24), S(6) + S(24), view - S(48), view - S(48))
+        elseif not info.model then
+            draw.SimpleText("No preview", K.Font(16, 600), S(6) + view * 0.5, S(6) + view * 0.5, C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
+        draw.SimpleText(K.Fit(info.title or "", K.Font(14, 700), w - S(16)), K.Font(14, 700), S(10), S(6) + view + S(16), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        if info.sub then
+            draw.SimpleText(K.Fit(info.sub, K.Font(12), w - S(16)), K.Font(12), S(10), S(6) + view + S(36), C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        end
+    end
+    function p:PaintOver(w, h)
+        surface.SetDrawColor(C.edgeDark)
+        surface.DrawOutlinedRect(S(6), S(6), view, view)
+    end
+    SP.pv = p
+    return p
+end
+
+local function hidePreview()
+    SP.pvOwner, SP.pvInfo = nil, nil
+    if IsValid(SP.pv) then
+        SP.pv:SetVisible(false)
+        SP.pv.info = nil
+    end
+    Rhylib.Hook.Remove("Think", "menus.spawnpreview")
+end
+SP.HidePreview = hidePreview
+
+local function placePreview(p)
+    local mx, my = input.GetCursorPos()
+    local w, h = p:GetSize()
+    local gap = K.S(22)
+    local x, y = mx + gap, my + gap
+    if x + w > ScrW() then x = mx - gap - w end
+    if y + h > ScrH() then y = ScrH() - h - K.S(4) end
+    p:SetPos(math.max(0, x), math.max(0, y))
+end
+
+local function previewThink()
+    local o = SP.pvOwner
+    if not (IsValid(o) and o:IsVisible() and o:IsHovered() and SP.IsOpen()) then hidePreview() return end
+    if RealTime() - SP.pvAt < PREVIEW_DELAY then return end
+    local p = previewPanel()
+    local info = SP.pvInfo
+    if p.info ~= info then
+        p.info = info
+        p.center = nil
+        if info.model then
+            p.mdl:SetVisible(true)
+            p.mdl:SetModel(info.model)
+            local ent = p.mdl.Entity
+            if IsValid(ent) then
+                ent:SetSkin(tonumber(info.skin) or 0)
+                if info.body and info.body ~= "" then ent:SetBodyGroups(info.body) end
+                local mn, mx = ent:GetRenderBounds()
+                local size = math.max(mx:Distance(mn), 1)
+                p.center = (mn + mx) * 0.5
+                p.dist = size * 1.6
+                if p.mdl.SetFarZ then p.mdl:SetFarZ(p.dist * 4 + 512) end
+            end
+        else
+            p.mdl:SetVisible(false)
+        end
+        p.shownAt = RealTime()
+        p:SetVisible(true)
+        p:MoveToFront()
+    end
+    placePreview(p)
+end
+
+-- Start (or switch) the preview for a hovered tile.
+function SP.Preview(owner, info)
+    SP.pvOwner, SP.pvInfo, SP.pvAt = owner, info, RealTime()
+    if IsValid(SP.pv) and SP.pv:IsVisible() then SP.pvAt = 0 end   -- (already showing: switch at once)
+    Rhylib.Hook.Add("Think", "menus.spawnpreview", previewThink)
 end
 
 -- A tab with categories on the left and tiles on the right.
@@ -262,7 +418,7 @@ local function build()
     f:DockPadding(S(12), S(46), S(12), S(12))
     f.bodies = {}
     function f:Paint(w, h)
-        K.Plate(0, 0, w, h, { title = "Spawn", sub = "R: close · hold R: peek · R twice: the old Q menu · Esc: close", ticks = "all", header = S(34) })
+        K.Plate(0, 0, w, h, { bg = SP.BG, title = "Spawn", sub = "R: close · hold R: peek · R twice: the old Q menu · Esc: close", ticks = "all", header = S(34) })
     end
     -- (clicking the window takes the keyboard back from a text box)
     function f:OnMousePressed()
@@ -353,6 +509,7 @@ function SP.Close()
     SP.win:SetKeyboardInputEnabled(false)
     SP.win:SetMouseInputEnabled(false)
     SP.win:SetVisible(false)
+    hidePreview()
     return true
 end
 
