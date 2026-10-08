@@ -89,3 +89,60 @@ Rhylib.Net.Receive("inv.icontune", function(ply)
         ply:ChatPrint((reset and "Picture back to automatic: " or "Picture saved for everyone: ") .. (Items.defs[id].name or id))
     end)
 end, { rate = 4, burst = 8 })
+
+-- Staff / server console: make everyone's (or one player's) pictures again.
+--   rhylib_icons_redraw_all            everyone
+--   rhylib_icons_redraw_all <name>     one player (part of the name works)
+Rhylib.Net.Register("inv.iconsredraw")
+concommand.Add("rhylib_icons_redraw_all", function(ply, _, args)
+    local function run()
+        local target
+        local who = args[1] and string.lower(table.concat(args, " ")) or nil
+        if who then
+            for _, p in ipairs(player.GetAll()) do
+                if string.find(string.lower(p:Nick()), who, 1, true) then target = p break end
+            end
+            if not target then
+                local msg = "[Rhylib] No player matches " .. who
+                if IsValid(ply) then ply:ChatPrint(msg) else print(msg) end
+                return
+            end
+        end
+        Rhylib.Net.Start("inv.iconsredraw")
+        if target then net.Send(target) else net.Broadcast() end
+        local msg = "[Rhylib] Inventory pictures redrawn for " .. (target and target:Nick() or "everyone")
+        if IsValid(ply) then ply:ChatPrint(msg) else print(msg) end
+    end
+    if not IsValid(ply) then run() return end   -- (server console)
+    Rhylib.Perms.Check(ply, "rhylib.inventory.icons", function(ok)
+        if ok and IsValid(ply) then run() else ply:ChatPrint("You can't do that") end
+    end)
+end, nil, "Make the inventory item pictures again for everyone, or for one player (name)")
+
+-- Load every item model on the server at start, so it's in every client's
+-- model list from the moment they join (a model nobody has used yet draws
+-- nothing in the picture maker: guns in a cabinet nobody has held).
+Rhylib.Hook.Add("InitPostEntity", "inventory.iconprecache", function()
+    timer.Simple(1, function()
+        if Items.EnsureReady then Items.EnsureReady() end
+        local seen, n = {}, 0
+        local function add(m)
+            if isstring(m) and m ~= "" and not seen[m] and util.IsValidModel(m) then
+                seen[m] = true
+                util.PrecacheModel(m)
+                n = n + 1
+            end
+        end
+        for _, def in pairs(Items.defs) do
+            add(def.model)
+            add(def.iconModel)
+            local sw = def.weapon and weapons.Get(def.weapon)
+            if sw then
+                add(sw.PropModel)
+                add(sw.WorldModel)
+                add(sw.InvIconModel)
+                for _, m in ipairs(istable(sw.InvIconModels) and sw.InvIconModels or {}) do add(m) end
+            end
+        end
+    end)
+end)

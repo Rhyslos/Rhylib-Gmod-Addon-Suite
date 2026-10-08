@@ -314,13 +314,21 @@ local function shootModel(ent, spec, tx, ty, tw, th)
         local d = Angle(-Icons.ANGLED[2], Icons.ANGLED[1], 0):Forward()   -- (from the model toward the camera)
         auto = (-d):Angle()
     else
-        -- side on: look along the thinnest axis, longest across a wide
-        -- picture (down a tall one; up for an upright square one)
+        -- side on: the longest axis across a wide picture (down a tall
+        -- one; up for an upright square one)
         local ext = maxs - mins
         local axes = { { Vector(1, 0, 0), ext.x }, { Vector(0, 1, 0), ext.y }, { Vector(0, 0, 1), ext.z } }
         table.sort(axes, function(a, b) return a[2] > b[2] end)
         local H, V = axes[1][1], axes[2][1]
-        if th > tw or (tw == th and axes[1][1].z == 1) then H, V = axes[2][1], axes[1][1] end
+        if th > tw or (tw == th and axes[1][1].z == 1) then
+            H, V = axes[2][1], axes[1][1]
+        elseif tw > th then
+            -- Guns: looking along the thinnest axis showed them from above
+            -- (owner 2026-10-08, muzzle right), so the gun's up is that
+            -- axis toward the camera: turn a quarter round the barrel to
+            -- see its side, upright, muzzle still right.
+            V = H:Cross(V)
+        end
         if spec.flip then H = -H end
         auto = V:Cross(H):AngleEx(V)
     end
@@ -341,7 +349,9 @@ local function shootModel(ent, spec, tx, ty, tw, th)
         render.SetColorModulation(1, 1, 1)
     end
     local pr0, pr1, pu0, pu1 = silhouette(center, ang, r0, r1, u0, u1, f0, f1, draw)
-    if not pr0 then pr0, pr1, pu0, pu1 = r0, r1, u0, u1 end   -- (nothing lit: the bounds)
+    -- (nothing drawn: the model isn't loaded yet; fail, so it's tried again
+    -- instead of keeping an empty picture)
+    if not pr0 then error("the model drew nothing (not loaded yet?): " .. tostring(spec.model)) end
     pr0, pr1, pu0, pu1 = finalBox(spec, pr0, pr1, pu0, pu1, tw, th)
     render.ClearDepth()
     startCam(tx, ty, tw, th, center, ang, pr0, pr1, pu0, pu1, f0, f1, 1)
@@ -447,14 +457,21 @@ local function renderTile(rt, rtW, rtH, x, y, tw, th, body, sp)
         render.Clear(body.r, body.g, body.b, 255, true, true)
         render.SetViewPort(0, 0, rtW, rtH)
         render.OverrideAlphaWriteEnable(true, false)   -- (alpha stays 255 from the clear)
+        -- (a model nobody has used yet must be loaded first, or it draws
+        -- nothing: guns in a cabinet you've never held)
+        util.PrecacheModel(sp.model)
         local ent = ClientsideModel(sp.model, RENDERGROUP_OPAQUE)
         local ok = IsValid(ent)
         if ok then
             ent:SetNoDraw(true)
             ent:SetPos(vector_origin)
             ent:SetAngles(angle_zero)
-            ok = pcall(sp.part and shootPart or shootModel, ent, sp, x, y, tw, th)
+            local err
+            ok, err = pcall(sp.part and shootPart or shootModel, ent, sp, x, y, tw, th)
+            if not ok then Icons.lastError = tostring(err) end
             ent:Remove()
+        else
+            Icons.lastError = "couldn't create the model " .. tostring(sp.model)
         end
         -- (put everything back, whatever happened)
         while camDepth > 0 do endCam() end
@@ -468,7 +485,8 @@ local function renderTile(rt, rtW, rtH, x, y, tw, th, body, sp)
         render.PopRenderTarget()
         return ok
     end
-    local _, ok = pcall(attempt)
+    local fine, ok = pcall(attempt)
+    if not fine then Icons.lastError = tostring(ok) ok = false end
     if lightMode ~= 0 then render.SetLightingMode(lightMode) end
     return ok
 end
@@ -513,6 +531,9 @@ local function build(def)
 end
 Icons.RenderTile = renderTile
 
+local tries, generation = {}, 0
+local enqueue
+
 local function process()
     -- one a frame (each reads its silhouette back from the GPU); ones
     -- already made are skipped for free
@@ -521,15 +542,36 @@ local function process()
         queued[id] = nil
         local def = Items.Get(id)
         if def and not entries[id] then
+            Icons.lastError = nil
             local ok, built = pcall(build, def)
-            if not (ok and built) then entries[id] = false end   -- (no room / failed: not drawn)
+            if not ok then Icons.lastError = tostring(built) end
+            if not (ok and built) then
+                -- Failed (often a model not ready yet while loading in): try
+                -- again a little later, a few times, then give up and say why.
+                entries[id] = false
+                local n = (tries[id] or 0) + 1
+                tries[id] = n
+                if n < 5 then
+                    local gen = generation
+                    timer.Simple(2 * n, function()
+                        if gen == generation and entries[id] == false then
+                            entries[id] = nil
+                            enqueue(id)
+                        end
+                    end)
+                else
+                    print("[Rhylib] No inventory picture for " .. id .. ": " .. tostring(Icons.lastError or "no room"))
+                end
+            else
+                tries[id] = nil
+            end
             break
         end
     end
     if #queue == 0 then Rhylib.Hook.Remove("PreRender", "inventory.icons") end
 end
 
-local function enqueue(id)
+function enqueue(id)
     if queued[id] then return end
     queued[id] = true
     queue[#queue + 1] = id
@@ -574,27 +616,64 @@ function Icons.Draw(def, x, y, w, h, rot, alpha)
     return true
 end
 
--- Make every picture again (lazily, as they're drawn).
+-- Make every picture again (all of them right away once we've loaded in,
+-- so storages and armouries never wait for one).
 function Icons.Reset()
     entries, queue, queued, builtFor, reuse = {}, {}, {}, nil, {}
+    tries, generation = {}, generation + 1
     for _, p in pairs(pages) do p.ready = false end
     Rhylib.Hook.Remove("PreRender", "inventory.icons")
+    if Icons.loadedIn then
+        local gen = generation
+        timer.Simple(0.5, function() if gen == generation and Icons.PrebuildAll then Icons.PrebuildAll() end end)
+    end
 end
 Icons.Reset()
 
-concommand.Add("rhylib_inventory_icons", function() Icons.Reset() print("[Rhylib] Inventory pictures will be made again") end)
+-- Make your own pictures again (if they ever look wrong or go missing);
+-- staff can do it for everyone with rhylib_icons_redraw_all (server).
+local function redraw()
+    Icons.loadedIn = true
+    Icons.Reset()
+    print("[Rhylib] Inventory pictures are being made again")
+end
+concommand.Add("rhylib_icons_redraw", redraw, nil, "Make your inventory item pictures again")
+concommand.Add("rhylib_inventory_icons", redraw)   -- (old name)
+Rhylib.Net.Receive("inv.iconsredraw", redraw)
 -- Render targets can lose their contents when the screen mode changes or
 -- the game comes back from alt-tab (device reset): make them again then.
 -- Also when your player model changes (the gear part pictures use it).
 Rhylib.Hook.Add("OnScreenSizeChanged", "inventory.icons", function() Icons.Reset() end)
-local hadFocus = true
+-- Only the wearable parts (they're cut out of your own player model): made
+-- again in their old spots, right away.
+function Icons.RedrawGear()
+    local GG = Rhylib.Gear
+    if not (GG and GG.SHOWS) then return end
+    for id in pairs(GG.SHOWS) do
+        local e = entries[id]
+        if e then reuse[id] = { page = e.page, x = e.x, y = e.y, tw = e.tw, th = e.th } end
+        entries[id], tries[id] = nil, nil
+        if Items.defs[id] then enqueue(id) end
+    end
+end
+
+-- Job or model changed (owner 2026-10-08: switching jobs should show the
+-- parts of the model you switched into): the gear pictures again, once
+-- the new model has settled (and again a moment later, in case the
+-- model or its bodygroups arrive after the job).
+local hadFocus, lastModel, lastTeam = true, nil, nil
 timer.Create("Rhylib.Inventory.IconFocus", 1, 0, function()
     local f = system.HasFocus()
     if f and not hadFocus and next(entries) ~= nil then Icons.Reset() end
     hadFocus = f
     local me = LocalPlayer()
-    local m = IsValid(me) and me:GetModel() or nil
-    if m and builtFor and m ~= builtFor then Icons.Reset() end
+    if not IsValid(me) then return end
+    local m, tm = me:GetModel(), me:Team()
+    if lastModel and (m ~= lastModel or tm ~= lastTeam) and Icons.loadedIn then
+        timer.Create("Rhylib.Inventory.IconGear", 1, 1, function() Icons.RedrawGear() end)
+        timer.Create("Rhylib.Inventory.IconGear2", 4, 1, function() Icons.RedrawGear() end)
+    end
+    lastModel, lastTeam = m, tm
 end)
 
 --------------------------------------------------------------------------
@@ -602,8 +681,33 @@ end)
 --------------------------------------------------------------------------
 
 -- Queue every item's picture, so the inventory is ready when opened.
+-- Every model an item picture can use (guns' props and world models,
+-- item models, explicit picture models).
+function Icons.ItemModels()
+    local out, seen = {}, {}
+    local function add(m)
+        if isstring(m) and m ~= "" and not seen[m] then seen[m] = true out[#out + 1] = m end
+    end
+    for _, def in pairs(Items.defs) do
+        add(def.model)
+        add(def.iconModel)
+        local sw = def.weapon and weapons.Get(def.weapon)
+        if sw then
+            add(sw.PropModel)
+            add(sw.WorldModel)
+            add(sw.InvIconModel)
+            for _, m in ipairs(istable(sw.InvIconModels) and sw.InvIconModels or {}) do add(m) end
+        end
+    end
+    return out
+end
+
 function Icons.PrebuildAll()
+    Icons.loadedIn = true
     if Items.EnsureReady then Items.EnsureReady() end
+    for _, m in ipairs(Icons.ItemModels()) do
+        if util.IsValidModel(m) then util.PrecacheModel(m) end
+    end
     for id in pairs(Items.defs) do
         if entries[id] == nil then enqueue(id) end
     end

@@ -398,23 +398,14 @@ function Inv.Deposit(ply, uid, x, y, rot, single)
     end
 
     if storage.kind == "depot" then
-        -- Handing stocked gear back: it's just removed.
-        -- (storage.returnable: more ids it takes back than it hands out)
-        local stocked = storage.returnable and storage.returnable[inst.id] or false
-        for _, id in ipairs(storage.stock) do
-            if id == inst.id then stocked = true break end
-        end
-        if not stocked or not (inst.data and inst.data.issued) then
-            -- Only issued gear goes back (your own items would just vanish).
-            Inv.Note(ply, stocked and "Only issued gear can be handed back here" or "That doesn't go in here")
-            I.sendSet(ply, st, inst)
-            return
-        end
+        -- Handing in: anything goes into any depot and is gone (owner
+        -- 2026-10-08: a quick way to get rid of a gun, a part or ammo
+        -- without finding the right cabinet; not just its own issued stock).
         if n >= inst.count then I.removeInst(ply, st, uid) else
             inst.count = inst.count - n
             I.update(ply, st, inst)
         end
-        if inst.data.loadout then hook.Run("Rhylib.LoadoutDropped", ply, inst.id) end   -- (rhylib_gear)
+        if inst.data and inst.data.loadout then hook.Run("Rhylib.LoadoutDropped", ply, inst.id) end   -- (rhylib_gear)
         return
     end
 

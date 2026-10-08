@@ -946,11 +946,10 @@ function PANEL:DropAllowed(d, r, tx, ty)
     local probe = { uid = -1, id = d.inst.id, count = d.inst.count, data = d.inst.data }
 
     if toExt and Inv.ext and Inv.ext.depot then
+        -- Anything can be handed in (and is gone): owner 2026-10-08, no
+        -- walking to the right cabinet just to get rid of something.
         if fromExt then return false end
-        for _, o in pairs(c.items) do
-            if o.id == d.inst.id then return true end  -- handing stocked gear back
-        end
-        return false
+        return Items.CanLeave(Inv, d.inst) and true or false
     end
     if toExt and fromExt then
         return Items.MergeTarget(c.items, d.inst, tx, ty) ~= nil
@@ -990,6 +989,15 @@ function PANEL:PaintDrag()
         surface.DrawRect(x, y, pw, ph)
         surface.SetDrawColor(ok and COL_OK_LINE or COL_BAD_LINE)
         surface.DrawOutlinedRect(x, y, pw, ph, math.max(1, math.floor(2 * s)))
+        if ok and r.cid == EXT and Inv.ext and Inv.ext.depot then
+            draw.SimpleTextOutlined("HAND IN (DISCARD)", self:Font(13, 700), x + pw * 0.5, y - math.floor(4 * s), COL_BAD_LINE, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, COL_TEXT_EDGE)
+        end
+    elseif not d.fromExt and not d.fromHotbar then
+        -- not over a grid or slot: letting go drops it
+        local mx, my = self:CursorPos()
+        if not (d.fromHotbar or self:HotbarAt(mx, my)) then
+            draw.SimpleTextOutlined("DROP", self:Font(14, 700), mx, my - math.floor(30 * s), COL_BAD_LINE, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, COL_TEXT_EDGE)
+        end
     end
 
     -- The item follows the cursor.
@@ -1234,7 +1242,12 @@ function PANEL:OnMouseReleased(code)
     end
 
     local r, tx, ty = self:DragTarget(d)
-    if not r then return end
+    if not r then
+        -- (owner 2026-10-08: let go anywhere that isn't a grid or slot,
+        -- inside the window too, and it's dropped)
+        Inv.RequestDrop(d.inst, d.single)
+        return
+    end
     if r.cid ~= d.inst.c or tx ~= d.inst.x or ty ~= d.inst.y or d.rot ~= d.inst.rot then
         Inv.RequestMove(d.inst, r.cid, tx, ty, d.rot, d.single)
     end
