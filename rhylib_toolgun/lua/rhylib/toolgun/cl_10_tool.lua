@@ -143,6 +143,7 @@ local function buildTab(body)
                     or e.preset and "LMB: places the whole squad in a grid facing you (front row where you aim, commander and B2s at the back)"
                     or (e.class .. "\nClick: pick it for the toolgun (LMB places)"),
                 mat = SP.IconMat({ sp.IconOverride, "entities/" .. (e.class or e.id) .. ".png" }),
+                model = Tool.EntryModel(e),   -- (3D tile picture and hover preview)
                 selected = function() return cvEntry:GetString() == e.id end,
                 run = function()
                     RunConsoleCommand("rhylib_tool_entry", e.id)

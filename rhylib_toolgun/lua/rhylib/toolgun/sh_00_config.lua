@@ -124,6 +124,68 @@ function Tool.Entries()
     return list
 end
 
+-- The model a toolgun entry places, for the spawn window's tile picture
+-- and hover preview (owner 2026-10-08). Mirrors how each entity picks its
+-- model in Initialize (module config, then that entity's fallback).
+-- Orders have none; presets show their main unit.
+local PRESET_CLASS = { clone_squad = "rhylib_ct_trooper", clone_company = "rhylib_ct_trooper", droid_small = "rhylib_b1",
+    droid_medium = "rhylib_b1", droid_large = "rhylib_b1", droid_b2 = "rhylib_b2", droid_mortar = "rhylib_b2_cannon" }
+-- (on a client, util.IsValidModel is false for a model nobody has loaded
+-- yet even when it's installed: check the file instead)
+local function modelExists(m)
+    return isstring(m) and m ~= "" and (util.IsValidModel(m) or file.Exists(m, "GAME"))
+end
+local function ok(m) return modelExists(m) and m or nil end
+local function cfg(module, key, fallback) return ok(Rhylib.Config.Get(module, key)) or fallback end
+
+function Tool.ClassModel(class)
+    local t = class and scripted_ents.Get(class)
+    if not t then return nil end
+    -- droids and clones (rhylib_droids kinds)
+    local D = Rhylib.Droids
+    if t.DroidKind and D and D.KINDS then
+        local k = D.KINDS[t.DroidKind] or D.KINDS.b1
+        return ok(D.KindModel and D.KindModel(k)) or (t.IsRhylibClone and D.CLONE_FALLBACK or D.B1_MODEL)
+    end
+    -- armouries, cabinets, crates, lockers
+    if t.ModelKey and Rhylib.Armoury and Rhylib.Armoury.MODELS and Rhylib.Armoury.MODELS[t.ModelKey] and (t.Base == "rhylib_armoury_base" or class == "rhylib_armoury_base") then
+        return ok(Rhylib.Armoury.MODELS[t.ModelKey])
+    end
+    -- battalion computer, medical holotable
+    if t.ModelKey and Rhylib.Datapad and Rhylib.Datapad.MODELS and Rhylib.Datapad.MODELS[t.ModelKey] then
+        return ok(Rhylib.Datapad.MODELS[t.ModelKey])
+    end
+    -- comms jammers
+    local R = Rhylib.Radio
+    if R and R.JAMMER_SIZES and R.JAMMER_SIZES[class] then
+        local key = R.JAMMER_SIZES[class].key or ""
+        return ok(R.Cfg("jammerModel" .. key)) or ok(R.Cfg("jammerFallbackModel")) or "models/props_lab/reciever01a.mdl"
+    end
+    local byClass = {
+        rhylib_bacta_tank = function() return cfg("medical", "tankModel", "models/props_c17/FurnitureFridge001a.mdl") end,
+        rhylib_chem_bench = function() return cfg("medical", "benchModel", "models/props_c17/FurnitureTable001a.mdl") end,
+        rhylib_med_sofa = function() return cfg("medical", "sofaModel", "models/props_c17/FurnitureCouch001a.mdl") end,
+        rhylib_jail_terminal = function() return cfg("mp", "terminalModel", "models/props_combine/combine_interface001.mdl") end,
+        rhylib_property_locker = function() return cfg("mp", "propertyModel", "models/props_c17/lockers001a.mdl") end,
+        rhylib_jail_cell = function() return "models/hunter/plates/plate1x1.mdl" end,
+        rhylib_spawn_point = function() return cfg("spawns", "model", "models/props_combine/combine_mine01.mdl") end,
+        rhylib_event_spawn = function() return cfg("spawns", "model", "models/props_combine/combine_mine01.mdl") end,
+        rhylib_training_beacon = function() return cfg("training", "beaconModel", "models/props_combine/combine_mine01.mdl") end,
+        rhylib_test_dummy = function() return ok("models/ct_trp/pm_ct_trp.mdl") or "models/aussiwozzi/cgi/base/unassigned_cpt.mdl" end,
+        rhylib_test_dummy_tough = function() return ok("models/ct_trp/pm_ct_trp.mdl") or "models/aussiwozzi/cgi/base/unassigned_cpt.mdl" end,
+        rhylib_droid_marker = function() return "models/hunter/blocks/cube025x025x025.mdl" end,
+    }
+    local f = byClass[class]
+    if f then return ok(f()) end
+    return ok(t.Model) or ok(t.WorldModel)
+end
+
+function Tool.EntryModel(e)
+    if e.preset then return Tool.ClassModel(PRESET_CLASS[e.preset]) end
+    if e.order or e.follow then return nil end
+    return Tool.ClassModel(e.class)
+end
+
 function Tool.ById(id)
     for _, e in ipairs(Tool.Entries()) do
         if e.id == id then return e end

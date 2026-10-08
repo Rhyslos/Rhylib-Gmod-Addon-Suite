@@ -83,6 +83,8 @@ function SP.Tile(parent, it)
             surface.SetMaterial(it.mat)
             local pad = S(8)
             surface.DrawTexturedRect((w - is) * 0.5 + pad, pad, is - pad * 2, is - pad * 2)
+        elseif self.modelPic then
+            -- (the 3D picture is a child panel, drawn over this)
         else
             draw.SimpleText(initials, K.Font(26, 700), w * 0.5, is * 0.5, C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         end
@@ -95,6 +97,20 @@ function SP.Tile(parent, it)
         surface.SetDrawColor(sel and C.accent or C.edgeDark)
         surface.DrawOutlinedRect(0, 0, w, h, sel and 2 or 1)
         return true
+    end
+    -- No icon image but a model (our own toolgun entries): the engine's
+    -- spawn icon of it, made once and kept on disk like the Q menu's.
+    if not it.mat and isstring(it.model) and it.model ~= "" then
+        local pad = S(8)
+        local is = S(104) - S(26)
+        local mi = vgui.Create("ModelImage", b)
+        mi:SetMouseInputEnabled(false)
+        util.PrecacheModel(it.model)   -- (loaded first, or its spawn icon comes out empty)
+        mi:SetModel(it.model)
+        mi:SetPos(pad, pad)
+        mi:SetSize(is - pad * 2 + S(10), is - pad * 2)
+        mi:SetPos((S(104) - mi:GetWide()) * 0.5, pad)
+        b.modelPic = mi
     end
     function b:DoClick()
         surface.PlaySound("ui/buttonclickrelease.wav")
@@ -181,7 +197,8 @@ function SP.ModelOf(it)
         local e = scripted_ents.GetStored(sp.name)
         m = e and e.t and e.t.Model
     end
-    if isstring(m) and m ~= "" and util.IsValidModel(m) then return m end
+    -- (file check: IsValidModel is false on clients for models not loaded yet)
+    if isstring(m) and m ~= "" and (util.IsValidModel(m) or file.Exists(m, "GAME")) then return m end
     return nil
 end
 
@@ -267,6 +284,7 @@ local function previewThink()
         p.center = nil
         if info.model then
             p.mdl:SetVisible(true)
+            util.PrecacheModel(info.model)
             p.mdl:SetModel(info.model)
             local ent = p.mdl.Entity
             if IsValid(ent) then

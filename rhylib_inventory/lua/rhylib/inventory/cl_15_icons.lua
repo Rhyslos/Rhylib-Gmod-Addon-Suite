@@ -67,7 +67,12 @@ Icons.ANGLED = { 35, 25 }   -- other items: front left, a little above
 -- What picture an item gets
 --------------------------------------------------------------------------
 
-local function valid(m) return isstring(m) and m ~= "" and util.IsValidModel(m) end
+-- (on a client, util.IsValidModel is false for a model nobody has loaded
+-- yet even when it's installed: check the file instead)
+local function modelExists(m)
+    return isstring(m) and m ~= "" and (util.IsValidModel(m) or file.Exists(m, "GAME"))
+end
+local function valid(m) return modelExists(m) end
 
 local function autoSpec(def)
     local sw = def.weapon and weapons.Get(def.weapon)
@@ -706,7 +711,7 @@ function Icons.PrebuildAll()
     Icons.loadedIn = true
     if Items.EnsureReady then Items.EnsureReady() end
     for _, m in ipairs(Icons.ItemModels()) do
-        if util.IsValidModel(m) then util.PrecacheModel(m) end
+        if valid(m) then util.PrecacheModel(m) end
     end
     for id in pairs(Items.defs) do
         if entries[id] == nil then enqueue(id) end
