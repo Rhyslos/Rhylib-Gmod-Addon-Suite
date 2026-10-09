@@ -1,8 +1,8 @@
 --[[
     Helmet lights (client): every player with NW2Bool rhylib_lights on
-    gets two hard beams from the sides of the helmet, each turned outwards
-    so two circles land side by side with a dark gap between them (and
-    above and below the middle). The server switches them on the
+    gets two hard beams from the sides of the helmet, each turned outwards,
+    overlapping a little in the middle (lightGap), the overlap dimmed in
+    each beam's own texture (buildBeams). The server switches them on the
     helmet gear key (default L) or the flashlight key (sv_20_gear.lua). Only your own beams cast shadows.
 ]]
 
@@ -29,6 +29,54 @@ local function cfg(k, d)
     return v == nil and d or v
 end
 
+-- Each beam's own texture (2026-10-09n, owner: less light where the two
+-- overlap): the flashlight texture copied into a render target with the
+-- inner band (the part that overlaps the other beam, from lightGap and
+-- lightFov) darkened to lightOverlapDim, so the middle isn't twice as
+-- bright. Rebuilt when those settings change. lightOverlapFlip mirrors it
+-- in case the darkening lands on the outer side.
+local beamTex = { key = nil }
+local function buildBeams()
+    local fov, gap = cfg("lightFov", 26), cfg("lightGap", -4.7)
+    local dim, flip = cfg("lightOverlapDim", 0.6), cfg("lightOverlapFlip", false)
+    local key = table.concat({ tex(), fov, gap, dim, tostring(flip) }, "|")
+    if beamTex.key == key and beamTex[1] then return end
+    local frac = math.Clamp(-2 * gap / fov, 0, 0.9)   -- (share of each beam's width that overlaps)
+    local base = CreateMaterial("rhylib_helmetlight_src", "UnlitGeneric", { ["$basetexture"] = tex(), ["$vertexcolor"] = 1 })
+    base:SetTexture("$basetexture", tex())
+    for i, side in ipairs({ -1, 1 }) do
+        local rt = GetRenderTargetEx("rhylib_helmetlight_" .. i, 256, 256, RT_SIZE_LITERAL, MATERIAL_RT_DEPTH_NONE,
+            bit.bor(4, 8), 0, IMAGE_FORMAT_RGB888)
+        render.PushRenderTarget(rt)
+        beamTex.pushed = true
+        render.Clear(0, 0, 0, 255)
+        cam.Start2D()
+        beamTex.cam = true
+        surface.SetMaterial(base)
+        surface.SetDrawColor(255, 255, 255, 255)
+        surface.DrawTexturedRect(0, 0, 256, 256)
+        draw.NoTexture()
+        -- inner side: the left beam's right edge, the right beam's left edge
+        local innerRight = (side == -1)
+        if flip then innerRight = not innerRight end
+        local band = math.floor(256 * frac)
+        for x = 0, band - 1 do
+            -- (soft start over the first 40% of the band, then flat)
+            local t = math.min(1, (x + 1) / math.max(1, band * 0.4))
+            local a = math.floor(255 * (1 - dim) * t)
+            surface.SetDrawColor(0, 0, 0, a)
+            local col = innerRight and (256 - band + x) or (band - 1 - x)   -- (x = 0 where the band starts, toward the beam's middle)
+            surface.DrawRect(col, 0, 1, 256)
+        end
+        cam.End2D()
+        beamTex.cam = false
+        render.PopRenderTarget()
+        beamTex.pushed = false
+        beamTex[i] = rt
+    end
+    beamTex.key = key
+end
+
 -- Where the lamps sit and which way they point.
 local function lampOrigin(ply)
     local ang = ply:EyeAngles()
@@ -51,7 +99,7 @@ local function lampPose(pos, ang, side)
     local fov = cfg("lightFov", 26)
     local p = pos + ang:Right() * (4.5 * side) + ang:Forward() * -3 + ang:Up() * 1   -- (owner: 5 back, inside the helmet)
     local a = Angle(ang.p, ang.y, 0)
-    a:RotateAroundAxis(ang:Up(), -side * (fov * 0.5 + cfg("lightGap", -7)))
+    a:RotateAroundAxis(ang:Up(), -side * (fov * 0.5 + cfg("lightGap", -4.7)))
     return p, a
 end
 
@@ -66,7 +114,7 @@ local function make(ply)
     local l = {}
     for i = 1, 2 do
         local pt = ProjectedTexture()
-        pt:SetTexture(tex())
+        pt:SetTexture(beamTex[i] or tex())
         pt:SetColor(COLOUR)
         pt:SetNearZ(10)
         pt:SetEnableShadows(ply == LocalPlayer())
@@ -128,6 +176,9 @@ Rhylib.Hook.Add("Think", "gear.lights", function()
     end
     local range = cfg("lightRange", 2000)
     local fov, bright = cfg("lightFov", 26), cfg("lightBrightness", 3.5)
+    beamTex.want = next(keep) ~= nil   -- (built in PreRender, which can draw into render targets)
+    local retex = beamTex.key ~= beamTex.applied
+    if retex then beamTex.applied = beamTex.key end
     for ply in pairs(keep) do
         if lit(ply) then
             local l = lamps[ply] or make(ply)
@@ -141,10 +192,23 @@ Rhylib.Hook.Add("Think", "gear.lights", function()
                     pt:SetFOV(fov)
                     pt:SetFarZ(range)
                     pt:SetBrightness(bright)
+                    if retex then pt:SetTexture(beamTex[i] or tex()) end
                     pt:Update()
                 end
             end
         end
+    end
+end)
+
+Rhylib.Hook.Add("PreRender", "gear.lights.tex", function()
+    if not beamTex.want or beamTex.failed then return end
+    local ok, err = pcall(buildBeams)
+    if not ok then
+        -- (unwind what was left open, then use the plain texture for good)
+        if beamTex.cam then cam.End2D() beamTex.cam = false end
+        if beamTex.pushed then render.PopRenderTarget() beamTex.pushed = false end
+        beamTex[1], beamTex[2], beamTex.key, beamTex.failed = nil, nil, "failed", true
+        print("[Rhylib] Helmet light textures failed, using the plain one: " .. tostring(err))
     end
 end)
 
