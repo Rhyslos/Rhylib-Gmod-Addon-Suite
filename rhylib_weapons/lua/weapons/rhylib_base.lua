@@ -70,7 +70,13 @@ SWEP.FireRate = 600                 -- rounds per minute
 SWEP.Damage = 25
 SWEP.BoltSpeed = 7000               -- units per second (max 16383)
 SWEP.BoltColor = 1                  -- 1 blue, 2 red, 3 green
-SWEP.FireSound = "weapons/airboat/airboat_gun_energy1.wav"
+-- Sounds from the Star Wars shared resources pack (Workshop dependency; owner
+-- 2026-10-09). FireSound may be a list (one picked per shot); FireSoundLevel
+-- in dB (owner: 80 didn't carry far: rifles ~110 are heard across a big room
+-- or street, heavy weapons further). ReloadSound overrides the magazine reload.
+SWEP.FireSound = "weapons/dc15s/dc15s_fire.ogg"
+SWEP.FireSoundLevel = 110
+SWEP.ReloadSound = nil
 
 -- Fire modes this weapon can switch between (E + R), first one is the default.
 SWEP.FireModes = { "semi" }
@@ -101,10 +107,17 @@ SWEP.DualBonePos = Vector(0, 0, 0)  -- prop offset on each of its gun bones (for
 SWEP.DualBoneAng = Angle(0, 0, 0)
 SWEP.DualMags = 2                   -- "dual" mode holds this many magazines (one per pistol)
 SWEP.NoAim = false                  -- true: right mouse doesn't aim (the riot shield bashes instead)
+SWEP.AimWhileReloading = nil        -- true: reloading doesn't lower the aim (riot shields: the shield stays up)
 SWEP.CarrierHideBones = nil         -- more carrier bones to hide (e.g. a built-in shield): { "bone", ... }
 -- Extra props, each drawn on a bone in first and third person:
 -- { key, model, vmBone, vmPos, vmAng, vmScale, wmBone, wmPos, wmAng, wmScale }
-SWEP.ExtraProps = nil
+SWEP.ExtraProps = nil   -- { { key, model, vmBone, vmPos, vmAng, vmScale, wmBone, wmPos, wmAng, wmScale,
+                        --    vmAnchor = "view" (in the view, not on a bone), wmAnchor = "body" (bone position, body facing),
+                        --    vmPosAim / vmAngAim (first-person pose while aiming, blended by GetAimFrac),
+                        --    vmAimAnchor = "eyes" (with vmAnchor "view": the frame becomes the camera while aiming),
+                        --    wmAttach = "anim_attachment_LH" (third person on a model attachment, wmBone as fallback),
+                        --    vmIgnoreGunPose = true (with vmAnchor "view": not moved by the gun's AimPos, lowering,
+                        --    reload dip or VMOffset; view bob still applies) } }
 SWEP.CarrierInvisible = false       -- true: the carrier itself isn't drawn, only the hands (an HL2 c_ model as
                                     -- arms only); CarrierBone is then a hand bone and is not shrunk
 SWEP.CarrierBoneMods = nil          -- carrier bone moves every frame: { ["bone"] = { pos = Vector, ang = Angle } }
@@ -433,7 +446,7 @@ end
 
 function SWEP:Initialize()
     local c = self.CarrierVM
-    if c and self.CarrierBone and self.PropModel and self.PropFirstPerson ~= false and util.IsValidModel(c) then
+    if c and self.CarrierBone and self.PropModel and self.PropFirstPerson ~= false and (util.IsValidModel(c) or file.Exists(c, "GAME")) then   -- (client: a model nobody has loaded yet isn't "valid")
         self.ViewModel = c
         self.UseHands = true
         if self.CarrierFOV then self.ViewModelFOV = self.CarrierFOV end
@@ -640,7 +653,7 @@ if SERVER then
             and Rhylib.Weapons.Pouch.Count(owner, G.ITEM) > 0
         local total = n + (grapple and 1 or 0)
         if self:GetSafety() or total <= 1 then
-            self:EmitSound("Weapon_AR2.Empty", 60)
+            self:EmitSound("weapons/2misc_non_guns/sw_noammo.ogg", 60)
             return
         end
         local cur = self:GetFireMode()
@@ -652,13 +665,13 @@ if SERVER then
             if nextMode > n or self:ModeAllowed(nextMode) then break end
         end
         if nextMode == cur then
-            self:EmitSound("Weapon_AR2.Empty", 60)
+            self:EmitSound("weapons/2misc_non_guns/sw_noammo.ogg", 60)
             return
         end
         if nextMode == n + 1 then self.preGrappleMode = cur end
         self:SetFireMode(nextMode)
         self:SetBurstLeft(0)
-        self:EmitSound("weapons/smg1/switch_burst.wav", 60)
+        self:EmitSound("weapons/2misc_non_guns/sw_change.ogg", 60)
     end
 
     -- Back to the fire mode used before switching to grapple.
@@ -674,7 +687,7 @@ if SERVER then
         self:SetSafety(on)
         self:SetAiming(false)
         self:SetBurstLeft(0)
-        self:EmitSound("weapons/smg1/switch_single.wav", 60)
+        self:EmitSound("weapons/2misc_non_guns/sw_change.ogg", 60, 85)
     end
 end
 
@@ -722,13 +735,13 @@ function SWEP:CanPrimaryAttack()
     if self:TooHeavyToFire() then return false end
 
     if self:Clip1() <= 0 then
-        self:EmitSound("Weapon_Pistol.Empty")
+        self:EmitSound("weapons/2misc_non_guns/sw_noammo.ogg", 65)
         self:SetNextPrimaryFire(CurTime() + 0.3)
         return false  -- empty: just the click, reloading is up to you (R)
     end
 
     if self.UsesCell and self:GetCell() <= 0 then
-        self:EmitSound("Weapon_AR2.Empty")
+        self:EmitSound("weapons/2misc_non_guns/sw_noammo.ogg", 65)
         self:SetNextPrimaryFire(CurTime() + 0.3)
         return false
     end
@@ -749,7 +762,7 @@ function SWEP:PrimaryAttack()
     end
 
     if self:GetSafety() then
-        self:EmitSound("Weapon_Pistol.Empty", 60)
+        self:EmitSound("weapons/2misc_non_guns/sw_noammo.ogg", 60)
         return
     end
     if mode == "grapple" then
@@ -836,7 +849,10 @@ function SWEP:FireShot()
     local stun = self:GetFireModeName() == "stun"
     local over = self:GetFireModeName() == "overcharge"
     -- (Overcharge: the same shot, pitched down so it sounds heavier)
-    self:EmitSound(stun and "weapons/stunstick/spark2.wav" or self.FireSound, over and 85 or 80,
+    local snd = self.FireSound
+    if istable(snd) then snd = snd[math.floor(util.SharedRandom("rhylib.snd", 1, #snd + 0.999))] or snd[1] end
+    local lvl = (self.FireSoundLevel or 110) + (over and 5 or 0)
+    self:EmitSound(stun and "weapons/1misc_guns/sw_stun.ogg" or snd, stun and 85 or lvl,
         util.SharedRandom("rhylib.pitch", 96, 104) * (over and 0.82 or 1), 1, CHAN_WEAPON)
     -- Sustained fire (rhylib_skills): when this spray started (a gap over 0.3 s starts a new one).
     if SERVER or IsFirstTimePredicted() then
@@ -973,8 +989,8 @@ end
 
 if SERVER then
     local SOUNDS = {
-        [RELOAD_MAG] = "weapons/smg1/smg1_reload.wav",
-        [RELOAD_CELL] = "items/battery_pickup.wav",
+        [RELOAD_MAG] = "weapons/shared/battlefront_standard_reload.ogg",
+        [RELOAD_CELL] = "weapons/2misc_non_guns/sw_startup.ogg",
     }
 
     -- Which magazine type a reload should load. magId: the type asked
@@ -1057,7 +1073,7 @@ if SERVER then
         self:SetNextPrimaryFire(finish)
         self:SetAiming(false)
         owner:SetAnimation(PLAYER_RELOAD)
-        self:EmitSound(SOUNDS[kind], 70)
+        self:EmitSound(kind == RELOAD_MAG and self.ReloadSound or SOUNDS[kind], 75)
     end
 
     function SWEP:FinishReload()
@@ -1253,7 +1269,7 @@ function SWEP:Think()
     end
 
     local Med = Rhylib.Medical
-    local want = not self.NoAim and owner:KeyDown(IN_ATTACK2) and not self:IsReloading() and not self:IsLowered()
+    local want = not self.NoAim and owner:KeyDown(IN_ATTACK2) and (self.AimWhileReloading or not self:IsReloading()) and not self:IsLowered()
         and not (Med and Med.CanAim and not Med.CanAim(owner))  -- hurt arms can't aim
     if want ~= self:GetAiming() then
         self:SetAiming(want)
@@ -1375,6 +1391,7 @@ if CLIENT then
 
     function SWEP:GetViewModelPosition(pos, ang)
         local ft = FrameTime()
+        local pos0, ang0 = pos, ang   -- (the view's own frame: props with vmIgnoreGunPose undo what's added below)
         self.aimFrac = math.Approach(self.aimFrac or 0, (self:GetAiming() or self.rhylibAimPreview) and 1 or 0, ft * 6)
         self.safeFrac = math.Approach(self.safeFrac or 0, self:IsLowered() and 1 or 0, ft / (self.SafeBlendTime or 0.2))
 
@@ -1402,8 +1419,18 @@ if CLIENT then
             if self:LoweredHoldType() == "normal" then
                 -- (SWEP.PistolLowerPos: right, forward, up; SWEP.PistolLowerTilt: degrees up)
                 local lp = self.PistolLowerPos or PISTOL_LOWER
-                pos = pos + ang:Right() * (lp.x * sf) + ang:Forward() * (lp.y * sf) + ang:Up() * (lp.z * sf)
-                ang:RotateAroundAxis(ang:Right(), (self.PistolLowerTilt or PISTOL_TILT) * sf)
+                local pv = self.PistolLowerPivot   -- (forward, right, up: turn around the hand, not the eyes)
+                local tilt = (self.PistolLowerTilt or PISTOL_TILT) * sf
+                if pv then
+                    local piv = pos + ang:Forward() * pv.x + ang:Right() * pv.y + ang:Up() * pv.z
+                    ang:RotateAroundAxis(ang:Right(), tilt)
+                    pos = piv - (ang:Forward() * pv.x + ang:Right() * pv.y + ang:Up() * pv.z)
+                    local a = ang0
+                    pos = pos + a:Right() * (lp.x * sf) + a:Forward() * (lp.y * sf) + a:Up() * (lp.z * sf)
+                else
+                    pos = pos + ang:Right() * (lp.x * sf) + ang:Forward() * (lp.y * sf) + ang:Up() * (lp.z * sf)
+                    ang:RotateAroundAxis(ang:Right(), tilt)
+                end
             else
                 pos = pos - ang:Up() * (4 * sf) + ang:Right() * (1.5 * sf) - ang:Forward() * (2 * sf)
                 ang:RotateAroundAxis(ang:Right(), -20 * sf)
@@ -1415,6 +1442,12 @@ if CLIENT then
         self.rhylibVMBase[1], self.rhylibVMBase[2] = pos, Angle(ang.p, ang.y, ang.r)
         local k = self:ReloadDip(false)
         if k > 0 then pos, ang = self:ApplyReloadDip(pos, ang, k) end
+        -- (where the view's own frame sits in the gun's: ExtraProps with
+        -- vmIgnoreGunPose use it, so a shield doesn't follow the gun's aim,
+        -- lowering, reload dip or VMOffset)
+        local up, ua = WorldToLocal(pos0, ang0, pos, ang)
+        self.rhylibVMUndo = self.rhylibVMUndo or {}
+        self.rhylibVMUndo[1], self.rhylibVMUndo[2] = up, ua
         return pos, ang
     end
 
@@ -2087,10 +2120,48 @@ if CLIENT then
         if self.PropModel and not self:Scoped() then drawDualVM(self, vm) end
         if not self.PropModel or not self:UsesCarrier() then return end
         for _, e in ipairs(self.ExtraProps or {}) do
-            local b = e.vmBone and vm:LookupBone(e.vmBone)
-            local m = b and vm:GetBoneMatrix(b)
+            local m
+            if e.vmAnchor == "view" then
+                -- (placed in the view itself: x ahead, y right, z up; follows view bob)
+                local vp, va = vm:GetPos(), vm:GetAngles()
+                local undo = e.vmIgnoreGunPose and self.rhylibVMUndo
+                if undo and undo[1] then vp, va = LocalToWorld(undo[1], undo[2], vp, va) end
+                if e.vmAimAnchor == "eyes" then
+                    -- (while aiming the frame slides onto the camera itself, so
+                    -- a sight on the prop stays on the crosshair: no bob, no AimPos)
+                    local f = self:GetAimFrac()
+                    f = math.ease and math.ease.InOutSine(f) or f
+                    if f > 0 then
+                        vp = LerpVector(f, vp, EyePos())
+                        va = LerpAngle(f, va, EyeAngles())
+                    end
+                end
+                m = Matrix()
+                m:SetTranslation(vp)
+                m:SetAngles(va)
+            else
+                local b = e.vmBone and vm:LookupBone(e.vmBone)
+                m = b and vm:GetBoneMatrix(b)
+            end
             local ent = m and self:GetExtraEntity(e, "vm")
-            if ent then drawExtra(self, ent, m, e.vmPos, e.vmAng, e.vmScale) end
+            if ent then
+                local pos, ang = e.vmPos, e.vmAng
+                -- (vmPosAim / vmAngAim: a second pose blended in while aiming)
+                if e.vmPosAim or e.vmAngAim then
+                    local f = self:GetAimFrac()
+                    f = math.ease and math.ease.InOutSine(f) or f
+                    if f > 0 then
+                        pos = LerpVector(f, pos or vector_origin, e.vmPosAim or pos or vector_origin)
+                        ang = LerpAngle(f, ang or angle_zero, e.vmAngAim or ang or angle_zero)
+                    end
+                end
+                -- (SWEP:ExtraPoseOffset(e): a moving offset on top, e.g. the shield bash shove)
+                if self.ExtraPoseOffset then
+                    local add = self:ExtraPoseOffset(e)
+                    if add then pos = (pos or vector_origin) + add end
+                end
+                drawExtra(self, ent, m, pos, ang, e.vmScale)
+            end
         end
         local b = carrierBone(self, vm)
         local m = b and vm:GetBoneMatrix(b)
@@ -2706,6 +2777,22 @@ if CLIENT then
             label(e.key .. ": first person (on " .. tostring(e.vmBone) .. ")")
             posAng(e, "vmPos", "vmAng", "")
             field(" size", 0.02, 0.05, 4, function() return e.vmScale or 1 end, function(v) e.vmScale = v end)
+            if e.vmPosAim or e.vmAngAim then
+                e.vmPosAim = e.vmPosAim or Vector(e.vmPos:Unpack())
+                e.vmAngAim = e.vmAngAim or Angle(e.vmAng:Unpack())
+                label(e.key .. ": first person while aiming")
+                local aim = f.list:Add("DCheckBoxLabel")
+                aim:SetText("Preview aim (shows the aiming pose)")
+                aim:Dock(TOP)
+                aim:DockMargin(4, 2, 4, 2)
+                aim.OnChange = function(_, on) if IsValid(w) then w.rhylibAimPreview = on or nil end end
+                local oldRemove = f.OnRemove
+                f.OnRemove = function(...)
+                    if IsValid(w) then w.rhylibAimPreview = nil end
+                    if oldRemove then return oldRemove(...) end
+                end
+                posAng(e, "vmPosAim", "vmAngAim", "aim")
+            end
             label(e.key .. ": third person (on " .. tostring(e.wmBone) .. ")")
             posAng(e, "wmPos", "wmAng", "")
             field(" size", 0.02, 0.05, 4, function() return e.wmScale or 1 end, function(v) e.wmScale = v end)
@@ -2734,6 +2821,9 @@ if CLIENT then
             for _, e in ipairs(w.ExtraProps) do
                 out[#out + 1] = string.format('%s = { vmPos = %s, vmAng = %s, vmScale = %g, wmPos = %s, wmAng = %s, wmScale = %g },',
                     e.key, fmtV(e.vmPos), fmtA(e.vmAng), e.vmScale or 1, fmtV(e.wmPos), fmtA(e.wmAng), e.wmScale or 1)
+                if e.vmPosAim then
+                    out[#out + 1] = string.format('    (aiming) vmPosAim = %s, vmAngAim = %s,', fmtV(e.vmPosAim), fmtA(e.vmAngAim))
+                end
             end
             if w.CarrierBoneMods then
                 out[#out + 1] = "SWEP.CarrierBoneMods = {"
@@ -2789,7 +2879,34 @@ if CLIENT then
                 eb = e.wmBone and owner:LookupBone(e.wmBone) or false
                 handBone[key] = eb
             end
-            local em = eb and owner:GetBoneMatrix(eb)
+            local em
+            -- (wmAttach: a player model attachment, e.g. "anim_attachment_LH",
+            -- so the prop is held by the hand through every animation; falls
+            -- back to wmBone on models without it)
+            if e.wmAttach then
+                local akey = mdl .. "|@" .. e.wmAttach
+                local ai = handBone[akey]
+                if ai == nil then
+                    ai = owner:LookupAttachment(e.wmAttach) or 0
+                    if ai <= 0 then ai = false end
+                    handBone[akey] = ai
+                end
+                local at = ai and owner:GetAttachment(ai)
+                if at then
+                    em = Matrix()
+                    em:SetTranslation(at.Pos)
+                    em:SetAngles(at.Ang)
+                end
+            end
+            em = em or (eb and owner:GetBoneMatrix(eb))
+            if em and not e.wmAttach and e.wmAnchor == "body" then
+                -- (at the bone, but turned with the body: x ahead, y right,
+                -- z up of where the player faces; stays upright)
+                local bm = Matrix()
+                bm:SetTranslation(em:GetTranslation())
+                bm:SetAngles(Angle(0, owner:EyeAngles().y, 0))
+                em = bm
+            end
             local ee = em and self:GetExtraEntity(e, "wm")
             if ee then drawExtra(self, ee, em, e.wmPos, e.wmAng, e.wmScale) end
         end

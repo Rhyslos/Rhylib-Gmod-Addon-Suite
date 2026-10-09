@@ -89,43 +89,46 @@ local function buildTab(body)
     save:Dock(RIGHT)
     save:SetWide(S(220))
 
-    -- Second row: the mode placed droids get, and the live aggression.
-    local row2 = vgui.Create("DPanel", body)
-    row2:Dock(BOTTOM)
-    row2:SetTall(S(40))
-    row2:DockMargin(0, S(8), 0, 0)
-    row2.Paint = bottom.Paint
-    row2:DockPadding(S(8), S(4), S(8), S(4))
-    local lm = K.Label(row2, "New droids", 13, 700, K.C.textDim)
-    lm:Dock(LEFT)
-    lm:SetWide(S(110))
-    lm:SetAutoStretchVertical(false)
-    lm:SetContentAlignment(4)
-    for i, m in ipairs({ "Guard", "Patrol", "Attack" }) do
-        local b = K.Button(row2, m, function() RunConsoleCommand("rhylib_tool_droidmode", tostring(i)) end,
-            { small = true, selected = function() return cvMode:GetInt() == i end,
-              tooltip = "Mode of the droids you place (markers you placed earlier still win)" })
-        b:Dock(LEFT)
-        b:SetWide(S(72))
-        b:DockMargin(0, S(2), S(6), S(2))
-    end
-    local la = K.Label(row2, "Aggression", 13, 700, K.C.textDim)
-    la:Dock(LEFT)
-    la:SetWide(S(100))
-    la:DockMargin(S(18), 0, 0, 0)
-    la:SetAutoStretchVertical(false)
-    la:SetContentAlignment(4)
-    local AGGRO = { "Fall back", "Retreat", "Moderate", "March", "Charge" }
-    for i = 1, 5 do
-        local b = K.Button(row2, i .. " " .. AGGRO[i], function()
-            Rhylib.Net.Start("droids.aggro")
-            net.WriteUInt(i, 3)
-            net.SendToServer()
-        end, { small = true, selected = function() return GetGlobal2Int("rhylib_droidAggro", 3) == i end,
-               tooltip = "Every droid at once, live: 1 falls back while firing ... 5 charges" })
-        b:Dock(LEFT)
-        b:SetWide(S(96))
-        b:DockMargin(0, S(2), S(6), S(2))
+    -- (only with rhylib_droids: its buttons send droid messages)
+    if Rhylib.Droids then
+        -- Second row: the mode placed droids get, and the live aggression.
+        local row2 = vgui.Create("DPanel", body)
+        row2:Dock(BOTTOM)
+        row2:SetTall(S(40))
+        row2:DockMargin(0, S(8), 0, 0)
+        row2.Paint = bottom.Paint
+        row2:DockPadding(S(8), S(4), S(8), S(4))
+        local lm = K.Label(row2, "New droids", 13, 700, K.C.textDim)
+        lm:Dock(LEFT)
+        lm:SetWide(S(110))
+        lm:SetAutoStretchVertical(false)
+        lm:SetContentAlignment(4)
+        for i, m in ipairs({ "Guard", "Patrol", "Attack" }) do
+            local b = K.Button(row2, m, function() RunConsoleCommand("rhylib_tool_droidmode", tostring(i)) end,
+                { small = true, selected = function() return cvMode:GetInt() == i end,
+                  tooltip = "Mode of the droids you place (markers you placed earlier still win)" })
+            b:Dock(LEFT)
+            b:SetWide(S(72))
+            b:DockMargin(0, S(2), S(6), S(2))
+        end
+        local la = K.Label(row2, "Aggression", 13, 700, K.C.textDim)
+        la:Dock(LEFT)
+        la:SetWide(S(100))
+        la:DockMargin(S(18), 0, 0, 0)
+        la:SetAutoStretchVertical(false)
+        la:SetContentAlignment(4)
+        local AGGRO = { "Fall back", "Retreat", "Moderate", "March", "Charge" }
+        for i = 1, 5 do
+            local b = K.Button(row2, i .. " " .. AGGRO[i], function()
+                Rhylib.Net.Start("droids.aggro")
+                net.WriteUInt(i, 3)
+                net.SendToServer()
+            end, { small = true, selected = function() return GetGlobal2Int("rhylib_droidAggro", 3) == i end,
+                   tooltip = "Every droid at once, live: 1 falls back while firing ... 5 charges" })
+            b:Dock(LEFT)
+            b:SetWide(S(96))
+            b:DockMargin(0, S(2), S(6), S(2))
+        end
     end
 
     local inner = vgui.Create("DPanel", body)

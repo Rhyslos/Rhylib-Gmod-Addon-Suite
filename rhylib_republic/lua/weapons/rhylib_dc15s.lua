@@ -54,7 +54,8 @@ SWEP.Recoil = { up = 0.55, side = 0.3, bias = -0.1, recover = 0.55, aimMult = 0.
 SWEP.Damage = 22
 SWEP.BoltSpeed = 7000
 SWEP.BoltColor = 1
-SWEP.FireSound = "weapons/airboat/airboat_gun_energy1.wav"
+SWEP.FireSound = "weapons/dc15s/dc15s_fire.ogg"
+SWEP.FireSoundLevel = 110
 
 -- Semi first (default), switch with E + R.
 -- Magazines it takes, preferred first.

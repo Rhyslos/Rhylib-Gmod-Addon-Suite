@@ -1064,7 +1064,8 @@ Rhylib.Hook.Add("PlayerCanPickupWeapon", "inventory.pickup", function(ply, wep)
         ply.rhylibPickupNoWep, ply.rhylibPickupNoUntil = wep, CurTime() + 0.5
         if (ply.rhylibFullNotice or 0) < CurTime() then
             ply.rhylibFullNotice = CurTime() + 2
-            ply:PrintMessage(HUD_PRINTCENTER, Inv.AtLimit(ply, class) and Inv.LimitText(ply, class) or "No room in your inventory")
+            ply:PrintMessage(HUD_PRINTCENTER, Inv.AtLimit(ply, class) and Inv.LimitText(ply, class)
+                or Items.SlotTakenText(Inv.Get(ply), class) or "No room in your inventory")
         end
         return false
     end

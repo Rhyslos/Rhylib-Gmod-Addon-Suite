@@ -1925,12 +1925,17 @@ local function acceptedPopup(bn, by)
     join:Dock(FILL)
 end
 
-if Rhylib.Menus and Rhylib.Menus.RegisterCloser then
-    Rhylib.Menus.RegisterCloser("datapad.accepted", function()
-        if IsValid(popup) then popup:Remove() return true end
-        return false
-    end)
+-- (rhylib_menus loads after this module, so register once everything has)
+local function registerAcceptedCloser()
+    if Rhylib.Menus and Rhylib.Menus.RegisterCloser then
+        Rhylib.Menus.RegisterCloser("datapad.accepted", function()
+            if IsValid(popup) then popup:Remove() return true end
+            return false
+        end)
+    end
 end
+registerAcceptedCloser()
+Rhylib.Hook.Add("InitPostEntity", "datapad.acceptedcloser", registerAcceptedCloser)
 
 Rhylib.Net.Receive("dp.uprompt", function()
     local kind, bn, by = net.ReadUInt(2), net.ReadString(), net.ReadString()

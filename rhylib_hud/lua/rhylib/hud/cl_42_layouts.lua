@@ -285,7 +285,7 @@ local function drawF4(entries, active, alpha, s, ai)
     if ai.cell then
         local ch = math.max(3, math.floor(5 * s))
         local cyb = level - above - math.floor(5 * s)
-        local lowCell = ai.cell < Rhylib.Config.Get("weapons", "lowCellThreshold")
+        local lowCell = ai.cell < (Rhylib.Config.Get("weapons", "lowCellThreshold") or 0.2)
         HUD.Bar(X0, cyb - ch, X1 - X0, ch, ai.cell, lowCell and C.bad or C.armor)
         above = above + math.floor(5 * s) + ch
     end
@@ -310,7 +310,7 @@ local function drawF4(entries, active, alpha, s, ai)
         lx = lx + txt(ai.others, 13, 400, lx, rowY(lx), C.dim, nil, 255) + math.floor(14 * s)
     end
     if ai.cell then
-        local low = ai.cell < Rhylib.Config.Get("weapons", "lowCellThreshold")
+        local low = ai.cell < (Rhylib.Config.Get("weapons", "lowCellThreshold") or 0.2)
         txt(string.format("CELL %d%%  %d spare", math.ceil(ai.cell * 100), ai.cells or 0), 13, 700, lx, rowY(lx), low and C.bad or C.dim, nil, 255)
     end
 
@@ -445,7 +445,7 @@ local function drawF5(entries, active, alpha, s, ai)
         lx = lx + txt(ai.mode, 14, 700, lx, ty, ai.safe and C.fuel or C.accent, nil, 255) + math.floor(14 * s)
     end
     if ai.cell then
-        local lowCell = ai.cell < Rhylib.Config.Get("weapons", "lowCellThreshold")
+        local lowCell = ai.cell < (Rhylib.Config.Get("weapons", "lowCellThreshold") or 0.2)
         txt(string.format("CELL %d%%  %d spare", math.ceil(ai.cell * 100), ai.cells or 0), 13, 700, lx, ty, lowCell and C.bad or C.dim, nil, 255)
     end
 
@@ -482,7 +482,7 @@ local function drawF5(entries, active, alpha, s, ai)
     -- the third-person cell bar.
     if ai.cell then
         local ch = math.max(3, math.floor(5 * s))
-        local lowCell = ai.cell < Rhylib.Config.Get("weapons", "lowCellThreshold")
+        local lowCell = ai.cell < (Rhylib.Config.Get("weapons", "lowCellThreshold") or 0.2)
         HUD.Bar(ax0 + pad, tyb - math.floor(5 * s) - ch, span, ch, ai.cell, lowCell and C.bad or C.armor)
     end
     for i = 1, N do

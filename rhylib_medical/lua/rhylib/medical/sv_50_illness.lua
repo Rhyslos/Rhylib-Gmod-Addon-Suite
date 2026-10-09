@@ -19,6 +19,8 @@ local Data = Rhylib.Data
 
 local function cfg(k) return Med.Cfg(k) end
 local function Inv() return Rhylib.Inventory end
+-- (item uid size; rhylib_inventory may be missing: the illness flow then does nothing)
+local function uidBits() return Rhylib.Items and Rhylib.Items.UID_BITS or 16 end
 
 Rhylib.Net.Register("ill.open")
 Rhylib.Net.Register("ill.cass")
@@ -162,7 +164,7 @@ end
 local function stop(ply, msg, uid)
     if msg then Med.Note(ply, msg) end
     Rhylib.Net.Start("ill.stop")
-    net.WriteUInt(uid or 0, Rhylib.Items.UID_BITS)
+    net.WriteUInt(uid or 0, uidBits())
     net.Send(ply)
 end
 
@@ -251,6 +253,7 @@ end
 --------------------------------------------------------------------------
 
 Rhylib.Net.Receive("ill.draw", function(ply)
+    if not (Inv() and Inv().Get) then return end   -- (needs rhylib_inventory)
     local t = net.ReadEntity()
     if not (able(ply) and Med.IsMedic(ply) and IsValid(t) and t:IsPlayer() and t ~= ply) then return end
     if not (Med.OnSofa(t) or t.rhylibDummy) then return stop(ply, "They need to lie on a med sofa") end   -- (test dummies: standing is fine)
@@ -268,7 +271,7 @@ Rhylib.Net.Receive("ill.draw", function(ply)
         data.note = sampleNote(data)
         local left = Inv().AddItem(ply, Med.SAMPLE, 1, data)
         if left > 0 then Inv().AddOrDrop(ply, Med.SAMPLE, left, data) end
-        ply:EmitSound("items/medshot4.wav", 60, 115)
+        ply:EmitSound("weapons/2misc_non_guns/sw_syringe.ogg", 60, 115)
         Med.Note(ply, "Blood sample from " .. t:Nick())
     end)
 end, { rate = 3, burst = 3 })
@@ -285,7 +288,8 @@ function Med.AnalyserUse(ent, ply)
 end
 
 Rhylib.Net.Receive("ill.scan", function(ply)
-    local ent, uid = net.ReadEntity(), net.ReadUInt(Rhylib.Items.UID_BITS)
+    if not (Inv() and Inv().Get) then return end   -- (needs rhylib_inventory)
+    local ent, uid = net.ReadEntity(), net.ReadUInt(uidBits())
     if not (able(ply) and Med.IsMedic(ply) and IsValid(ent) and ent:GetClass() == "rhylib_chem_bench" and near(ply, ent, 160)) then return end
     local inst = carriedItem(ply, uid, Med.SAMPLE)
     if not inst or inst.data.reading then return end
@@ -354,7 +358,7 @@ end
 local function sendCassette(ply, inst)
     local d = inst.data
     Rhylib.Net.Start("ill.cass")
-    net.WriteUInt(inst.uid, Rhylib.Items.UID_BITS)
+    net.WriteUInt(inst.uid, uidBits())
     net.WriteString(shortName(d.who))
     net.WriteUInt(math.Clamp(os.time() - (d.start or os.time()), 0, 65535), 16)
     net.WriteUInt(math.Clamp(d.dev or 120, 1, 1023), 10)
@@ -364,7 +368,8 @@ local function sendCassette(ply, inst)
 end
 
 Rhylib.Net.Receive("ill.strip", function(ply)
-    local uid = net.ReadUInt(Rhylib.Items.UID_BITS)
+    if not (Inv() and Inv().Get) then return end   -- (needs rhylib_inventory)
+    local uid = net.ReadUInt(uidBits())
     if not able(ply) then return end
     local inst = carriedItem(ply, uid, Med.SAMPLE)
     if not inst or inst.data.tested then return end
@@ -378,7 +383,7 @@ Rhylib.Net.Receive("ill.strip", function(ply)
     local cd = { key = d.key, who = d.who, kind = d.kind, load = d.load, start = os.time(), dev = devTime(d.kind, d.load), at = os.time() }
     cd.note = cassetteNote(cd)
     Inv().AddOrDrop(ply, Med.CASSETTE, 1, cd)
-    ply:EmitSound("items/medshot4.wav", 55, 140)
+    ply:EmitSound("weapons/2misc_non_guns/sw_syringe.ogg", 55, 140)
     local cas = Med.FindCassette(ply, d.key)
     if cas then sendCassette(ply, cas) end
     beep(ply, false)
@@ -397,13 +402,15 @@ end, { rate = 4, burst = 4 })
 
 -- Look at a used strip again.
 Rhylib.Net.Receive("ill.look", function(ply)
-    local inst = carriedItem(ply, net.ReadUInt(Rhylib.Items.UID_BITS), Med.CASSETTE)
+    if not (Inv() and Inv().Get) then return end   -- (needs rhylib_inventory)
+    local inst = carriedItem(ply, net.ReadUInt(uidBits()), Med.CASSETTE)
     if inst then sendCassette(ply, inst) end
 end, { rate = 4, burst = 4 })
 
 -- Throw away a sample or a used strip.
 Rhylib.Net.Receive("ill.discard", function(ply)
-    local uid = net.ReadUInt(Rhylib.Items.UID_BITS)
+    if not (Inv() and Inv().Get) then return end   -- (needs rhylib_inventory)
+    local uid = net.ReadUInt(uidBits())
     local inst = carriedItem(ply, uid, Med.SAMPLE) or carriedItem(ply, uid, Med.CASSETTE)
     if inst then Inv().Remove(ply, uid) end
 end, { rate = 6, burst = 6 })
@@ -461,6 +468,7 @@ function Med.ApplyDose(t, medId, units, by)
 end
 
 Rhylib.Net.Receive("ill.dose", function(ply)
+    if not (Inv() and Inv().Get) then return end   -- (needs rhylib_inventory)
     local t, which, units = net.ReadEntity(), net.ReadUInt(2), net.ReadUInt(6)
     if not (able(ply) and Med.IsMedic(ply) and IsValid(t) and t:IsPlayer() and t:Alive()) then return end
     local m = Med.MEDICINES[which + 1]
@@ -484,7 +492,7 @@ Rhylib.Net.Receive("ill.dose", function(ply)
             end
         end
         local result = Med.ApplyDose(t, medId, units, ply)
-        t:EmitSound("items/medshot4.wav", 60, 100)
+        t:EmitSound("weapons/2misc_non_guns/sw_syringe.ogg", 60, 100)
         -- The medic only learns what the patient shows.
         Med.Note(ply, units .. " units of " .. m[2] .. " given to " .. t:Nick())
         if result == "too much" or result == "no effect" then

@@ -62,7 +62,8 @@ SWEP.Recoil = { up = 0.7, side = 0.25, bias = 0.05, recover = 0.6, aimMult = 0.6
 SWEP.Damage = 27
 SWEP.BoltSpeed = 7500
 SWEP.BoltColor = 1
-SWEP.FireSound = "weapons/airboat/airboat_gun_energy2.wav"
+SWEP.FireSound = "weapons/westarm5/westarm5_fire.wav"
+SWEP.FireSoundLevel = 110
 
 SWEP.Mags = { "mag_medium", "mag_small" }
 

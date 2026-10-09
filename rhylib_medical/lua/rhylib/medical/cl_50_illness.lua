@@ -8,6 +8,8 @@ local Med = Rhylib.Medical
 
 local function K() return Rhylib.Menus and Rhylib.Menus.Kit end
 local function Inv() return Rhylib.Inventory end
+-- (item uid size; rhylib_inventory may be missing: the illness flow then does nothing)
+local function uidBits() return Rhylib.Items and Rhylib.Items.UID_BITS or 16 end
 
 local function carried(id)
     local I = Inv()
@@ -42,7 +44,7 @@ end
 
 -- A timed step was cancelled (uid: an analyser sample, 0 = something else).
 net.Receive(Rhylib.Net.Name("ill.stop"), function()
-    local uid = net.ReadUInt(Rhylib.Items.UID_BITS)
+    local uid = net.ReadUInt(uidBits())
     if uid > 0 then
         Med.scanning[uid] = nil
         return
@@ -151,7 +153,7 @@ local function openAnalyser(ent)
                 if not IsValid(ent) then return end
                 Rhylib.Net.Start("ill.scan")
                 net.WriteEntity(ent)
-                net.WriteUInt(uid, Rhylib.Items.UID_BITS)
+                net.WriteUInt(uid, uidBits())
                 net.SendToServer()
                 Med.scanning[uid] = RealTime() + Med.Cfg("scanTime") * (chemist(LocalPlayer()) and 0.5 or 1)
             end, { small = true, accent = true, enabled = function() return not done and not running() end })
@@ -208,7 +210,7 @@ end)
 
 local function send(name, uid)
     Rhylib.Net.Start(name)
-    net.WriteUInt(uid, Rhylib.Items.UID_BITS)
+    net.WriteUInt(uid, uidBits())
     net.SendToServer()
 end
 
@@ -357,7 +359,7 @@ net.Receive(Rhylib.Net.Name("ill.beep"), function()
 end)
 
 net.Receive(Rhylib.Net.Name("ill.cass"), function()
-    local info = { uid = net.ReadUInt(Rhylib.Items.UID_BITS), who = net.ReadString(), elapsed = net.ReadUInt(16),
+    local info = { uid = net.ReadUInt(uidBits()), who = net.ReadString(), elapsed = net.ReadUInt(16),
         dev = net.ReadUInt(10), kind = net.ReadUInt(2), load = net.ReadUInt(7) }
     info.max = Med.Cfg("stripMax") or 120
     openCassette(info)

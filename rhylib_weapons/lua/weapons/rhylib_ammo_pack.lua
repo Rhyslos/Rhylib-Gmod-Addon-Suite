@@ -108,7 +108,7 @@ if SERVER then
         self:SetNextSecondaryFire(CurTime() + self.Cooldown)
         if not self:SkillOK() then return o:ChatPrint("You need the Ammo pack skill to use this") end
         local Inv, W = Rhylib.Inventory, Rhylib.Weapons
-        if not (Inv and Inv.Get and W) then return end
+        if not (Inv and Inv.Get and W) then return o:ChatPrint("The ammo pack needs rhylib_inventory") end
         if Inv.Locked and (Inv.Locked(t) or Inv.Locked(o)) then return o:ChatPrint("Can't resupply right now") end
         local pack = packItem(Inv, o, self:GetClass())
         if not pack then return end

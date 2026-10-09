@@ -457,7 +457,9 @@ end)
 -- Hold the line: shield up and another MP close by.
 function K.HoldingLine(ply)
     local W, MP = Rhylib.Weapons, Rhylib.MP
-    if not (W and W.ShieldUp and W.ShieldUp(ply) and MP and MP.IsMP) then return false end
+    -- (the CG shield only: the Republic shield gets no Shock Trooper bonuses)
+    local up = W and (W.ShieldProficient or W.ShieldUp)
+    if not (up and up(ply) and MP and MP.IsMP) then return false end
     -- Another MP nearby: checked at most every 0.25 s per player (hits come in bursts).
     local now = CurTime()
     if (ply.rhylibHoldLineAt or 0) > now then return ply.rhylibHoldLine == true end

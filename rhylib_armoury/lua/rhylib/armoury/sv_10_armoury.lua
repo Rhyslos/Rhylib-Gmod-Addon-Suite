@@ -136,12 +136,20 @@ local function roleStock(roles, kind)
 end
 
 -- One depot per set of roles, made when someone with that set opens it.
+-- Items the player may not hold yet (skill-locked, e.g. the CG riot shield
+-- until Riot shield is learned) are left out, so learning a skill makes them
+-- appear (owner 2026-10-09).
 local function specVariant(storage, ply)
     local roles = A.Roles(ply)
-    local key = table.concat(roles, "+")
+    local all = roleStock(roles, storage.specKind)
+    local I = Inv()
+    local stock = {}
+    for _, id in ipairs(all) do
+        if not (I and I.MayHold) or I.MayHold(ply, id) then stock[#stock + 1] = id end
+    end
+    local key = table.concat(roles, "+") .. "|" .. table.concat(stock, ",")
     local sub = storage.subs[key]
     if not sub then
-        local stock = roleStock(roles, storage.specKind)
         if #stock == 0 then
             ply:PrintMessage(HUD_PRINTCENTER, "Nothing here for your role")
             return nil
@@ -214,6 +222,7 @@ end
 local function depositExpire(sid, ply)
     Rhylib.Data.Delete("train_dep", sid)
     A.deposits[sid] = nil
+    if not Inv() then return end
     for _, ent in ipairs(ents.FindByClass("rhylib_training_deposit")) do
         local storage = Inv().GetStorage(ent)
         local sub = storage and storage.subs[sid]
@@ -273,6 +282,7 @@ function A.LoadLocker(ent, storage)
 end
 
 function A.SaveLocker(ent)
+    if not Inv() then return end   -- (rhylib_inventory missing)
     local storage = Inv().GetStorage(ent)
     local sid = ent:GetOwnerSid()
     if not storage or sid == "" then return end
@@ -364,6 +374,7 @@ local function ownsLocker(sid)
 end
 
 function A.Claim(ply, ent)
+    if not Inv() then return end   -- (rhylib_inventory missing)
     if not IsValid(ent) or ent:GetClass() ~= "rhylib_locker" or ent:GetOwnerSid() ~= "" then return end
     local dist = Inv() and Inv().STORAGE_DIST or 160
     if ply:GetPos():DistToSqr(ent:GetPos()) > dist * dist then return end
@@ -383,6 +394,7 @@ function A.Claim(ply, ent)
 end
 
 function A.ToggleLock(ent)
+    if not Inv() then return end   -- (rhylib_inventory missing)
     ent:SetLocked(not ent:GetLocked())
     local storage = Inv().GetStorage(ent)
     if storage and ent:GetLocked() then
@@ -397,6 +409,7 @@ end
 -- The contents stay saved under the old owner; they get them back in
 -- whichever locker they claim next.
 function A.Unclaim(ent)
+    if not Inv() then return end   -- (rhylib_inventory missing)
     A.SaveLocker(ent)
     Inv().RemoveStorage(ent)
     ent:SetOwnerSid("")
@@ -420,6 +433,7 @@ end, { rate = 2, burst = 2 })
 -- Owner buttons in the locker window: 0 = lock/unlock, 1 = unclaim.
 Rhylib.Net.Receive("armoury.control", function(ply)
     local action = net.ReadUInt(1)
+    if not Inv() then return end
     local storage = Inv().Get(ply).ext
     local ent = storage and storage.ent
     if not IsValid(ent) or ent:GetClass() ~= "rhylib_locker" or ent:GetOwnerSid() ~= ply:SteamID64() then return end

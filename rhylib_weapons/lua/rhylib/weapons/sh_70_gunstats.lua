@@ -86,9 +86,17 @@ local function writeStat(class, s, v)
     for _, e in ipairs(ents.FindByClass("rhylib_*")) do
         local c = e:IsWeapon() and e:GetClass()
         if c and (c == class or weapons.IsBasedOn(c, class)) then
-            local own = c ~= class and weapons.GetStored(c)
+            -- (any class between it and this one that sets the value keeps
+            -- it: the Republic shield inherits the riot shield's own Spread)
             local field = s[4] or s[3]
-            if not (own and rawget(own, field) ~= nil) then
+            local ownsIt, cc, guard = false, c, 0
+            while cc and cc ~= class and guard < 16 do
+                local st = weapons.GetStored(cc)
+                if not st then break end
+                if rawget(st, field) ~= nil then ownsIt = true break end
+                cc, guard = st.Base, guard + 1
+            end
+            if not ownsIt then
                 if s[4] then
                     local t = e[s[4]]
                     if istable(t) then t[s[3]] = v end

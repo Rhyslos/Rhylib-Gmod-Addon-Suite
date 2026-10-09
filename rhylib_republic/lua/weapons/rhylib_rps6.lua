@@ -56,7 +56,8 @@ SWEP.Damage = 0               -- all damage comes from the blast
 SWEP.BoltSpeed = 2200
 SWEP.BoltColor = 4            -- rocket look
 SWEP.BoltLife = 5
-SWEP.FireSound = "weapons/rpg/rocketfire1.wav"
+SWEP.FireSound = { "weapons/explosives_cannons_superlazers/wpn_rocket_launcher_shoot_01.ogg", "weapons/explosives_cannons_superlazers/wpn_rocket_launcher_shoot_02.ogg", "weapons/explosives_cannons_superlazers/wpn_rocket_launcher_shoot_03.ogg" }
+SWEP.FireSoundLevel = 120
 
 SWEP.Explosive = { radius = 200, damage = 250 }
 

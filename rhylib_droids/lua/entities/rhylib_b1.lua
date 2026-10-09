@@ -428,7 +428,7 @@ if SERVER then
         dir:Normalize()
         local gun = D.Gun(self.DroidKind)
         Bolts.Fire(self, gun, origin, dir, gun.Damage)
-        self:EmitSound(k.sound or D.E5_SOUND, 80, k.big and math.random(90, 98) or (k.sound and math.random(97, 105)) or math.random(108, 118), 0.8, CHAN_WEAPON)
+        self:EmitSound(k.sound or D.E5_SOUND, 100, math.random(96, 104), 0.8, CHAN_WEAPON)   -- (level 100: heard across a fight; was 80)
         if self.anims.shoot then self:RestartGesture(self.anims.shoot, true, true) end
     end
 
@@ -528,7 +528,7 @@ if SERVER then
         r.training = self.Training
         r:SetOwner(self)
         r:Spawn()
-        self:EmitSound("weapons/stinger_fire1.wav", 80, 105)
+        self:EmitSound("weapons/explosives_cannons_superlazers/wpn_rocket_launcher_shoot_02.ogg", 105, 100)
         if self.anims.shoot then self:RestartGesture(self.anims.shoot, true, true) end
         self.nextRocket = CurTime() + D.Cfg("b2RocketCooldown") * math.Rand(0.8, 1.3)
     end
@@ -577,7 +577,7 @@ if SERVER then
         r.training = self.Training
         r:SetOwner(self)
         r:Spawn()
-        self:EmitSound("weapons/stinger_fire1.wav", arty and 95 or 80, 115)
+        self:EmitSound("weapons/explosives_cannons_superlazers/wpn_mortar_cannon_r1_shoot_0" .. math.random(1, 3) .. ".ogg", arty and 115 or 105, 100)
         if self.anims.shoot then self:RestartGesture(self.anims.shoot, true, true) end
         self.nextRocket = CurTime() + D.Cfg(arty and "artyCooldown" or "b2RocketCooldown") * math.Rand(0.8, 1.3)
     return true

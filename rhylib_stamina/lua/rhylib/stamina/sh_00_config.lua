@@ -90,7 +90,8 @@ end
 -- Weight and carry cap from rhylib_inventory (0 and the base cap without it).
 function S.Load(ply)
     local weight = ply:GetNW2Float("rhylib_weight", 0)
-    local base = Config.Get("inventory", "baseCarry") or 20
+    -- (only asked when rhylib_inventory registered it: no "unknown setting" warning without it)
+    local base = (Config.defs.inventory and Config.Get("inventory", "baseCarry")) or 20
     local cap = ply:GetNW2Float("rhylib_carry", base)
     if cap <= 0 then cap = base end
     return weight / cap, cap > base

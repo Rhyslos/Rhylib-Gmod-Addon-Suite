@@ -70,7 +70,8 @@ SWEP.Recoil = { up = 0.9, side = 0.2, bias = 0.15, recover = 0.7, aimMult = 0.6 
 SWEP.Damage = 35
 SWEP.BoltSpeed = 8000
 SWEP.BoltColor = 1
-SWEP.FireSound = "weapons/airboat/airboat_gun_energy2.wav"
+SWEP.FireSound = "weapons/dc15a/dc15a_fire.ogg"
+SWEP.FireSoundLevel = 110
 
 -- Magazines it takes, preferred first.
 SWEP.Mags = { "mag_medium", "mag_small" }

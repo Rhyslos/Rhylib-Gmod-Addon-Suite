@@ -390,7 +390,7 @@ local function finishAct(helper, a)
     elseif a.kind == Med.A_TREAT then
         if Med.TreatPart then Med.TreatPart(helper, t, a.limb, kit) end
     end
-    if IsValid(t) and not Med.REVIVES[a.kind] then t:EmitSound("items/medshot4.wav", 60) end
+    if IsValid(t) and not Med.REVIVES[a.kind] then t:EmitSound("weapons/2misc_non_guns/use_bacta.ogg", 65) end
 end
 
 function Med.CheckActions(now)

@@ -78,7 +78,7 @@ local function drawContent(ply, wep, x, y, w, sizes)
     -- Power cell
     if sizes.cell > 0 then
         local charge = wep:GetCell()
-        local lowCell = charge < Rhylib.Config.Get("weapons", "lowCellThreshold")
+        local lowCell = charge < (Rhylib.Config.Get("weapons", "lowCellThreshold") or 0.2)
         local cells = ply:GetAmmoCount("rhylib_cell")
         HUD.Text(string.format("Cell %d%%", math.ceil(charge * 100)), 14, x, y + math.floor(4 * s), lowCell and C.bad or C.dim)
         HUD.Text(cells .. " spare", 14, right, y + math.floor(4 * s), C.dim, TEXT_ALIGN_RIGHT)

@@ -160,6 +160,7 @@ if SERVER then
             local ed = EffectData()
             ed:SetOrigin(pos)
             util.Effect("Explosion", ed, true, true)
+            sound.Play("weapons/explosives_cannons_superlazers/sw_detonator_explosion.ogg", pos, 110, math.random(95, 105))   -- (thermal detonator blast, shared resources pack)
             -- (training grenades, e.g. from training droids: sim health only)
             local W = Rhylib.Weapons
             if self.training and W and W.TrainingBlast then

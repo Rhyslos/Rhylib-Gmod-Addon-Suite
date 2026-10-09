@@ -343,9 +343,9 @@ K.NODES = {
 
     -- Shock Trooper (military police jobs only)
     { id = "riot_shield", cat = "shocktrooper", tier = 1, cost = 1, name = "Riot shield",
-      desc = "Carry the riot shield: a DC-15S fired from the hip behind a shield that stops bolts from the front." },
+      desc = "Unlocks the Coruscant Guard riot shield in the MP armoury, and lets you fire through a shield's viewport. Better than the Republic shield anyone carries: lighter, faster on foot, wider cover, halves explosions you hold it up against. Your Shock Trooper skills only work with it." },
     { id = "shield_bash", cat = "shocktrooper", tier = 2, cost = 2, name = "Shield bash",
-      desc = "Right click with the riot shield: stun a player in front of you, or knock a droid back.", needs = { "riot_shield" } },
+      desc = "Shield bash key (default X) with the CG riot shield: stun a player in front of you, or knock a droid back.", needs = { "riot_shield" } },
     { id = "escort_drills", cat = "shocktrooper", tier = 2, cost = 2, name = "Escort drills",
       desc = "No slowdown while you escort a prisoner.", needs = { "riot_shield" } },
     { id = "breaching", cat = "shocktrooper", tier = 3, cost = 3, name = "Breaching charge",

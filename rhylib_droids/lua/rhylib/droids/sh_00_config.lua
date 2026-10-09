@@ -190,7 +190,8 @@ function D.Cfg(k) return Config.Get("droids", k) end
 
 D.B1_MODEL = "models/aussiwozzi/cgi/b1droids/b1_battledroid.mdl"   -- (same pack as the variants, B2s and training droids)
 D.E5_MODEL = "models/jajoff/sps/cgiweapons/tc13j/e5.mdl"
-D.E5_SOUND = "weapons/airboat/airboat_gun_energy2.wav"
+D.E5_SOUND = "weapons/1misc_guns/wpn_btldroid_laser_shoot_01.ogg"
+D.B2_SOUND = "weapons/1misc_guns/wpn_b2_btldroid_hvy_laser_shoot_01.ogg"
 
 D.B2_MODEL = "models/aussiwozzi/cgi/b1droids/b2_battledroid.mdl"
 D.B1T_MODEL = "models/aussiwozzi/cgi/b1droids/b1_battledroid_training.mdl"
@@ -205,7 +206,7 @@ D.KINDS = {
     b1 = { name = "B1 battle droid", model = D.B1_MODEL, health = "b1Health", speed = "b1Speed", range = "b1Range", reaction = "b1Reaction",
         damage = "e5Damage", rpm = "e5RPM", spread = "e5Spread", burst = { 2, 3 }, color = 2, gun = D.E5_MODEL, nades = true, cover = true },
     b2 = { name = "B2 super battle droid", model = D.B2_MODEL, health = "b2Health", speed = "b2Speed", range = "b2Range", reaction = "b2Reaction",
-        damage = "b2Damage", rpm = "b2RPM", spread = "b2Spread", burst = { 5, 8 }, color = 2, big = true, dual = true },
+        damage = "b2Damage", rpm = "b2RPM", spread = "b2Spread", burst = { 5, 8 }, color = 2, big = true, dual = true, sound = D.B2_SOUND },
 }
 
 -- B1 variants: a B1 with another model, and a few changes.
@@ -241,14 +242,14 @@ local DC15S, DC15A, Z6 = "models/jajoff/sps/cgiweapons/tc13j/dc15s.mdl", "models
 D.CLONE_FALLBACK = "models/combine_soldier.mdl"
 D.KINDS.ct_trooper = { name = "Clone trooper", side = "republic", modelCfg = "ctModel", health = "ctHealth", speed = "ctSpeed", range = "ctRange", reaction = "ctReaction",
     damage = "ctDamage", rpm = "ctRPM", spread = "ctSpread", burst = { 2, 4 }, color = 1, gun = DC15S, poppers = true, cover = true,
-    sound = "weapons/airboat/airboat_gun_energy1.wav" }
+    sound = "weapons/dc15s/dc15s_fire.ogg" }
 D.KINDS.ct_rifleman = variant("ct_trooper", "Clone rifleman", nil, { damage = "ctRifleDamage", rpm = "ctRifleRPM", burst = { 2, 3 }, gun = DC15A, poppers = false,
-    sound = "weapons/airboat/airboat_gun_energy2.wav" })
+    sound = "weapons/dc15a/dc15a_fire.ogg" })
 D.KINDS.ct_heavy = variant("ct_trooper", "Clone heavy", nil, { health = "ctHeavyHealth", speed = "ctHeavySpeed", damage = "ctHeavyDamage", rpm = "ctHeavyRPM",
-    spread = "ctHeavySpread", burst = { 6, 10 }, gun = Z6, poppers = false, cover = false, sound = "weapons/airboat/airboat_gun_energy2.wav" })
+    spread = "ctHeavySpread", burst = { 6, 10 }, gun = Z6, poppers = false, cover = false, sound = "weapons/z6_rotary/z6_fire.ogg" })
 D.KINDS.ct_medic = variant("ct_trooper", "Clone medic", nil, { modelCfg = "ctMedicModel", poppers = false, medic = true })
 D.KINDS.ct_commander = variant("ct_trooper", "Clone commander", nil, { modelCfg = "ctCmdModel", health = "ctCmdHealth", damage = "ctRifleDamage", rpm = "ctRifleRPM",
-    burst = { 2, 3 }, gun = DC15A, poppers = false, commander = true, sound = "weapons/airboat/airboat_gun_energy2.wav" })
+    burst = { 2, 3 }, gun = DC15A, poppers = false, commander = true, sound = "weapons/dc15a/dc15a_fire.ogg" })
 
 -- The model a kind uses (config for clones).
 function D.KindModel(k)

@@ -139,6 +139,10 @@ function Items.RegisterWeapons()
                     rounds = full.InvUses,
                     unit = full.InvUses and "uses" or nil,
                     carrySkill = full.CarrySkill,   -- (rhylib_skills: only players with it may carry it)
+                    -- SWEP.InvSlot: worn in that slot (riot shields: "back"); SWEP.InvSlotOnly:
+                    -- only there (not in a grid), so it takes the place of a backpack/jetpack.
+                    slot = full.InvSlot,
+                    slotOnly = full.InvSlotOnly or nil,
                     -- Fits a holster: SWEP.InvHolster (true/false), or a small pistol.
                     -- (Not SWEP.Holster: that's the weapon's holster function, so
                     -- every gun had a function here and none fitted.)
@@ -407,12 +411,27 @@ end
 function Items.ContainerAllows(cid, def)
     local worn = Items.WORN[cid]
     if worn then return def.slot == worn.slot end
+    -- (slotOnly: only its worn slot, or an outside storage)
+    if def.slotOnly and cid ~= Items.EXT then return false end
     if cid == Items.HOLSTER then return def.holster == true end
     if cid == Items.EXT then return true end  -- the storage itself decides (sv_30_storage.lua)
     if cid == Items.BACK then return not def.large and not def.grid end
     if cid == Items.RACK or cid == Items.CELLPACK then return def.id == "cell" end
     if cid == Items.BELT or cid == Items.POUCH then return not def.grid and not def.slot and not (def.weapon and def.w >= 5) end
     return true
+end
+
+-- Why a slot-only item (riot shield: the back slot) won't fit: what's worn
+-- there. nil when that isn't the reason.
+function Items.SlotTakenText(state, id)
+    local def = Items.defs[id]
+    local cid = def and def.slotOnly and def.slot and Items.WORN_BY_SLOT[def.slot]
+    local c = cid and state.cont[cid]
+    if not c then return nil end
+    for _, o in pairs(c.items) do
+        local od = Items.defs[o.id]
+        return "It goes on your back: take off the " .. string.lower(od and od.name or "item") .. " first"
+    end
 end
 
 -- Can item `id` go to container cid at x, y? ignoreUid: the item being moved.

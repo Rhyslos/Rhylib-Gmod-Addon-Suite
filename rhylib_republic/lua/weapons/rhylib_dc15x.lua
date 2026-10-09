@@ -58,7 +58,8 @@ SWEP.Recoil = { up = 3.2, side = 0.5, bias = 0.1, recover = 0.8, aimMult = 0.7 }
 SWEP.Damage = 120
 SWEP.BoltSpeed = 16000
 SWEP.BoltColor = 1
-SWEP.FireSound = "weapons/airboat/airboat_gun_energy2.wav"
+SWEP.FireSound = "weapons/shared/shared_clonesniper_fire.ogg"
+SWEP.FireSoundLevel = 120
 
 SWEP.Mags = { "mag_large" }
 SWEP.ClipCap = 15

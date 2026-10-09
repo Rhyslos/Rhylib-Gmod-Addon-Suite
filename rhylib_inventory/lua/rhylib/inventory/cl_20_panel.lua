@@ -1124,7 +1124,8 @@ function PANEL:OnMousePressed(code)
             menu:AddOption("Split stack", function() Inv.RequestSplit(inst) end)
         end
         -- Equip = put it on the hotbar (first free slot); Unequip = take it off.
-        if def and not Items.IsWorn(inst.c) and not def.slot then
+        -- (worn weapons, e.g. a riot shield on the back slot, still go on the hotbar)
+        if def and (def.weapon or (not Items.IsWorn(inst.c) and not def.slot)) then
             if inst.hb then
                 menu:AddOption("Unequip", function() Inv.RequestHotbar(nil, inst.hb) end)
             else
@@ -1149,7 +1150,7 @@ function PANEL:OnMousePressed(code)
             else
                 menu:AddOption("Can't wear: " .. (why or "not on your model"), function() end)
             end
-        elseif wearCid and inst.c == wearCid then
+        elseif wearCid and inst.c == wearCid and not def.slotOnly then   -- (slot-only: nowhere else to put it; drop it instead)
             menu:AddOption("Take off", function()
                 -- First free spot in the main grid, then the backpack.
                 for _, cid in ipairs({ MAIN, BACK }) do

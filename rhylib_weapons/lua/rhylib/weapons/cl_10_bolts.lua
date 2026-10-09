@@ -201,6 +201,19 @@ end, function(s)
     Bolts.Spawn(shooter, s.origin, s.dir, s.speed, s.color, s.left, s.ahead)
 end)
 
+-- Bolt hit sounds (Star Wars shared resources pack: effects/sw_impact,
+-- 24 variants; owner 2026-10-09): only within IMPACT_RANGE, at most one
+-- every IMPACT_GAP s, so a big fight doesn't stack hundreds of them.
+local IMPACT_RANGE2, IMPACT_GAP = 1800 * 1800, 0.03
+local nextImpactSound = 0
+local function impactSound(pos)
+    local now = RealTime()
+    if now < nextImpactSound then return end
+    if EyePos():DistToSqr(pos) > IMPACT_RANGE2 then return end
+    nextImpactSound = now + IMPACT_GAP
+    sound.Play(string.format("effects/sw_impact/sw752_hit_%02d.ogg", math.random(1, 24)), pos, 72, math.random(95, 105), 0.8)
+end
+
 local function impact(b)
     local style = b.style
     if style.rocket or style.hook then return end  -- the server handles these
@@ -215,6 +228,7 @@ local function impact(b)
     ed:SetOrigin(b.hitPos)
     ed:SetNormal(b.hitNormal)
     util.Effect("AR2Impact", ed)
+    impactSound(b.hitPos)
 
     local ent = b.hitEnt
     if not (IsValid(ent) and (ent:IsPlayer() or ent:IsNPC())) then

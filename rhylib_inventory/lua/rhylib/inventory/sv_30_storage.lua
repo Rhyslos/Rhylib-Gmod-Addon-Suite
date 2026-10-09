@@ -552,7 +552,7 @@ function Inv.QuickTake(ply, suid, single)
     local data = depot and { fill = def.fill and 1 or nil, issued = true } or table.Copy(so.data or {})
     local taken = n - Inv.AddItem(ply, so.id, n, data)
     if taken <= 0 then
-        Inv.Note(ply, "No room for that")
+        Inv.Note(ply, Items.SlotTakenText(Inv.Get(ply), so.id) or "No room for that")
         return
     end
     tookSound(ply)
