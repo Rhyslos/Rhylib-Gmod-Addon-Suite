@@ -424,21 +424,30 @@ local CLASSES = { "rhylib_jail_cell", "rhylib_jail_terminal", "rhylib_property_l
 Rhylib.PLACEMENT_CLASSES = Rhylib.PLACEMENT_CLASSES or {}
 for _, c in ipairs(CLASSES) do Rhylib.PLACEMENT_CLASSES[c] = true end
 
+-- Only permanent ones (the toolgun's Permanent tool, 2026-10-09u).
+function MP.SavePlaces()
+    local list = {}
+    for _, class in ipairs(CLASSES) do
+        for _, e in ipairs(ents.FindByClass(class)) do
+            if (not Rhylib.Perma or Rhylib.Perma.Is(e)) then
+                local pos, ang = e:GetPos(), e:GetAngles()
+                list[#list + 1] = { class = class, pos = { pos.x, pos.y, pos.z }, ang = { ang.p, ang.y, ang.r } }
+            end
+        end
+    end
+    Data.Set("mp_places", game.GetMap(), list)
+    return #list
+end
+if Rhylib.Perma and Rhylib.Perma.Register then Rhylib.Perma.Register(CLASSES, MP.SavePlaces) end
+
 concommand.Add("rhylib_mp_save", function(ply)
     Rhylib.Perms.Check(ply, "rhylib.mp.admin", function(ok)
         if not ok then
             if IsValid(ply) then ply:ChatPrint("You don't have permission for rhylib_mp_save") end
             return
         end
-        local list = {}
-        for _, class in ipairs(CLASSES) do
-            for _, e in ipairs(ents.FindByClass(class)) do
-                local pos, ang = e:GetPos(), e:GetAngles()
-                list[#list + 1] = { class = class, pos = { pos.x, pos.y, pos.z }, ang = { ang.p, ang.y, ang.r } }
-            end
-        end
-        Data.Set("mp_places", game.GetMap(), list)
-        local msg = "Saved " .. #list .. " jail cells, terminals and property lockers for " .. game.GetMap()
+        local n = MP.SavePlaces()
+        local msg = "Saved " .. n .. " jail cells, terminals and property lockers for " .. game.GetMap()
         if IsValid(ply) then ply:ChatPrint(msg) else print(msg) end
     end)
 end)
@@ -457,6 +466,7 @@ local function loadPlaces()
             e:Spawn()
             local phys = e:GetPhysicsObject()
             if IsValid(phys) then phys:EnableMotion(false) end
+            if Rhylib.Perma then Rhylib.Perma.Mark(e, true) end
         end
     end
 end

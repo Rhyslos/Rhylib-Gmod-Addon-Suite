@@ -103,7 +103,7 @@ Admin.COMMANDS = {
 
     -- Server / events
     { id = "map", name = "Change map", cat = "Server", args = { { "map", "Map", "map" } }, desc = "Pick from a list (or !map part-of-name); 10 s countdown" },
-    { id = "cleanup", name = "Clean up spawned things", cat = "Server", target = "opt", args = {}, desc = "Everything that isn't part of the map, a saved placement or a perma prop; or one player's things with a target (^ = yours)" },
+    { id = "cleanup", name = "Clean up spawned things", cat = "Server", target = "opt", args = {}, desc = "Everything that isn't part of the map or made permanent (toolgun Permanent tool); or one player's things with a target (^ = yours)" },
     { id = "cancelmap", name = "Cancel map change", cat = "Server", perm = "map", args = {} },
     { id = "restartmap", name = "Restart map", cat = "Server", perm = "map", args = {}, aliases = { "maprestart" }, desc = "Reloads this map after a 10 s countdown" },
     { id = "hidecells", name = "Show / hide jail cells", cat = "Server", args = {}, desc = "Hides the jail cell rings for everyone (again to show them)" },

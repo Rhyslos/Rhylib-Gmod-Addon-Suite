@@ -191,8 +191,10 @@ end)
 function T.SaveBeacons()
     local rows = {}
     for _, b in ipairs(ents.FindByClass(BEACON)) do
-        local p, a = b:GetPos(), b:GetAngles()
-        rows[#rows + 1] = { name = b:GetBeaconName(), pos = { p.x, p.y, p.z }, yaw = a.y }
+        if (not Rhylib.Perma or Rhylib.Perma.Is(b)) then   -- (only permanent ones, 2026-10-09u)
+            local p, a = b:GetPos(), b:GetAngles()
+            rows[#rows + 1] = { name = b:GetBeaconName(), pos = { p.x, p.y, p.z }, yaw = a.y }
+        end
     end
     Rhylib.Data.Set("training", game.GetMap(), rows)
     return #rows
@@ -208,6 +210,7 @@ function T.SpawnBeacons()
             b:SetAngles(Angle(0, row.yaw or 0, 0))
             b:SetBeaconName(tostring(row.name or "Beacon"))
             b:Spawn()
+            if Rhylib.Perma then Rhylib.Perma.Mark(b, true) end
         end
     end
 end
@@ -217,6 +220,7 @@ Rhylib.Hook.Add("PostCleanupMap", "training.beacons", T.SpawnBeacons)
 
 Rhylib.PLACEMENT_CLASSES = Rhylib.PLACEMENT_CLASSES or {}
 Rhylib.PLACEMENT_CLASSES[BEACON] = true
+if Rhylib.Perma and Rhylib.Perma.Register then Rhylib.Perma.Register({ BEACON }, T.SaveBeacons) end
 
 concommand.Add("rhylib_training_save", function(ply)
     local function reply(m) if IsValid(ply) then ply:ChatPrint(m) else print(m) end end

@@ -600,7 +600,7 @@ local JAMMER = "rhylib_comms_jammer"
 function R.SaveJammers()
     local rows = {}
     for _, j in ipairs(ents.FindByClass(JAMMER .. "*")) do
-        if R.JAMMER_SIZES[j:GetClass()] then
+        if R.JAMMER_SIZES[j:GetClass()] and (not Rhylib.Perma or Rhylib.Perma.Is(j)) then   -- (only permanent ones, 2026-10-09u)
             local p, a = j:GetPos(), j:GetAngles()
             -- (a shot-up jammer is saved as it was before: it's back next map)
             local on = j.destroyed and j.wasOn or j:GetActive()
@@ -622,6 +622,7 @@ function R.SpawnJammers()
             j:SetAngles(Angle(row.ang[1], row.ang[2], row.ang[3]))
             j.startOff = row.on == false
             j:Spawn()
+            if Rhylib.Perma then Rhylib.Perma.Mark(j, true) end
         end
     end
 end
@@ -630,6 +631,11 @@ Rhylib.Hook.Add("InitPostEntity", "radio.jammers", function() timer.Simple(1, R.
 Rhylib.Hook.Add("PostCleanupMap", "radio.jammers", R.SpawnJammers)
 Rhylib.PLACEMENT_CLASSES = Rhylib.PLACEMENT_CLASSES or {}
 for class in pairs(R.JAMMER_SIZES) do Rhylib.PLACEMENT_CLASSES[class] = true end
+if Rhylib.Perma and Rhylib.Perma.Register then
+    local list = {}
+    for class in pairs(R.JAMMER_SIZES) do list[#list + 1] = class end
+    Rhylib.Perma.Register(list, R.SaveJammers)
+end
 
 Rhylib.Perms.Register("rhylib.radio.admin", "admin", "Place, switch and save comms jammers")
 concommand.Add("rhylib_radio_save", function(ply)

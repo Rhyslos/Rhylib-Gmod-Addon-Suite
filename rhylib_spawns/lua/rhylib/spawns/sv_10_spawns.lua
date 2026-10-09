@@ -189,8 +189,10 @@ function S.Save()
     local rows = {}
     for _, class in ipairs({ S.POINT, S.EVENT }) do
         for _, e in ipairs(ents.FindByClass(class)) do
-            local p, a = e:GetPos(), e:GetAngles()
-            rows[#rows + 1] = { class = class, name = e:GetBeaconName(), bn = e:GetBattalion(), pos = { p.x, p.y, p.z }, yaw = a.y }
+            if (not Rhylib.Perma or Rhylib.Perma.Is(e)) then   -- (only permanent ones, 2026-10-09u)
+                local p, a = e:GetPos(), e:GetAngles()
+                rows[#rows + 1] = { class = class, name = e:GetBeaconName(), bn = e:GetBattalion(), pos = { p.x, p.y, p.z }, yaw = a.y }
+            end
         end
     end
     Data.Set("spawns", game.GetMap(), rows)
@@ -212,11 +214,13 @@ function S.Load()
                 e:Spawn()
                 e:SetBeaconName(tostring(row.name or "Spawn"))
                 e:SetBattalion(tostring(row.bn or ""))
+                if Rhylib.Perma then Rhylib.Perma.Mark(e, true) end
             end
         end
     end
 end
 
+if Rhylib.Perma and Rhylib.Perma.Register then Rhylib.Perma.Register({ S.POINT, S.EVENT }, S.Save) end
 Rhylib.Hook.Add("InitPostEntity", "spawns.load", function() timer.Simple(1, S.Load) end)
 Rhylib.Hook.Add("PostCleanupMap", "spawns.load", S.Load)
 Rhylib.Hook.Add("EntityRemoved", "spawns.removed", function(ent)

@@ -392,6 +392,15 @@ Rhylib.Hook.Add("Rhylib.PlayerDowned", "skills.momentum", function(_, attacker) 
 -- Damage taken: Airborne and Combat medic (before armour at 100)
 --------------------------------------------------------------------------
 
+-- No push from a hit. The engine shoves a walking player away from the
+-- inflictor by the damage amount (CBaseCombatCharacter::OnTakeDamage_Alive),
+-- not by the damage force, so zeroing the force alone did nothing;
+-- DMG_NO_PHYSICS_FORCE is the flag that skips that shove.
+local function noPush(dmg)
+    dmg:SetDamageForce(vector_origin)
+    dmg:SetDamageType(bit.bor(dmg:GetDamageType(), DMG_NO_PHYSICS_FORCE))
+end
+
 Rhylib.Hook.Add("EntityTakeDamage", "skills.resist", function(ent, dmg)
     if not ent:IsPlayer() or ent.rhylibDown then return end
     if bit.band(dmg:GetDamageType(), DMG_DIRECT) ~= 0 then return end   -- (bleeding, bleed-out)
@@ -426,10 +435,10 @@ Rhylib.Hook.Add("EntityTakeDamage", "skills.resist", function(ent, dmg)
             K.Note(ent, "Battle rush: " .. math.Round((K.Cfg("rushDamage") - 1) * 100) .. "% more damage for " .. K.Cfg("rushTime") .. " s")
         end
         -- Shock Assault: no push from hits.
-        if set.shock_assault then dmg:SetDamageForce(vector_origin) end
+        if set.shock_assault then noPush(dmg) end
     end
     -- Command orders (Hold fast blocks everything earlier, skills.holdfast).
-    if K.OrderIs(ent, "press") then dmg:SetDamageForce(vector_origin) end
+    if K.OrderIs(ent, "press") then noPush(dmg) end
     if m ~= 1 then dmg:ScaleDamage(m) end
 end, 95)
 

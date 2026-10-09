@@ -406,8 +406,10 @@ local function savePlaces()
     local rows = {}
     for _, class in ipairs(CLASSES) do
         for _, e in ipairs(ents.FindByClass(class)) do
-            local p, an = e:GetPos(), e:GetAngles()
-            rows[#rows + 1] = { class = class, pos = { p.x, p.y, p.z }, ang = { an.p, an.y, an.r } }
+            if (not Rhylib.Perma or Rhylib.Perma.Is(e)) then   -- (only permanent ones, 2026-10-09u)
+                local p, an = e:GetPos(), e:GetAngles()
+                rows[#rows + 1] = { class = class, pos = { p.x, p.y, p.z }, ang = { an.p, an.y, an.r } }
+            end
         end
     end
     Rhylib.Data.Set("med_places", game.GetMap(), rows)
@@ -426,9 +428,11 @@ local function loadPlaces()
             e:SetPos(Vector(r.pos[1], r.pos[2], r.pos[3]))
             e:SetAngles(Angle(r.ang[1], r.ang[2], r.ang[3]))
             e:Spawn()
+            if Rhylib.Perma then Rhylib.Perma.Mark(e, true) end
         end
     end
 end
+if Rhylib.Perma and Rhylib.Perma.Register then Rhylib.Perma.Register(CLASSES, savePlaces) end
 Rhylib.Hook.Add("InitPostEntity", "medical.places", function() timer.Simple(1, loadPlaces) end)
 Rhylib.Hook.Add("PostCleanupMap", "medical.places", loadPlaces)
 

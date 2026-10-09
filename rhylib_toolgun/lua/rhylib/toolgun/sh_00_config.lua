@@ -2,9 +2,9 @@
     Toolgun (rhylib_toolgun weapon, BTX-42 pistol model): the host's spawn
     tool. LMB places the chosen thing where you aim (on the world or on
     props), facing you; RMB removes a Rhylib thing you aim at; R opens the
-    list. Fixtures (armouries, cabinets, crates, med bay, jail, computers,
-    training beacons) are saved for the map straight away (their own
-    *_save command); droids are not saved.
+    list. Nothing placed is saved by itself: the "Permanent" entry (Staff
+    tools) makes a thing stay on the map (Rhylib.Perma); !cleanup wipes the
+    rest.
 
     Permission rhylib.toolgun (admin). Get one with rhylib_toolgun in the
     console, !toolgun in chat, or the spawn menu (Weapons > Rhylib).
@@ -30,6 +30,10 @@ local SPAWNS = "rhylib_spawns_save"
 local RADIO = "rhylib_radio_save"
 
 local ALL = {
+    -- Staff tool (2026-10-09u, owner): placing no longer saves anything; this
+    -- makes the aimed thing permanent (rhylib_core Rhylib.Perma). Works on
+    -- anything not part of the map: fixtures, props, other addons' entities.
+    { id = "perma", name = "Permanent (LMB: keep it on the map / save its new spot, RMB: stop keeping it)", cat = "Staff tools", perma = true },
     { id = "b1", name = "B1 battle droid", cat = "Droid NPCs", class = "rhylib_b1", count = true },
     { id = "b2", name = "B2 super battle droid", cat = "Droid NPCs", class = "rhylib_b2", count = true },
     { id = "b2c", name = "B2 mortar droid", cat = "Droid NPCs", class = "rhylib_b2_cannon", count = true },
@@ -108,7 +112,7 @@ local ALL = {
 
 -- The Rhylib tab's categories, top to bottom (owner: NPCs on their own,
 -- not alphabetical); others follow alphabetically.
-Tool.CAT_ORDER = { "Clone NPCs", "Clone orders", "Droid NPCs", "Droid orders", "Spawns", "Armoury", "Medical", "Base", "Training", "Testing" }
+Tool.CAT_ORDER = { "Staff tools", "Clone NPCs", "Clone orders", "Droid NPCs", "Droid orders", "Spawns", "Armoury", "Medical", "Base", "Training", "Testing" }
 
 -- The installed entries (built once, after entities are registered).
 function Tool.Entries()
@@ -116,7 +120,8 @@ function Tool.Entries()
     local list = {}
     for _, e in ipairs(ALL) do
         -- (orders need rhylib_droids, the rest their entity)
-        if ((e.order or e.preset or e.follow) and Rhylib.Droids) or (e.class and scripted_ents.GetStored(e.class)) then list[#list + 1] = e end
+        if ((e.order or e.preset or e.follow) and Rhylib.Droids) or (e.class and scripted_ents.GetStored(e.class))
+            or (e.perma and Rhylib.Perma) then list[#list + 1] = e end
     end
     hook.Run("Rhylib.ToolEntries", list)
     for i, e in ipairs(list) do e.index = i end
@@ -182,8 +187,33 @@ end
 
 function Tool.EntryModel(e)
     if e.preset then return Tool.ClassModel(PRESET_CLASS[e.preset]) end
-    if e.order or e.follow then return nil end
+    if e.order or e.follow or e.perma then return nil end
     return Tool.ClassModel(e.class)
+end
+
+-- What the Permanent tool works on: the entity aimed at, or (for things
+-- that aren't solid, like jail cells and spawn points) the nearest one
+-- within 48 units of where you aim. Shared, so the outline matches: the
+-- fallback only picks scripted entities (both realms agree on that).
+local PICK_R = 48
+function Tool.PermaTarget(ply)
+    local start = ply:EyePos()
+    local tr = util.TraceLine({ start = start, endpos = start + ply:GetAimVector() * Tool.RANGE, filter = ply, mask = MASK_SOLID })
+    local e = tr.Entity
+    if IsValid(e) and e:IsPlayer() then return nil end
+    if IsValid(e) and not e:IsWorld() then return e end
+    if not tr.Hit then return nil end
+    local best, bestD = nil, PICK_R * PICK_R
+    for _, c in ipairs(ents.FindInSphere(tr.HitPos, PICK_R)) do
+        if IsValid(c) and c:IsScripted() and not c:IsPlayer() and not c:IsWeapon()
+            and not IsValid(c:GetParent()) and not (IsValid(c:GetOwner()) and c:GetOwner():IsPlayer())
+            and not (SERVER and c:CreatedByMap())
+            and isstring(c:GetModel()) and c:GetModel() ~= "" then
+            local d = c:GetPos():DistToSqr(tr.HitPos)
+            if d < bestD then best, bestD = c, d end
+        end
+    end
+    return best
 end
 
 function Tool.ById(id)

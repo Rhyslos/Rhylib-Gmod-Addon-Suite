@@ -250,8 +250,9 @@ recv("dp.tset", {
         if not a.rawAdmin or isMed(ent) or ent:GetBattalion() ~= "" then return end
         if string.sub(bn, 1, 2) == "__" then return end  -- reserved Data keys
         ent:SetBattalion(bn)
-        if D.SavePlacements(true) == 0 then
-            ply:ChatPrint("Battalion set. Run rhylib_datapad_save to keep it after a map change")
+        D.SavePlacements(true)
+        if Rhylib.Perma and not Rhylib.Perma.Is(ent) then
+            ply:ChatPrint("Battalion set. Make the computer permanent (toolgun Permanent tool) to keep it after a map change")
         end
         D.SendTerminal(ply, ent)
     end,
@@ -304,9 +305,11 @@ function D.SavePlacements(quiet)
     local rows = {}
     for _, class in ipairs(CLASSES) do
         for _, e in ipairs(ents.FindByClass(class)) do
-            local p, an = e:GetPos(), e:GetAngles()
-            rows[#rows + 1] = { class = class, pos = { p.x, p.y, p.z }, ang = { an.p, an.y, an.r },
-                bn = e.GetBattalion and e:GetBattalion() or "" }
+            if (not Rhylib.Perma or Rhylib.Perma.Is(e)) then   -- (only permanent ones, 2026-10-09u)
+                local p, an = e:GetPos(), e:GetAngles()
+                rows[#rows + 1] = { class = class, pos = { p.x, p.y, p.z }, ang = { an.p, an.y, an.r },
+                    bn = e.GetBattalion and e:GetBattalion() or "" }
+            end
         end
     end
     Rhylib.Data.Set("dp_places", game.GetMap(), rows)
@@ -326,9 +329,11 @@ local function loadPlaces()
             e:SetAngles(Angle(r.ang[1], r.ang[2], r.ang[3]))
             e:Spawn()
             if e.SetBattalion then e:SetBattalion(r.bn or "") end
+            if Rhylib.Perma then Rhylib.Perma.Mark(e, true) end
         end
     end
 end
+if Rhylib.Perma and Rhylib.Perma.Register then Rhylib.Perma.Register(CLASSES, function() return D.SavePlacements() end) end
 Rhylib.Hook.Add("InitPostEntity", "datapad.places", function() timer.Simple(1, loadPlaces) end)
 Rhylib.Hook.Add("PostCleanupMap", "datapad.places", loadPlaces)
 

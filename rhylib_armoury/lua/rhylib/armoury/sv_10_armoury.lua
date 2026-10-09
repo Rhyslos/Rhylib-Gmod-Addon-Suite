@@ -460,8 +460,13 @@ function A.SavePlacements()
     local rows = {}
     for class in pairs(A.CLASSES) do
         for _, ent in ipairs(ents.FindByClass(class)) do
-            rows[#rows + 1] = rowFor(ent)
-            ent.placeIndex = #rows
+            -- (only permanent ones: the toolgun's Permanent tool, 2026-10-09u)
+            if (not Rhylib.Perma or Rhylib.Perma.Is(ent)) then
+                rows[#rows + 1] = rowFor(ent)
+                ent.placeIndex = #rows
+            else
+                ent.placeIndex = nil
+            end
         end
     end
     A.placements = rows
@@ -494,10 +499,17 @@ function A.SpawnPlacements()
                     ent:SetLocked(row.locked and true or false)
                 end
                 ent.placeIndex = i
+                if Rhylib.Perma then Rhylib.Perma.Mark(ent, true) end
             end
         end
     end
     Rhylib.Print("armoury", "Placed %d armoury entities on %s", #rows, game.GetMap())
+end
+
+if Rhylib.Perma and Rhylib.Perma.Register then
+    local list = {}
+    for c in pairs(A.CLASSES) do list[#list + 1] = c end
+    Rhylib.Perma.Register(list, A.SavePlacements)
 end
 
 Rhylib.Hook.Add("InitPostEntity", "armoury.spawn", function()

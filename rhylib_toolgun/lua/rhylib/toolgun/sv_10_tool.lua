@@ -9,7 +9,11 @@
                    thing at the aimed spot, through sandbox's own spawn code
                    (so the gamemode's spawn rules and limits apply)
       tool.remove  client
-      tool.save    client: run every placement save now
+      tool.perma   client: bool: the Permanent tool on the aimed thing (on / off)
+      tool.save    client: save every permanent thing again now
+
+    Placing no longer saves anything (owner 2026-10-09u): staff make a thing
+    permanent with the Permanent tool (rhylib_core sh_62_perma.lua).
 ]]
 
 local Tool = Rhylib.Tool
@@ -33,18 +37,26 @@ local function aim(ply)
     return util.TraceLine({ start = start, endpos = start + ply:GetAimVector() * Tool.RANGE, filter = ply, mask = MASK_SOLID })
 end
 
--- Saves run once, a moment after the last change (one per command).
-local pendingSaves = {}
-local function queueSave(cmd)
-    if not cmd then return end
-    pendingSaves[cmd] = true
-    timer.Create("Rhylib.Tool.Save", 0.5, 1, function()
-        for c in pairs(pendingSaves) do game.ConsoleCommand(c .. "\n") end
-        pendingSaves = {}
-    end)
+-- The Permanent tool: make the aimed thing permanent (or save its new
+-- spot), or stop keeping it (rhylib_core Rhylib.Perma).
+local function perma(ply, on)
+    local P = Rhylib.Perma
+    if not (P and P.Set) then return end
+    local ent = Tool.PermaTarget(ply)
+    if not IsValid(ent) then return ply:ChatPrint("[Permanent] Aim at something") end
+    local ok, msg = P.Set(ent, on)
+    ply:ChatPrint("[Permanent] " .. msg)
+    ply:EmitSound(ok and "buttons/button14.wav" or "buttons/button10.wav", 60, ok and (on and 120 or 90) or 100)
 end
 
+Rhylib.Net.Register("tool.perma")
+Rhylib.Net.Receive("tool.perma", function(ply)
+    local on = net.ReadBool()
+    allowed(ply, function() perma(ply, on) end)
+end, { rate = 10, burst = 10 })
+
 local function place(ply, e, count, name, mode)
+    if e.perma then return perma(ply, true) end
     local tr = aim(ply)
     if not tr.Hit or tr.HitSky then return end
     local D = Rhylib.Droids
@@ -134,7 +146,6 @@ local function place(ply, e, count, name, mode)
         end
     end
     if made > 0 then
-        queueSave(e.save)
         ply:EmitSound("buttons/button14.wav", 60, 110)
     end
 end
@@ -281,8 +292,10 @@ Rhylib.Net.Receive("tool.remove", function(ply)
             if best then ent, e = best, { class = best:GetClass() } end
         end
         if not e then return end
-        if IsValid(e.ent) then e.ent:Remove() else ent:Remove() end
-        queueSave(e.save)
+        -- (a permanent thing is saved again without it)
+        local P = Rhylib.Perma
+        local victim = IsValid(e.ent) and e.ent or ent
+        if P and P.Forget then P.Forget(victim) else victim:Remove() end
         ply:EmitSound("buttons/button15.wav", 60, 100)
     end)
 end, { rate = 20, burst = 20 })
@@ -306,14 +319,15 @@ end, { rate = 10, burst = 10 })
 
 Rhylib.Net.Receive("tool.save", function(ply)
     allowed(ply, function()
+        -- Every permanent thing again (positions may have moved).
+        local P = Rhylib.Perma
+        if not P then return end
         local seen = {}
-        for _, e in ipairs(Tool.Entries()) do
-            if e.save and not seen[e.save] then
-                seen[e.save] = true
-                queueSave(e.save)
-            end
+        for class, fn in pairs(P.savers) do
+            if not seen[fn] then seen[fn] = true P.Save(class) end
         end
-        ply:ChatPrint("Saving every placement on " .. game.GetMap())
+        P.Save("")   -- (the plain list)
+        ply:ChatPrint("Saving every permanent thing on " .. game.GetMap())
     end)
 end, { rate = 1, burst = 2 })
 

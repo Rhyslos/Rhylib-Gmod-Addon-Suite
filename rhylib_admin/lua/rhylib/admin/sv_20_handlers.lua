@@ -441,7 +441,7 @@ H.cancelmap = function(caller)
     return name(caller) .. " cancelled the map change"
 end
 
--- Saved placements (armoury, jail, datapad terminals) stay.
+-- Rhylib fixtures (armoury, jail, terminals...): freezeprops leaves them be.
 local function isPlacement(e)
     if e.placeIndex then return true end
     local c = e:GetClass()
@@ -451,27 +451,35 @@ local function isPlacement(e)
     return c == "rhylib_jail_cell" or c == "rhylib_jail_terminal" or c == "rhylib_bn_computer" or c == "rhylib_med_holotable"
 end
 
--- Perma props (PermaProps addons, sandbox persistence) stay too.
+-- Permanent things stay: Rhylib's own (toolgun "Permanent" tool,
+-- Rhylib.Perma) and other perma prop addons / sandbox persistence.
 local function isPerma(e)
+    if Rhylib.Perma and Rhylib.Perma.Is(e) then return true end
     return e.PermaProps or e.PermaProps_ID or e:GetNWBool("PermaProps", false) or e:GetPersistent() or e.rhylibPerma or false
 end
 
--- What a full cleanup may take: things spawned during play (not part of
--- the map, not carried, not a lying player's body, not a placement).
-local TAKE_PREFIX = { "prop_physics", "prop_ragdoll", "prop_vehicle", "spawned_", "sent_", "gmod_wire_", "edit_" }
-local TAKE_CLASS = { rhylib_world_item = true, rhylib_grenade = true, gmod_button = true, gmod_lamp = true, gmod_light = true,
+-- What a full cleanup takes: everything spawned during play that isn't
+-- permanent (2026-10-09u, owner: placements are only kept when made
+-- permanent). Never map entities, players, held weapons, hands and
+-- viewmodels, grapple ropes, lying bodies, or things attached to a player
+-- or to something permanent.
+local TAKE_PREFIX = { "prop_", "spawned_", "sent_", "gmod_wire_", "edit_", "rhylib_", "npc_" }
+local TAKE_CLASS = { gmod_button = true, gmod_lamp = true, gmod_light = true,
     gmod_balloon = true, gmod_thruster = true, gmod_wheel = true, gmod_hoverball = true, gmod_emitter = true,
     gmod_dynamite = true, gmod_cameraprop = true, gmod_turret = true }
-local KEEP_CLASS = { gmod_hands = true, gmod_gamerules = true, predicted_viewmodel = true, viewmodel = true, rhylib_rope = true }
+local KEEP_CLASS = { gmod_hands = true, gmod_gamerules = true, predicted_viewmodel = true, viewmodel = true, rhylib_rope = true,
+    physgun_beam = true }
 local function cleanable(e)
-    if e:CreatedByMap() or e:IsPlayer() or isPlacement(e) or isPerma(e) then return false end
+    -- (rhylibMapish: there when the map loaded, e.g. point_template spawns)
+    if e:CreatedByMap() or e.rhylibMapish or e:IsPlayer() or isPerma(e) then return false end
     local c = e:GetClass()
-    if KEEP_CLASS[c] or string.sub(c, 1, 17) == "rhylib_test_dummy" then return false end
+    if KEEP_CLASS[c] then return false end
     if e:GetNW2Bool("rhylib_lyingRag", false) then return false end
     if e:IsWeapon() and IsValid(e:GetOwner()) then return false end
     local parent = e:GetParent()
-    if IsValid(parent) and (parent:IsPlayer() or parent:GetClass() == "predicted_viewmodel") then return false end
-    if e.rhylibSpawner ~= nil or e:IsNPC() or e:IsNextBot() or e:IsVehicle() or e:IsWeapon() or TAKE_CLASS[c] then return true end
+    if IsValid(parent) and (parent:IsPlayer() or parent:GetClass() == "predicted_viewmodel" or isPerma(parent)) then return false end
+    if e.rhylibSpawner ~= nil or e.rhylibToolSpawned or e:IsNPC() or e:IsNextBot() or e:IsVehicle() or e:IsWeapon() or TAKE_CLASS[c] then return true end
+    if e:IsScripted() then return true end
     for _, p in ipairs(TAKE_PREFIX) do
         if string.sub(c, 1, #p) == p then return true end
     end
@@ -484,7 +492,7 @@ H.cleanup = function(caller, t)
     for _, e in ipairs(ents.GetAll()) do
         local take
         if only then
-            take = e.rhylibSpawner == only and not e:IsWeapon() and not isPlacement(e) and not isPerma(e)
+            take = e.rhylibSpawner == only and not e:IsWeapon() and not isPerma(e)
         else
             take = cleanable(e)
         end

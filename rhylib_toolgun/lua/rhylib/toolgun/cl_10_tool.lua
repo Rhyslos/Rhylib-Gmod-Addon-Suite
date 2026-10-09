@@ -35,10 +35,14 @@ function Tool.Chosen()
         local c = customEntry()
         if c then return c end
     end
-    for _, e in ipairs(Tool.Entries()) do
+    local list = Tool.Entries()
+    for _, e in ipairs(list) do
         if e.id == id then return e end
     end
-    return Tool.Entries()[1]
+    for _, e in ipairs(list) do   -- (never fall back to the Permanent tool)
+        if not e.perma then return e end
+    end
+    return list[1]
 end
 
 -- The "Rhylib" tab of the spawn window (rhylib_menus cl_85_spawn.lua):
@@ -82,10 +86,10 @@ local function buildTab(body)
     te:SetWide(S(240))
     te:SetValue(cvName:GetString())
     te.OnChange = function(self) RunConsoleCommand("rhylib_tool_name", string.sub(self:GetValue(), 1, 32)) end
-    local save = K.Button(bottom, "Save all placements", function()
+    local save = K.Button(bottom, "Re-save permanent things", function()
         Rhylib.Net.Start("tool.save")
         net.SendToServer()
-    end, { tooltip = "Fixtures save by themselves when placed or removed; this saves everything on the map again." })
+    end, { tooltip = "Placing doesn't save anything: use the Permanent tool (Staff tools). This saves every permanent thing again where it stands now." })
     save:Dock(RIGHT)
     save:SetWide(S(220))
 
@@ -141,7 +145,8 @@ local function buildTab(body)
             local sp = e.class and ents[e.class] or {}
             items[#items + 1] = {
                 cat = e.cat, name = e.name, extra = e.class or e.id,
-                tip = e.order and "Click: pick it; LMB sets the mode of every NPC of that side near where you aim"
+                tip = e.perma and "LMB on a thing: keep it on this map for good (or save where it is now); RMB: stop keeping it.\nWhile picked, permanent things have an orange outline, the thing you aim at a light blue one."
+                    or e.order and "Click: pick it; LMB sets the mode of every NPC of that side near where you aim"
                     or e.follow and "LMB: pick a clone (or all near the spot); RMB: they follow you, or the player you aim at"
                     or e.preset and "LMB: places the whole squad in a grid facing you (front row where you aim, commander and B2s at the back)"
                     or (e.class .. "\nClick: pick it for the toolgun (LMB places)"),
@@ -262,6 +267,12 @@ function Tool.Click(wep, which)
     if which == "3" then return end   -- (R is read from the key, above)
     if which == "2" then
         local f = Tool.Chosen()
+        if f and f.perma then
+            Rhylib.Net.Start("tool.perma")
+            net.WriteBool(false)
+            net.SendToServer()
+            return
+        end
         Rhylib.Net.Start(f and f.follow and "tool.follow" or "tool.remove")
         net.SendToServer()
         return
@@ -300,6 +311,7 @@ function Tool.DrawHUD(wep)
     if not e then return end
     local ply = LocalPlayer()
     local tr = ply:GetEyeTrace()
+    if e.perma then return Tool.DrawPermaHUD() end
     local text = e.order and e.name or ((e.custom and "Spawn: " or "Place: ") .. e.name)
     if e.count and cvCount:GetInt() > 1 then text = text .. " ×" .. cvCount:GetInt() end
     if e.count and not e.custom then text = text .. "  ·  " .. ({ "Guard", "Patrol", "Attack" })[math.Clamp(cvMode:GetInt(), 1, 3)] end
@@ -317,6 +329,69 @@ function Tool.DrawHUD(wep)
     end
     draw.SimpleTextOutlined("R: spawn window  ·  hold R: peek  ·  R twice: old Q menu", Rhylib.UI.Font(13), ScrW() * 0.5, y + 42, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
 end
+
+-- The Permanent tool: what you aim at and whether it's kept.
+local COL_PERMA = Color(255, 150, 40)
+local COL_AIM = Color(110, 200, 255)
+-- The aimed thing, worked out once a frame (HUD and outlines both ask).
+local aimFrame, aimEnt = -1, nil
+local function permaAimed(ply)
+    local f = FrameNumber()
+    if f ~= aimFrame then aimFrame, aimEnt = f, Tool.PermaTarget(ply) end
+    return aimEnt
+end
+
+function Tool.DrawPermaHUD()
+    local ply = LocalPlayer()
+    local y = ScrH() * 0.5 + 40
+    draw.SimpleTextOutlined("Permanent tool", Rhylib.UI.Font(16, 700), ScrW() * 0.5, y, COL, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
+    local ent = permaAimed(ply)
+    local P = Rhylib.Perma
+    if IsValid(ent) then
+        local name = ent.PrintName and ent.PrintName ~= "" and ent.PrintName or ent:GetClass()
+        local kept = P and P.Is(ent)
+        draw.SimpleTextOutlined(name .. (kept and " · permanent" or " · not saved"), Rhylib.UI.Font(14, 700), ScrW() * 0.5, y + 22,
+            kept and COL_PERMA or COL_AIM, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
+        draw.SimpleTextOutlined(kept and "LMB: save where it is now  ·  RMB: stop keeping it" or "LMB: make it permanent",
+            Rhylib.UI.Font(13), ScrW() * 0.5, y + 42, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
+    else
+        draw.SimpleTextOutlined("Aim at something: orange outline = permanent", Rhylib.UI.Font(13), ScrW() * 0.5, y + 22, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
+    end
+end
+
+-- Outlines while the Permanent tool is picked: every permanent thing near
+-- you orange, the (not yet permanent) thing you aim at light blue.
+local permaList, permaAt = {}, 0
+Rhylib.Hook.Add("PreDrawHalos", "toolgun.perma", function()
+    local ply = LocalPlayer()
+    local w = IsValid(ply) and ply:GetActiveWeapon()
+    if not (IsValid(w) and w:GetClass() == "rhylib_toolgun") then return end
+    local e = Tool.Chosen()
+    local P = Rhylib.Perma
+    if not (e and e.perma and P) then return end
+    local now = RealTime()
+    if now - permaAt > 0.5 then
+        permaAt = now
+        -- (the nearest 64 within 3000: halos redraw every entity)
+        local pos, near = ply:GetPos(), {}
+        for _, x in ipairs(ents.GetAll()) do
+            if P.Is(x) then
+                local d = x:GetPos():DistToSqr(pos)
+                if d < 3000 * 3000 then near[#near + 1] = { x, d } end
+            end
+        end
+        table.sort(near, function(a, b) return a[2] < b[2] end)
+        permaList = {}
+        for i = 1, math.min(#near, 64) do permaList[i] = near[i][1] end
+    end
+    local live = {}
+    for _, x in ipairs(permaList) do
+        if IsValid(x) and P.Is(x) then live[#live + 1] = x end
+    end
+    if #live > 0 then halo.Add(live, COL_PERMA, 2, 2, 1, true, false) end
+    local aimed = permaAimed(ply)
+    if IsValid(aimed) and not P.Is(aimed) then halo.Add({ aimed }, COL_AIM, 3, 3, 2, true, true) end
+end)
 
 -- Where it will go: a ring on the aimed surface.
 local RING = Material("effects/select_ring")
