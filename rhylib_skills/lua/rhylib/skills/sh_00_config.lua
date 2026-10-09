@@ -60,7 +60,7 @@ K.CATEGORIES = {
     -- Airborne page (2026-10-09x, owner): also holds the Field technician
     -- (EOD) path, which isn't Airborne; it's here because the Support page
     -- is full. The two are separate specialisations: pick one.
-    { id = "airborne", name = "Airborne · EOD", desc = "Jetpacks and getting in close, or (a separate path) bomb disposal",
+    { id = "airborne", name = "Specialist", desc = "Airborne (jetpacks and getting in close) or Field technician (combat engineer: demolitions or sapper)",
       specs = {
           { id = "airborne", name = "Airborne", desc = "Jetpacks, hard landings and getting in close (indoors too)" },
           { id = "eod", name = "Field technician", desc = "Combat engineer (EOD): armour repair, explosives, mines and jamming. Not Airborne: it only shares the page",
