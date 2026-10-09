@@ -136,7 +136,7 @@ if SERVER then
         if self:GetKind() == 5 and CurTime() >= self.nextBeep then
             local left = boom - CurTime()
             if self.nextBeep == 0 or left <= 3 then
-                self:EmitSound("buttons/blip1.wav", 75, left <= 1 and 135 or 120)
+                sound.Play("buttons/blip1.wav", self:GetPos(), 80, left <= 1 and 135 or 120, 1)   -- (world sound at the charge: owner 2026-10-09l, the beeps went missing)
             end
             self.nextBeep = left > 3 and (boom - 3) or (CurTime() + math.max(0.07, 0.5 * left / 3))
         end

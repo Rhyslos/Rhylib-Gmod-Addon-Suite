@@ -56,7 +56,7 @@ SWEP.Damage = 28
 SWEP.BoltSpeed = 7000
 SWEP.BoltColor = 1
 SWEP.FireSound = "weapons/dc17/dc17_fire.ogg"
-SWEP.FireSoundLevel = 105
+SWEP.FireSoundLevel = 135
 SWEP.ReloadSound = "weapons/dc17/dc17_reload.ogg"
 
 SWEP.Mags = { "mag_small" }

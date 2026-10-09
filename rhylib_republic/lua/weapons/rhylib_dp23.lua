@@ -68,7 +68,7 @@ SWEP.Damage = 20
 SWEP.BoltSpeed = 7000
 SWEP.BoltColor = 1
 SWEP.FireSound = "weapons/dp23/dp23_fire.ogg"
-SWEP.FireSoundLevel = 110
+SWEP.FireSoundLevel = 140
 
 SWEP.Mags = { "mag_small" }
 

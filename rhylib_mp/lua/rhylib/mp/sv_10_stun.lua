@@ -54,7 +54,7 @@ function MP.Stun(ply, by)
     stow(ply)
     -- Body centred on the player's position (rhylib_core; clients draw a ragdoll).
     if Rhylib.Lying then Rhylib.Lying.Begin(ply) end
-    ply:EmitSound("weapons/stunstick/stunstick_impact" .. math.random(1, 2) .. ".wav", 70)
+    ply:EmitSound("weapons/1misc_guns/sw_stun.ogg", 80)   -- (Star Wars shared resources pack stun)
     timer.Create("Rhylib.MP.Stun." .. ply:EntIndex(), t, 1, function() getUp(ply) end)
     hook.Run("Rhylib.PlayerStunned", ply, by)
 end

@@ -59,7 +59,7 @@ SWEP.PelletCone = 4.5        -- degrees, on top of the normal spread
 SWEP.BoltSpeed = 6500
 SWEP.BoltColor = 1
 SWEP.FireSound = "weapons/dc17_shotgun/dc17mat_fire.mp3"
-SWEP.FireSoundLevel = 115
+SWEP.FireSoundLevel = 145
 
 SWEP.Mags = { "mag_medium" }
 

@@ -87,7 +87,7 @@ if SERVER then
             if now >= boom then self:Explode() return end
             if now >= self.nextBeep then
                 local left = boom - now
-                self:EmitSound("buttons/blip1.wav", 75, left <= 2 and 140 or 115)
+                sound.Play("buttons/blip1.wav", self:GetPos(), 80, left <= 2 and 140 or 115, 1)
                 self.nextBeep = now + (left > 5 and 1 or math.max(0.08, 0.5 * left / 5))
             end
         elseif self.dieAt and now > self.dieAt then

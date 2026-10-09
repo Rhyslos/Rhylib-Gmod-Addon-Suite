@@ -60,8 +60,8 @@ SWEP.Recoil = { up = 0.32, side = 0.4, bias = 0.25, recover = 0.4, aimMult = 0.7
 SWEP.Damage = 18
 SWEP.BoltSpeed = 7500
 SWEP.BoltColor = 1
-SWEP.FireSound = "weapons/z6_rotary/z6_fire.ogg"
-SWEP.FireSoundLevel = 115
+SWEP.FireSound = "weapons/airboat/airboat_gun_energy2.wav"   -- (owner 2026-10-09l: the pack sound reverted)
+SWEP.FireSoundLevel = 145
 
 SWEP.Mags = { "mag_large", "mag_medium", "mag_small" }
 SWEP.MagSkills = { mag_large = "heavy_feed" }   -- (rhylib_skills: Support > Heavy)
@@ -74,7 +74,7 @@ SWEP.PlayerFireAnim = false
 
 SWEP.SpinUp = 0.6
 SWEP.SpinMoveMult = 0.6
-SWEP.SpinSound = "weapons/z6_rotary/z6_startspin.ogg"
+SWEP.SpinSound = "weapons/physcannon/physcannon_charge.wav"  -- placeholder (pack sound reverted, owner)
 
 SWEP.UsesCell = true
 SWEP.CellShots = 1000

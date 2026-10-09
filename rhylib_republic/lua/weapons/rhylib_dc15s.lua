@@ -54,8 +54,9 @@ SWEP.Recoil = { up = 0.55, side = 0.3, bias = -0.1, recover = 0.55, aimMult = 0.
 SWEP.Damage = 22
 SWEP.BoltSpeed = 7000
 SWEP.BoltColor = 1
-SWEP.FireSound = "weapons/dc15s/dc15s_fire.ogg"
-SWEP.FireSoundLevel = 110
+SWEP.FireSound = "weapons/dc15a/dc15a_fire.ogg"   -- (owner 2026-10-09l: the DC-15A sound, a bit brighter)
+SWEP.FireSoundPitch = 1.12
+SWEP.FireSoundLevel = 140
 
 -- Semi first (default), switch with E + R.
 -- Magazines it takes, preferred first.

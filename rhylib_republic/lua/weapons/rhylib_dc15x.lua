@@ -59,7 +59,7 @@ SWEP.Damage = 120
 SWEP.BoltSpeed = 16000
 SWEP.BoltColor = 1
 SWEP.FireSound = "weapons/shared/shared_clonesniper_fire.ogg"
-SWEP.FireSoundLevel = 120
+SWEP.FireSoundLevel = 150
 
 SWEP.Mags = { "mag_large" }
 SWEP.ClipCap = 15

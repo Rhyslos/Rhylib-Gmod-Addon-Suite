@@ -428,7 +428,7 @@ if SERVER then
         dir:Normalize()
         local gun = D.Gun(self.DroidKind)
         Bolts.Fire(self, gun, origin, dir, gun.Damage)
-        self:EmitSound(k.sound or D.E5_SOUND, 100, math.random(96, 104), 0.8, CHAN_WEAPON)   -- (level 100: heard across a fight; was 80)
+        self:EmitSound(k.sound or D.E5_SOUND, 130, math.random(96, 104) * (k.pitch or 100) / 100, 0.8, CHAN_WEAPON)   -- (level 130: heard well across a fight; was 80, then 100)
         if self.anims.shoot then self:RestartGesture(self.anims.shoot, true, true) end
     end
 

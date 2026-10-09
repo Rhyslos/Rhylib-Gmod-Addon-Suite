@@ -71,7 +71,7 @@ SWEP.Damage = 35
 SWEP.BoltSpeed = 8000
 SWEP.BoltColor = 1
 SWEP.FireSound = "weapons/dc15a/dc15a_fire.ogg"
-SWEP.FireSoundLevel = 110
+SWEP.FireSoundLevel = 140
 
 -- Magazines it takes, preferred first.
 SWEP.Mags = { "mag_medium", "mag_small" }

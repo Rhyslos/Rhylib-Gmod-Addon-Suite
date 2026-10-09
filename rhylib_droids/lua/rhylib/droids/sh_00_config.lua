@@ -242,14 +242,14 @@ local DC15S, DC15A, Z6 = "models/jajoff/sps/cgiweapons/tc13j/dc15s.mdl", "models
 D.CLONE_FALLBACK = "models/combine_soldier.mdl"
 D.KINDS.ct_trooper = { name = "Clone trooper", side = "republic", modelCfg = "ctModel", health = "ctHealth", speed = "ctSpeed", range = "ctRange", reaction = "ctReaction",
     damage = "ctDamage", rpm = "ctRPM", spread = "ctSpread", burst = { 2, 4 }, color = 1, gun = DC15S, poppers = true, cover = true,
-    sound = "weapons/dc15s/dc15s_fire.ogg" }
+    sound = "weapons/dc15a/dc15a_fire.ogg", pitch = 112 }
 D.KINDS.ct_rifleman = variant("ct_trooper", "Clone rifleman", nil, { damage = "ctRifleDamage", rpm = "ctRifleRPM", burst = { 2, 3 }, gun = DC15A, poppers = false,
-    sound = "weapons/dc15a/dc15a_fire.ogg" })
+    sound = "weapons/dc15a/dc15a_fire.ogg", pitch = 100 })
 D.KINDS.ct_heavy = variant("ct_trooper", "Clone heavy", nil, { health = "ctHeavyHealth", speed = "ctHeavySpeed", damage = "ctHeavyDamage", rpm = "ctHeavyRPM",
-    spread = "ctHeavySpread", burst = { 6, 10 }, gun = Z6, poppers = false, cover = false, sound = "weapons/z6_rotary/z6_fire.ogg" })
+    spread = "ctHeavySpread", burst = { 6, 10 }, gun = Z6, poppers = false, cover = false, sound = "weapons/airboat/airboat_gun_energy2.wav", pitch = 100 })
 D.KINDS.ct_medic = variant("ct_trooper", "Clone medic", nil, { modelCfg = "ctMedicModel", poppers = false, medic = true })
 D.KINDS.ct_commander = variant("ct_trooper", "Clone commander", nil, { modelCfg = "ctCmdModel", health = "ctCmdHealth", damage = "ctRifleDamage", rpm = "ctRifleRPM",
-    burst = { 2, 3 }, gun = DC15A, poppers = false, commander = true, sound = "weapons/dc15a/dc15a_fire.ogg" })
+    burst = { 2, 3 }, gun = DC15A, poppers = false, commander = true, sound = "weapons/dc15a/dc15a_fire.ogg", pitch = 100 })
 
 -- The model a kind uses (config for clones).
 function D.KindModel(k)

@@ -63,7 +63,7 @@ SWEP.Damage = 27
 SWEP.BoltSpeed = 7500
 SWEP.BoltColor = 1
 SWEP.FireSound = "weapons/westarm5/westarm5_fire.wav"
-SWEP.FireSoundLevel = 110
+SWEP.FireSoundLevel = 140
 
 SWEP.Mags = { "mag_medium", "mag_small" }
 

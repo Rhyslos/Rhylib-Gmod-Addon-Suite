@@ -223,6 +223,7 @@ local function impact(b)
         ed:SetOrigin(b.hitPos)
         ed:SetNormal(b.hitNormal)
         util.Effect("StunstickImpact", ed)
+        if EyePos():DistToSqr(b.hitPos) < IMPACT_RANGE2 then sound.Play("weapons/1misc_guns/sw_stun.ogg", b.hitPos, 68, 120, 0.6) end
         return
     end
     ed:SetOrigin(b.hitPos)

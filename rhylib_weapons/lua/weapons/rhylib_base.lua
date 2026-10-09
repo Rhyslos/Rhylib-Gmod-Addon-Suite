@@ -73,9 +73,15 @@ SWEP.BoltColor = 1                  -- 1 blue, 2 red, 3 green
 -- Sounds from the Star Wars shared resources pack (Workshop dependency; owner
 -- 2026-10-09). FireSound may be a list (one picked per shot); FireSoundLevel
 -- in dB (owner: 80 didn't carry far: rifles ~110 are heard across a big room
--- or street, heavy weapons further). ReloadSound overrides the magazine reload.
-SWEP.FireSound = "weapons/dc15s/dc15s_fire.ogg"
-SWEP.FireSoundLevel = 110
+-- or street, heavy weapons further; 2026-10-09l: still dim from "semi far
+-- away", so 140 = Source's own gunfire level, whose attenuation filter also
+-- sends the sound much further). FireSoundPitch scales the pitch (DC-15S:
+-- the DC-15A sound, brighter). ReloadSound overrides the magazine reload.
+SWEP.FireSound = "weapons/dc15a/dc15a_fire.ogg"
+SWEP.FireSoundLevel = 140
+SWEP.FireSoundPitch = 1
+-- Stun mode (owner: the right stun sounds): the pack's own stun-ammo shot.
+SWEP.StunSound = "weapons/bf3/e11_light.wav"
 SWEP.ReloadSound = nil
 
 -- Fire modes this weapon can switch between (E + R), first one is the default.
@@ -851,9 +857,9 @@ function SWEP:FireShot()
     -- (Overcharge: the same shot, pitched down so it sounds heavier)
     local snd = self.FireSound
     if istable(snd) then snd = snd[math.floor(util.SharedRandom("rhylib.snd", 1, #snd + 0.999))] or snd[1] end
-    local lvl = (self.FireSoundLevel or 110) + (over and 5 or 0)
-    self:EmitSound(stun and "weapons/1misc_guns/sw_stun.ogg" or snd, stun and 85 or lvl,
-        util.SharedRandom("rhylib.pitch", 96, 104) * (over and 0.82 or 1), 1, CHAN_WEAPON)
+    local lvl = (self.FireSoundLevel or 140) + (over and 5 or 0)
+    self:EmitSound(stun and self.StunSound or snd, stun and 100 or lvl,
+        util.SharedRandom("rhylib.pitch", 96, 104) * (over and 0.82 or 1) * (stun and 1.15 or (self.FireSoundPitch or 1)), 1, CHAN_WEAPON)
     -- Sustained fire (rhylib_skills): when this spray started (a gap over 0.3 s starts a new one).
     if SERVER or IsFirstTimePredicted() then
         if now - (self.rhylibLastShot or 0) > 0.3 then self.rhylibSprayStart = now end
