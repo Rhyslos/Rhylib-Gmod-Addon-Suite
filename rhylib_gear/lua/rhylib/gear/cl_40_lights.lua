@@ -51,7 +51,7 @@ local function lampPose(pos, ang, side)
     local fov = cfg("lightFov", 26)
     local p = pos + ang:Right() * (4.5 * side) + ang:Forward() * -3 + ang:Up() * 1   -- (owner: 5 back, inside the helmet)
     local a = Angle(ang.p, ang.y, 0)
-    a:RotateAroundAxis(ang:Up(), -side * (fov * 0.5 + cfg("lightGap", -2)))
+    a:RotateAroundAxis(ang:Up(), -side * (fov * 0.5 + cfg("lightGap", -7)))
     return p, a
 end
 

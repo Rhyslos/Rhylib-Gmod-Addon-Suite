@@ -144,7 +144,7 @@ Config.Register("gear", "kamaFractureChance", 0.5, "Kama: chance a leg actually 
 Config.Register("gear", "pauldronDrainMult", 0.8, "Pauldron: armour lost per hit is multiplied by this")
 Config.Register("gear", "lightNeeded", true, "The flashlight key only works with helmet lights worn")
 Config.Register("gear", "lightFov", 26, "Helmet lights: width of each beam (degrees); the two point apart with a small gap between")
-Config.Register("gear", "lightGap", -2, "Helmet lights: extra degrees each beam turns outwards past touching (positive = a dark gap in the middle, negative = closer together)")
+Config.Register("gear", "lightGap", -7, "Helmet lights: extra degrees each beam turns outwards past touching (positive = a dark gap in the middle, negative = overlap; -7 = the beams overlap well in the middle, owner 2026-10-09: the dark slit was headache inducing)")
 Config.Register("gear", "lightRange", 2000, "Helmet lights: how far the beams reach")
 Config.Register("gear", "lightBrightness", 3.5, "Helmet lights: brightness of each beam")
 Config.Register("gear", "lightMaxPlayers", 2, "Helmet lights: other players whose beams light the world for you (nearest first, no shadows; your own always do). Further ones show only the lamp glow")
