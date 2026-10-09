@@ -1037,6 +1037,10 @@ local TABS = {
         local x = curX()
         return x and (#x.file.quals > 0 or x.file.ncom > 0 or #x.file.strikes > 0)
     end },
+    -- EOD bomb manual (rhylib_eod, Field technician skill "Bomb manual")
+    { id = "eod", name = "EOD manual", build = function()
+        if D.EodManualBuild then D.EodManualBuild(content, K()) end
+    end, has = function() return D.EodManualBuild ~= nil and D.HasEodManual ~= nil and D.HasEodManual() end },
     { id = "records", name = "Records", build = recordsTab, mp = true },
     { id = "ologs", name = "Officer logs", build = ologsTab, mp = true },
     { id = "arrest", name = "Arrest", build = arrestTab, mp = true },

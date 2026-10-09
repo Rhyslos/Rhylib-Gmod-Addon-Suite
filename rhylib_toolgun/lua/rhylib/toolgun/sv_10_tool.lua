@@ -32,6 +32,47 @@ local function allowed(ply, fn)
     end)
 end
 
+-- Full access (rhylib.toolgun), or one of the entries' own permissions
+-- (perm field): cb(true) for the first that passes.
+local function anyAccess(ply, cb)
+    Rhylib.Perms.Check(ply, "rhylib.toolgun", function(ok)
+        if ok then return cb(true) end
+        local perms = Tool.EntryPerms()
+        local function try(i)
+            if not IsValid(ply) then return end
+            local p = perms[i]
+            if not p then return cb(false) end
+            Rhylib.Perms.Check(ply, p, function(ok2) if ok2 then cb(true) else try(i + 1) end end)
+        end
+        try(1)
+    end)
+end
+Tool.AnyAccess = anyAccess
+
+-- Runs fn(full) if they may use this entry (full access, or the entry's perm).
+local function allowedEntry(ply, e, fn)
+    if not holding(ply) then return end
+    Rhylib.Perms.Check(ply, "rhylib.toolgun", function(ok)
+        if not IsValid(ply) then return end
+        if ok then return fn(true) end
+        if e and e.perm then
+            Rhylib.Perms.Check(ply, e.perm, function(ok2) if ok2 and IsValid(ply) then fn(false) end end)
+        end
+    end)
+end
+
+-- Mines are small and half buried: the nearest one to where you aim.
+local function nearestMine(pos)
+    local best, bestD = nil, 32 * 32
+    for _, m in ipairs(ents.FindInSphere(pos, 32)) do
+        if m.IsRhylibMine then
+            local d = m:GetPos():DistToSqr(pos)
+            if d < bestD then best, bestD = m, d end
+        end
+    end
+    return best
+end
+
 local function aim(ply)
     local start = ply:GetShootPos()
     return util.TraceLine({ start = start, endpos = start + ply:GetAimVector() * Tool.RANGE, filter = ply, mask = MASK_SOLID })
@@ -96,6 +137,22 @@ local function place(ply, e, count, name, mode)
         return
     end
     local yaw = (ply:GetPos() - tr.HitPos):Angle().y   -- facing you
+    -- Entries with their own placing (rhylib_eod minefields): e.place(ply, tr, count, yaw) -> list of entities.
+    if e.place then
+        local list = e.place(ply, tr, count, yaw) or {}
+        if #list > 0 then
+            undo.Create(e.name)
+            for _, ent in ipairs(list) do
+                ent.rhylibToolPlaced = true
+                if ent.CPPISetOwner then ent:CPPISetOwner(ply) end
+                undo.AddEntity(ent)
+            end
+            undo.SetPlayer(ply)
+            undo.Finish()
+            ply:EmitSound("buttons/button14.wav", 60, 110)
+        end
+        return
+    end
     local made = 0
     -- Droids and clones: stop at the cap instead of creating ones Initialize removes.
     local droid = D and D.Count and (e.class == "rhylib_b1" or scripted_ents.IsBasedOn(e.class, "rhylib_b1"))
@@ -158,7 +215,7 @@ Rhylib.Net.Receive("tool.place", function(ply)
     local e = Tool.ById(id)
     if not e then return end
     if not e.count then count = 1 end
-    allowed(ply, function() place(ply, e, count, name, mode) end)
+    allowedEntry(ply, e, function() place(ply, e, count, name, mode) end)
 end, { rate = 20, burst = 20 })   -- (owner: as fast as you click)
 
 -- Spawning spawn-window things (sandbox gamemodes, DarkRP included).
@@ -278,10 +335,23 @@ local function removable(ent)
 end
 
 Rhylib.Net.Receive("tool.remove", function(ply)
-    allowed(ply, function()
+    if not holding(ply) then return end
+    -- (limited access: only things of the entries they may place)
+    local tr0 = aim(ply)
+    local pre = removable(tr0.Entity) or (tr0.Hit and removable(nearestMine(tr0.HitPos)))
+    allowedEntry(ply, pre and Tool.ByClass(pre.class) or nil, function(full)
         local tr = aim(ply)
         local ent = tr.Entity
         local e = removable(ent)
+        if not e and tr.Hit then
+            local m = nearestMine(tr.HitPos)
+            if m then ent, e = m, removable(m) end
+        end
+        -- (gamemasters can't undo the permanent map setup)
+        if e and not full and Rhylib.Perma and Rhylib.Perma.Is(IsValid(e.ent) and e.ent or ent) then
+            ply:ChatPrint("[Toolgun] That's part of the permanent map setup: ask an admin")
+            return
+        end
         -- Droid markers aren't solid: the nearest one to where you aim.
         if not e and tr.Hit then
             local best, bestD = nil, 80 * 80
@@ -335,7 +405,7 @@ end, { rate = 1, burst = 2 })
 -- tool.give), chat !toolgun or /toolgun, or the spawn menu (Weapons > Rhylib).
 local function give(ply)
     if not IsValid(ply) then return end
-    Rhylib.Perms.Check(ply, "rhylib.toolgun", function(ok)
+    anyAccess(ply, function(ok)
         if not IsValid(ply) then return end
         if not ok then return ply:ChatPrint("You don't have permission for the toolgun") end
         if not ply:HasWeapon(CLASS) then ply:Give(CLASS) end
@@ -359,7 +429,7 @@ end
 
 local function keepToolgun(ply)
     if not IsValid(ply) then return end
-    Rhylib.Perms.Check(ply, "rhylib.toolgun", function(ok)
+    anyAccess(ply, function(ok)
         if not IsValid(ply) then return end
         if not ok then return ply:ChatPrint("You don't have permission for the toolgun") end
         local on = not Tool.KeepsToolgun(ply)
@@ -380,7 +450,7 @@ Rhylib.Hook.Add("PlayerSpawn", "toolgun.keep", function(ply)
     if ply:IsBot() or not Tool.KeepsToolgun(ply) then return end
     timer.Simple(0.5, function()
         if not (IsValid(ply) and ply:Alive()) or ply:HasWeapon(CLASS) then return end
-        Rhylib.Perms.Check(ply, "rhylib.toolgun", function(ok)
+        anyAccess(ply, function(ok)
             if ok and IsValid(ply) and ply:Alive() and not ply:HasWeapon(CLASS) then ply:Give(CLASS) end
         end)
     end)

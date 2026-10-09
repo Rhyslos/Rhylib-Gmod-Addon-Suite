@@ -114,7 +114,7 @@ local ALL = {
 
 -- The Rhylib tab's categories, top to bottom (owner: NPCs on their own,
 -- not alphabetical); others follow alphabetically.
-Tool.CAT_ORDER = { "Staff tools", "Clone NPCs", "Clone orders", "Droid NPCs", "Droid orders", "Spawns", "Armoury", "Medical", "Base", "Training", "Testing" }
+Tool.CAT_ORDER = { "Staff tools", "Clone NPCs", "Clone orders", "Droid NPCs", "Droid orders", "EOD", "Spawns", "Armoury", "Medical", "Base", "Training", "Testing" }
 
 -- The installed entries (built once, after entities are registered).
 function Tool.Entries()
@@ -231,3 +231,30 @@ function Tool.ByClass(class)
 end
 
 Rhylib.Perms.Register("rhylib.toolgun", "admin", "Use the Rhylib toolgun (place droids, armouries, beacons and other fixtures)")
+
+-- Limited toolgun access (2026-10-09y, owner: gamemasters place bombs).
+-- An entry may set perm = "<permission>": staff without rhylib.toolgun but
+-- with that permission may hold the toolgun and use only those entries
+-- (rhylib_eod: rhylib.eod.gm for bombs and mines). These checks are
+-- for the client's list; the server checks with Rhylib.Perms.
+local function has(ply, perm)
+    local A = Rhylib.Admin
+    if A and A.Has then return A.Has(ply, perm, "admin") end
+    return IsValid(ply) and ply:IsAdmin()
+end
+
+function Tool.FullAccess(ply) return has(ply, "rhylib.toolgun") end
+
+function Tool.CanEntry(ply, e)
+    if Tool.FullAccess(ply) then return true end
+    return e and e.perm and has(ply, e.perm) or false
+end
+
+-- The permissions that give limited access (one list per map).
+function Tool.EntryPerms()
+    local seen, out = {}, {}
+    for _, e in ipairs(Tool.Entries()) do
+        if e.perm and not seen[e.perm] then seen[e.perm] = true out[#out + 1] = e.perm end
+    end
+    return out
+end

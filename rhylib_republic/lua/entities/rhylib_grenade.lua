@@ -331,6 +331,9 @@ if SERVER then
                 end
             end
         end
+        -- other addons (rhylib_eod: a small chance to fry a bomb, switches off
+        -- interference devices). Not training EMPs.
+        if not self.training then hook.Run("Rhylib.EMP", pos, self:EmpR(), attacker, self) end
     end
 end
 

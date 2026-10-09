@@ -451,7 +451,7 @@ local function airborne(ply)
             c.air = false
             for id in pairs(set) do
                 local n = K.byId[id]
-                if n and n.cat == "airborne" then c.air = true break end
+                if n and n.cat == "airborne" and n.spec ~= "eod" then c.air = true break end   -- (the Field technician only shares the page)
             end
         end
         return c.air

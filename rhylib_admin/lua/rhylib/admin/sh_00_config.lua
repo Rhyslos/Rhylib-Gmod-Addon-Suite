@@ -33,7 +33,7 @@ Config.Register("admin", "ranks", {
                 "noclip", "noclip.self", "god", "cloak", "notarget", "hp", "armor", "give", "spawn",
                 "map", "cleanup", "announce", "setjob", "spectate", "info", "tell", "revive", "heal", "buddha",
                 "scale", "speed", "jump", "model", "playsound", "stopsound", "slap", "ignite", "free", "infect", "cure",
-                "freezeprops", "cleardecals", "call", "rhylib.chat.event", "rhylib.weapons.infammo" } },
+                "freezeprops", "cleardecals", "call", "rhylib.chat.event", "rhylib.weapons.infammo", "rhylib.eod.gm" } },
     { id = "moderator", name = "Moderator", level = 50, color = Color(90, 170, 240), inherits = { "trialmod" },
       perms = { "ban", "slay", "teleport", "noclip", "god", "cloak", "notarget", "hp", "armor", "bans", "setjob",
                 "jail", "unjail", "revive", "heal", "stopsound", "freezeprops", "cleardecals", "ignite", "hidecells" } },

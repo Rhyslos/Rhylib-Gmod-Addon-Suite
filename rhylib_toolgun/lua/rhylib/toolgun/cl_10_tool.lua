@@ -31,11 +31,15 @@ end
 
 function Tool.Chosen()
     local id = cvEntry:GetString()
-    if id == "@custom" then
+    if id == "@custom" and Tool.FullAccess(LocalPlayer()) then
         local c = customEntry()
         if c then return c end
     end
-    local list = Tool.Entries()
+    local list = {}
+    local me = LocalPlayer()
+    for _, e in ipairs(Tool.Entries()) do
+        if Tool.CanEntry(me, e) then list[#list + 1] = e end   -- (gamemasters: only their entries)
+    end
     for _, e in ipairs(list) do
         if e.id == id then return e end
     end
@@ -92,9 +96,10 @@ local function buildTab(body)
     end, { tooltip = "Placing doesn't save anything: use the Permanent tool (Staff tools). This saves every permanent thing again where it stands now." })
     save:Dock(RIGHT)
     save:SetWide(S(220))
+    if not Tool.FullAccess(LocalPlayer()) then save:SetVisible(false) end
 
     -- (only with rhylib_droids: its buttons send droid messages)
-    if Rhylib.Droids then
+    if Rhylib.Droids and Tool.FullAccess(LocalPlayer()) then
         -- Second row: the mode placed droids get, and the live aggression.
         local row2 = vgui.Create("DPanel", body)
         row2:Dock(BOTTOM)
@@ -141,7 +146,9 @@ local function buildTab(body)
     local tab = SP.CatalogueTab(function()
         local items = {}
         local ents = list.Get("SpawnableEntities") or {}
+        local me = LocalPlayer()
         for _, e in ipairs(Tool.Entries()) do
+          if Tool.CanEntry(me, e) then
             local sp = e.class and ents[e.class] or {}
             items[#items + 1] = {
                 cat = e.cat, name = e.name, extra = e.class or e.id,
@@ -162,6 +169,7 @@ local function buildTab(body)
                     if IsValid(tg) and w ~= tg then input.SelectWeapon(tg) end
                 end,
             }
+          end
         end
         return items
     end, Tool.CAT_ORDER)

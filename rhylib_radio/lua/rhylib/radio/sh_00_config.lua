@@ -96,6 +96,7 @@ end
 
 -- Radius a jammer covers (math.huge for the map-wide one).
 function R.JammerRange(ent)
+    if not isstring(ent) and IsValid(ent) and ent.JamRange then return ent:JamRange() end   -- (rhylib_eod interference devices)
     local s = R.JammerSize(ent)
     if s.wholeMap then return math.huge end
     return R.Cfg("jammerRange" .. s.key) or 1800
