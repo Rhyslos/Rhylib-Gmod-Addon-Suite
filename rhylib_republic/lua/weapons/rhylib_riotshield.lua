@@ -145,7 +145,7 @@ local SHIELDS = {
     rep = { model = "models/cs574/weapons/shields/blast_shield.mdl", vmAnchor = "view", vmAimAnchor = "eyes", vmIgnoreGunPose = true, wmAttach = "anim_attachment_LH", wmBone = "ValveBiped.Bip01_L_Hand",
         vmPos = Vector(24, -24, -17), vmAng = Angle(0, 135, 0), vmScale = 0.9,
         vmPosAim = Vector(22, 0.2, -15.5), vmAngAim = Angle(0, 90, 0),
-        wmPos = Vector(4, 7, 0), wmAng = Angle(0, 90, 0), wmScale = 1 },
+        wmPos = Vector(5, 5, -10), wmAng = Angle(0, 100, 0), wmScale = 1 },   -- (2026-10-09o, owner: like the CG shield: its numbers, 8 lower since this model's middle sits 8 higher above its handle)
     -- (older packs, used when cs574's isn't installed)
     tf2 = { model = "models/workshop/weapons/c_models/c_batonshield/c_batonshield_shield.mdl",
         vmPos = Vector(30.851, 42.902, -5.067), vmAng = Angle(0.535, 54.853, 5.843), vmScale = 1,
