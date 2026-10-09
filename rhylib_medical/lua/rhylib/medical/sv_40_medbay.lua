@@ -157,6 +157,7 @@ end
 -- The bench menu: the blood analyser (medics) and crafting (Chemists).
 function Med.BenchUse(bench, ply)
     if not ply:Alive() or ply.rhylibDown then return end
+    if Med.Simple() then return Med.Note(ply, "Not used in the simplified medical system") end
     if not Med.IsMedic(ply) then return Med.Note(ply, "Only medics know how to use this") end
     if not inventory() then return Med.Note(ply, "The bench needs rhylib_inventory") end
     Rhylib.Net.Start("chem.open")
@@ -198,6 +199,7 @@ Rhylib.Net.Receive("chem.make", function(ply)
     local r = (cfg("chemRecipes") or {})[net.ReadUInt(5)]
     local Inv = inventory()
     if not (Inv and istable(r) and isstring(r[1]) and IsValid(bench) and bench:GetClass() == "rhylib_chem_bench") then return end
+    if Med.Simple() then return end
     if not ply:Alive() or ply.rhylibDown or crafting[ply] or not near(ply, bench) then return end
     if not Med.Skill(ply, "chem_bench") then return end
     local def = Rhylib.Items and Rhylib.Items.Get(r[1])
@@ -227,7 +229,7 @@ timer.Create("Rhylib.Medical.Craft", 0.2, 0, function()
     for ply, c in pairs(crafting) do
         if not IsValid(ply) then
             crafting[ply] = nil
-        elseif not ply:Alive() or ply.rhylibDown or not near(ply, c.bench) then
+        elseif not ply:Alive() or ply.rhylibDown or not near(ply, c.bench) or Med.Simple() then
             stopCraft(ply, "Stopped mixing")
         elseif now >= c.endT then
             local Inv = inventory()

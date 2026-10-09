@@ -184,6 +184,10 @@ end)
 -- The bench on the interaction wheel: analyser or crafting.
 Rhylib.Hook.Add("Rhylib.WheelEntityOptions", "medical.bench", function(ent, me, add)
     if ent:GetClass() ~= "rhylib_chem_bench" then return end
+    if Med.Simple() then
+        add("Chemistry bench", nil, { disabled = "Not used in the simplified medical system" })
+        return
+    end
     if not Med.IsMedic(me) then
         add("Chemistry bench", nil, { disabled = "Medics only" })
         return
@@ -215,6 +219,10 @@ local function send(name, uid)
 end
 
 Rhylib.Hook.Add("Rhylib.ItemMenu", "medical.strip", function(inst, menu)
+    if (inst.id == Med.SAMPLE or inst.id == Med.CASSETTE) and Med.Simple() then
+        menu:AddOption("Throw away", function() send("ill.discard", inst.uid) end)   -- (simplified: nothing else)
+        return
+    end
     if inst.id == Med.SAMPLE then
         local note = inst.data and inst.data.note or ""
         if string.find(note, "no strip yet", 1, true) then
@@ -442,6 +450,7 @@ end
 --------------------------------------------------------------------------
 
 Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.illness", function(t, me, add)
+    if Med.Simple() then return end   -- (simplified medical system: no illness)
     if Med.IsMedic(me) and not Med.IsDown(me) then
         -- (test dummies are bots that can't lie down: standing is fine for them)
         if not (Med.OnSofa(t) or t:IsBot()) then

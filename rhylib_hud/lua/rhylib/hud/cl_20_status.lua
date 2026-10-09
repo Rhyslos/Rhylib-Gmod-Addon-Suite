@@ -30,7 +30,9 @@ Rhylib.Hook.Add("HUDPaint", "hud.status", function()
     local rowH = math.floor(30 * s)
     local x, y, w = HUD.Plate(-1)
 
-    local labelW = math.floor(48 * s)
+    local Med = Rhylib.Medical
+    local pct = not simHp and Med and Med.Simple and Med.Simple()   -- (simplified medical system: "87%")
+    local labelW = math.floor((pct and 62 or 48) * s)
     local barH = math.floor(10 * s)
     local barW = w - labelW
 
@@ -43,7 +45,8 @@ Rhylib.Hook.Add("HUDPaint", "hud.status", function()
     local low = hp / maxHp < 0.3
     local hc, hl = C.health, C.healthLow
     if simHp then hc, hl = C.sim, C.simLow end
-    row(hp, shown.hp / maxHp, low and hl or hc, low and hl or C.text)
+    local hpText = pct and (Med.HealthPct(ply) .. "%") or hp
+    row(hpText, shown.hp / maxHp, low and hl or hc, low and hl or C.text)
     if ar > 0 then row(ar, shown.ar / maxAr, C.armor, C.text) end
 
     if darkrp then

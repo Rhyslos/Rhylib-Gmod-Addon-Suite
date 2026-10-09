@@ -457,6 +457,7 @@ function Med.OpenInjuries(target)
     if IsValid(Med.injuryPanel) then Med.injuryPanel:Remove() end
     local me = LocalPlayer()
     if not me:Alive() or Med.IsDown(me) then return end
+    if Med.Simple() then return end   -- (simplified medical system: no injury menu)
     if target == me then target = nil end
     local p = vgui.Create("RhylibInjuries")
     if IsValid(target) then
@@ -480,7 +481,11 @@ concommand.Add("rhylib_injuries", Med.ToggleInjuries)
 -- Open with the key (not while typing or in a menu).
 local wasDown = false
 Rhylib.Hook.Add("Think", "medical.injurykey", function()
-    if IsValid(Med.injuryPanel) then wasDown = true return end
+    if IsValid(Med.injuryPanel) then
+        if Med.Simple() then Med.injuryPanel:Remove() end   -- (switched to the simplified system)
+        wasDown = true
+        return
+    end
     local code = input.GetKeyCode(keyVar:GetString())
     local down = code and code > 0 and input.IsKeyDown(code)
     if down and not wasDown and not vgui.GetKeyboardFocus() and not gui.IsGameUIVisible() and not gui.IsConsoleVisible() then
@@ -503,7 +508,8 @@ Rhylib.Hook.Add("InitPostEntity", "medical.injurymenu", function()
         end)
     end
     if Menus.AddSetting then
-        Menus.AddSetting("Medical", { id = "med.key", order = 10, title = "Injury menu key", kind = "key", convar = "rhylib_medical_key" })
+        Menus.AddSetting("Medical", { id = "med.key", order = 10, title = "Injury menu key", kind = "key", convar = "rhylib_medical_key",
+            showIf = function() return not Med.Simple() end })
     end
 end)
 

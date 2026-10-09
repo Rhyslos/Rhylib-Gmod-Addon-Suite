@@ -68,7 +68,7 @@ end
 
 -- kind 1-3, load 1-100 (default 40). Infecting again replaces it.
 function Med.Infect(ply, kind, load)
-    if not (IsValid(ply) and Med.ILL[kind]) then return false end
+    if not (IsValid(ply) and Med.ILL[kind]) or Med.Simple() then return false end
     Med.ill[ply] = { kind = kind, load = math.Clamp(tonumber(load) or 40, 1, 100) }
     publish(ply)
     save(ply)
@@ -111,6 +111,7 @@ end)
 local COUGHS = { "ambient/voices/cough1.wav", "ambient/voices/cough2.wav", "ambient/voices/cough3.wav", "ambient/voices/cough4.wav" }
 
 timer.Create("Rhylib.Medical.Illness", 30, 0, function()
+    if Med.Simple() then return end   -- (simplified medical system: illnesses wait, no symptoms)
     local rates = cfg("loadRate") or {}
     for ply, s in pairs(Med.ill) do
         if not IsValid(ply) then
@@ -157,6 +158,7 @@ local function near(a, b, r)
 end
 
 local function able(ply)
+    if Med.Simple() then return false end   -- (simplified medical system: no illness work)
     return IsValid(ply) and ply:Alive() and not Med.IsDown(ply) and not (Inv() and Inv().Locked and Inv().Locked(ply))
 end
 
@@ -403,6 +405,7 @@ end, { rate = 4, burst = 4 })
 -- Look at a used strip again.
 Rhylib.Net.Receive("ill.look", function(ply)
     if not (Inv() and Inv().Get) then return end   -- (needs rhylib_inventory)
+    if Med.Simple() then return end
     local inst = carriedItem(ply, net.ReadUInt(uidBits()), Med.CASSETTE)
     if inst then sendCassette(ply, inst) end
 end, { rate = 4, burst = 4 })

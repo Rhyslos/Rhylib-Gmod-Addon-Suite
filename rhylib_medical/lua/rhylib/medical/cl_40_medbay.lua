@@ -124,7 +124,7 @@ Rhylib.Hook.Add("HUDPaint", "medical.medbay", function()
         local w = S(300)
         local y = H * 0.7
         text("BACTA TANK", 14, W / 2, y, COL_BACTA, 700)
-        text("Health " .. ply:Health() .. " / " .. ply:GetMaxHealth(), 15, W / 2, y + S(22), C.text, 600)
+        text(Med.Simple() and ("Health " .. Med.HealthPct(ply) .. "%") or ("Health " .. ply:Health() .. " / " .. ply:GetMaxHealth()), 15, W / 2, y + S(22), C.text, 600)
         bar(W / 2 - w / 2, y + S(36), w, S(4), ply:Health() / math.max(1, ply:GetMaxHealth()), COL_BACTA)
         local jump = string.upper(input.LookupBinding("+jump") or "SPACE")
         text(jump .. " or E to climb out", 12, W / 2, y + S(54), C.textDim)

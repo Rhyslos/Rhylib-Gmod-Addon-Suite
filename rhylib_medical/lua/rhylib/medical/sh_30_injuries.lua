@@ -88,9 +88,10 @@ function Med.Painkilled(ply)
     return ply:GetNW2Float("rhylib_painkill", 0) > CurTime()
 end
 
--- Field triage (officer order) mutes every affliction until this time.
+-- Field triage (officer order) mutes every affliction until this time;
+-- the simplified medical system mutes them all the time.
 function Med.Muted(ply)
-    return ply:GetNW2Float("rhylib_afflMute", 0) > CurTime()
+    return Med.Simple() or ply:GetNW2Float("rhylib_afflMute", 0) > CurTime()
 end
 
 local function broken(p) return p.frac and not p.splint end

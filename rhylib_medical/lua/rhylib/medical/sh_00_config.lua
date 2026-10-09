@@ -49,6 +49,10 @@ local Med = Rhylib.Medical
 local Config = Rhylib.Config
 
 Config.Register("medical", "enabled", true, "Players go down at 0 HP instead of dying")
+Config.Register("medical", "simplified", false, "Simplified medical system: no injuries, bleeding, illness, field items, H menu or chemistry; health is a plain 0-100% of the job's max health. Medkit +simpleMedkit, first aid kit heals to full, revive kit revives to full. Downing, stabilising, dragging and reviving stay")
+Config.Register("medical", "simpleMedkit", 0.3, "Simplified medical system: share of max health a medkit heals (0.3 = +30%)")
+Config.Register("medical", "simpleFirstAidRevive", 0.3, "Simplified medical system: health after a first aid kit revive, as a share of max health")
+Config.Register("medical", "simpleFirstAidCharge", false, "Simplified medical system: first aid kits still spend their charge (off = never run out)")
 Config.Register("medical", "bleedTime", 120, "Seconds a downed player lasts before bleeding out")
 Config.Register("medical", "downHealth", 50, "Health while downed; damage while down comes off this")
 Config.Register("medical", "downGrace", 2, "Seconds after going down when the body takes no damage (the fall plays; no instant finishing)")
@@ -116,6 +120,20 @@ Config.Register("medical", "chemRecipes", {
 
 function Med.Cfg(key)
     return Config.Get("medical", key)
+end
+
+-- Simplified medical system (Server settings, live): afflictions off,
+-- health as a share of the job's max health, kits heal by share.
+function Med.Simple()
+    return Config.Get("medical", "simplified") == true
+end
+
+-- Health as a whole percent of max health (HUDs in the simplified system).
+function Med.HealthPct(ply)
+    -- (rounded down, so 100% only at full health; 1% while any is left)
+    local hp = math.max(ply:Health(), 0)
+    if hp <= 0 then return 0 end
+    return math.Clamp(math.floor(hp / math.max(ply:GetMaxHealth(), 1) * 100), 1, 100)
 end
 
 -- Actions a helper can be doing.
@@ -200,6 +218,17 @@ local function registerMedicines()
     end
 end
 registerMedicines()
+
+-- Items the simplified medical system takes out (armouries and crates
+-- leave them out, H menu items can't be used, the bench is closed).
+Med.HARDCORE_ITEMS = {
+    [Med.SUPPLIES] = true, [Med.SPLINT] = true, [Med.BURN_GEL] = true, [Med.PAINKILLER] = true, [Med.BLOOD_PACK] = true,
+    rhylib_antiviral = true, rhylib_antidote = true, rhylib_antibiotics = true,
+    rhylib_blood_kit = true, rhylib_test_strip = true, rhylib_blood_sample = true, rhylib_test_cassette = true,
+}
+Rhylib.Hook.Add("Rhylib.ItemDisabled", "medical.simple", function(id)
+    if Med.HARDCORE_ITEMS[id] and Med.Simple() then return true end
+end)
 
 -- Medkits stack 3 for troopers and 5 for medics, +3 with Deep pockets
 -- (rhylib_inventory asks this).

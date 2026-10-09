@@ -64,6 +64,7 @@ Config.Register("medical", "stripMin", 30, "Test strip: seconds a severe infecti
 Config.Register("medical", "sampleLife", 1800, "Seconds before a blood sample or used strip spoils and is thrown away")
 
 function Med.IllState(ply)
+    if Med.Simple() then return 0, 0 end   -- (simplified medical system: no illness)
     local v = ply:GetNW2Int("rhylib_ill", 0)
     return v % 4, math.floor(v / 4)   -- kind, stage
 end

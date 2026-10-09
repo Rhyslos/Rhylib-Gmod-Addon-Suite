@@ -59,8 +59,12 @@ function SWEP:Reload() end
 if CLIENT then
     function SWEP:DrawHUD()
         local s = ScrH() / 1080
-        local text = self.Hint
-        if self.ChargeText then text = text .. "   ·   " .. self:ChargeText() end
+        local Med = Rhylib.Medical
+        local simple = Med and Med.Simple and Med.Simple()
+        local text = simple and self.SimpleHint or self.Hint
+        -- (simplified medical system: no charge shown when kits never run out)
+        local charge = self.ChargeText and not (simple and Med.Cfg("simpleFirstAidCharge") ~= true)
+        if charge then text = text .. "   ·   " .. self:ChargeText() end
         draw.SimpleText(text, Rhylib.UI.Font(14, 500), ScrW() * 0.5, ScrH() * 0.5 + 60 * s, Rhylib.UI.Colors.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
     end
 end

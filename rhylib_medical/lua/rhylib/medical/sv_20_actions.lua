@@ -189,6 +189,17 @@ local function itemName(id)
     return def and def.name or "kit"
 end
 
+-- First aid kits spend charge (always, unless the simplified medical
+-- system says they don't: simpleFirstAidCharge).
+local function usesCharge()
+    return not Med.Simple() or Med.Cfg("simpleFirstAidCharge") == true
+end
+
+-- Share of max health, rounded up (simplified medical system).
+local function share(t, frac)
+    return math.ceil(t:GetMaxHealth() * math.Clamp(tonumber(frac) or 0, 0, 1))
+end
+
 local function bleeding(target)
     local t = Med.inj and Med.inj[target]
     if not t then return false end
@@ -209,8 +220,10 @@ local function refuse(helper, kind, target, opts)
 
     if kind == Med.A_STAB or Med.REVIVES[kind] or kind == Med.A_BLOOD then
         if self or not down then return "" end
+        if kind == Med.A_BLOOD and Med.Simple() then return "Blood packs aren't used in the simplified medical system" end
     elseif kind == Med.A_FA_HEAL or kind == Med.A_MEDKIT or kind == Med.A_TREAT then
         if down then return "Revive them first" end
+        if kind == Med.A_TREAT and Med.Simple() then return "" end
         if kind ~= Med.A_TREAT and target:Health() >= target:GetMaxHealth() and not bleeding(target) then
             return (self and "You're" or target:Nick() .. " is") .. " at full health"
         end
@@ -248,7 +261,7 @@ local function refuse(helper, kind, target, opts)
         if kit == Med.MEDKIT then return "You have no medkit" end
         return "You have no " .. string.lower(itemName(kit))
     end
-    if kit == Med.FIRST_AID and Med.KitCharge(helper) < 1 then return "Your first aid kit is empty" end
+    if kit == Med.FIRST_AID and usesCharge() and Med.KitCharge(helper) < 1 then return "Your first aid kit is empty" end
 end
 
 function Med.Start(helper, kind, target, opts)
@@ -350,20 +363,28 @@ local function finishAct(helper, a)
     local medic = Med.IsMedic(helper)
     local kit = kitOf(a)
 
+    local simple = Med.Simple()
     if a.kind == Med.A_REVIVE then
         if not Med.Consume(helper, kit) then resume(t, helper) return end
-        revive(helper, t, t:GetMaxHealth() * Med.Cfg("reviveKitHealth"))
+        -- (simplified: always back to full)
+        revive(helper, t, simple and t:GetMaxHealth() or t:GetMaxHealth() * Med.Cfg("reviveKitHealth"))
     elseif a.kind == Med.A_FA_REVIVE then
-        local hp, cost = kitHeal(helper, Med.Cfg("firstAidReviveHealth"))
-        if hp < 1 then
-            Med.Note(helper, "Your first aid kit is empty")
-            resume(t, helper)
-            return
+        local want = simple and share(t, Med.Cfg("simpleFirstAidRevive")) or Med.Cfg("firstAidReviveHealth")
+        if not usesCharge() then
+            revive(helper, t, want)
+        else
+            local hp, cost = kitHeal(helper, want)
+            if hp < 1 then
+                Med.Note(helper, "Your first aid kit is empty")
+                resume(t, helper)
+                return
+            end
+            Med.SpendCharge(helper, cost)
+            revive(helper, t, hp)
         end
-        Med.SpendCharge(helper, cost)
-        revive(helper, t, hp)
     elseif a.kind == Med.A_HAND_REVIVE then
-        revive(helper, t, Med.Cfg("handReviveHealth"))
+        -- (simplified: handReviveHealth read as a percent of max health)
+        revive(helper, t, simple and share(t, Med.Cfg("handReviveHealth") / 100) or Med.Cfg("handReviveHealth"))
     elseif a.kind == Med.A_BLOOD then
         if not Med.Consume(helper, kit) then return end
         local add = Med.Cfg("bloodPackAdd")
@@ -376,15 +397,23 @@ local function finishAct(helper, a)
     elseif a.kind == Med.A_FA_HEAL then
         -- As much health as is missing (and the kit holds); stops all bleeding.
         if t:Health() >= t:GetMaxHealth() and not bleeding(t) then return end   -- (nothing left to do)
-        local hp, cost = kitHeal(helper, t:GetMaxHealth() - t:Health())
-        Med.SpendCharge(helper, cost)
-        heal(t, hp)
+        if usesCharge() then
+            local hp, cost = kitHeal(helper, t:GetMaxHealth() - t:Health())
+            Med.SpendCharge(helper, cost)
+            heal(t, hp)
+        else
+            heal(t, t:GetMaxHealth())   -- (simplified: to full, no charge)
+        end
         stopBleeding(t, true)
         hook.Run("Rhylib.PlayerHealed", t, helper)
     elseif a.kind == Med.A_MEDKIT then
         if t:Health() >= t:GetMaxHealth() and not bleeding(t) then return end   -- (nothing left to do)
         if not Med.Consume(helper, kit) then return end
-        heal(t, medic and Med.Cfg("medkitHealMedic") or Med.Cfg("medkitHeal"))
+        if simple then
+            heal(t, share(t, Med.Cfg("simpleMedkit")))   -- (simplified: a share of max health, medic or not)
+        else
+            heal(t, medic and Med.Cfg("medkitHealMedic") or Med.Cfg("medkitHeal"))
+        end
         stopBleeding(t, medic)
         hook.Run("Rhylib.PlayerHealed", t, helper)
     elseif a.kind == Med.A_TREAT then
@@ -423,7 +452,8 @@ end
 -- the client instead (treatment goes through med.treat).
 function Med.UseKit(ply, class, self)
     if Med.acts[ply] then return end
-    local menuKit = class == Med.MEDKIT or class == Med.FIRST_AID
+    -- (simplified medical system: no injury menu, kits heal straight away)
+    local menuKit = (class == Med.MEDKIT or class == Med.FIRST_AID) and not Med.Simple()
     if self then
         if menuKit then Med.OpenMenuFor(ply, nil) return end
         if class == Med.FIRST_AID then Med.Start(ply, Med.A_FA_HEAL, ply)

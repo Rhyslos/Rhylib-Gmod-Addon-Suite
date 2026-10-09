@@ -7,6 +7,7 @@ SWEP.Category = "Rhylib: Medical"  -- the spawn menu reads it from this file, no
 SWEP.CanSelf = true
 SWEP.OpensMenu = true
 SWEP.Hint = "LMB  treat someone   ·   RMB  treat yourself   (drag onto a body part)"
+SWEP.SimpleHint = "LMB  heal someone   ·   RMB  heal yourself"   -- (simplified medical system)
 
 -- One use each. Stacks 3 for troopers, 5 for medics (config medkitStack /
 -- medkitStackMedic, at most InvStack).

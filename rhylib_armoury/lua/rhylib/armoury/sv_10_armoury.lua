@@ -114,7 +114,7 @@ function A.FillCrate(ent, storage)
     Rhylib.Items.EnsureReady()
     for _, row in ipairs(list) do
         local def = istable(row) and Rhylib.Items.defs[row[1]]
-        if def then Inv().StorageAdd(storage, row[1], tonumber(row[2]) or 1, def.fill and { fill = 1 } or {}) end
+        if def and not hook.Run("Rhylib.ItemDisabled", row[1]) then Inv().StorageAdd(storage, row[1], tonumber(row[2]) or 1, def.fill and { fill = 1 } or {}) end
     end
 end
 
@@ -128,7 +128,8 @@ local function roleStock(roles, kind)
         local list = istable(cfg[r]) and cfg[r][kind]
         if istable(list) then
             for _, id in ipairs(list) do
-                if not seen[id] and Rhylib.Items.defs[id] then seen[id] = true out[#out + 1] = id end
+                -- (hook Rhylib.ItemDisabled: e.g. field items under the simplified medical system)
+                if not seen[id] and Rhylib.Items.defs[id] and not hook.Run("Rhylib.ItemDisabled", id) then seen[id] = true out[#out + 1] = id end
             end
         end
     end

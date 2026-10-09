@@ -90,7 +90,10 @@ function Med.Down(ply, attacker, inflictor)
     if Med.TankExit and ply.rhylibTank then Med.TankExit(ply) end   -- (out of the bacta tank first)
     if Rhylib.Inventory and Rhylib.Inventory.Stow then Rhylib.Inventory.Stow(ply) end
 
-    ply:SetHealth(Med.Cfg("downHealth"))
+    -- (simplified medical system: downHealth is a percent of max health)
+    local pool = Med.Cfg("downHealth")
+    if Med.Simple() then pool = math.max(1, math.ceil(ply:GetMaxHealth() * pool / 100)) end
+    ply:SetHealth(pool)
     ply:SetNW2Float("rhylib_downYaw", ply:EyeAngles().y)
     ply:SetNW2Float("rhylib_downEnd", CurTime() + Med.Cfg("bleedTime"))
     ply:SetNW2Float("rhylib_downLeft", 0)

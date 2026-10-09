@@ -7,6 +7,7 @@ SWEP.Category = "Rhylib: Medical"  -- the spawn menu reads it from this file, no
 SWEP.CanSelf = true
 SWEP.OpensMenu = true
 SWEP.Hint = "LMB  treat someone / revive the downed   ·   RMB  treat yourself"
+SWEP.SimpleHint = "LMB  heal someone to full / revive the downed   ·   RMB  heal yourself"   -- (simplified medical system)
 
 -- Doesn't stack. Holds a charge (config firstAidCharge health), kept by the
 -- inventory item as fill and shown as %.

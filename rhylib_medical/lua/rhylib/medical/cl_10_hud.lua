@@ -32,6 +32,12 @@ timer.Create("Rhylib.Medical.List", 0.25, 0, function()
     Med.clientDown = list
 end)
 
+-- ", uses charge" unless the simplified medical system's kits never run out.
+local function faCharge()
+    if Med.Simple() and Med.Cfg("simpleFirstAidCharge") ~= true then return "" end
+    return ", uses charge"
+end
+
 local note, noteTime = nil, 0
 -- The same short message, from the client (e.g. a kit with nobody aimed at).
 function Med.ShowNote(text) note, noteTime = text, RealTime() end
@@ -284,7 +290,7 @@ local function openMenu(ply, t)
             any = true
         end
         if ply:HasWeapon(Med.FIRST_AID) then
-            m:AddOption("Revive · first aid kit (slow, uses charge)", function() if IsValid(t) then send(Med.A_FA_REVIVE, t) end end)
+            m:AddOption("Revive · first aid kit (slow" .. faCharge() .. ")", function() if IsValid(t) then send(Med.A_FA_REVIVE, t) end end)
             any = true
         end
         local hands = Med.Skill(ply, "hands_on")
@@ -296,7 +302,7 @@ local function openMenu(ply, t)
             m:AddOption("No revive kit or first aid kit", function() end)
             any = true
         end
-        if carried(Med.BLOOD_PACK) > 0 then
+        if carried(Med.BLOOD_PACK) > 0 and not Med.Simple() then
             m:AddOption("Blood pack (+" .. Med.Cfg("bloodPackAdd") .. " s bleed-out)", function() if IsValid(t) then send(Med.A_BLOOD, t) end end)
             any = true
         end
@@ -325,7 +331,7 @@ Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.wheel", function(t, me, add)
                 kits = true
             end
             if me:HasWeapon(Med.FIRST_AID) then
-                add("Revive", function(x) send(Med.A_FA_REVIVE, x) end, { order = 12, sub = "First aid kit (slow, uses charge)" })
+                add("Revive", function(x) send(Med.A_FA_REVIVE, x) end, { order = 12, sub = "First aid kit (slow" .. faCharge() .. ")" })
                 kits = true
             end
             if Med.Skill(me, "hands_on") then
@@ -333,12 +339,12 @@ Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.wheel", function(t, me, add)
                 kits = true
             end
             if not kits then add("Revive", nil, { order = 11, disabled = "No revive or first aid kit" }) end
-            if carried(Med.BLOOD_PACK) > 0 then
+            if carried(Med.BLOOD_PACK) > 0 and not Med.Simple() then
                 add("Blood pack", function(x) send(Med.A_BLOOD, x) end, { order = 14, sub = "+" .. Med.Cfg("bloodPackAdd") .. " s bleed-out" })
             end
         end
     end
-    if Med.OpenInjuries and t:GetPos():DistToSqr(me:GetPos()) < cfgRange * cfgRange * 2 then
+    if Med.OpenInjuries and not Med.Simple() and t:GetPos():DistToSqr(me:GetPos()) < cfgRange * cfgRange * 2 then
         add("Injuries", function(x) Med.OpenInjuries(x) end, { order = 20, sub = "Check and treat" })
     end
 end)

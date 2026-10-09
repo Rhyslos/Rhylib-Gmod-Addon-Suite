@@ -176,7 +176,7 @@ end
 
 Rhylib.Hook.Add("PostEntityTakeDamage", "medical.injuries", function(ply, dmg, took)
     if not took or not ply:IsPlayer() or ply.rhylibBleedTick then return end
-    if not cfg("injuries") or not ply:Alive() then
+    if not cfg("injuries") or Med.Simple() or not ply:Alive() then
         ply.rhylibHitGroup = nil
         return
     end
@@ -241,7 +241,7 @@ Rhylib.Net.Receive("med.view", function(ply)
         v[ply] = nil
         if next(v) == nil then viewers[p] = nil end
     end
-    if not (IsValid(patient) and patient:IsPlayer() and patient ~= ply) then return end
+    if not (IsValid(patient) and patient:IsPlayer() and patient ~= ply) or Med.Simple() then return end
     local r = Config.Get("medical", "viewRange")
     if not ply:Alive() or ply.rhylibDown or ply:GetPos():DistToSqr(patient:GetPos()) > r * r or not Med.CanSee(ply, patient) then return end
     viewers[patient] = viewers[patient] or {}
@@ -283,7 +283,7 @@ local function bleedDamage(ply, amount)
 end
 
 timer.Create("Rhylib.Medical.Injuries", 1, 0, function()
-    if next(inj) == nil then return end
+    if next(inj) == nil or Med.Simple() then return end
     local now = CurTime()
     local light, heavy = cfg("lightBleed"), cfg("heavyBleed")
     local rec, burnRec = cfg("recover"), cfg("burnRecover")
@@ -423,6 +423,7 @@ Rhylib.Net.Receive("med.treat", function(ply)
     local limb = Med.LIMBS[net.ReadUInt(3)]
     local kit = Med.TREAT_ITEMS[net.ReadUInt(3)]
     if not limb or not kit or not ply:Alive() or ply.rhylibDown then return end
+    if Med.Simple() then return Med.Note(ply, "The simplified medical system has no injuries to treat") end
     if not (IsValid(patient) and patient:IsPlayer() and patient:Alive()) then return end
     if patient ~= ply then
         local r = cfg("viewRange")
@@ -456,6 +457,7 @@ end, { rate = 4, burst = 4 })
 -- dt seconds in a tank at rate mult. Returns true when nothing is left.
 function Med.TankTick(ply, dt, mult)
     local heal = cfg("tankHeal") * dt * mult
+    if Med.Simple() then heal = heal * ply:GetMaxHealth() / 100 end   -- (simplified: tankHeal = percent per second)
     ply:SetHealth(math.min(ply:GetMaxHealth(), ply:Health() + math.max(1, math.floor(heal + 0.5))))
     local t = inj[ply]
     if t then
@@ -472,3 +474,17 @@ function Med.TankTick(ply, dt, mult)
     end
     return ply:Health() >= ply:GetMaxHealth() and (not inj[ply] or healthy(inj[ply]))
 end
+
+-- Simplified medical system switched on: everyone's injuries and illnesses go
+-- (offline players' saved illnesses stay frozen until they're cured), and
+-- treatments and blood packs under way stop.
+Rhylib.Hook.Add("Rhylib.ConfigChanged", "medical.simple", function(m, k)
+    if m ~= "medical" or k ~= "simplified" or not Med.Simple() then return end
+    for _, p in ipairs(player.GetAll()) do
+        Med.ClearInjuries(p)
+        if Med.Cure then Med.Cure(p) end   -- (illnesses go too)
+    end
+    for h, a in pairs(Med.acts or {}) do
+        if a.kind == Med.A_TREAT or a.kind == Med.A_BLOOD then Med.Cancel(h) end
+    end
+end)

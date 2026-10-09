@@ -748,6 +748,7 @@ H.infect = function(caller, t, a)
     local kind, load = a and a.kind, a and a.load
     local Med = med()
     if not (Med and Med.Infect) then return nil, "Needs rhylib_medical" end
+    if Med.Simple and Med.Simple() then return nil, "The simplified medical system is on: no illnesses" end
     local k = Med.ILL_BY_ID[string.lower(tostring(kind or ""))]
     if not k then return nil, "Kind: viral, bacterial or poison" end
     load = math.Clamp(math.floor(tonumber(load) or 40), 1, 100)
