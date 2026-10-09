@@ -51,7 +51,7 @@ SWEP.Primary = {
     Automatic = true,       -- must stay true; FireModes decides
     Ammo = "rhylib_mag_large",
 }
-SWEP.Secondary = { ClipSize = -1, DefaultClip = -1, Automatic = true, Ammo = "none" }
+SWEP.Secondary = { ClipSize = -1, DefaultClip = -1, Automatic = true, Ammo = "rhylib_cell" }   -- (shows spare cells on the HUD)
 
 SWEP.FireRate = 50          -- 1.2 s between shots
 SWEP.Recoil = { up = 3.2, side = 0.5, bias = 0.1, recover = 0.8, aimMult = 0.7 }
@@ -67,9 +67,12 @@ SWEP.ClipCap = 15
 SWEP.Grapple = true
 SWEP.FireModes = { "semi" }
 
-SWEP.UsesCell = false
+-- Power cell too (2026-10-09t, owner: snipers and shotguns take cells; each shot draws a lot: 4 magazines of 15 per cell).
+SWEP.UsesCell = true
+SWEP.CellShots = 60
+SWEP.CellReloadMult = 1.6
 SWEP.StartMags = 2
-SWEP.StartCells = 0
+SWEP.StartCells = 1
 
 SWEP.InvW = 6   -- (long guns are 6 long, the inventory is 6 wide; owner 2026-10-07)
 SWEP.InvH = 1

@@ -146,8 +146,8 @@ local function squadList(me)
     local names = (D and D.SQUAD_AGGRO_NAMES) or {}
     local mine, free = countClones(me)
     local lock
-    if not K.IsCommanderSpec(me) then
-        lock = "Commander officers only"
+    if not K.CanCommandSquad(me) then
+        lock = "Commander officers (or Reinforcements) only"
     else
         local ok, why = K.RankOk(me, "commandRank")
         if not ok then lock = why end

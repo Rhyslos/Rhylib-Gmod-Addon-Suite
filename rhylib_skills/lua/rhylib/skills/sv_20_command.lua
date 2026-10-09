@@ -99,7 +99,7 @@ end
 -- Reinforcements (Commander capstone, 2026-10-06az): a clone squad
 -- (rhylib_droids D.CallSquad) around the officer. Returns ok, reason.
 function K.CallReinforcements(ply)
-    if not K.Has(ply, "reinforcements") then return false, "You haven't learned Reinforcements" end
+    if not K.HasReinforcements(ply) then return false, "You haven't learned Reinforcements" end
     if not canReceive(ply) then return false, "You can't call reinforcements right now" end
     local ok, why = K.RankOk(ply, "commandRank")
     if not ok then return false, why end
@@ -165,7 +165,7 @@ Rhylib.Net.Receive("skills.squad", function(ply)
     end
     local D = Rhylib.Droids
     if not (D and D.SquadOrder) then return end
-    if not K.IsCommanderSpec(ply) then return K.Note(ply, "Only Commander officers give squad orders", true) end
+    if not K.CanCommandSquad(ply) then return K.Note(ply, "Only Commander officers (or officers with Reinforcements) give squad orders", true) end
     local ok, why = K.RankOk(ply, "commandRank")
     if not ok then return K.Note(ply, why, true) end
     local msg = D.SquadOrder(ply, op)

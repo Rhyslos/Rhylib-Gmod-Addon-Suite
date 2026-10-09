@@ -145,7 +145,7 @@ local function drawAction(ply, a, t, st, en)
         text(name, 15, W / 2, y + S(32), C.text)
         bar(x + S(16), y + S(44), w - S(32), S(4), (CurTime() - st) / math.max(0.01, en - st), C.good)
     end
-    text("Move or press E to stop", 12, W / 2, y + S(60), C.textDim)
+    text(ply:GetNW2Bool("rhylib_medDrag", false) and "Keep dragging · let go to stop" or "Move or press E to stop", 12, W / 2, y + S(60), C.textDim)
 end
 
 -- Someone is treating you: who, and how long it takes.
@@ -161,6 +161,18 @@ local function drawPatient(ply)
     text((Med.ActName[a] or "Treating") .. " · " .. by:Nick(), 15, W / 2, y + S(30), C.text)
     bar(x + S(16), y + S(44), w - S(32), S(4), (CurTime() - st) / math.max(0.01, en - st), C.good)
     return true
+end
+
+-- Carries a revive kit (inventory item, or the plain weapon).
+local function hasReviveKit(ply)
+    local Inv = Rhylib.Inventory
+    if Inv and Inv.byUid then
+        for _, o in pairs(Inv.byUid) do
+            if o.id == Med.REVIVE_KIT then return true end
+        end
+        return false
+    end
+    return ply:HasWeapon(Med.REVIVE_KIT)
 end
 
 local function drawPrompt(ply)
@@ -231,6 +243,10 @@ Rhylib.Hook.Add("HUDPaint", "medical.hud", function()
             -- (being treated)
         elseif Med.Dragging(ply) then
             text("Dragging " .. Med.Dragging(ply):Nick() .. " · release to drop", 15, ScrW() / 2, ScrH() * 0.5 + S(50), C.text)
+            -- Revive on the move (Combat medic): with a revive kit on you.
+            if Med.Skill(ply, "drag_revive") and hasReviveKit(ply) then
+                text("Right click to use revive kit while dragging", 14, ScrW() / 2, ScrH() * 0.5 + S(70), C.good)
+            end
         else
             drawPrompt(ply)
         end

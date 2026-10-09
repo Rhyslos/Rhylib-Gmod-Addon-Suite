@@ -358,6 +358,7 @@ Items.BELT = 6       -- ammo belt (rhylib_skills Ammo belt): no worn items, no l
 Items.HOLSTER = 7    -- pistols (def.holster), while a holster is worn (2x2: both holsters)
 Items.POUCH = 18     -- belt pouches (worn belt pouches): like the ammo belt
 Items.CELLPACK = 19  -- ARC backpack's side pouch: power cells only
+Items.CELLBELT = 20  -- belt cell pouch every clone carries (config inventory beltCells): power cells only
 Items.CONT_BITS = 5   -- (containers 0-31; gear slots 8-17)
 
 -- Worn slots: [cid] = { slot = def.slot, title }. GEAR_SLOTS in display order.
@@ -416,7 +417,7 @@ function Items.ContainerAllows(cid, def)
     if cid == Items.HOLSTER then return def.holster == true end
     if cid == Items.EXT then return true end  -- the storage itself decides (sv_30_storage.lua)
     if cid == Items.BACK then return not def.large and not def.grid end
-    if cid == Items.RACK or cid == Items.CELLPACK then return def.id == "cell" end
+    if cid == Items.RACK or cid == Items.CELLPACK or cid == Items.CELLBELT then return def.id == "cell" end
     if cid == Items.BELT or cid == Items.POUCH then return not def.grid and not def.slot and not (def.weapon and def.w >= 5) end
     return true
 end

@@ -134,8 +134,9 @@ end
 -- Starting and stopping
 --------------------------------------------------------------------------
 
-local function setAct(helper, kind, target, startT, endT)
+local function setAct(helper, kind, target, startT, endT, dragging)
     helper:SetNW2Int("rhylib_medAct", kind)
+    if helper:GetNW2Bool("rhylib_medDrag", false) ~= (dragging or false) then helper:SetNW2Bool("rhylib_medDrag", dragging or false) end
     helper:SetNW2Entity("rhylib_medT", target or NULL)
     helper:SetNW2Float("rhylib_medS", startT or 0)
     helper:SetNW2Float("rhylib_medE", endT or 0)
@@ -270,7 +271,8 @@ function Med.Start(helper, kind, target, opts)
         if why ~= "" then Med.Note(helper, why) end
         return false
     end
-    Med.StopDrag(helper)
+    local dragging = opts and opts.dragging and Med.Dragging(helper) == target or false
+    if not dragging then Med.StopDrag(helper) end
 
     local now = CurTime()
     if kind == Med.A_STAB then
@@ -281,7 +283,7 @@ function Med.Start(helper, kind, target, opts)
         return true
     end
 
-    local a = { kind = kind, target = target, kit = opts and opts.kit, limb = opts and opts.limb, started = now }
+    local a = { kind = kind, target = target, kit = opts and opts.kit, limb = opts and opts.limb, started = now, dragging = dragging or nil }
     a.endTime = now + duration(helper, kind, target == helper, a.kit)
     -- Reviving pauses the bleed-out (unless someone already stabilises).
     if Med.REVIVES[kind] and not Med.StabilisedBy(target) then
@@ -290,7 +292,7 @@ function Med.Start(helper, kind, target, opts)
         a.paused = true
     end
     Med.acts[helper] = a
-    setAct(helper, kind, target, now, a.endTime)
+    setAct(helper, kind, target, now, a.endTime, dragging)
     setPatient(target, helper)
     return true
 end
@@ -433,7 +435,9 @@ function Med.CheckActions(now)
             ok = (t.rhylibDown and true or false) == needDown
                 and (t == helper or Med.InRange(helper, t, 50))
                 and (not kit or Med.Has(helper, kit))
-                and not (needDown and Med.DraggedBy(t))
+                -- (a dragged body can't be treated, unless it's this helper's own revive on the move)
+                and not (needDown and Med.DraggedBy(t) and not (a.dragging and Med.DraggedBy(t) == helper))
+                and not (a.dragging and Med.Dragging(helper) ~= t)
         end
         if not ok then
             Med.Cancel(helper)
@@ -493,6 +497,14 @@ function Med.UseKit(ply, class, self)
         return
     end
     Med.Start(ply, class == Med.FIRST_AID and Med.A_FA_HEAL or Med.A_MEDKIT, t)
+end
+
+-- Revive on the move (Combat medic): right click while dragging starts a
+-- revive kit revive that runs as you walk; letting go stops it.
+function Med.DragRevive(ply, target)
+    if not Med.Skill(ply, "drag_revive") then return end
+    if Med.acts[ply] or not (IsValid(target) and Med.Dragging(ply) == target) then return end
+    Med.Start(ply, Med.A_REVIVE, target, { dragging = true })
 end
 
 -- Open the injury menu on ply's screen: patient's, or their own (nil).

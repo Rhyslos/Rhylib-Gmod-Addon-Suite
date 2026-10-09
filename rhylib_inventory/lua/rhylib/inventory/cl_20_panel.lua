@@ -257,7 +257,7 @@ function PANEL:LayoutKey()
         .. "|" .. (e and (e.w .. "x" .. e.h) or "-") .. "|" .. (r and (r.w .. "x" .. r.h) or "-")
         .. "|" .. (bl and (bl.w .. "x" .. bl.h) or "-") .. "|" .. (ho and (ho.w .. "x" .. ho.h) or "-")
         .. "|" .. table.concat(gear) .. "|" .. (LocalPlayer():GetModel() or "")
-        .. "|" .. dims(Inv.cont[Items.POUCH]) .. "|" .. dims(Inv.cont[Items.CELLPACK])
+        .. "|" .. dims(Inv.cont[Items.POUCH]) .. "|" .. dims(Inv.cont[Items.CELLPACK]) .. "|" .. dims(Inv.cont[Items.CELLBELT])
 end
 
 -- Works out where every region sits and sizes the window; shrinks the
@@ -356,6 +356,12 @@ function PANEL:LayoutOnce()
 
     -- Combine munitions button, under the Back slot.
     self.combineRect = { x = slotX, y = top + slotSize + self.gap * 3, w = slotSize, h = math.floor(label * 1.4) }
+    -- The belt cell pouch (every clone's), under that; it doesn't scroll.
+    local cb = Inv.cont[Items.CELLBELT]
+    if cb then
+        self.regions[#self.regions + 1] = { cid = Items.CELLBELT, fixed = true, x = slotX,
+            y = self.combineRect.y + self.combineRect.h + label + self.gap * 2, gw = cb.w, gh = cb.h, title = "Belt cells" }
+    end
 
     -- Tallest a column may be: the main grid plus a backpack, and never
     -- off the screen. Anything longer scrolls (mouse wheel).
@@ -366,7 +372,7 @@ function PANEL:LayoutOnce()
     local ownView = math.min(gridsH, maxH)
     self.cols = { own = { x = gridX, w = gridsW, top = top, view = ownView, content = gridsH } }
     for _, r in ipairs(self.regions) do
-        if not r.slot then r.col, r.baseY = "own", r.y end
+        if not r.slot and not r.fixed then r.col, r.baseY = "own", r.y end
     end
     self.backLabelBase = self.backLabelY
 
@@ -637,7 +643,7 @@ function PANEL:PaintRegion(r, dragUid)
             draw.SimpleText("Empty", self:Font(14), r.x + r.pw * 0.5, r.y + r.ph * 0.5, UI.Colors.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         end
     else
-        local isBack, isExt = r.cid == BACK or r.cid == RACK or r.cid == BELT or r.cid == HOLSTER or r.cid == Items.POUCH or r.cid == Items.CELLPACK, r.cid == EXT
+        local isBack, isExt = r.cid == BACK or r.cid == RACK or r.cid == BELT or r.cid == HOLSTER or r.cid == Items.POUCH or r.cid == Items.CELLPACK or r.cid == Items.CELLBELT, r.cid == EXT
         local cellCol = isExt and COL_EXT_CELL or (isBack and COL_BACK_CELL or COL_CELL)
         local borderCol = isExt and COL_EXT_BORDER or (isBack and COL_BACK_BORDER or COL_BORDER)
         for y = 0, r.gh - 1 do
@@ -664,6 +670,8 @@ function PANEL:PaintRegion(r, dragUid)
             label(self, "Belt pouches · no rifles or launchers", r.x, r.y - self.label * 0.5)
         elseif r.cid == Items.CELLPACK then
             label(self, "Cell pouch · power cells only", r.x, r.y - self.label * 0.5)
+        elseif r.cid == Items.CELLBELT then
+            label(self, "Belt cells", r.x, r.y - self.label * 0.5)
         end
         ticks(r.x - 3, r.y - 3, self:SpanPx(r.gw) + 6, self:SpanPx(r.gh) + 6, self.s)
     end

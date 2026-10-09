@@ -49,7 +49,7 @@ SWEP.Primary = {
     Automatic = true,
     Ammo = "rhylib_mag_medium",
 }
-SWEP.Secondary = { ClipSize = -1, DefaultClip = -1, Automatic = true, Ammo = "none" }
+SWEP.Secondary = { ClipSize = -1, DefaultClip = -1, Automatic = true, Ammo = "rhylib_cell" }   -- (shows spare cells on the HUD)
 
 SWEP.FireRate = 75           -- 0.8 s between shots
 SWEP.Recoil = { up = 2.4, side = 0.6, bias = 0.1, recover = 0.75, aimMult = 0.75 }
@@ -66,9 +66,12 @@ SWEP.Mags = { "mag_medium" }
 SWEP.Grapple = true
 SWEP.FireModes = { "semi" }
 
-SWEP.UsesCell = false
+-- Power cell too (2026-10-09t, owner: snipers and shotguns take cells; about 12 magazines (10 shots each) per cell).
+SWEP.UsesCell = true
+SWEP.CellShots = 120
+SWEP.CellReloadMult = 1.6
 SWEP.StartMags = 4
-SWEP.StartCells = 0
+SWEP.StartCells = 1
 
 SWEP.InvW = 4
 SWEP.InvH = 1

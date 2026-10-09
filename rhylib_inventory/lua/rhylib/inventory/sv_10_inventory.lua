@@ -37,6 +37,7 @@ local Config = Rhylib.Config
 local MAIN, BACK, SLOT_BACK, RACK, BELT, HOLSTER = Items.MAIN, Items.BACK, Items.SLOT_BACK, Items.RACK, Items.BELT, Items.HOLSTER
 local IsWorn = Items.IsWorn
 
+Config.Register("inventory", "beltCells", 2, "Power cells every clone's belt cell pouch holds (under Combine munitions; 0-2, 0 = none). Takes effect for players who join after a change")
 Config.Register("inventory", "width", 6, "Personal inventory width in cells (owner 2026-10-07: 6, and the long guns are 6 long)")
 Config.Register("inventory", "height", 3, "Personal inventory height in cells")
 Config.Register("inventory", "saveInterval", 2, "Seconds between saves of changed inventories")
@@ -309,7 +310,7 @@ end
 -- First free spot for a new item: worn slot if it fits there, then the
 -- main grid, then the backpack.
 local ROTS_SQUARE, ROTS_BOTH = { false }, { false, true }
-local SEARCH = { RACK, Items.CELLPACK, HOLSTER, MAIN, BACK, BELT, Items.POUCH }   -- (the rack and cell pouch only take cells, the holster pistols)
+local SEARCH = { Items.CELLBELT, RACK, Items.CELLPACK, HOLSTER, MAIN, BACK, BELT, Items.POUCH }   -- (the belt pouch, rack and cell pouch only take cells, the holster pistols)
 
 local function findSpot(st, id)
     local def = Items.defs[id]
@@ -398,6 +399,10 @@ function Inv.Get(ply)
     for _, cid in ipairs(Items.GEAR_SLOTS) do
         if Items.SlotUsed(Items.WORN[cid].slot) then st.cont[cid] = { w = 1, h = 1, items = {} } end
     end
+    -- The belt cell pouch (owner 2026-10-09t: every clone carries one).
+    local bc = math.floor(tonumber(Config.Get("inventory", "beltCells")) or 0)
+    -- (cells are 1x2, so the pouch is 2 rows tall; at most 2 wide to fit under the button)
+    if bc > 0 then st.cont[Items.CELLBELT] = { w = math.min(bc, 2), h = 2, items = {} } end
     -- Grids from skills (the cell rack), before the saved items go in.
     local K = Rhylib.Skills
     if K and K.ExtraGrids then
@@ -838,7 +843,7 @@ end
 
 local function partials(st)
     local groups, n = {}, 0
-    for _, cid in ipairs({ MAIN, BACK, RACK, BELT, Items.POUCH, Items.CELLPACK }) do
+    for _, cid in ipairs({ MAIN, BACK, RACK, BELT, Items.POUCH, Items.CELLPACK, Items.CELLBELT }) do
         local c = st.cont[cid]
         if c then
             for _, o in pairs(c.items) do

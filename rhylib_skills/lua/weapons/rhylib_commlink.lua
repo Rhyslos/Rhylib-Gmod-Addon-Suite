@@ -65,7 +65,7 @@ function SWEP:SecondaryAttack()
     if CLIENT then return end
     local K, owner = Rhylib.Skills, self:GetOwner()
     if not (K and K.CallReinforcements and IsValid(owner)) then return end
-    if not K.Has(owner, "reinforcements") then return end
+    if not K.HasReinforcements(owner) then return end
     local ok, res = K.CallReinforcements(owner)
     if ok then
         self:SendWeaponAnim(ACT_SLAM_DETONATOR_DETONATE)
@@ -148,7 +148,7 @@ if CLIENT then
         end
         draw.SimpleText(line, Rhylib.UI.Font(15), w * 0.5, y + h * 0.028, (ok and cd <= 0) and C.text or C.textDim, TEXT_ALIGN_CENTER)
         -- Reinforcements (Commander capstone)
-        if K.Has(me, "reinforcements") and K.ReinfCooldown then
+        if K.HasReinforcements(me) and K.ReinfCooldown then
             local rc = K.ReinfCooldown(me)
             local rl
             local jammed = Rhylib.Radio and Rhylib.Radio.Jammed and Rhylib.Radio.Jammed(me)
@@ -165,7 +165,7 @@ if CLIENT then
             if rl then draw.SimpleText(rl, Rhylib.UI.Font(15), w * 0.5, y + h * 0.052, rc <= 0 and C.text or C.textDim, TEXT_ALIGN_CENTER) end
         end
         -- Squad orders (Commander officers, cl_20_command.lua)
-        if ok and K.IsCommanderSpec and K.IsCommanderSpec(me) then
+        if ok and K.CanCommandSquad and K.CanCommandSquad(me) then
             draw.SimpleText("Hold R: squad orders", Rhylib.UI.Font(15), w * 0.5, y + h * 0.076, C.textDim, TEXT_ALIGN_CENTER)
         end
     end

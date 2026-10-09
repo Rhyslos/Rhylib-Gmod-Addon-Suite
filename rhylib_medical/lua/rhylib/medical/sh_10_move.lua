@@ -11,6 +11,9 @@
              players don't collide with other players (collision group).
     Helpers: no shooting while doing an action; stabilising and treating
              lock you in place, and pressing a move key, Jump or E stops.
+             Revive on the move (Combat medic): right click while dragging
+             revives with a kit as you walk (NW2Bool rhylib_medDrag);
+             letting go of the body stops it.
     Dragger: capped at dragSpeed (Field drag: dragSpeedSkill), no sprint;
     letting go of attack drops.
 ]]
@@ -21,6 +24,7 @@ local band, bor, bnot = bit.band, bit.bor, bit.bnot
 local DOWN_STRIP = bor(IN_ATTACK, IN_ATTACK2, IN_RELOAD, IN_USE, IN_DUCK, IN_SPEED, IN_WALK, IN_ZOOM)
 local MOVE_STRIP = bor(IN_JUMP, IN_DUCK, IN_SPEED)
 local ACT_STRIP = bor(IN_ATTACK, IN_ATTACK2, IN_RELOAD)
+local DRAG_ACT_STRIP = bor(IN_ATTACK2, IN_RELOAD, IN_SPEED)
 local CANCEL_KEYS = { IN_FORWARD, IN_BACK, IN_MOVELEFT, IN_MOVERIGHT, IN_JUMP, IN_USE }
 
 local HULL_MIN, HULL_MAX = Vector(-16, -16, 0), Vector(16, 16, 16)  -- under step height
@@ -60,7 +64,12 @@ Rhylib.Hook.Add("StartCommand", "medical.input", function(ply, cmd)
             if changed then cmd:SetViewAngles(ang) end
         end
     elseif ply:GetNW2Int("rhylib_medAct", 0) ~= 0 then
-        cmd:RemoveKey(ACT_STRIP)
+        -- (reviving while dragging: attack stays held for the drag)
+        if ply:GetNW2Bool("rhylib_medDrag", false) then
+            cmd:RemoveKey(DRAG_ACT_STRIP)
+        else
+            cmd:RemoveKey(ACT_STRIP)
+        end
     elseif Med.Dragging(ply) then
         cmd:RemoveKey(IN_SPEED)
     end
@@ -99,7 +108,8 @@ Rhylib.Hook.Add("SetupMove", "medical.move", function(ply, mv, cmd)
     if ply.rhylibGiveUp then ply.rhylibGiveUp = nil end
 
     local act = ply:GetNW2Int("rhylib_medAct", 0)
-    if act ~= 0 then
+    -- (a revive while dragging, Revive on the move: walking and the drag go on)
+    if act ~= 0 and not ply:GetNW2Bool("rhylib_medDrag", false) then
         if SERVER then
             for _, k in ipairs(CANCEL_KEYS) do
                 if mv:KeyPressed(k) then
@@ -119,6 +129,8 @@ Rhylib.Hook.Add("SetupMove", "medical.move", function(ply, mv, cmd)
         mv:SetMaxClientSpeed(math.min(mv:GetMaxClientSpeed(), Med.DragSpeed(ply)))
         if SERVER and (not mv:KeyDown(IN_ATTACK) or not Med.HoldingHands(ply)) then
             Med.StopDrag(ply)
+        elseif SERVER and act == 0 and mv:KeyPressed(IN_ATTACK2) and Med.DragRevive then
+            Med.DragRevive(ply, dragging)   -- (Revive on the move, sv_20_actions.lua)
         end
         return
     end

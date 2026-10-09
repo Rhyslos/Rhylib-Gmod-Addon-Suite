@@ -174,7 +174,7 @@ K.NODES = {
     -- Pistol: 1-3-4-2 then the orders.
     { id = "dual_dc17", cat = "officer", spec = "pistol", tier = 2, cost = 2, name = "Dual DC-17",
       desc = "Draw a second DC-17 (E + R): two magazines loaded, shots alternate between hands.", needs = { "mark_target" } },
-    { id = "pistol_prof", cat = "officer", spec = "pistol", tier = 3, cost = 3, name = "Pistol proficiency",
+    { id = "pistol_prof", cat = "officer", spec = "pistol", tier = 3, cost = 2, name = "Pistol proficiency",
       desc = "DC-17: 20% less spread.", needs = { "dual_dc17" } },
     { id = "quick_draw", cat = "officer", spec = "pistol", tier = 3, cost = 1, name = "Quick draw",
       desc = "Guns come out 40% faster when you switch to them.", needs = { "dual_dc17" } },
@@ -193,7 +193,7 @@ K.NODES = {
     { id = "light_rounds", cat = "officer", spec = "pistol", tier = 5, cost = 3, name = "Light rounds",
       desc = "Hits from a gun loaded with a small magazine: 15% chance to do 50% more damage. Doesn't stack with Critical hits (the better chance counts).",
       needs = { "light_mags" } },
-    { id = "crits", cat = "officer", spec = "pistol", tier = 5, cost = 3, name = "Critical hits",
+    { id = "crits", cat = "officer", spec = "pistol", tier = 5, cost = 2, name = "Critical hits",
       desc = "10% of your hits with any gun do 50% more damage (with a small magazine, Light rounds' 15% counts instead).",
       needsGroups = { { "steady_grip" }, { "speed_loader" } }, needsLabel = "Needs Steady grip or Speed loader" },
     { id = "cmd_wind", cat = "officer", spec = "pistol", tier = 6, cost = 2, name = "Second wind", exclusive = "command", rankCfg = "commandRank", order = "cmd_wind",
@@ -271,6 +271,13 @@ K.NODES = {
     { id = "reinforcements", cat = "officer", spec = "commander", tier = 7, cost = 2, name = "Reinforcements", icon = "stack", rankCfg = "commandRank",
       desc = "Right-click with the command comlink: a clone squad (a trooper, a medic, a rifleman and a heavy) arrives around you, steps toward the enemy and follows you, for 10 minutes. You lead them: clones near you aim better, react faster and pause less. 15 min cooldown.",
       needsGroups = { { "adapt_1" }, { "chain_command" } }, needsLabel = "Needs Adaptable or Chain of command" },
+    -- The Pistol officer's copy (2026-10-09t, owner: it's an officer path too).
+    -- Path still 24: Pistol proficiency and Critical hits cost one less.
+    { id = "reinforcements_p", cat = "officer", spec = "pistol", tier = 7, cost = 2, name = "Reinforcements", icon = "stack", rankCfg = "commandRank",
+      reinforce = true,
+      desc = "Right-click with the command comlink: a clone squad (a trooper, a medic, a rifleman and a heavy) arrives around you, steps toward the enemy and follows you, for 10 minutes. You lead them: clones near you aim better, react faster and pause less, and you can give them squad orders (hold R). 15 min cooldown.",
+      needsGroups = { { "cmd_wind" }, { "cmd_triage" }, { "cmd_hold" }, { "cmd_focus" }, { "cmd_open" }, { "cmd_press" } },
+      needsLabel = "Needs a command order" },
 
     -- Airborne (jetpack: 15 s of flight with any Airborne skill, 10 s without).
     -- Shape 1-2-3-1-3-1: it widens, narrows to Grenadier, then widens again.
@@ -327,9 +334,13 @@ K.NODES = {
     { id = "triage", cat = "medic", spec = "combat_medic", tier = 4, cost = 3, name = "Triage",
       desc = "Downed markers reach twice as far, show who is helping and flash when time runs short.",
       needs = { "quick_revive" } },
-    { id = "medevac", cat = "medic", spec = "combat_medic", tier = 5, cost = 6, name = "Medevac", icon = "drag",
+    { id = "medevac", cat = "medic", spec = "combat_medic", tier = 5, cost = 4, name = "Medevac", icon = "drag",
       desc = "A downed player's bleed-out pauses while you drag them to cover.",
       needs = { "under_fire" } },
+    -- (2026-10-09t, owner; path still 24: Medevac 6 -> 4)
+    { id = "drag_revive", cat = "medic", spec = "combat_medic", tier = 6, cost = 2, name = "Revive on the move",
+      desc = "While dragging someone, right click to revive them with a revive kit as you walk. It takes as long as a normal revive; letting go of the body stops it.",
+      needs = { "medevac" } },
 
     { id = "chem_bench", cat = "medic", spec = "chemist", tier = 3, cost = 3, name = "Chemistry",
       desc = "Use a chemistry bench to turn medical supplies into gels, painkillers, splints, blood packs and medkits.",
@@ -427,6 +438,17 @@ end
 
 -- A Commander officer (any skill of the commander specialisation that
 -- isn't borrowed)? Only they give clone squad orders (comlink R wheel).
+-- Either officer path's Reinforcements capstone.
+function K.HasReinforcements(ply)
+    return K.Has(ply, "reinforcements") or K.Has(ply, "reinforcements_p")
+end
+
+-- May give clones squad orders: a Commander officer, or anyone who can
+-- call reinforcements (the Pistol officer's capstone).
+function K.CanCommandSquad(ply)
+    return K.IsCommanderSpec(ply) or K.HasReinforcements(ply)
+end
+
 function K.IsCommanderSpec(ply)
     local set = K.Set(ply)
     for id in pairs(set) do

@@ -307,6 +307,12 @@ function Med.StartDrag(ply, target)
 end
 
 function Med.StopDrag(ply)
+    -- (a revive while dragging stops with the drag)
+    local act = Med.acts and Med.acts[ply]
+    if act and act.dragging and Med.Cancel then
+        Med.Cancel(ply)
+        if Med.Note then Med.Note(ply, "Revive stopped: the drag ended") end
+    end
     local target = ply:GetNW2Entity("rhylib_dragging")
     if IsValid(target) and target:GetNW2Entity("rhylib_dragBy") == ply then
         target:SetNW2Entity("rhylib_dragBy", NULL)

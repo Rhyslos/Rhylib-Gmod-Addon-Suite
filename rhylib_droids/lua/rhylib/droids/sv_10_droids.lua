@@ -126,7 +126,7 @@ function D.Boosted(droid)
     local K = Rhylib.Skills
     if not boost and clone and K and K.Has then
         for _, p in ipairs(player.GetAll()) do
-            if p:Alive() and not p.rhylibDown and p:GetPos():DistToSqr(pos) < r * r and K.Has(p, "reinforcements") then
+            if p:Alive() and not p.rhylibDown and p:GetPos():DistToSqr(pos) < r * r and (K.HasReinforcements and K.HasReinforcements(p) or K.Has(p, "reinforcements")) then
                 boost = true
                 break
             end
