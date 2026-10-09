@@ -19,8 +19,9 @@
 local HUD = Rhylib.HUD
 
 -- Fire mode text (long names shortened so they fit beside the gun name).
-local SHORT = { overcharge = "OVERCH" }
+local SHORT = { overcharge = "OVERCH", lockon = "LOCK-ON" }
 local function modeLabel(wep)
+    if wep.HUDModeText then return wep:HUDModeText() end   -- (e.g. the grenade launcher's range)
     local m = wep:GetFireModeName()
     return SHORT[m] or string.upper(m)
 end
@@ -53,7 +54,13 @@ local function drawContent(ply, wep, x, y, w, sizes)
         end
     end
 
-    if wep.IsRhylib and wep.GetMag then
+    if wep.HUDSpare then
+        -- (weapons with their own ammo, e.g. the grenade launcher: count, label)
+        local reserve, label = wep:HUDSpare()
+        HUD.Text(tostring(reserve), 24, right, y + math.floor(2 * s), reserve > 0 and C.text or C.bad, TEXT_ALIGN_RIGHT)
+        label = string.lower(label or "") .. (reserve ~= 1 and label and "s" or "")
+        HUD.Text(label, 13, right, y + sizes.count - math.floor(2 * s), C.dim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_BOTTOM)
+    elseif wep.IsRhylib and wep.GetMag then
         -- Spares of the loaded type, then other types this gun takes.
         local mag = wep:GetMag()
         local reserve = mag and ply:GetAmmoCount(mag.ammo) or 0
@@ -133,6 +140,10 @@ function HUD.AmmoInfo(ply, wep)
             end
         end
         info.others = extra
+        if wep.HUDSpare then
+            info.spare, info.magShort = wep:HUDSpare()
+            info.magRounds = 1   -- (one round each: "THERMALS", not "MAGS")
+        end
         if wep.UsesCell then
             info.cell = wep:GetCell()
             info.cells = ply:GetAmmoCount("rhylib_cell")

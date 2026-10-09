@@ -231,10 +231,9 @@ local function msg(ply, text, bad)
 end
 E.Msg = msg
 
--- What the inspection tells this player (Trained eye: battery, board, modules).
+-- What the inspection tells (the same for everyone).
 local function facts(st, ply)
     local f = st.f
-    local eye = E.Skill(ply, "eod_eye")
     local list = {
         { "Size", st.kindName },
         { "Detonator", f.det == "remote" and "remote (antenna)" or "timer" },
@@ -245,16 +244,7 @@ local function facts(st, ply)
     }
     local mods = {}
     for _, m in ipairs(E.MODS) do if st.mods[m.id] then mods[#mods + 1] = m end end
-    if eye then
-        list[#list + 1] = { "Battery", ({ single = "single", dual = "dual supply", capacitor = "single + capacitor", collapse = "single + collapse circuit" })[f.battery] }
-        list[#list + 1] = { "Board", #st.wires .. " wires" }
-        local names = {}
-        for _, m in ipairs(mods) do names[#names + 1] = m.name .. " (" .. m.rank .. ")" end
-        list[#list + 1] = { "Modules", #names > 0 and table.concat(names, ", ") or "none", #names > 0 }
-    else
-        list[#list + 1] = { "Battery", "? (Trained eye)" }
-        list[#list + 1] = { "Modules", #mods > 0 and (#mods .. " (Trained eye names them)") or "none", #mods > 0 }
-    end
+    list[#list + 1] = { "Modules", #mods > 0 and (#mods .. " (lift the lid to see them)") or "none", #mods > 0 }
     return list
 end
 
@@ -344,7 +334,6 @@ local function fail(bomb, cause) E.Detonate(bomb, cause) return true end
 local function addHeat(bomb, ply, n, always)
     local st = bomb.eod
     if not (st.mods.fuse or always) then return false end
-    if E.Skill(ply, "eod_heat") then n = n * 0.6 end
     st.heat = heatNow(st) + n
     st.heatAt = CurTime()
     if st.heat >= 100 then return fail(bomb, "heat") end
@@ -355,7 +344,6 @@ E.AddHeat = addHeat
 local function jolt(bomb, ply, k)
     local t = bomb.eod.tilt
     if not t or bomb.eod.safe then return end
-    if E.Skill(ply, "eod_steady") then k = k * 0.5 end
     local a = math.random() * 2 * math.pi
     t.nx = t.nx + math.cos(a) * k
     t.ny = t.ny + math.sin(a) * k
@@ -585,7 +573,7 @@ OPS[0] = function(ply, bomb) ply.eodInspect = { bomb = bomb, t = CurTime() } end
 
 OPS[1] = function(ply, bomb)
     local st = bomb.eod
-    local need = (E.Cfg("inspectTime") or 2.5) * (E.Skill(ply, "eod_quick") and 0.6 or 1)
+    local need = (E.Cfg("inspectTime") or 2.5)
     local ins = ply.eodInspect
     ply.eodInspect = nil
     if st.inspected or not ins or ins.bomb ~= bomb or CurTime() - ins.t < need * 0.9 then return end
@@ -606,12 +594,7 @@ OPS[3] = function(ply, bomb)
     if st.f.lid and not st.lidReleased then return fail(bomb, "lid") end
     st.open = true
     st.tech = ply
-    if st.tilt then
-        st.tilt.t0 = CurTime()
-        if E.Skill(ply, "eod_steady") then st.tilt.mult = st.tilt.mult * 0.6 end
-    end
-    if st.fake then st.fake.xrays = st.fake.xrays + (E.Skill(ply, "eod_xray") and 1 or 0) end
-    st.jumpers = st.jumpers + (E.Skill(ply, "eod_jumpers") and 2 or 0)
+    if st.tilt then st.tilt.t0 = CurTime() end
     msg(ply, "Casing open: the board is exposed")
 end
 
@@ -700,7 +683,7 @@ OPS[11] = function(ply, bomb)
     local st = bomb.eod
     if not (st.fake and st.open) or st.fake.removed or st.fake.xrays <= 0 or not E.HasKit(ply) then return end
     st.fake.xrays = st.fake.xrays - 1
-    local secs = (E.Cfg("xrayTime") or 5) + (E.Skill(ply, "eod_xray") and 3 or 0)
+    local secs = (E.Cfg("xrayTime") or 5)
     Net.Start("eod.xray")
     net.WriteEntity(bomb)
     for k = 1, 3 do net.WriteUInt(st.fake.order[k], 2) end

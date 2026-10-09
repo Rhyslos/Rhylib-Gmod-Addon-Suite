@@ -289,6 +289,7 @@ if SERVER then
             if self.target ~= best and now - (seen[best] or -100) > REMEMBER then
                 local react = D.Cfg(k.reaction) * math.Rand(0.8, 1.3)
                 if D.Boosted(self) then react = react * D.Cfg("cmdReaction") end
+                if D.BlackedOut and D.BlackedOut(self) then react = react * D.Cfg("blackoutReaction") end   -- (EOD Signal blackout)
                 self.reactUntil = now + react
             end
             if not seen[best] then
@@ -535,6 +536,11 @@ if SERVER then
 
     -- B2 mortar: a wrist rocket lobbed high, landing near pos.
     function ENT:FireRocket(pos, mover)
+        -- (EOD Signal blackout: artillery can't fire into the bubble)
+        if self.artillery and D.Blackout and D.Blackout(pos) then
+            self.nextRocket = CurTime() + 2
+            return false
+        end
         if self:Kind().direct and IsValid(mover) then return self:FireDirectRocket(mover) end
         local from = self:GetPos() + Vector(0, 0, 80) + self:GetForward() * 10
         local dist = from:Distance(pos)

@@ -301,7 +301,8 @@ end
 function Items.StackFor(def, ply)
     if not ply then return def.stack end
     local r = hook.Run("Rhylib.ItemStack", def, ply)
-    return isnumber(r) and math.Clamp(math.floor(r), 1, def.stack) or def.stack
+    -- (def.stackMax: a skill may raise it past def.stack, e.g. EOD Explosives pack)
+    return isnumber(r) and math.Clamp(math.floor(r), 1, math.max(def.stack, def.stackMax or 0)) or def.stack
 end
 
 -- If dropping `inst` with its top-left on x, y should merge into a stack,

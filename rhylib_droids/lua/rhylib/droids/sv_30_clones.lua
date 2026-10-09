@@ -591,7 +591,8 @@ function D.SpottedTarget(mortar, range)
     for d in pairs(D.active) do
         if IsValid(d) and not d.Training and d:Health() > 0 then
             local t = d.target
-            if IsValid(t) and ok[t] and now - (d.lastSeenAt or 0) < 3 and not t.rhylibDown and (t:IsPlayer() and t:Alive() or not t:IsPlayer() and t:Health() > 0) then
+            if IsValid(t) and ok[t] and now - (d.lastSeenAt or 0) < 3 and not t.rhylibDown and (t:IsPlayer() and t:Alive() or not t:IsPlayer() and t:Health() > 0)
+                and not D.Blackout(t:GetPos()) then   -- (EOD Signal blackout: nobody can call it in)
                 local dist = t:GetPos():DistToSqr(pos)
                 if dist < r2 and dist > min2 and (not bestD or dist < bestD) then best, bestD = t, dist end
             end

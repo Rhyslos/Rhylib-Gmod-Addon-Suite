@@ -17,4 +17,5 @@ SWEP.TrainingOf = "rhylib_rps6"   -- (skills treat it as the real gun)
 SWEP.BoltColor = 9             -- training yellow
 SWEP.InvCategory = "training"
 SWEP.Mags = { "rocket_t" }
+SWEP.FireModes = { "semi" }   -- (no lock-on with training rockets)
 -- (the rocket's blast only takes sim health, rhylib_training)

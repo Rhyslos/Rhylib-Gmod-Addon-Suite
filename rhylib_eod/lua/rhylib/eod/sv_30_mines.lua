@@ -283,7 +283,7 @@ end
 
 local function sendOpen(p, m)
     local d = m.eodm
-    local w = d.width * (E.Skill(p, "eod_steady") and 1.4 or 1)
+    local w = d.width
     Net.Start("eod.mineopen")
     net.WriteEntity(m)
     net.WriteUInt(d.center, 7)
@@ -317,14 +317,14 @@ Net.Receive("eod.mineact", function(p)
     elseif op == 1 then
         local h = p.eodMineHold
         p.eodMineHold = nil
-        local need = (E.Cfg("mineDigTime") or 3) * (E.Skill(p, "eod_quick") and 0.6 or 1)
+        local need = (E.Cfg("mineDigTime") or 3)
         if m:GetDug() or not h or h.m ~= m or h.op ~= 0 or now - h.t < need * 0.9 then return end
         m:SetDug(true)
         E.Msg(p, "Dug out: the fuse is showing. Push the safety pin in while the needle is in the zone.")
     elseif op == 2 then
         if not m:GetDug() or m:GetSafe() then return end
         local d = m.eodm
-        local w = d.width * (E.Skill(p, "eod_steady") and 1.4 or 1)
+        local w = d.width
         local n = E.MineNeedle(d.period, d.ph, now - math.min(0.25, p:Ping() / 1000))
         if math.abs(n - d.center) > w / 2 + 3 then
             E.MineBoom(m, "minepin")

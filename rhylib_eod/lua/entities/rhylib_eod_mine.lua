@@ -108,7 +108,7 @@ if CLIENT then
         local ply = LocalPlayer()
         local w = ply:GetActiveWeapon()
         if IsValid(w) and w:GetClass() == "rhylib_toolgun" then return 0.8 end   -- (the GM placing them)
-        local vis = (E and E.Cfg("mineVisible") or 240) * (E and E.Skill(ply, "eod_eye") and 1.6 or 1)
+        local vis = (E and E.Cfg("mineVisible") or 240)
         local d = EyePos():Distance(self:GetPos())
         if d >= vis then return 0 end
         return 0.6 * math.sqrt(1 - d / vis)

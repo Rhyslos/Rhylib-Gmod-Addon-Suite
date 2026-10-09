@@ -410,6 +410,7 @@ Rhylib.Hook.Add("EntityTakeDamage", "skills.resist", function(ent, dmg)
         local t = dmg:GetDamageType()
         if set.hard_landings and bit.band(t, DMG_FALL) ~= 0 then m = m * K.Cfg("fallMult") end
         if set.blast_hardened and bit.band(t, DMG_BLAST) ~= 0 then m = m * K.Cfg("blastMult") end
+        if set.eod_blast and bit.band(t, DMG_BLAST) ~= 0 then m = m * K.Cfg("eodBlastMult") end
         if set.aerial_stability and bit.band(t, DMG_FALL) == 0 and not ent:OnGround()
             and ent:GetMoveType() == MOVETYPE_WALK then
             m = m * K.Cfg("airMult")
@@ -441,6 +442,21 @@ Rhylib.Hook.Add("EntityTakeDamage", "skills.resist", function(ent, dmg)
     if K.OrderIs(ent, "press") then noPush(dmg) end
     if m ~= 1 then dmg:ScaleDamage(m) end
 end, 95)
+
+-- EOD Blast hardened: explosions never knock you down (rhylib_weapons).
+Rhylib.Hook.Add("Rhylib.CanKnockDown", "skills.eodblast", function(p)
+    if IsValid(p) and p:IsPlayer() and K.Has(p, "eod_blast") then return false end
+end)
+
+-- EOD Anti-armour: a player's explosions hit B2s, heavy and commander
+-- droids harder (before the droid takes it).
+Rhylib.Hook.Add("EntityTakeDamage", "skills.antiarmour", function(ent, dmg)
+    if not (ent.IsRhylibDroid and ent.Kind) or bit.band(dmg:GetDamageType(), DMG_BLAST) == 0 then return end
+    local att = dmg:GetAttacker()
+    if not (IsValid(att) and att:IsPlayer() and K.Has(att, "eod_antiarmor")) then return end
+    local k = ent:Kind()
+    if k and (k.big or k.commander or ent.DroidKind == "b1_heavy") then dmg:ScaleDamage(K.Cfg("eodAntiArmour")) end
+end, 90)
 
 -- Hold fast: no damage at all while it lasts (before lying, medical, armour).
 Rhylib.Hook.Add("EntityTakeDamage", "skills.holdfast", function(ent, dmg)

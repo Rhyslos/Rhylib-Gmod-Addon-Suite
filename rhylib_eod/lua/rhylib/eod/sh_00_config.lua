@@ -71,7 +71,7 @@ reg("lapDamage", 320, "LAP mine: blast damage at the centre")
 reg("apTrigger", 26, "AP mine: how close a foot must come to press it (units)")
 reg("lapTrigger", 38, "LAP mine: how close a foot must come to press it (units)")
 reg("mineShift", 16, "Standing on a mine: moving further than this (units) sets it off")
-reg("mineVisible", 240, "Mines: how close you see one without a scanner (units; Trained eye ×1.6)")
+reg("mineVisible", 240, "Mines: how close you see one without a scanner (units)")
 reg("mineDigTime", 3, "Mines: seconds to dig one out")
 reg("mineLiftTime", 2, "Mines: seconds to lift a pinned mine away")
 reg("mineScanRange", 700, "Mine scanner: reach of its beam (units)")
@@ -80,10 +80,20 @@ reg("mineModel", "models/props/starwars/weapons/ap_mine.mdl", "AP mine model (HL
 reg("mineModelLarge", "models/props/starwars/weapons/lasertrap.mdl", "LAP (large AP) mine model (HL2 hopper mine if missing)")
 reg("mineSize", 20, "AP mine: width it is drawn at (units; the model is scaled to fit, LAP ×1.4)")
 reg("mineChain", 140, "Mines: another mine within this (units) of an explosion goes off too")
+-- Republic mines (EOD Republic mines skill, 2026-10-10)
+reg("repDamage", 260, "Republic mine: blast damage to droids at the centre")
+reg("repRadius", 280, "Republic mine: blast radius (units; Minefield ×repFieldRadius)")
+reg("repTrigger", 45, "Republic mine: how close a droid must come to set it off (units)")
+reg("repLimit", 3, "Republic mines: how many one player may have out")
+reg("repLimitField", 6, "Republic mines: how many with the Minefield skill")
+reg("repFieldRadius", 1.3, "Republic mines: blast radius multiplier with Minefield")
 
 E.KIT = "eod_kit"
 E.SCANNER = "rhylib_mine_scanner"
 E.DEVICE = "eod_interference"
+E.ARMORKIT = "rhylib_armor_kit"
+E.LAUNCHER = "rhylib_grenade_launcher"
+E.RMINE = "rhylib_rep_mine"
 E.UNITS_PER_M = 52.5
 E.F0, E.F1 = 2400, 2480   -- frequency band (MHz) on the scanner
 
@@ -195,7 +205,7 @@ Rhylib.Hook.Add("Rhylib.ModuleLoaded", "eod.items", function(id) if id == "inven
 do
     local A = Rhylib.Armoury
     if A and A.AMMO_STOCK then
-        for _, id in ipairs({ E.KIT, E.DEVICE, E.SCANNER }) do
+        for _, id in ipairs({ E.KIT, E.DEVICE, E.SCANNER, E.ARMORKIT, E.RMINE }) do
             if not table.HasValue(A.AMMO_STOCK, id) then A.AMMO_STOCK[#A.AMMO_STOCK + 1] = id end
         end
     end

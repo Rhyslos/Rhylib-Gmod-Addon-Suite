@@ -478,7 +478,7 @@ Net.Receive("eod.place", function(ply)
     if not IsValid(dev) then Inv.AddOrDrop(ply, E.DEVICE, 1) Inv.AddOrDrop(ply, "cell", 1, { fill = fill }) return end
     dev:SetPos(tr.HitPos)
     dev:SetAngles(Angle(0, ply:EyeAngles().y + 180, 0))
-    dev.eodLong = E.Skill(ply, "eod_signal")
+    dev.eodLong = false
     dev.eodOwner = ply
     dev:Spawn()
     dev:SetPos(tr.HitPos - Vector(0, 0, dev:OBBMins().z))
@@ -542,11 +542,10 @@ end, { rate = 12, burst = 12 })
 
 local function motionLimit(p, sensitive)
     local walk = p:GetWalkSpeed()
-    local light = E.Skill(p, "eod_light")
-    if sensitive and not light then
+    if sensitive then
         return math.min(p:GetSlowWalkSpeed(), walk * p:GetCrouchedWalkSpeed()) * 1.15
     end
-    return walk * (light and not sensitive and 1.3 or 1.15)
+    return walk * 1.15
 end
 
 local function tooFast(bomb, st, now)
@@ -581,6 +580,19 @@ end
 
 local lastScan = 0
 
+-- Signal blackout (rhylib_droids asks, D.Blackout): is pos inside a running
+-- wideband device placed by someone with the skill?
+E.blackouts = E.blackouts or {}
+function E.InBlackout(pos)
+    for _, dev in ipairs(E.blackouts) do
+        if IsValid(dev) and dev:GetActive() then
+            local r = dev:GetRadius() * E.UNITS_PER_M
+            if dev:WorldSpaceCenter():DistToSqr(pos) <= r * r then return true end
+        end
+    end
+    return false
+end
+
 local function tick()
     local now = CurTime()
     -- devices: running out of power
@@ -596,6 +608,12 @@ local function tick()
             if dev:GetActive() then devs[#devs + 1] = dev end
         end
     end
+    -- Signal blackout (EOD skill): wideband devices whose owner has it.
+    local bo = {}
+    for _, dev in ipairs(devs) do
+        if not dev:GetTuned() and IsValid(dev.eodOwner) and E.Skill(dev.eodOwner, "eod_blackout") then bo[#bo + 1] = dev end
+    end
+    E.blackouts = bo
     local scan = now - lastScan >= 0.5
     if scan then
         lastScan = now

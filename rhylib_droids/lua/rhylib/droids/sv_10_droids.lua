@@ -102,6 +102,24 @@ function D.SuppressMult(droid)
     return m
 end
 
+-- EOD Signal blackout (rhylib_eod): inside a player's wideband interference
+-- device whose owner has the skill. Droids there get no commander boost,
+-- react slower, and artillery doesn't fire on targets there.
+function D.Blackout(pos)
+    local E = Rhylib.EOD
+    return E ~= nil and E.InBlackout ~= nil and E.InBlackout(pos) or false
+end
+
+-- A droid (not a clone) in a blackout (checked at most twice a second).
+function D.BlackedOut(droid)
+    if droid.IsRhylibClone then return false end
+    local now = CurTime()
+    if (droid.rhylibBlackAt or 0) > now then return droid.rhylibBlack end
+    droid.rhylibBlackAt = now + 0.5
+    droid.rhylibBlack = D.Blackout(droid:WorldSpaceCenter())
+    return droid.rhylibBlack
+end
+
 -- Near a living commander of its own side other than itself (checked at
 -- most twice a second). Clones are also led by players with the
 -- Reinforcements skill (rhylib_skills; owner: the player is the commander).
@@ -111,13 +129,18 @@ function D.Boosted(droid)
     droid.rhylibBoostAt = now + 0.5
     local boost = false
     local clone = droid.IsRhylibClone == true
+    if D.BlackedOut(droid) then
+        droid.rhylibBoost = false
+        return false
+    end
     local r = D.Cfg("cmdRadius")
     local pos = droid:GetPos()
     if next(D.commanders) then
         for c in pairs(D.commanders) do
             if not IsValid(c) then
                 D.commanders[c] = nil
-            elseif c ~= droid and (c.IsRhylibClone == true) == clone and c:Health() > 0 and c:GetPos():DistToSqr(pos) < r * r then
+            elseif c ~= droid and (c.IsRhylibClone == true) == clone and c:Health() > 0 and c:GetPos():DistToSqr(pos) < r * r
+                and not D.BlackedOut(c) then
                 boost = true
                 break
             end

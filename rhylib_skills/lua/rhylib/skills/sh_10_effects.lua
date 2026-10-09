@@ -148,6 +148,13 @@ reg("holdLineMult", 0.8, "Hold the line: damage multiplier with the shield up an
 reg("holdLineRange", 200, "Hold the line: how close the other MP must be (units)")
 reg("bashDamage", 30, "Shield bash: damage to droids")
 reg("searchMult", 1.2, "Thorough search: search roll multiplier")
+-- EOD (Field technician, 2026-10-10)
+reg("eodBlastMult", 0.7, "EOD Blast hardened: explosion damage multiplier")
+reg("eodPackWeight", 0.5, "EOD Explosives pack: weight multiplier of grenades, charges, rockets and mines")
+reg("eodPackStack", 1, "EOD Explosives pack: extra per stack of grenades, charges and mines")
+reg("eodDemoDamage", 1.25, "EOD Demolitions: thermal detonator and HE charge damage multiplier")
+reg("eodDemoRadius", 1.15, "EOD Demolitions: thermal detonator and HE charge blast radius multiplier")
+reg("eodAntiArmour", 1.25, "EOD Anti-armour: explosive damage multiplier against B2s, heavy and commander droids")
 
 local function cfg(k) return Config.Get("skills", k) end
 
@@ -372,19 +379,22 @@ function K.AdjustWeight(ply, state, weight, cap)
     if not isPly(ply) then return weight, cap end
     local set = K.Set(ply)
     if set.load_bearer then cap = cap + cfg("loadBearerCarry") end
-    if set.gun_runner or set.long_gun or set.shotgun_drills then
+    if set.gun_runner or set.long_gun or set.shotgun_drills or set.eod_pack then
         local Items = Rhylib.Items
         if not (Items and Items.defs) then return weight, cap end
         for cid, c in pairs(state.cont or {}) do
             if cid ~= Items.EXT then
                 for _, o in pairs(c.items) do
                     local def = Items.defs[o.id]
-                    if def and def.weight and def.weapon then
+                    if def and def.weight and (def.weapon or (set.eod_pack and K.ExplosiveItem(def))) then
                         -- The lightest that applies (they don't stack).
                         local mult = 1
-                        if set.gun_runner and K.ItemGun(o.id) == K.Z6 then mult = math.min(mult, cfg("gunRunnerWeight")) end
-                        if set.long_gun and K.ItemGun(o.id) == K.DC15X then mult = math.min(mult, cfg("longGunWeight")) end
-                        if set.shotgun_drills and def.w <= 4 and isGun(def.weapon) then mult = math.min(mult, cfg("sidearmWeight")) end
+                        if def.weapon then
+                            if set.gun_runner and K.ItemGun(o.id) == K.Z6 then mult = math.min(mult, cfg("gunRunnerWeight")) end
+                            if set.long_gun and K.ItemGun(o.id) == K.DC15X then mult = math.min(mult, cfg("longGunWeight")) end
+                            if set.shotgun_drills and def.w <= 4 and isGun(def.weapon) then mult = math.min(mult, cfg("sidearmWeight")) end
+                        end
+                        if set.eod_pack and K.ExplosiveItem(def) then mult = math.min(mult, cfg("eodPackWeight")) end
                         -- (backpack contents count at backpackWeightMult in Items.Weight)
                         local share = cid == Items.BACK and (Config.Get("inventory", "backpackWeightMult") or 0.8) or 1
                         if mult < 1 then weight = weight - def.weight * (1 - mult) * (o.count or 1) * share end
@@ -394,6 +404,31 @@ function K.AdjustWeight(ply, state, weight, cap)
         end
     end
     return math.max(0, weight), cap
+end
+
+-- Explosives (EOD Explosives pack): grenades and charges (armoury shelf
+-- "grenade"), rockets, Republic mines.
+function K.ExplosiveItem(def)
+    if not def then return false end
+    if def.group == "grenade" or def.id == "rhylib_rep_mine" then return true end
+    local W = Rhylib.Weapons
+    return W ~= nil and W.BaseMag ~= nil and not def.weapon and W.BaseMag(def.id) == "rocket"
+end
+
+-- Explosives pack: one more per stack of explosives that stack.
+-- (Items.StackFor allows up to def.stackMax.)
+Rhylib.Hook.Add("Rhylib.ItemStack", "skills.eodpack", function(def, ply)
+    if not (def and def.stack and def.stack > 1 and K.ExplosiveItem(def)) then return end
+    local extra = math.max(0, math.floor(cfg("eodPackStack") or 1))
+    def.stackMax = def.stack + extra
+    if isPly(ply) and K.Has(ply, "eod_pack") then return def.stack + extra end
+end)
+
+-- Demolitions (EOD): damage and radius multipliers for thermal detonators
+-- and HE charges, or nil without the skill.
+function K.DemoMults(ply)
+    if not (isPly(ply) and K.Has(ply, "eod_demo")) then return nil end
+    return cfg("eodDemoDamage"), cfg("eodDemoRadius")
 end
 
 -- DP-23 proficiency (Airborne): the DP-23 fires while flying a jetpack.

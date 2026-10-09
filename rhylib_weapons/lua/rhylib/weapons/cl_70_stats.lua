@@ -17,7 +17,7 @@ local MODE_NAMES = {
 
 local function gun(me)
     local w = IsValid(me) and me:GetActiveWeapon()
-    if IsValid(w) and w.IsRhylib and not w.ToolGun and w.Mags then return w end
+    if IsValid(w) and w.IsRhylib and not w.ToolGun and w.Mags and #w.Mags > 0 then return w end
 end
 
 -- C with a gun: show the stats instead of the context menu.

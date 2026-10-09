@@ -172,7 +172,7 @@ local function heatNow(w)
     local h = (v.heat or 0)
     local dt = CurTime() - (v.now or CurTime())
     if v.torching then
-        h = h + dt * ((E.Cfg("heatTorch") or 26) * (E.Skill(LocalPlayer(), "eod_heat") and 0.6 or 1) - (E.Cfg("heatCool") or 9))
+        h = h + dt * ((E.Cfg("heatTorch") or 26) - (E.Cfg("heatCool") or 9))
     else
         h = h - dt * (E.Cfg("heatCool") or 9)
     end
@@ -568,7 +568,7 @@ local function buildLeft(win, k)
     section(sp, k, "First inspection")
     if not v.insp then
         text(sp, k, "Hold to look the bomb over before touching anything: detonator, anti-jam, motion sensor, lid switch, charge.")
-        local need = (E.Cfg("inspectTime") or 2.5) * (E.Skill(ply, "eod_quick") and 0.6 or 1)
+        local need = (E.Cfg("inspectTime") or 2.5)
         local b = holdButton(sp, k, "Hold to inspect", need, function() act(0) end, function() act(1) end)
         b:Dock(TOP)
         b:DockMargin(0, 0, s(8), s(4))

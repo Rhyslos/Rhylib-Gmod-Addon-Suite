@@ -207,7 +207,7 @@ local function build(content, k)
     section("start", "Start here", COL.start, "The first thirty seconds decide most bombs. Do these before touching a single wire.")
     local approach = {
         "Stop at the edge. Motion sensors watch " .. sensorM .. " m around the bomb: walk in, never run (crouch-walk for a sensitive one).",
-        "Hold Inspect (" .. inspectS .. " s). It names the detonator, anti-jam, motion sensor, lid switch and charge. Trained eye also names the battery, board and modules.",
+        "Hold Inspect (" .. inspectS .. " s). It names the detonator, anti-jam, motion sensor, lid switch and charge. It also says how many modules there are.",
         "Remote bomb? With anti-jam, don't jam it yet. Without, place an interference device: wideband also blinds the motion sensor.",
         "Lid switch? Release the tab first, then lift the lid.",
         "Probe every wire before cutting. Decoys read DEAD and do nothing; note what each one is.",
@@ -287,7 +287,7 @@ local function build(content, k)
 
     -- 6. Modules ----------------------------------------------------------------------
 
-    section("mods", "Modules", COL.mods, "Extra mechanisms on harder bombs. Inspect (with Trained eye) tells you which ones are fitted.")
+    section("mods", "Modules", COL.mods, "Extra mechanisms on harder bombs. Inspect tells you how many; lift the lid to see which.")
     for _, m in ipairs(E.MODS) do
         local steps = MODULE_STEPS[m.id] or {}
         local card = vgui.Create("DPanel", sp)
@@ -384,6 +384,7 @@ local function build(content, k)
         left = function(w, h) drawChip("WIDEBAND", COL.device, s(10), math.min(h / 2, s(15)) - s(10), s(20)) end })
     row({ leftW = s(110), text = "Blocks one frequency (read it with the probe or the scanner), lasts four times longer and leaves your radio alone. A hopping receiver jumps away every ~" .. (E.Cfg("hopEvery") or 25) .. " s.", strip = COL.device,
         left = function(w, h) drawChip("TUNED", COL.device, s(10), math.min(h / 2, s(15)) - s(10), s(20)) end })
+    note("Signal blackout (Sapper skill): your wideband device also jams droids inside it. Their commanders' boost stops, they react half as fast, and their artillery can't fire on anyone inside.", C.textDim)
     header("Radius", "Wideband per cell", "Tuned per cell", s(80))
     for _, r in ipairs({ 3, 5, 8, 10, 15 }) do
         local wide = string.FormattedTime(E.CellLife(r, false, false), "%02i:%02i")
@@ -395,11 +396,11 @@ local function build(content, k)
 
     -- 9. Mines ----------------------------------------------------------------------------
 
-    section("mines", "Mines", COL.mines, "Half buried and hard to see: only a few metres off (Trained eye: further), unless someone marked them or a scanner shows them. AP mines need one safety pin, LAP (large) mines two and blast much wider.")
+    section("mines", "Mines", COL.mines, "Half buried and hard to see: only a few metres off, unless someone marked them or a scanner shows them. AP mines need one safety pin, LAP (large) mines two and blast much wider.")
     local mineSteps = {
         "It clicked? Freeze. Moving, jumping or stepping off sets it off. Call EOD.",
         "Someone else with an EOD kit: E on the mine, hold Dig until the fuse shows.",
-        "Push the safety pin (Space) while the needle is inside the green zone. A wrong push sets it off. Steady hands widens the zone.",
+        "Push the safety pin (Space) while the needle is inside the green zone. A wrong push sets it off.",
         "Pinned = safe: whoever stood on it can step off. Hold Lift to take it away.",
     }
     for i, t in ipairs(mineSteps) do step(i, t, COL.mines) end
@@ -407,6 +408,8 @@ local function build(content, k)
         left = function(w, h) drawChip("SCANNER", COL.mines, s(10), math.min(h / 2, s(15)) - s(10), s(20)) end })
     row({ leftW = s(110), text = "Grenades and other blasts set mines off from a distance, and so does shooting one you can see. Mines close together set each other off.", strip = COL.mines,
         left = function(w, h) drawChip("CLEARING", COL.mines, s(10), math.min(h / 2, s(15)) - s(10), s(20)) end })
+    row({ leftW = s(110), text = "Blue outline = one of ours (Sapper skill). Only droids set them off and the blast only hurts droids: walk over them. Whoever planted one picks it up with E.", strip = COL.mines,
+        left = function(w, h) drawChip("REPUBLIC", Color(80, 160, 255), s(10), math.min(h / 2, s(15)) - s(10), s(20)) end })
 
     -- 10. Training ---------------------------------------------------------------------
 

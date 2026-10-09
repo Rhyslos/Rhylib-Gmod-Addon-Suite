@@ -95,9 +95,9 @@ if SERVER then
     -- The gun to resupply: the one in their hands, else their first blaster.
     local function gunOf(ply)
         local w = ply:GetActiveWeapon()
-        if IsValid(w) and w.IsRhylib and w.Mags then return w end
+        if IsValid(w) and w.IsRhylib and w.Mags and #w.Mags > 0 then return w end
         for _, x in ipairs(ply:GetWeapons()) do
-            if x.IsRhylib and x.Mags and not x.Explosive then return x end
+            if x.IsRhylib and x.Mags and #x.Mags > 0 and not x.Explosive then return x end
         end
     end
 

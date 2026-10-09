@@ -108,6 +108,9 @@ function SWEP:PlaceCharge()
     c.fuse = self:GetFuseSet()
     c.planter = o
     c.stuckTo = (IsValid(e) and not e:IsWorld()) and e or nil
+    -- Demolitions (rhylib_skills, EOD): harder and wider.
+    local K = Rhylib.Skills
+    if K and K.DemoMults then c.damageMult, c.radiusMult = K.DemoMults(o) end
     c:Spawn()
     o:EmitSound("weapons/slam/mine_mode.wav", 65, 100)
     self:UseOne(o)

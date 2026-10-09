@@ -112,8 +112,8 @@ if SERVER then
         util.Effect("Explosion", ed, true, true)
         util.Effect("HelicopterMegaBomb", ed, true, true)
         sound.Play("ambient/explosions/explode_" .. math.random(1, 4) .. ".wav", pos, 100, 95)
-        local r = Config.Get("weapons", "heRadius") or 350
-        util.BlastDamage(self, attacker, pos, r, Config.Get("weapons", "heDamage") or 400)
+        local r = (Config.Get("weapons", "heRadius") or 350) * (self.radiusMult or 1)
+        util.BlastDamage(self, attacker, pos, r, (Config.Get("weapons", "heDamage") or 400) * (self.damageMult or 1))
         util.ScreenShake(pos, 14, 160, 1.2, r * 3)
         util.Decal("Scorch", pos + Vector(0, 0, 8), pos - Vector(0, 0, 40), self)
         -- strength 3: the only thing that takes down large and map-wide jammers

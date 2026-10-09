@@ -149,7 +149,7 @@ local function openWin(m, center, width, period, ph)
         end
     end
 
-    local dig = holdBtn(k, f, "Hold: dig it out", function() return (E.Cfg("mineDigTime") or 3) * (E.Skill(LocalPlayer(), "eod_quick") and 0.6 or 1) end, 0, 1,
+    local dig = holdBtn(k, f, "Hold: dig it out", function() return (E.Cfg("mineDigTime") or 3) end, 0, 1,
         function() return IsValid(m) and not m:GetDug() end)
     dig:Dock(TOP)
     dig:DockMargin(0, s(6), 0, s(8))

@@ -252,6 +252,14 @@ function SWEP:Throw(force, lift)
         g.EmpRadius = (g.EmpRadius or Config.Get("weapons", "empRadius") or 190) * rad
         g.FlashRadius = g.FlashRadius * rad
     end
+    -- Demolitions (EOD): thermal detonators harder and wider.
+    if self.Demolition and K and K.DemoMults then
+        local dm, rm = K.DemoMults(o)
+        if dm then
+            g.Damage = g.Damage * dm
+            g.Radius = g.Radius * rm
+        end
+    end
     g:Spawn()
     local phys = g:GetPhysicsObject()
     if IsValid(phys) then
