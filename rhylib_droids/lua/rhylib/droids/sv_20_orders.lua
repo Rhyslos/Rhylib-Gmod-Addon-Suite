@@ -6,6 +6,10 @@
         patrol  walk around a centre (droid.home) within patrolRadius
         attack  push on: to an attack marker (droid.objective), else
                 hunt the nearest players
+        roam    spread out: wander the map in twos (D.Buddy, D.RoamPoint)
+        retreat withdraw from the enemy, nowhere in particular (run, turn
+                and fight, run on; last stand when cornered; rhylib_b1
+                ENT:RetreatPlan). Aggression 1 does the same.
       Droids spawned any other way (spawn menu, load test) guard where
       they were spawned.
 
@@ -30,10 +34,12 @@ D.MARKER_KINDS = KIND_NAMES
 -- Mode for a droid (and where its area is).
 function D.SetMode(droid, mode, center)
     if not (IsValid(droid) and (droid.IsRhylibDroid or droid.IsRhylibClone)) then return end
-    if mode ~= "guard" and mode ~= "patrol" and mode ~= "attack" and mode ~= "roam" then mode = "guard" end
+    if mode ~= "guard" and mode ~= "patrol" and mode ~= "attack" and mode ~= "roam" and mode ~= "retreat" then mode = "guard" end
     droid.leader, droid.advanceTo, droid.leaderNpc = nil, nil, nil   -- (a new mode ends following an officer / buddy)
     droid.roamGoal, droid.reinforceTo = nil, nil
     droid.holdAt, droid.orderAggro = nil, nil   -- (command wheel orders end with the follow)
+    droid.rt, droid.lastStand, droid.retreatDir = nil, nil, nil   -- (a retreat starts over)
+    droid.buddyRoam = nil
     if droid.IsRhylibClone then droid:SetNW2Entity("rhylib_lead", NULL) end
     droid.mode = mode
     if center then droid.home = center end
@@ -111,10 +117,25 @@ function D.MarkerRemoved(marker)
     end
 end
 
+-- Placed in roam mode: paired up two and two like the brush does (the
+-- next one placed within 3 s and 500 units walks beside this one).
+D.roamSolo = D.roamSolo or {}
+
 -- A droid the toolgun placed: the picked mode, then the latest markers.
 function D.ToolPlaced(droid, mode)
     if not (IsValid(droid) and (droid.IsRhylibDroid or droid.IsRhylibClone)) then return end
     D.SetMode(droid, mode or "guard", droid:GetPos())
+    if mode == "roam" and D.Buddy then
+        local side = droid.IsRhylibClone and 1 or 2
+        local solo = D.roamSolo[side]
+        if solo and IsValid(solo.e) and solo.e.mode == "roam" and CurTime() - solo.at < 3
+            and solo.e:GetPos():DistToSqr(droid:GetPos()) < 500 * 500 then
+            D.Buddy(droid, solo.e)
+            D.roamSolo[side] = nil
+        else
+            D.roamSolo[side] = { e = droid, at = CurTime() }
+        end
+    end
     if droid.IsRhylibClone then
         -- (clones follow the latest clone marker)
         if IsValid(D.lastCloneOrder) then D.ApplyMarker(droid, D.lastCloneOrder) end
@@ -141,6 +162,42 @@ function D.PaintMode(pos, mode, side)
                 n = n + 1
                 picked[#picked + 1] = d
             end
+        end
+    end
+    -- Retreat: one shared way out for the group, away from the enemies
+    -- around it (so they stay roughly together), and the alarm raised so
+    -- they start moving even if nobody is shooting yet.
+    if mode == "retreat" and #picked > 0 then
+        local centre = Vector(0, 0, 0)
+        for _, d in ipairs(picked) do centre = centre + d:GetPos() end
+        centre = centre / #picked
+        local foes = side == 1 and D.CloneTargets and D.CloneTargets() or (D.DroidTargets and D.DroidTargets()) or {}
+        local mid, nf = Vector(0, 0, 0), 0
+        for _, e in ipairs(foes) do
+            if IsValid(e) and e:GetPos():DistToSqr(centre) < 4000 * 4000 then
+                mid = mid + e:GetPos()
+                nf = nf + 1
+            end
+        end
+        local dir
+        if nf > 0 then
+            mid = mid / nf
+            dir = centre - mid
+        else
+            -- (nobody about: back the way they face)
+            dir = Vector(0, 0, 0)
+            for _, d in ipairs(picked) do dir = dir - d:GetForward() end
+        end
+        dir.z = 0
+        if dir:LengthSqr() > 0.01 then dir:Normalize() else dir = nil end
+        local now = CurTime()
+        for _, d in ipairs(picked) do
+            d.retreatDir = dir
+            if not d.threatAt or now - d.threatAt > 5 then
+                d.threatPos = nf > 0 and mid or (dir and d:GetPos() - dir * 300) or nil
+                d.threatAt = now
+            end
+            d.woken, d.redirect, d.planAt = true, true, 0
         end
     end
     -- Spread out (owner: alone or two and two): pair them up; the second

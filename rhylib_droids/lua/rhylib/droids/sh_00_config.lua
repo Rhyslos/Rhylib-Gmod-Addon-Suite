@@ -123,7 +123,15 @@ Config.Register("droids", "crowdMax", 1.4, "Most the crowd rule widens the aim c
 -- Orders (2026-10-06ay, owner): modes per droid (guard / patrol /
 -- attack), admin-only markers (attack here, defend this, fall back here)
 -- and one aggression level for every droid that GMs turn up or down live.
-Config.Register("droids", "aggression", 3, "Droid aggression 1-5: 1 fall back to a fallback point while firing, 2 slow retreat (no pushing, more cover), 3 moderate (default), 4 march forward firing (charge when spread out or in tight spaces), 5 running charge. GMs change it live with !droidaggro or the toolgun")
+Config.Register("droids", "aggression", 3, "Droid aggression 1-5: 1 retreat (withdraw from the enemy: run, turn and fire, run on; last stand when cornered), 2 fall back (to a fallback marker or their post while firing, then back off from anyone close, no pushing), 3 moderate (default), 4 march forward firing (charge when spread out or in tight spaces), 5 running charge. GMs change it live with !droidaggro or the toolgun")
+-- Retreat (2026-10-09w, owner): mode "retreat" (toolgun order) and
+-- aggression 1. Nowhere in particular, just away from the enemy.
+Config.Register("droids", "retreatLeg", 550, "Retreat: how far each run away from the enemy goes before turning to fight")
+Config.Register("droids", "retreatStand", 3.5, "Retreat: seconds it turns and fights between runs")
+Config.Register("droids", "retreatClose", 350, "Retreat: an enemy this close makes it turn and fight instead of turning its back")
+Config.Register("droids", "retreatClear", 15, "Retreat: seconds with no enemy seen or shooting before it stops and holds where it is")
+Config.Register("droids", "retreatMax", 1500, "Retreat: with no enemy in sight it stops this far from where the retreat began (stays roughly in the same area)")
+Config.Register("droids", "lastStandPause", 0.6, "Last stand (retreating with nowhere to go): pause between bursts multiplier")
 Config.Register("droids", "walkMult", 0.5, "Walking (marching) speed as a share of a droid's run speed")
 Config.Register("droids", "guardRadius", 700, "Guard mode: how far a droid fights away from its post")
 Config.Register("droids", "patrolRadius", 900, "Patrol mode: how far a droid walks around its patrol centre")
@@ -266,11 +274,12 @@ for _, v in ipairs({ "aat", "commander", "geonosis", "heavy", "marine", "securit
     D.CLASSES["b1_" .. v] = "rhylib_b1_" .. v
 end
 
-D.MODES = { "guard", "patrol", "attack" }   -- (index 1-3 on the wire)
-D.MODE_NAMES = { guard = "Guard", patrol = "Patrol", attack = "Attack", follow = "Follow", roam = "Spread out" }
-D.AGGRO_NAMES = { "Fall back", "Slow retreat", "Moderate", "March", "Charge" }
+D.MODES = { "guard", "patrol", "attack", "roam" }   -- (index 1-4 on the wire, toolgun "New droids")
+D.MODE_NAMES = { guard = "Guard", patrol = "Patrol", attack = "Attack", follow = "Follow", roam = "Spread out", retreat = "Retreat", laststand = "Last stand" }
+-- (owner 2026-10-09w: retreat = leave the front entirely, fall back = relocate)
+D.AGGRO_NAMES = { "Retreat", "Fall back", "Moderate", "March", "Charge" }
 -- A commander's own clones (command wheel): 3 = by the odds (their doctrine).
-D.SQUAD_AGGRO_NAMES = { "Fall back to me", "Slow retreat", "By the odds", "March", "Charge" }
+D.SQUAD_AGGRO_NAMES = { "Retreat", "Fall back to me", "By the odds", "March", "Charge" }
 
 -- Aggression 1-5 (server: config, live; clients: Global2Int).
 function D.Aggro()

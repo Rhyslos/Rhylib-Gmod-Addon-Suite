@@ -154,7 +154,7 @@ Rhylib.Net.Receive("tool.place", function(ply)
     local id = string.sub(net.ReadString(), 1, 32)
     local count = math.Clamp(net.ReadUInt(3), 1, 5)
     local name = string.sub(net.ReadString(), 1, 32)
-    local mode = ({ "guard", "patrol", "attack" })[net.ReadUInt(2)] or "guard"
+    local mode = ({ "guard", "patrol", "attack", "roam" })[net.ReadUInt(3)] or "guard"
     local e = Tool.ById(id)
     if not e then return end
     if not e.count then count = 1 end

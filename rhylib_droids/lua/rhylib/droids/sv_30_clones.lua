@@ -280,7 +280,7 @@ local function assignGuards(players)
                 local pos = p:GetPos()
                 local free = {}
                 for c in pairs(D.clones) do
-                    if IsValid(c) and c:Health() > 0 and not c.guardDowned and c.mode ~= "attack" then
+                    if IsValid(c) and c:Health() > 0 and not c.guardDowned and c.mode ~= "attack" and not c:Retreating() then
                         local d = c:GetPos():DistToSqr(pos)
                         if d < r2 then free[#free + 1] = { c = c, d = d } end
                     end
@@ -396,7 +396,7 @@ function D.CloneCall(caller, enemy)
     local free = {}
     for c in pairs(D.clones) do
         if c ~= caller and IsValid(c) and c:Health() > 0 and not IsValid(c.target) and not c.leader
-            and not c.guardDowned and not c.reviveTarget and c.mode ~= "attack" then
+            and not c.guardDowned and not c.reviveTarget and c.mode ~= "attack" and not c:Retreating() then
             local d = c:GetPos():DistToSqr(from)
             if d < r2 then free[#free + 1] = { c = c, d = d } end
         end
@@ -517,6 +517,7 @@ function D.SpawnPreset(name, origin, yaw, mode)
             local m = wards[(i - 1) % #wards + 1]
             g.mode = "follow"
             g.leader, g.leaderNpc = m, true
+            g.buddyRoam = nil   -- (placed in roam mode: they guard the mortar, not roam off)
             g.followSlot = SLOTS[(i - 1) % #SLOTS + 1] * 0.8 + Vector(120, 0, 0)   -- (in front of and beside it)
             g:SetNW2String("rhylib_dmode", "follow")
         end

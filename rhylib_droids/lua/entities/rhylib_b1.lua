@@ -298,7 +298,7 @@ if SERVER then
             end
             seen[best] = now
             -- Clones: fresh contact, call nearby clones over (sv_30_clones).
-            if self.IsRhylibClone and not IsValid(cur) and D.CloneCall then D.CloneCall(self, best) end
+            if self.IsRhylibClone and not IsValid(cur) and D.CloneCall and not self:Retreating() then D.CloneCall(self, best) end
             self.target = best
             self.lastSeen = best:GetPos()
             self.lastSeenAt = now
@@ -495,7 +495,7 @@ if SERVER then
         if math.random() >= chance then return false end
         -- Clone troopers: a short charge first, then the popper (owner).
         -- Not while standing over a downed player.
-        if k.poppers and not self.guarding then
+        if k.poppers and not self.guarding and not self:Retreating() then
             self.popRush = { t = t, from = self:GetPos(), untilT = CurTime() + 1.6 }
             self.planAt = 0
             return true
@@ -703,6 +703,7 @@ if SERVER then
     function ENT:WantsCover()
         if not self:Kind().cover or not self.threatPos or CurTime() < (self.coverReady or 0) then return false end
         if self.guarding then return false end   -- (stands over a downed player)
+        if self:Retreating() then return false end   -- (retreat runs its own way: away)
         if CurTime() - (self.threatAt or 0) > 10 then return false end   -- (no recent threat to hide from)
         if self.retreatPending then return true end
         local L = self:Aggro()
@@ -714,7 +715,7 @@ if SERVER then
         for i = #hits, 1, -1 do
             if now - hits[i] <= win then n = n + 1 else table.remove(hits, i) end
         end
-        return n >= (L <= 2 and 1 or D.Cfg("coverHits"))   -- (retreating droids take cover sooner)
+        return n >= (L == 2 and 1 or D.Cfg("coverHits"))   -- (falling back: cover sooner)
     end
 
     -- A hiding spot near it that the threat can't see (far: one that's
@@ -824,7 +825,7 @@ if SERVER then
     -- The area a guard / patrol droid stays in (nil = attack: anywhere).
     function ENT:AreaRadius()
         if self.mode == "patrol" then return D.Cfg("patrolRadius") end
-        if self.mode == "attack" or self.mode == "roam" then return nil end
+        if self.mode == "attack" or self.mode == "roam" or self.mode == "retreat" then return nil end
         if self.guarding then return 250 end
         if self.mode == "follow" then return D.Cfg("cloneFollowRadius") end
         return D.Cfg("guardRadius")
@@ -868,12 +869,222 @@ if SERVER then
         return ok
     end
 
-    -- Where to fall back to (aggression 1): a fallback marker, else home.
+    -- Where to fall back to (aggression 2, "Fall back"; was 1 before
+    -- 2026-10-09w): a fallback marker, else home.
     function ENT:FallbackPoint()
         -- (a player's followers fall back to them)
-        if (self.doctrine == 1 or self.orderAggro == 1) and self.leader and not self.leaderNpc and self.home then return self.home end
-        if self.doctrine == 1 and self.doctrineFallback then return self.doctrineFallback end
+        if (self.doctrine == 2 or self.orderAggro == 2) and self.leader and not self.leaderNpc and self.home then return self.home end
+        if self.doctrine == 2 and self.doctrineFallback then return self.doctrineFallback end
         return self.fallback or self.home
+    end
+
+    --------------------------------------------------------------------------
+    -- Retreat (owner 2026-10-09w): mode "retreat" or aggression 1. Leave
+    -- the front, nowhere in particular: run a leg away from the enemy, turn
+    -- and fight a few seconds, run on. An enemy close by or hits while
+    -- running = turn and fight first (so they don't just get shot in the
+    -- back). Nowhere left to run = last stand: hold, no cover, fire faster.
+    -- Once nobody has been seen or shot at them for retreatClear they hold
+    -- where they ended up.
+    --------------------------------------------------------------------------
+
+    function ENT:Retreating()
+        if self.guarding or self.reviveTarget or self.artillery then return false end
+        return self.mode == "retreat" or self:Aggro() == 1
+    end
+
+    -- Last time there was an enemy to get away from.
+    function ENT:RetreatAlarm()
+        return math.max(self.threatAt or 0, self.lastSeenAt or 0)
+    end
+
+    function ENT:RetreatThreat(t)
+        if IsValid(t) then return t:GetPos() end
+        local now = CurTime()
+        if self.threatPos and now - (self.threatAt or 0) < 10 then return self.threatPos end
+        if self.lastSeen and now - (self.lastSeenAt or 0) < 10 then return self.lastSeen end
+        return self.rt and self.rt.from
+    end
+
+    function ENT:SetLastStand(on)
+        on = on and true or nil
+        if self.lastStand == on then return end
+        self.lastStand = on
+        self:SetNW2String("rhylib_dmode", on and "laststand" or (self.buddyRoam and "roam") or self.mode or "guard")
+    end
+
+    -- Hits within secs (from OnInjured's list).
+    function ENT:HitsWithin(secs)
+        local n, now = 0, CurTime()
+        for _, h in ipairs(self.hits or {}) do
+            if now - h <= secs then n = n + 1 end
+        end
+        return n
+    end
+
+    -- The next spot to run to: away from the threat (blended with the
+    -- group's shared way out), turning up to 70 degrees to find ground
+    -- that is further from the threat. Nil = nowhere to go.
+    local LEG_TURNS = { 0, 35, -35, 70, -70 }
+    local WIDE_TURNS = { 0, 50, -50, 105, -105 }
+    function ENT:PickRetreatLeg(threat)
+        local pos = self:GetPos()
+        local away = threat and (pos - threat) or -self:GetForward()
+        away.z = 0
+        if away:LengthSqr() < 1 then away = -self:GetForward() away.z = 0 end
+        away:Normalize()
+        local dir = away
+        -- (the group's way out, unless it now leads toward the enemy)
+        if self.retreatDir and self.retreatDir:Dot(away) > 0 then
+            dir = self.retreatDir * 0.6 + away * 0.4
+            dir.z = 0
+            if dir:LengthSqr() < 0.01 then dir = away end
+            dir:Normalize()
+        end
+        local leg = D.Cfg("retreatLeg") * math.Rand(0.8, 1.2)
+        local myD = threat and pos:Distance(threat) or 0
+        local mesh = navmesh and navmesh.IsLoaded and navmesh.IsLoaded() and navmesh.GetNearestNavArea
+        local function try(d, turns)
+            for _, turn in ipairs(turns) do
+                local a = d:Angle()
+                a.y = a.y + turn
+                local to = pos + a:Forward() * leg
+                if mesh then
+                    local area = navmesh.GetNearestNavArea(to, false, 250, false, true)
+                    to = IsValid(area) and area:GetClosestPointOnArea(to) or nil
+                elseif not self:OpenGround(to) then
+                    to = nil
+                end
+                if to and to:DistToSqr(pos) > 200 * 200 and (not threat or to:Distance(threat) > myD + 150) then return to end
+            end
+        end
+        return try(dir, LEG_TURNS) or try(away, WIDE_TURNS)
+    end
+
+    -- No navmesh: walls and ground only (other NPCs don't block a retreat).
+    local openTr = {}
+    local openHull = { mask = MASK_SOLID_BRUSHONLY, output = openTr, mins = Vector(-13, -13, 0), maxs = Vector(13, 13, 46) }
+    function ENT:OpenGround(goal)
+        openHull.start = self:GetPos() + Vector(0, 0, 20)
+        openHull.endpos = goal + Vector(0, 0, 20)
+        util.TraceHull(openHull)
+        if openTr.Hit then return false end
+        local g = util.TraceLine({ start = goal + Vector(0, 0, 20), endpos = goal - Vector(0, 0, 80), mask = MASK_SOLID_BRUSHONLY })
+        return g.Hit
+    end
+
+    -- No navmesh: walk a straight leg (yields; stops when a target shows up).
+    function ENT:WalkStraight(goal, secs)
+        local stop = CurTime() + secs
+        while CurTime() < stop and self:GetPos():DistToSqr(goal) > 60 * 60 do
+            self.loco:Approach(goal, 1)
+            self.loco:FaceTowards(goal)
+            if self.loco:IsStuck() then
+                self:HandleStuck()
+                return false
+            end
+            if self:Look() then return true end
+            coroutine.yield()
+        end
+        return true
+    end
+
+    -- Turn and fight for a few seconds where it stands.
+    function ENT:RetreatStand(rt)
+        local now = CurTime()
+        rt.phase, rt.untilT = "stand", now + D.Cfg("retreatStand") * math.Rand(0.8, 1.25)
+        if self.IsRhylibClone then self.crouchUntil = rt.untilT end
+        self.home = self:GetPos()   -- (never walks back to the old post)
+    end
+
+    -- Where to go now: goal, run, face the goal (nil = stay and fight).
+    function ENT:RetreatPlan(t)
+        if self.lastStand then
+            if self.IsRhylibClone then self.crouchUntil = CurTime() + 1 end
+            return nil
+        end
+        local now = CurTime()
+        local rt = self.rt
+        if not rt then
+            rt = { phase = "stand", untilT = 0, stuck = 0, origin = self:GetPos() }
+            self.rt = rt
+        end
+        local threat = self:RetreatThreat(t)
+        if threat then rt.from = threat end
+        local pos = self:GetPos()
+        local close = D.Cfg("retreatClose")
+        if rt.phase == "run" then
+            -- An enemy close or hits while running: turn and fight back first.
+            if IsValid(t) and (pos:DistToSqr(t:GetPos()) < close * close or self:HitsWithin(1.2) >= 2) then
+                self:RetreatStand(rt)
+                return nil
+            end
+            if pos:DistToSqr(rt.leg) < 80 * 80 or now > rt.untilT then
+                if IsValid(t) then
+                    self:RetreatStand(rt)
+                    return nil
+                end
+                rt.phase, rt.untilT = "stand", 0   -- (nobody in sight: straight on)
+            elseif now > rt.checkAt then
+                -- Not getting anywhere: another way; three in a row = cornered.
+                local moved = pos:DistToSqr(rt.checkPos) > 40 * 40
+                -- (waiting for a route search isn't being stuck)
+                local waiting = IsValid(t) and (self.needPath or not (self.moveStraight or self.pathGoal))
+                rt.checkAt, rt.checkPos = now + 1.5, pos
+                if moved or waiting then
+                    rt.stuck = 0
+                else
+                    rt.stuck = rt.stuck + 1
+                    if rt.stuck >= 3 then
+                        self:SetLastStand(true)
+                        return nil
+                    end
+                    rt.phase, rt.untilT = "stand", 0
+                end
+            end
+            if rt.phase == "run" then return rt.leg, true, true end
+        end
+        -- Standing: fight out the stand (longer while someone is right on it).
+        if IsValid(t) and now < rt.untilT then return nil end
+        if IsValid(t) and pos:DistToSqr(t:GetPos()) < (close * 0.6) ^ 2 then
+            rt.untilT = now + 1
+            return nil
+        end
+        local leg = self:PickRetreatLeg(threat)
+        if not leg then
+            -- (twice in a row = cornered; the first time it fights a moment more)
+            rt.noLeg = (rt.noLeg or 0) + 1
+            if rt.noLeg >= 2 then self:SetLastStand(true) end
+            rt.untilT = now + 1.5
+            return nil
+        end
+        rt.noLeg = 0
+        rt.phase, rt.leg, rt.untilT = "run", leg, now + 6
+        rt.checkAt, rt.checkPos = now + 1.5, pos
+        return leg, true, true
+    end
+
+    -- Retreat over (nobody about for retreatClear): hold where it is.
+    -- Also ends when it isn't retreating any more (aggression raised,
+    -- another order, guarding a downed player).
+    function ENT:RetreatCheckClear()
+        if not (self.rt or self.lastStand) then return end
+        local still = self:Retreating()
+        if still and CurTime() - self:RetreatAlarm() < D.Cfg("retreatClear") then return end
+        self.rt = nil
+        self:SetLastStand(false)
+        if still then
+            self.retreatDir = nil
+            self.lastSeen = nil   -- (no walking back to where the enemy was)
+            if not self.leader then self.home = self:GetPos() end
+        end
+    end
+
+    -- Out of sight and far enough from where this retreat began: stop
+    -- there (owner: they stay roughly in the same area).
+    function ENT:RetreatFarEnough()
+        local rt = self.rt
+        return rt and rt.origin and self:GetPos():DistToSqr(rt.origin) > D.Cfg("retreatMax") ^ 2
     end
 
     -- Clones' doctrine (owner): outnumbered → fall back, even → hold the
@@ -883,7 +1094,8 @@ if SERVER then
         local now = CurTime()
         if (self.doctrineAt or 0) > now then return end
         self.doctrineAt = now + 1
-        if self.guarding or self.reviveTarget or self.orderAggro or not IsValid(self.target) then
+        if self.guarding or self.reviveTarget or self.orderAggro or self.mode == "retreat" or not IsValid(self.target)
+            or math.Round(tonumber(D.Cfg("cloneAggro")) or 3) == 1 then
             self.doctrine = nil   -- (guards, medics and followers keep to their job)
             return
         end
@@ -891,7 +1103,7 @@ if SERVER then
         if e <= 0 then self.doctrine = nil return end
         local r = f / e
         if r < D.Cfg("ctFallBackOdds") then
-            if self.doctrine ~= 1 or not self.doctrineFallback then
+            if self.doctrine ~= 2 or not self.doctrineFallback then
                 local away = self:GetPos() - (mid or self.target:GetPos())
                 away.z = 0
                 if away:LengthSqr() < 1 then away = -self:GetForward() end
@@ -899,7 +1111,7 @@ if SERVER then
                 local to = self:GetPos() + away * 600
                 self.doctrineFallback = D.GroundAt and D.GroundAt(to) or to
             end
-            self.doctrine = 1
+            self.doctrine = 2   -- (fall back: relocate, not a full retreat)
         elseif r > D.Cfg("ctChargeOdds") then
             self.doctrine = 5
         else
@@ -923,6 +1135,9 @@ if SERVER then
                 return self:InArea(pos + side), false
             end
         end
+        -- Retreating: its own plan (away from the enemy).
+        self:RetreatCheckClear()
+        if self:Retreating() then return self:RetreatPlan(t) end
         -- Popper charge: run a few steps at the droid (Engage throws at the end).
         local rush = self.popRush
         if rush then
@@ -956,12 +1171,15 @@ if SERVER then
         if L == 3 and self.IsRhylibClone and (self.crouchUntil or 0) > CurTime() then return nil end
         local d = pos:Distance(tp)
         local goal, run
-        if L == 1 then
+        if L <= 2 then
+            -- Fall back: to the fallback point while firing; there, fights,
+            -- never pushes, backs off from anyone close.
             local fb = self:FallbackPoint()
-            if fb and pos:DistToSqr(fb) > 150 * 150 then goal, run = fb, false end
-        elseif L == 2 then
-            -- Fights, never pushes, backs off from anyone close.
-            if d < 600 then goal, run = pos + (pos - tp):GetNormalized() * 220, false end
+            if fb and pos:DistToSqr(fb) > 150 * 150 then
+                goal, run = fb, false
+            elseif d < 600 then
+                goal, run = pos + (pos - tp):GetNormalized() * 220, false
+            end
         elseif L == 3 then
             if d > ADVANCE_DIST then goal, run = pos + (tp - pos):GetNormalized() * 300, false end
         else
@@ -970,7 +1188,7 @@ if SERVER then
                 run = L >= 5 or not self:CanMarch()
             end
         end
-        if goal and L > 1 then goal = self:InArea(goal) end
+        if goal and not (L == 2 and goal == self:FallbackPoint()) then goal = self:InArea(goal) end
         if goal and goal:DistToSqr(pos) < 60 * 60 then goal = nil end
         return goal, run
     end
@@ -1002,8 +1220,9 @@ if SERVER then
         local now = CurTime()
         if now >= (self.planAt or 0) then
             self.planAt = now + math.Rand(0.4, 0.7)
-            local goal, run = self:PlanMove(t)
+            local goal, run, face = self:PlanMove(t)
             self.moveGoal = goal
+            self.moveFace = face   -- (retreating: turns its back and runs)
             if goal then
                 self:SetPace(run)
                 local dist = goal:Distance(self:GetPos())
@@ -1023,7 +1242,7 @@ if SERVER then
         end
         if self.moveStraight then
             self.loco:Approach(goal, 1)
-            self.loco:FaceTowards(t:GetPos())
+            self.loco:FaceTowards(self.moveFace and goal or t:GetPos())
             if self.loco:IsStuck() then
                 self:HandleStuck()
                 self.moveGoal = nil
@@ -1052,8 +1271,8 @@ if SERVER then
         if self.pathGoal and path:IsValid() then
             path:Update(self)
             self:OpenDoors()
-            -- Falling back / retreating keeps the gun on the enemy.
-            if self:Aggro() <= 2 then self.loco:FaceTowards(t:GetPos()) end
+            -- Falling back keeps the gun on the enemy (retreat runs facing the way).
+            if not self.moveFace and self:Aggro() == 2 then self.loco:FaceTowards(t:GetPos()) end
             if self.loco:IsStuck() then
                 self:HandleStuck()
                 self.moveGoal, self.pathGoal = nil, nil
@@ -1148,6 +1367,7 @@ if SERVER then
                     else
                         local pause = math.Rand(0.6, 1.3)
                         if D.Boosted(self) then pause = pause * D.Cfg("cmdPause") end
+                        if self.lastStand then pause = pause * D.Cfg("lastStandPause") end
                         nextShot = now + pause
                         if IsValid(t) and self.threatPos then self.threatPos = t:GetPos() end   -- (once shot at: cover from the one it's fighting)
                         -- B1: now and then a grenade at a target in the open
@@ -1318,12 +1538,27 @@ if SERVER then
             self:UpdateHome()
             local follow = self.mode == "follow"
             local fb = self:FallbackPoint()
+            self:RetreatCheckClear()
             if self.reviveTarget then
                 self:DoRevive()
             elseif self:CoverCheck() then
                 -- (came out of cover: look again straight away)
             elseif self:Look() then
                 self:Engage()
+            elseif self:Retreating() and CurTime() - self:RetreatAlarm() < D.Cfg("retreatClear") then
+                -- Retreating with nobody in sight: keep getting away (last
+                -- stand: stay put and watch).
+                local goal = not self:RetreatFarEnough() and self:RetreatPlan(nil)
+                if goal then
+                    self:SetPace(true)
+                    if navmesh.IsLoaded and not navmesh.IsLoaded() then
+                        self:WalkStraight(goal, 4)
+                    else
+                        self:GoOrWait(goal, 4, true)
+                    end
+                else
+                    self:Idle(0.5)
+                end
             elseif self.reinforceTo and CurTime() < (self.reinforceUntil or 0) and not self.guarding and not self.leader
                 and self:GetPos():DistToSqr(self.reinforceTo) > 250 * 250 then
                 -- Called by a clone in a fight: run over.
@@ -1335,10 +1570,10 @@ if SERVER then
                 self.advanceTo = nil
                 self:SetPace(false)
                 self:GoOrWait(to, 4, true)
-            elseif L == 1 and fb and self:GetPos():DistToSqr(fb) > 200 * 200 then
+            elseif L == 2 and fb and self:GetPos():DistToSqr(fb) > 200 * 200 then
                 self:SetPace(false)
                 self:GoOrWait(fb, 8, true)
-            elseif L >= 3 and not self.artillery and self.lastSeen and CurTime() - (self.lastSeenAt or 0) < 20 then
+            elseif L >= 3 and not self.artillery and not self:Retreating() and self.lastSeen and CurTime() - (self.lastSeenAt or 0) < 20 then
                 -- Go where the target was last seen (or where the shot came
                 -- from); guards and patrols only within their area.
                 local pos = self:InArea(self.lastSeen)

@@ -9,7 +9,7 @@ local cvEntry = CreateClientConVar("rhylib_tool_entry", "b1", true, false, "Tool
 local cvCount = CreateClientConVar("rhylib_tool_count", "1", true, false, "Toolgun: how many droids at once (1-5)")
 local cvName = CreateClientConVar("rhylib_tool_name", "Range", true, false, "Toolgun: name for new training beacons")
 
-local cvMode = CreateClientConVar("rhylib_tool_droidmode", "1", true, false, "Toolgun: mode for placed droids (1 guard, 2 patrol, 3 attack)")
+local cvMode = CreateClientConVar("rhylib_tool_droidmode", "1", true, false, "Toolgun: mode for placed droids (1 guard, 2 patrol, 3 attack, 4 roam)")
 local cvCustom = CreateClientConVar("rhylib_tool_custom", "", true, false, "Toolgun: picked spawn-window thing (kind|name|skin|body|weapon|label)")
 
 -- Spawn-window things picked with "Spawn with Rhy's toolgun": entry id
@@ -107,12 +107,12 @@ local function buildTab(body)
         lm:SetWide(S(110))
         lm:SetAutoStretchVertical(false)
         lm:SetContentAlignment(4)
-        for i, m in ipairs({ "Guard", "Patrol", "Attack" }) do
+        for i, m in ipairs({ "Guard", "Patrol", "Attack", "Roam" }) do
             local b = K.Button(row2, m, function() RunConsoleCommand("rhylib_tool_droidmode", tostring(i)) end,
                 { small = true, selected = function() return cvMode:GetInt() == i end,
-                  tooltip = "Mode of the droids you place (markers you placed earlier still win)" })
+                  tooltip = i == 4 and "Placed NPCs roam the map in twos (spread out)" or "Mode of the droids you place (markers you placed earlier still win)" })
             b:Dock(LEFT)
-            b:SetWide(S(72))
+            b:SetWide(S(66))
             b:DockMargin(0, S(2), S(6), S(2))
         end
         local la = K.Label(row2, "Aggression", 13, 700, K.C.textDim)
@@ -121,16 +121,16 @@ local function buildTab(body)
         la:DockMargin(S(18), 0, 0, 0)
         la:SetAutoStretchVertical(false)
         la:SetContentAlignment(4)
-        local AGGRO = { "Fall back", "Retreat", "Moderate", "March", "Charge" }
+        local AGGRO = (Rhylib.Droids and Rhylib.Droids.AGGRO_NAMES) or { "Retreat", "Fall back", "Moderate", "March", "Charge" }
         for i = 1, 5 do
             local b = K.Button(row2, i .. " " .. AGGRO[i], function()
                 Rhylib.Net.Start("droids.aggro")
                 net.WriteUInt(i, 3)
                 net.SendToServer()
             end, { small = true, selected = function() return GetGlobal2Int("rhylib_droidAggro", 3) == i end,
-                   tooltip = "Every droid at once, live: 1 falls back while firing ... 5 charges" })
+                   tooltip = "Every droid at once, live: 1 retreats (gets away, last stand if cornered), 2 falls back to the fallback marker / its post ... 5 charges" })
             b:Dock(LEFT)
-            b:SetWide(S(96))
+            b:SetWide(S(90))
             b:DockMargin(0, S(2), S(6), S(2))
         end
     end
@@ -299,7 +299,7 @@ function Tool.Click(wep, which)
     net.WriteString(e.id)
     net.WriteUInt(math.Clamp(cvCount:GetInt(), 1, 5), 3)
     net.WriteString(e.named and cvName:GetString() or "")
-    net.WriteUInt(math.Clamp(cvMode:GetInt(), 1, 3), 2)
+    net.WriteUInt(math.Clamp(cvMode:GetInt(), 1, 4), 3)
     net.SendToServer()
 end
 
@@ -314,7 +314,7 @@ function Tool.DrawHUD(wep)
     if e.perma then return Tool.DrawPermaHUD() end
     local text = e.order and e.name or ((e.custom and "Spawn: " or "Place: ") .. e.name)
     if e.count and cvCount:GetInt() > 1 then text = text .. " ×" .. cvCount:GetInt() end
-    if e.count and not e.custom then text = text .. "  ·  " .. ({ "Guard", "Patrol", "Attack" })[math.Clamp(cvMode:GetInt(), 1, 3)] end
+    if e.count and not e.custom then text = text .. "  ·  " .. ({ "Guard", "Patrol", "Attack", "Roam" })[math.Clamp(cvMode:GetInt(), 1, 4)] end
     local D = Rhylib.Droids
     if D and D.AGGRO_NAMES then
         local a = D.Aggro()
@@ -415,7 +415,9 @@ end)
 
 -- With the toolgun out: each droid's mode over its head (staff only see
 -- this, since only they hold the toolgun).
-local MODE_COL = { guard = Color(110, 170, 255), patrol = Color(120, 230, 140), attack = Color(255, 100, 80), follow = Color(240, 220, 120), roam = Color(200, 140, 255) }
+local MODE_COL = { guard = Color(110, 170, 255), patrol = Color(120, 230, 140), attack = Color(255, 100, 80), follow = Color(240, 220, 120), roam = Color(200, 140, 255),
+    retreat = Color(255, 170, 60), laststand = Color(255, 60, 60) }
+local MODE_LABEL = { laststand = "LAST STAND" }
 local PICKED = Color(255, 255, 120)
 local droidList, droidListAt = {}, 0
 Rhylib.Hook.Add("HUDPaint", "toolgun.droidmodes", function()
@@ -437,7 +439,7 @@ Rhylib.Hook.Add("HUDPaint", "toolgun.droidmodes", function()
             local mode = d:GetNW2String("rhylib_dmode", "guard")
             local sp = (d:GetPos() + Vector(0, 0, 90)):ToScreen()
             if sp.visible then
-                draw.SimpleTextOutlined(string.upper(mode), font, sp.x, sp.y, MODE_COL[mode] or color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, color_black)
+                draw.SimpleTextOutlined(MODE_LABEL[mode] or string.upper(mode), font, sp.x, sp.y, MODE_COL[mode] or color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, color_black)
                 -- (picked with the follow tool)
                 if d:GetNW2Entity("rhylib_pickBy") == ply then
                     draw.SimpleTextOutlined("PICKED", font, sp.x, sp.y - 14, PICKED, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, color_black)

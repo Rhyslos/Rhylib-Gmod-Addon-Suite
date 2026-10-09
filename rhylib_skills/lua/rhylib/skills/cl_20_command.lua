@@ -166,7 +166,7 @@ local function squadList(me)
         { label = "More aggressive", sub = names[level] and ("Now: " .. names[level]),
             op = "aggroUp", run = function() sendOp("aggroUp") end, disabled = lock or none or (level >= 5 and "Already charging" or nil) },
         { label = "Less aggressive", sub = names[level] and ("Now: " .. names[level]),
-            op = "aggroDown", run = function() sendOp("aggroDown") end, disabled = lock or none or (level <= 1 and "Already falling back" or nil) },
+            op = "aggroDown", run = function() sendOp("aggroDown") end, disabled = lock or none or (level <= 1 and "Already retreating" or nil) },
         { label = "Dismiss", sub = "They guard where they stand", op = "dismiss", run = function() sendOp("dismiss") end, disabled = lock or none },
     }
     for _, o in ipairs(list) do o.col = SQ_COL[o.op] end
