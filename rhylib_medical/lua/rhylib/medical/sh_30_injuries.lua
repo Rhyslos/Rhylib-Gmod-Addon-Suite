@@ -61,6 +61,9 @@ Config.Register("medical", "torsoStaminaHit", 0.8, "Stamina lost per point of to
 Config.Register("medical", "torsoStaminaCap", 0.5, "Share of max stamina lost at a fully hurt torso")
 Config.Register("medical", "firstAidLimbHealth", 50, "Health a first aid kit gives when treating a body part (from its charge)")
 Config.Register("medical", "medkitLimbRepair", 40, "Damage and burns a medkit use removes from a body part")
+Config.Register("medical", "regenEvery", 6, "Recovery (medic skill): seconds between heals")
+Config.Register("medical", "regenHealth", 4, "Recovery: health per heal (a percent of max health in the simplified medical system)")
+Config.Register("medical", "regenAffliction", 4, "Recovery: damage and burns each of your body parts loses per heal (bleeding also eases one step)")
 Config.Register("medical", "viewRange", 120, "How close you must be to open someone's injury menu (units)")
 
 local function cfg(k) return Config.Get("medical", k) end

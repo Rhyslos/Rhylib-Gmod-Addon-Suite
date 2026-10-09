@@ -320,6 +320,57 @@ timer.Create("Rhylib.Medical.Injuries", 1, 0, function()
 end)
 
 --------------------------------------------------------------------------
+-- Recovery (medic skill): every regenEvery seconds, regenHealth health and
+-- the medic's own afflictions ease at the same pace: each part's damage and
+-- burns -regenAffliction, bleeding one step (heavy -> light -> stopped), a
+-- fracture knits once its part has no damage left. Not while down.
+--------------------------------------------------------------------------
+
+local function recover(ply)
+    local max = ply:GetMaxHealth()
+    local hp = cfg("regenHealth")
+    if Med.Simple() then hp = math.ceil(max * hp / 100) end
+    if ply:Health() < max then ply:SetHealth(math.min(max, ply:Health() + hp)) end
+    local t = inj[ply]
+    if not t then return end
+    local step = cfg("regenAffliction")
+    for _, l in ipairs(Med.LIMBS) do
+        local p = t[l]
+        if p.bleed > 0 then
+            p.bleed = p.bleed - 1
+            if p.bleed == 1 then p.bleedEnd = CurTime() + cfg("lightBleedStops") end
+        end
+        p.dmg = math.max(0, p.dmg - step)
+        p.burn = math.max(0, p.burn - step)
+        if p.frac and p.dmg <= 0 then p.frac, p.splint = false, false end
+    end
+    if healthy(t) then
+        inj[ply] = nil
+        dirty[ply] = true
+    else
+        Med.MarkInjuries(ply)
+    end
+end
+
+timer.Create("Rhylib.Medical.Recovery", 1, 0, function()
+    if not (Rhylib.Skills and Rhylib.Skills.Has) then return end
+    local now = CurTime()
+    local every = math.max(1, tonumber(cfg("regenEvery")) or 6)
+    for _, ply in ipairs(player.GetAll()) do
+        if ply:Alive() and not ply.rhylibDown and Med.Skill(ply, "recovery") then
+            if not ply.rhylibRegenAt then
+                ply.rhylibRegenAt = now + every
+            elseif now >= ply.rhylibRegenAt then
+                ply.rhylibRegenAt = now + every
+                recover(ply)
+            end
+        else
+            ply.rhylibRegenAt = nil
+        end
+    end
+end)
+
+--------------------------------------------------------------------------
 -- Treatment from the H menu
 --------------------------------------------------------------------------
 

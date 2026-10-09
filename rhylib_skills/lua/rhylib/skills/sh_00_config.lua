@@ -309,10 +309,14 @@ K.NODES = {
     -- Medic (medic jobs only)
     { id = "field_drag", cat = "medic", tier = 1, cost = 1, name = "Field drag",
       desc = "Drag bodies at a jog instead of a crawl." },
-    { id = "hands_on", cat = "medic", tier = 2, cost = 2, name = "Hands-on revive",
+    { id = "hands_on", cat = "medic", tier = 2, cost = 1, name = "Hands-on revive",
       desc = "Revive with no kit at all (E menu). Very slow, and they get up with 15 health.", needs = { "field_drag" } },
-    { id = "steady_hands", cat = "medic", tier = 2, cost = 2, name = "Steady hands",
+    { id = "steady_hands", cat = "medic", tier = 2, cost = 1, name = "Steady hands",
       desc = "Treatments (not revives) are 15% faster.", needs = { "field_drag" } },
+    -- (2026-10-09s, owner: both medic paths; Hands-on and Steady hands went 2 -> 1 so paths stay 24)
+    { id = "recovery", cat = "medic", tier = 2, cost = 2, name = "Recovery",
+      desc = "You heal 4 health every 6 seconds, and your own injuries heal at the same pace: bleeding eases a step each time (heavy, then light, then stopped), damage and burns drop by 4, and a broken bone knits once its damage is gone.",
+      needs = { "field_drag" } },
 
     { id = "quick_revive", cat = "medic", spec = "combat_medic", tier = 3, cost = 3, name = "Quick revive",
       desc = "Revives take 20% less time.", needs = { "hands_on", "steady_hands" } },
