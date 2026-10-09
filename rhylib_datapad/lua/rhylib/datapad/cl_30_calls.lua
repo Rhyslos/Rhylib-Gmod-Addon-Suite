@@ -20,6 +20,7 @@ local sent = {}           -- [kind] = RealTime of our last call
 
 local KIND_COL = {
     mp = Color(90, 150, 235), medic = Color(230, 75, 65), reinf = Color(235, 170, 60), supply = Color(120, 205, 120),
+    eod = Color(240, 140, 50),
 }
 
 local function S(n) return math.floor(n * ScrH() / 1080 + 0.5) end

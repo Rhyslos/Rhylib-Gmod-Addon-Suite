@@ -649,6 +649,11 @@ Rhylib.Net.Receive("inv.iconsredraw", redraw)
 -- the game comes back from alt-tab (device reset): make them again then.
 -- Also when your player model changes (the gear part pictures use it).
 Rhylib.Hook.Add("OnScreenSizeChanged", "inventory.icons", function() Icons.Reset() end)
+-- A model swapped in Server settings > Models: pictures again (once, after
+-- a burst of changes).
+Rhylib.Hook.Add("Rhylib.ModelsChanged", "inventory.icons", function()
+    timer.Create("Rhylib.Inventory.IconsModels", 0.5, 1, function() Icons.Reset() end)
+end)
 -- Only the wearable parts (they're cut out of your own player model): made
 -- again in their old spots, right away.
 function Icons.RedrawGear()

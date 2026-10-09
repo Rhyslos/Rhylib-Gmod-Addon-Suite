@@ -120,12 +120,12 @@ local function openWin(m, center, width, period, ph)
     local s = k.S
     local C = k.C
     local f = vgui.Create("EditablePanel")
-    f:SetSize(s(520), s(340))
+    f:SetSize(s(520), m.IsTrainingMine and s(560) or s(340))
     f:Center()
     f:MakePopup()
     f:DockPadding(s(14), s(50), s(14), s(14))
     E.mineWin = { frame = f, mine = m, center = center, width = width, period = period, ph = ph }
-    local lap = m.MineType == "lap"
+    local lap = m:IsLarge()
     function f:Paint(w, h)
         k.Plate(0, 0, w, h, { title = lap and "LAP mine (large)" or "AP mine", ticks = "all", header = s(38), bg = OPAQUE })
     end
@@ -183,6 +183,37 @@ local function openWin(m, center, width, period, ph)
 
     local note = k.Label(f, "Push the pin only while the needle is inside the green zone. A wrong push sets it off.", 12, 400, C.textDim)
     note:Dock(BOTTOM)
+
+    -- Training mine: set it up (anyone near it).
+    if m.IsTrainingMine then
+        local set = { large = m:IsLarge(), shown = m:GetShown(), level = math.max(1, m:GetLevel() == 0 and 2 or m:GetLevel()), pins = m:GetPinsNeed() }
+        local h = k.Heading(f, "Training setup")
+        h:Dock(TOP)
+        h:DockMargin(0, s(10), 0, s(4))
+        local function row(title, opts, key)
+            local r = k.Row(f, title)
+            r:Dock(TOP)
+            r:SetTall(s(34))
+            r:DockMargin(0, 0, 0, s(2))
+            local ch = k.Choices(r.right, opts, function() return set[key] end, function(v) set[key] = v end)
+            ch:Dock(FILL)
+        end
+        row("Type", { { false, "AP" }, { true, "LAP" } }, "large")
+        row("Difficulty", { { 1, "Easy" }, { 2, "Normal" }, { 3, "Hard" } }, "level")
+        row("Safety pins", { { 0, "By type" }, { 1, "1" }, { 2, "2" }, { 3, "3" } }, "pins")
+        row("Hidden", { { false, "Hidden" }, { true, "Always visible" } }, "shown")
+        local apply = k.Button(f, "Set it up", function()
+            Net.Start("eod.trainmine")
+            net.WriteEntity(m)
+            net.WriteBool(set.large)
+            net.WriteBool(set.shown)
+            net.WriteUInt(set.level, 2)
+            net.WriteUInt(set.pins, 2)
+            net.SendToServer()
+        end, { accent = true, enabled = function() return IsValid(m) and not IsValid(m:GetPresser()) end })
+        apply:Dock(TOP)
+        apply:DockMargin(0, s(4), 0, 0)
+    end
 
     function f:Think()
         if not (IsValid(m) and LocalPlayer():Alive()) or LocalPlayer():GetPos():DistToSqr(m:GetPos()) > 200 * 200 then closeWin(false) return end

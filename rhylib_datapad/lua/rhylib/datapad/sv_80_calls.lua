@@ -1,6 +1,6 @@
 --[[
     Quick response calls from the datapad (config "calls"): call MPs, a
-    medic, reinforcements, resupply (with a list of what's needed).
+    medic, the bomb squad, reinforcements, resupply (with a list of what's needed).
 
     A call goes to the players its "to" names (not the caller). Calls
     with accept = false show the caller's position to them at once; with
@@ -28,6 +28,7 @@ local function wants(p, d, caller)
     if p == caller or not p:Alive() then return false end
     if d.to == "mp" then return D.IsMP(p) end
     if d.to == "medic" then return D.IsMedic(p) end
+    if d.to == "eod" then return D.IsBombSquad(p) end
     if d.to == "battalion" then
         local bn = D.Battalion(caller)
         return bn ~= "" and D.Battalion(p) == bn

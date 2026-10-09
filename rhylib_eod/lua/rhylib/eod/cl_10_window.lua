@@ -128,7 +128,8 @@ local function thick(pts, width, col, sc, ox, oy, skipFrom, skipTo)
             local dx, dy = bx - ax, by - ay
             local len = math.sqrt(dx * dx + dy * dy)
             if len > 0.01 then
-                local nx, ny = -dy / len * hw, dx / len * hw
+                -- (clockwise on screen: surface.DrawPoly skips the other winding)
+                local nx, ny = dy / len * hw, -dx / len * hw
                 -- (extend a little so the joins close)
                 local ex, ey = dx / len * hw * 0.5, dy / len * hw * 0.5
                 quad[1].x, quad[1].y = ax + nx - ex, ay + ny - ey
@@ -804,6 +805,16 @@ local function overlay(win, k, kind, a, b, c)
         back:SetSize(s(170), s(34))
         back:SetPos(bx - s(180), by)
     end
+    -- Training bomb: go again (a failed one re-arms by itself in a few seconds).
+    if IsValid(win.bomb) and win.bomb.IsTrainingBomb then
+        local again = k.Button(ov, bad and "Training: it re-arms in 3 s" or "Same again", function()
+            if bad then return end
+            if E.TrainAct then E.TrainAct(win.bomb, 1) end
+            closeWindow(true)
+        end, { enabled = not bad })
+        again:SetSize(s(190), s(34))
+        again:SetPos(bx - (bad and s(200) or s(380)), by)
+    end
 end
 
 local function openWindow(bomb)
@@ -835,6 +846,11 @@ local function openWindow(bomb)
     local x = k.Button(f, "Close", function() closeWindow(true) end, { small = true })
     x:SetSize(s(90), s(26))
     x:SetPos(fw - s(90) - s(160), s(6))
+    if bomb.IsTrainingBomb then
+        local ts = k.Button(f, "Training setup", function() if E.TrainingSetup then E.TrainingSetup(bomb) end end, { small = true, accent = true })
+        ts:SetSize(s(150), s(26))
+        ts:SetPos(fw - s(90) - s(160) - s(160), s(6))
+    end
 
     local left = vgui.Create("DPanel", f)
     left:Dock(LEFT)

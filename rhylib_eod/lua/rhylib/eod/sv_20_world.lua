@@ -50,13 +50,29 @@ function E.SetupBomb(bomb, f)
     bomb:SetNW2Bool("rhylib_eodTimer", st.timerSecs ~= nil)
     bomb:SetNW2Bool("rhylib_eodSafe", false)
     local mdl = E.Cfg(st.big and "modelLarge" or "modelSmall")
-    if isstring(mdl) and util.IsValidModel(mdl) and bomb:GetModel() ~= mdl then
+    if not (isstring(mdl) and util.IsValidModel(mdl)) then mdl = st.big and "models/props_lab/powerbox01a.mdl" or "models/props_c17/consolebox01a.mdl" end
+    if bomb:GetModel() ~= mdl then
         bomb:SetModel(mdl)
         bomb:PhysicsInit(SOLID_VPHYSICS)
         local ph = bomb:GetPhysicsObject()
         if IsValid(ph) then ph:EnableMotion(false) end
     end
     syncDisplay(bomb)
+    if bomb.IsTrainingBomb then E.ArmedBeep(bomb) end
+end
+
+-- Training bombs: a rising two-tone beep each time they (re)arm.
+function E.ArmedBeep(ent)
+    if not IsValid(ent) then return end
+    -- Delayed a moment: a bomb set up in Initialize isn't on clients yet.
+    local id = "Rhylib.EOD.Armed." .. ent:EntIndex()
+    timer.Create(id, 0.15, 1, function()
+        if not IsValid(ent) then return end
+        ent:EmitSound("buttons/blip1.wav", 75, 90)
+        timer.Create(id, 0.18, 1, function()
+            if IsValid(ent) then ent:EmitSound("buttons/blip1.wav", 75, 130) end
+        end)
+    end)
 end
 
 -- GM re-roll / new type: close every window, new state in place.
@@ -246,6 +262,18 @@ function E.Detonate(bomb, cause)
     local pos = bomb:WorldSpaceCenter()
     sendBoom(bomb, st, pos, cause)
     st.viewers = {}
+    -- Training bomb: nobody gets hurt; it re-arms with the same setup.
+    if bomb.IsTrainingBomb then
+        local ed = EffectData()
+        ed:SetOrigin(pos)
+        util.Effect("StunstickImpact", ed, true, true)
+        sound.Play("buttons/button10.wav", pos, 75, 80)
+        sound.Play("ambient/levels/labs/electric_explosion1.wav", pos, 70, 140)
+        local f = table.Copy(st.f)
+        f.mods = table.Copy(st.f.mods or {})
+        timer.Simple(3, function() if IsValid(bomb) and bomb.eod == st then E.SetupBomb(bomb, f) end end)
+        return
+    end
     bomb:SetNoDraw(true)
     bomb:SetNotSolid(true)
     local charge = st.f.charge
@@ -523,7 +551,7 @@ end
 
 local function tooFast(bomb, st, now)
     if now < (st.armAt or 0) then return nil end
-    local r = E.Cfg("sensorRange") or 520
+    local r = E.Cfg("sensorRange") or 315
     local c = bomb:WorldSpaceCenter()
     for _, p in ipairs(player.GetAll()) do
         if walkOk(p) and not p:GetNW2Bool("rhylib_cloak", false) then
@@ -730,12 +758,12 @@ function E.UseBomb(ply, bomb)
 end
 
 -- Custom bombs: the GM's features (JSON from the GM window), checked.
-local function customFeatures(js)
+local function customFeatures(js, kind)
     local t = isstring(js) and #js < 2000 and util.JSONToTable(js)
     if not istable(t) then return nil end
     local function pick(v, ok, def) return ok[v] and v or def end
     local f = {
-        type = "custom",
+        type = kind or "custom",
         det = pick(t.det, { timer = true, remote = true }, "timer"),
         motion = pick(t.motion, { normal = true, sensitive = true }, nil),
         lid = t.lid == true,
@@ -756,6 +784,7 @@ local function customFeatures(js)
     if secs then f.timerSecs = math.Clamp(math.floor(secs), 20, 1800) end
     return f
 end
+E.CustomFeatures = customFeatures
 
 -- GM ops: 0 re-roll, 1 simplified, 2 small, 3 large, 4 custom (JSON),
 -- 5 start timer, 6 pause/resume, 7 set seconds, 8 remote signal now,
@@ -773,7 +802,7 @@ Net.Receive("eod.gm", function(ply)
         local st = bomb.eod
         local note
         if op == 0 then
-            if st.type == "custom" then
+            if st.type == "custom" or st.type == "training" then
                 local f = table.Copy(st.f)
                 f.mods = table.Copy(st.f.mods)
                 E.Rebuild(bomb, f)
@@ -823,3 +852,45 @@ Net.Receive("eod.gm", function(ply)
         if IsValid(bomb) and bomb.eod and not bomb.eod.over then sendGM(ply, bomb, note) end
     end)
 end, { rate = 8, burst = 8 })
+
+--------------------------------------------------------------------------
+-- Training bombs (2026-10-09z): anyone near one sets it up like a custom
+-- bomb (or rolls a random one); failing only fails, then it re-arms.
+-- eod.train ops: 0 build (JSON), 1 again (same setup, fresh board),
+-- 2 random simplified, 3 random small, 4 random large, 5 open the setup.
+--------------------------------------------------------------------------
+
+Net.Register("eod.trainopen")
+
+local function trainingFrom(kind)
+    local f = E.Roll(kind)
+    f.type = "training"
+    return f
+end
+
+Net.Receive("eod.train", function(ply)
+    local bomb = net.ReadEntity()
+    local op = net.ReadUInt(3)
+    local js = op == 0 and net.ReadString() or nil
+    if not (IsValid(bomb) and bomb.IsTrainingBomb and bomb.eod) or not walkOk(ply) then return end
+    if ply:GetPos():DistToSqr(bomb:GetPos()) > 300 * 300 then return end
+    if op == 5 then
+        local data = util.Compress(util.TableToJSON(bomb.eod.f))
+        if not data then return end
+        Net.Start("eod.trainopen")
+        net.WriteEntity(bomb)
+        net.WriteUInt(#data, 16)
+        net.WriteData(data, #data)
+        net.Send(ply)
+        return
+    end
+    local f
+    if op == 0 then f = customFeatures(js, "training")
+    elseif op == 1 then
+        f = table.Copy(bomb.eod.f)
+        f.mods = table.Copy(bomb.eod.f.mods or {})
+    elseif op >= 2 and op <= 4 then f = trainingFrom(({ "simple", "small", "large" })[op - 1]) end
+    if not f then return end
+    E.Rebuild(bomb, f)
+    E.Msg(ply, "Training bomb set up: " .. (op == 1 and "the same again" or "ready"))
+end, { rate = 4, burst = 4 })

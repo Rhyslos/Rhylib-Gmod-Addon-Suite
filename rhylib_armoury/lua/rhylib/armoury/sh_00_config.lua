@@ -50,6 +50,17 @@ A.MODELS = {
     gear = "models/reizer_props/srsp/sci_fi/armory_02_1/armory_02_1.mdl",
 }
 
+-- Server settings > Models.
+local MODEL_NAMES = {
+    armoury = "Weapons armoury", ammo = "Ammo cabinet", locker = "Personal locker", crate = "Supply crate",
+    medcrate = "Medical crate", specWeapons = "Specialist weapons armoury", specGear = "Specialist gear armoury", gear = "Gear cabinet",
+}
+Rhylib.Hook.Add("Rhylib.ModelCatalogue", "armoury.models", function(add)
+    for key, name in SortedPairs(MODEL_NAMES) do
+        add("armoury." .. key, name, "Armoury & storage", function() return A.MODELS end, key)
+    end
+end)
+
 -- Every armoury entity class, for saving and loading placements.
 A.CLASSES = {
     rhylib_armoury = true,

@@ -25,6 +25,8 @@ Config.Register("weapons", "heIdleLife", 900, "High explosive charge: seconds a 
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "High explosive charge"
+ENT.Category = "Rhylib: Grenades & charges"
+ENT.Model = "models/weapons/w_slam.mdl"
 ENT.Spawnable = false
 ENT.RenderGroup = RENDERGROUP_BOTH
 
@@ -47,7 +49,7 @@ if SERVER then
     end
 
     function ENT:Initialize()
-        self:SetModel("models/weapons/w_slam.mdl")
+        self:SetModel(self.Model)
         self:SetMoveType(MOVETYPE_NONE)
         self:SetSolid(SOLID_NONE)
         self:SetColor(Color(255, 205, 140))

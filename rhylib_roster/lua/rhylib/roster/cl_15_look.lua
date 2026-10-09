@@ -15,7 +15,7 @@ local R = Rhylib.Roster
 
 local function K() return Rhylib.Menus and Rhylib.Menus.Kit end
 
-local PREVIEW_MODEL = "models/ct_trp/pm_ct_trp.mdl"
+local PREVIEW_DEFAULT = "models/ct_trp/pm_ct_trp.mdl"
 
 local function norm(s) return (string.gsub(string.lower(tostring(s or "")), "%.smd$", "")) end
 
@@ -126,7 +126,8 @@ end)
 -- getLook() returns { hair, fhair, hcol, skin }.
 function R.LookPreview(parent, getLook)
     local mdl = vgui.Create("DModelPanel", parent)
-    local model = util.IsValidModel(PREVIEW_MODEL) and PREVIEW_MODEL or LocalPlayer():GetModel()
+    local want = (R.PREVIEW and R.PREVIEW.model) or PREVIEW_DEFAULT
+    local model = (util.IsValidModel(want) or file.Exists(want, "GAME")) and want or LocalPlayer():GetModel()
     mdl:SetModel(model)
     mdl:SetFOV(28)
     local ent = mdl.Entity

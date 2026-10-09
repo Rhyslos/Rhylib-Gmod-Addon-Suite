@@ -37,14 +37,16 @@ Config.Register("datapad", "useRange", 160, "How close you must stay to a comput
 Config.Register("datapad", "strikeDays", 30, "Days a strike stays active")
 
 -- Quick response calls (datapad). to: "mp", "medic", "battalion" (the
--- caller's), "all". accept = true: they see where you are only after
+-- caller's), "eod" (bomb squad: hook Rhylib.IsBombSquad, or a job with
+-- eod = true), "all". accept = true: they see where you are only after
 -- answering. items = true: pick from supplyItems. At most 7 kinds.
 Config.Register("datapad", "calls", {
     { id = "mp", name = "Call military police", short = "MP", to = "mp", accept = false, inbound = "MP" },
     { id = "medic", name = "Call a medic", short = "Medic", to = "medic", accept = false, inbound = "Medic" },
     { id = "reinf", name = "Request reinforcements", short = "Reinforcements", to = "all", accept = true, inbound = "Reinforcements" },
     { id = "supply", name = "Request resupply", short = "Resupply", to = "all", accept = true, inbound = "Resupply", items = true },
-}, "Quick response calls: { id, name, short, to = mp|medic|battalion|all, accept, inbound, items }")
+    { id = "eod", name = "Call the bomb squad", short = "Bomb squad", to = "eod", accept = false, inbound = "Bomb squad" },
+}, "Quick response calls: { id, name, short, to = mp|medic|battalion|eod|all, accept, inbound, items }")
 Config.Register("datapad", "supplyItems", {
     "Medical crate", "Light ammo", "Medium ammo", "Heavy ammo", "Rockets", "Grenades", "Power cells",
 }, "What a resupply request can ask for (at most 16)")
@@ -56,6 +58,11 @@ D.MODELS = {
     battalion = "models/ace/sw/rh/cgi_holotable_bottom.mdl",
     medical = "models/reizer_props/srsp/sci_fi/command_table_02/command_table_02.mdl",
 }
+-- Server settings > Models.
+Rhylib.Hook.Add("Rhylib.ModelCatalogue", "datapad.models", function(add)
+    add("datapad.battalion", "Battalion computer", "Terminals", function() return D.MODELS end, "battalion")
+    add("datapad.medical", "Medical holotable", "Terminals", function() return D.MODELS end, "medical")
+end)
 D.MED_KEY = "__medical"   -- the medical holotable's key in Data
 D.KIND_LOG, D.KIND_MED = 0, 1
 D.HARD_CAP = 100          -- notes on any pad, even "no limit" ones (keeps messages small)
@@ -73,6 +80,13 @@ function D.Battalion(ply)
 end
 
 function D.IsMP(ply) return Rhylib.MP and Rhylib.MP.IsMP and Rhylib.MP.IsMP(ply) or false end
+-- Bomb squad: rhylib_eod answers (Field technician skill or an EOD kit), else a job with eod = true.
+function D.IsBombSquad(ply)
+    local r = hook.Run("Rhylib.IsBombSquad", ply)
+    if r ~= nil then return r end
+    local j = RPExtraTeams and RPExtraTeams[ply:Team()]
+    return j and j.eod == true or false
+end
 function D.IsMedic(ply) return Rhylib.Medical and Rhylib.Medical.IsMedic and Rhylib.Medical.IsMedic(ply) or false end
 
 function D.IsCommander(ply)

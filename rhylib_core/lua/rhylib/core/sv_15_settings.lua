@@ -74,16 +74,25 @@ end
 
 local function wrap(v) return util.TableToJSON({ v = v }) or "{}" end
 
+-- Sent in parts of up to 60000 bytes (the catalogue with every model
+-- grew past one message): part index, part count, length, data.
+local PART = 60000
 local function sendCompressed(name, tbl, target)
     local data = util.Compress(util.TableToJSON(tbl) or "[]") or ""
-    if #data > 60000 then
+    local parts = math.max(1, math.ceil(#data / PART))
+    if parts > 255 then
         Rhylib.Warn("settings", "%s is too large to send (%d bytes)", name, #data)
         return
     end
-    Rhylib.Net.Start(name)
-    net.WriteUInt(#data, 32)
-    net.WriteData(data, #data)
-    net.Send(target)
+    for i = 1, parts do
+        local chunk = string.sub(data, (i - 1) * PART + 1, i * PART)
+        Rhylib.Net.Start(name)
+        net.WriteUInt(i, 8)
+        net.WriteUInt(parts, 8)
+        net.WriteUInt(#chunk, 32)
+        net.WriteData(chunk, #chunk)
+        net.Send(target)
+    end
 end
 
 -- Everyone gets the overrides once their Lua is loaded (shared code
@@ -108,7 +117,8 @@ Rhylib.Net.Receive("core.cfgreq", function(ply)
             if PROTECTED[m] then keys = {} end
             for k, d in pairs(keys) do
                 local ov = Config.overrides[m] and Config.overrides[m][k]
-                list[#list + 1] = { m = m, k = k, d = d.default, b = Config.Base(m, k), o = ov, s = d.desc }
+                local pend = Rhylib.Models and Rhylib.Models.pending[m .. "\0" .. k] or nil
+                list[#list + 1] = { m = m, k = k, d = d.default, b = Config.Base(m, k), o = ov, s = d.desc, x = d.meta, p = pend }
             end
         end
         sendCompressed("core.cfglist", list, ply)
@@ -141,6 +151,21 @@ local function sameKind(new, default)
     return true
 end
 
+-- Model paths (config module "models" and any setting whose default is a
+-- .mdl path): a clean path under models/ that the server has.
+local function badModel(value)
+    if not isstring(value) then return "that isn't a model path" end
+    if value == "" then return nil end   -- (some settings use "" for their own fallback)
+    local v = string.lower(value)
+    if string.sub(v, 1, 7) ~= "models/" or string.sub(v, -4) ~= ".mdl" or string.find(v, "..", 1, true)
+        or string.find(v, "[:%c\\]") then
+        return "a model path looks like models/folder/name.mdl"
+    end
+    if not util.IsValidModel(value) then
+        return "the server doesn't have " .. value .. " (install the addon it comes from on the server and add it to your Workshop collection)"
+    end
+end
+
 local function broadcast(m, k, value)
     Rhylib.Net.Start("core.cfgsync")
     net.WriteString(m)
@@ -165,6 +190,18 @@ Rhylib.Net.Receive("core.cfgset", function(ply)
                 if IsValid(ply) then ply:ChatPrint("[Settings] " .. m .. "." .. k .. ": that isn't a valid value") end
                 return
             end
+            if m == "models" or Config.IsModelDefault(def.default) then
+                if isstring(value) then value = string.Trim((string.gsub(value, "\\", "/"))) end
+                if m == "models" and value == "" then value = nil end   -- (empty = back to the shipped model)
+                local why = value and badModel(value)
+                if why then
+                    if IsValid(ply) then ply:ChatPrint("[Settings] " .. ((def.meta and def.meta.name) or (m .. "." .. k)) .. ": " .. why) end
+                    return
+                end
+            end
+        end
+        if (m == "models" or Config.IsModelDefault(def.default)) and Rhylib.Models then
+            Rhylib.Models.pending[m .. "\0" .. k] = true
         end
         Config.SetOverride(m, k, value)
         save()

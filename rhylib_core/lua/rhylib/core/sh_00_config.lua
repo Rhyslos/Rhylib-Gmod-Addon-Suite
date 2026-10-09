@@ -23,9 +23,16 @@ Config.defs = Config.defs or {}      -- [module][key] = { default, desc }
 Config.values = Config.values or {}  -- [module][key] = value set by the host
 Config.overrides = Config.overrides or {}  -- [module][key] = value from the Server settings page
 
-function Config.Register(module, key, default, desc)
+-- meta (optional): extra facts for the Server settings page, e.g.
+-- { name = "Shown name", group = "Weapons" } (model overrides use it).
+function Config.Register(module, key, default, desc, meta)
     Config.defs[module] = Config.defs[module] or {}
-    Config.defs[module][key] = { default = default, desc = desc or "" }
+    Config.defs[module][key] = { default = default, desc = desc or "", meta = meta }
+end
+
+-- A model path setting: a string default ending in .mdl.
+function Config.IsModelDefault(default)
+    return isstring(default) and string.lower(string.sub(default, -4)) == ".mdl"
 end
 
 function Config.Set(module, key, value)

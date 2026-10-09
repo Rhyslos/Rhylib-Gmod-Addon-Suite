@@ -114,6 +114,11 @@ function SP.Tile(parent, it)
     end
     function b:DoClick()
         surface.PlaySound("ui/buttonclickrelease.wav")
+        if SP.pick then
+            local m = SP.ModelOf(it)
+            if m then SP.TakePick(m) else surface.PlaySound("buttons/button10.wav") end
+            return
+        end
         if it.run then it.run() end
     end
     local entered = b.OnCursorEntered
@@ -148,6 +153,7 @@ function SP.ModelTile(parent, model, skin, body, run)
     ic:SetTooltip(model)
     ic.DoClick = function()
         surface.PlaySound("ui/buttonclickrelease.wav")
+        if SP.TakePick(model) then return end
         run()
     end
     ic.OpenMenu = function()
@@ -275,7 +281,9 @@ end
 
 local function previewThink()
     local o = SP.pvOwner
-    if not (IsValid(o) and o:IsVisible() and o:IsHovered() and SP.IsOpen()) then hidePreview() return end
+    -- (owners outside the spawn window, e.g. Server settings model pictures, work while it's shut)
+    local inWin = IsValid(o) and IsValid(SP.win) and o:HasParent(SP.win)
+    if not (IsValid(o) and o:IsVisible() and o:IsHovered() and (not inWin or SP.IsOpen())) then hidePreview() return end
     if RealTime() - SP.pvAt < PREVIEW_DELAY then return end
     local p = previewPanel()
     local info = SP.pvInfo
@@ -436,6 +444,12 @@ local function build()
     f:DockPadding(S(12), S(46), S(12), S(12))
     f.bodies = {}
     function f:Paint(w, h)
+        if SP.pick then
+            K.Plate(0, 0, w, h, { bg = SP.BG, title = "Pick a model", sub = "For " .. (SP.pick.label or "the setting") .. " · click any model or entity · Esc: cancel", ticks = "all", header = S(34) })
+            surface.SetDrawColor(C.accent)
+            surface.DrawOutlinedRect(0, 0, w, h, 2)
+            return
+        end
         K.Plate(0, 0, w, h, { bg = SP.BG, title = "Spawn", sub = "R: close · hold R: peek · R twice: the old Q menu · Esc: close", ticks = "all", header = S(34) })
     end
     -- (clicking the window takes the keyboard back from a text box)
@@ -519,6 +533,7 @@ function SP.Open()
 end
 
 function SP.Close()
+    SP.pick = nil
     if not SP.IsOpen() then return false end
     SP.lastTab = SP.win.tabId
     CloseDermaMenus()
@@ -528,6 +543,23 @@ function SP.Close()
     SP.win:SetMouseInputEnabled(false)
     SP.win:SetVisible(false)
     hidePreview()
+    return true
+end
+
+-- Pick mode (Server settings > Models): the window opens on Props and the
+-- next model or entity clicked goes to cb(path) instead of spawning.
+function SP.PickModel(cb, label)
+    SP.Open()
+    SP.pick = { cb = cb, label = label }
+    if IsValid(SP.win) and SP.win.ShowTab and SP.tabs.props then SP.win.ShowTab("props") end
+end
+
+-- A tile was clicked in pick mode: hand the model over. True if it was.
+function SP.TakePick(model)
+    local p = SP.pick
+    if not (p and isstring(model) and model ~= "") then return false end
+    SP.Close()
+    p.cb(model)
     return true
 end
 

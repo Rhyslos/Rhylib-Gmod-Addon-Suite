@@ -39,8 +39,13 @@ end
 Rhylib.Hook.Add("PostPlayerDraw", "jetpack.draw", function(ply)
     if not ply:GetDTBool(J.DT_HAS) or not ply:Alive() then return end
 
+    -- (the jetpack item's model: Server settings > Models can swap it)
+    local def = Rhylib.Items and Rhylib.Items.Get and Rhylib.Items.Get("jetpack")
+    local want = def and def.model or MODEL
+    if IsValid(backModel) and backModel.rhylibWant ~= want then backModel:Remove() end
     if not IsValid(backModel) then
-        backModel = ClientsideModel(MODEL, RENDERGROUP_OPAQUE)
+        backModel = ClientsideModel(want, RENDERGROUP_OPAQUE)
+        if IsValid(backModel) then backModel.rhylibWant = want end
         if not IsValid(backModel) then return end
         backModel:SetNoDraw(true)
     end

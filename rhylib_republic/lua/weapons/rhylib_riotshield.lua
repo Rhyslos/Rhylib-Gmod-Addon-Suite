@@ -179,6 +179,21 @@ local function shieldProp(kind)
 end
 SWEP.ShieldModels = SHIELDS
 
+-- Server settings > Models: each shield's own model (the first picture
+-- in its inventory icon list follows it).
+if Rhylib and Rhylib.Hook then
+    Rhylib.Hook.Add("Rhylib.ModelCatalogue", "republic.shields", function(add)
+        for _, sp in ipairs({ { "rhylib_riotshield", "cg", "CG riot shield" }, { "rhylib_riotshield_rep", "rep", "Republic shield" } }) do
+            local class, kind = sp[1], sp[2]
+            add("weapon." .. class .. ".shield", sp[3] .. " · shield", "Weapons: Equipment", function() return SHIELDS[kind] end, "model", function(v)
+                local st = weapons.GetStored(class)
+                local icons = st and rawget(st, "InvIconModels")
+                if istable(icons) then icons[1] = v end
+            end)
+        end
+    end)
+end
+
 SWEP.ExtraProps = nil   -- (picked per weapon in Initialize, from the installed models)
 
 function SWEP:Initialize()
@@ -187,6 +202,20 @@ function SWEP:Initialize()
         local p = shieldProp(self.ShieldKind)
         if p then util.PrecacheModel(p.model) end
         self.ExtraProps = p and { p } or nil
+    end
+end
+
+-- Server settings > Models changed a shield after this one was made
+-- (rhylib_core sh_25_models): pick the prop again.
+function SWEP:RhylibModelsChanged()
+    if not CLIENT then return end
+    local p = shieldProp(self.ShieldKind)
+    if p then util.PrecacheModel(p.model) end
+    self.ExtraProps = p and { p } or nil
+    for _, side in ipairs({ "vm", "wm" }) do
+        local k = "rhylibExtra_shield" .. side
+        if IsValid(self[k]) then self[k]:Remove() end
+        self[k] = nil
     end
 end
 

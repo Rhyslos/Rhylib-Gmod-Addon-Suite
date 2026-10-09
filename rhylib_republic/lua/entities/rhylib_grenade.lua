@@ -25,6 +25,8 @@ Config.Register("weapons", "empRadius", 190, "Droid popper (EMP): radius it kill
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Grenade"
+ENT.Category = "Rhylib: Grenades & charges"
+ENT.Model = "models/jajoff/sps/cgiweapons/tc13j/thermalgrenade.mdl"
 ENT.Spawnable = false
 
 local KIND = { fuse = 1, impact = 2, emp = 3, emp_impact = 4, breach = 5, flash = 6 }   -- (4: EMP on impact)
@@ -56,7 +58,7 @@ end
 
 if SERVER then
     function ENT:Initialize()
-        self:SetModel("models/jajoff/sps/cgiweapons/tc13j/thermalgrenade.mdl")
+        self:SetModel(self.Model)
         if self.kind == "breach" then
             -- Stuck where it was placed: no physics, moves with a door.
             -- (the physics mesh is only measured, so the model is drawn

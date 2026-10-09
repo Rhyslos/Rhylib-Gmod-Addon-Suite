@@ -259,6 +259,21 @@ D.KINDS.ct_medic = variant("ct_trooper", "Clone medic", nil, { modelCfg = "ctMed
 D.KINDS.ct_commander = variant("ct_trooper", "Clone commander", nil, { modelCfg = "ctCmdModel", health = "ctCmdHealth", damage = "ctRifleDamage", rpm = "ctRifleRPM",
     burst = { 2, 3 }, gun = DC15A, poppers = false, commander = true, sound = "weapons/dc15a/dc15a_fire.ogg", pitch = 100 })
 
+-- Server settings > Models: each kind's model and gun (clone bodies are
+-- config settings: ctModel, ctMedicModel, ctCmdModel).
+Rhylib.Hook.Add("Rhylib.ModelCatalogue", "droids.models", function(add)
+    local keys = {}
+    for k in pairs(D.KINDS) do keys[#keys + 1] = k end
+    table.sort(keys)
+    for _, k in ipairs(keys) do
+        local kind = D.KINDS[k]
+        local get = function() return D.KINDS[k] end
+        local group = kind.side == "republic" and "NPCs: Clones" or "NPCs: Droids"
+        if not kind.modelCfg then add("droid." .. k, kind.name, group, get, "model") end
+        if kind.gun then add("droid." .. k .. ".gun", kind.name .. " · gun", group, get, "gun") end
+    end
+end)
+
 -- The model a kind uses (config for clones).
 function D.KindModel(k)
     if k.modelCfg then

@@ -7,4 +7,4 @@ ENT.Category = "Rhylib: EOD"
 ENT.Spawnable = true
 ENT.AdminOnly = true
 ENT.BombType = "custom"
-ENT.Model = "models/props_lab/powerbox01a.mdl"
+ENT.Model = "models/cire992/props2/gethbomb01.mdl"

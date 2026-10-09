@@ -29,6 +29,13 @@ ENT.AdminOnly = true
 
 local MODEL = "models/ct_trp/pm_ct_trp.mdl"
 local MODEL_FALLBACK = "models/aussiwozzi/cgi/base/unassigned_cpt.mdl"
+ENT.Model = MODEL   -- (Server settings > Models can swap it)
+local function dummyModel()
+    local st = scripted_ents.GetStored("rhylib_test_dummy")
+    local m = st and st.t and st.t.Model or MODEL
+    if util.IsValidModel(m) then return m end
+    return util.IsValidModel(MODEL) and MODEL or MODEL_FALLBACK
+end
 local MARKER = "models/hunter/blocks/cube025x025x025.mdl"
 ENT.BotName = "Test dummy"
 ENT.Tough = false
@@ -127,7 +134,7 @@ function ENT:PlaceBot()
     if not IsValid(bot) then return end
     if not bot:Alive() then bot:Spawn() end
     bot:StripWeapons()
-    bot:SetModel(util.IsValidModel(MODEL) and MODEL or MODEL_FALLBACK)
+    bot:SetModel(dummyModel())
     bot:SetPos(self:GetPos())
     bot:SetEyeAngles(self:GetAngles())
     bot:SetVelocity(-bot:GetVelocity())
@@ -182,7 +189,7 @@ end, 100)
 
 Rhylib.Hook.Add("PlayerSetModel", "dummy.model", function(ply)
     if ply:IsBot() and dummyOf(ply) then
-        ply:SetModel(util.IsValidModel(MODEL) and MODEL or MODEL_FALLBACK)
+        ply:SetModel(dummyModel())
         return true
     end
 end)

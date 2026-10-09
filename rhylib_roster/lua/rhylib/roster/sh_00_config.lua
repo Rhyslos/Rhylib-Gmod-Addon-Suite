@@ -34,6 +34,13 @@
 
 Rhylib.Roster = Rhylib.Roster or {}
 local R = Rhylib.Roster
+
+-- The clone shown in the character creator and Appearance page
+-- (Server settings > Models can swap it).
+R.PREVIEW = R.PREVIEW or { model = "models/ct_trp/pm_ct_trp.mdl" }
+Rhylib.Hook.Add("Rhylib.ModelCatalogue", "roster.models", function(add)
+    add("roster.preview", "Character creator preview", "Players", function() return R.PREVIEW end, "model")
+end)
 local Config = Rhylib.Config
 
 Config.Register("roster", "ranks", {

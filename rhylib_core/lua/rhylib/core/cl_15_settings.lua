@@ -20,14 +20,27 @@ local function fixColors(v)
     return v
 end
 
-local function readCompressed()
+-- Messages come in parts (see sv_15_settings.lua): nil until the last
+-- part of that message has arrived.
+local parts = {}
+local function readCompressed(name)
+    local i, count = net.ReadUInt(8), net.ReadUInt(8)
     local n = net.ReadUInt(32)
-    local json = util.Decompress(net.ReadData(n) or "") or "[]"
+    local chunk = net.ReadData(n) or ""
+    if i == 1 then parts[name] = {} end
+    local buf = parts[name]
+    if not buf then return nil end
+    buf[i] = chunk
+    if i < count then return nil end
+    parts[name] = nil
+    local json = util.Decompress(table.concat(buf)) or "[]"
     return util.JSONToTable(json) or {}
 end
 
 Rhylib.Net.Receive("core.cfgall", function()
-    for _, e in ipairs(readCompressed()) do
+    local list = readCompressed("cfgall")
+    if not list then return end
+    for _, e in ipairs(list) do
         if isstring(e.m) and isstring(e.k) then Config.SetOverride(e.m, e.k, fixColors(e.v)) end
     end
 end)
@@ -42,13 +55,19 @@ Rhylib.Net.Receive("core.cfgsync", function()
     Config.SetOverride(m, k, v)
     -- (keep the staff page's catalogue in step)
     for _, e in ipairs(S.list or {}) do
-        if e.m == m and e.k == k then e.o = v end
+        if e.m == m and e.k == k then
+            e.o = v
+            -- (a model change: things already placed need a map change)
+            if m == "models" or Config.IsModelDefault(e.d) then e.p = true end
+        end
     end
     if S.onChanged then S.onChanged(m, k) end
 end)
 
 Rhylib.Net.Receive("core.cfglist", function()
-    S.list = readCompressed()
+    local list = readCompressed("cfglist")
+    if not list then return end
+    S.list = list
     table.sort(S.list, function(a, b)
         if a.m ~= b.m then return a.m < b.m end
         return a.k < b.k

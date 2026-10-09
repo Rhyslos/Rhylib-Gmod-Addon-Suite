@@ -319,6 +319,22 @@ function E.HasKit(ply)
     return Inv.Has(ply, E.KIT)
 end
 
+-- Bomb squad (datapad "Call the bomb squad"): any Field technician skill,
+-- or an EOD kit carried. nil = let the datapad decide (job eod = true).
+function E.IsBombSquad(ply)
+    local K = Rhylib.Skills
+    if K and K.NODES and K.Has then
+        for _, n in ipairs(K.NODES) do
+            if n.spec == "eod" and K.Has(ply, n.id) then return true end
+        end
+    end
+    local Inv = Rhylib.Inventory
+    return Inv and Inv.Has and Inv.Has(ply, E.KIT) or false
+end
+Rhylib.Hook.Add("Rhylib.IsBombSquad", "eod.squad", function(ply)
+    if E.IsBombSquad(ply) then return true end
+end)
+
 --------------------------------------------------------------------------
 -- Rules
 --------------------------------------------------------------------------

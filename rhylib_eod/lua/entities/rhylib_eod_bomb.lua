@@ -19,15 +19,16 @@ ENT.Spawnable = true
 ENT.AdminOnly = true
 ENT.RenderGroup = RENDERGROUP_BOTH
 ENT.BombType = "small"
-ENT.Model = "models/props_c17/consolebox01a.mdl"
+ENT.Model = "models/props/starwars/weapons/seismic_charge.mdl"
 ENT.IsRhylibBomb = true
+ENT.ModelFromConfig = true   -- (eod modelSmall / modelLarge pick it; ENT.Model is only the toolgun preview)
 
 if SERVER then
     function ENT:Initialize()
         local E = Rhylib.EOD
         local big = self.BombType == "large" or self.BombType == "custom"
         local mdl = E and E.Cfg(big and "modelLarge" or "modelSmall")
-        if not (isstring(mdl) and util.IsValidModel(mdl)) then mdl = big and "models/props_lab/powerbox01a.mdl" or self.Model end
+        if not (isstring(mdl) and util.IsValidModel(mdl)) then mdl = big and "models/props_lab/powerbox01a.mdl" or "models/props_c17/consolebox01a.mdl" end
         self:SetModel(mdl)
         self:PhysicsInit(SOLID_VPHYSICS)
         if not IsValid(self:GetPhysicsObject()) then self:PhysicsInitBox(self:OBBMins(), self:OBBMaxs()) end
@@ -41,6 +42,9 @@ if SERVER then
         if self.BombType == "custom" then
             f = E.Roll("large")
             f.type = "custom"
+        elseif self.BombType == "training" then
+            f = E.Roll("small")
+            f.type = "training"
         else
             f = E.Roll(self.BombType)
         end
@@ -103,6 +107,10 @@ if CLIENT then
                 txt, col = "RX", (now % 1.2 < 0.15) and Color(255, 60, 50) or Color(110, 30, 30)
             end
             draw.SimpleText(txt, DIGITS, 0, 0, col, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            if self.IsTrainingBomb then
+                draw.RoundedBox(4, -w / 2, h / 2 + 4, w, 26, Color(245, 200, 40, 255))
+                draw.SimpleText("TRAINING", SMALL, 0, h / 2 + 17, Color(20, 20, 20), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            end
         cam.End3D2D()
     end
 end

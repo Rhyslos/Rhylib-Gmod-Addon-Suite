@@ -14,6 +14,8 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "B2 rocket"
+ENT.Category = "Rhylib: Droids"
+ENT.Model = "models/weapons/w_missile_closed.mdl"   -- (Server settings > Models can swap it)
 ENT.Spawnable = false
 ENT.RenderGroup = RENDERGROUP_BOTH
 
@@ -26,7 +28,7 @@ if SERVER then
     local trData = { mask = MASK_SHOT, output = tr }
 
     function ENT:Initialize()
-        self:SetModel("models/weapons/w_missile_closed.mdl")
+        self:SetModel(self.Model)
         self:SetModelScale(0.5, 0)
         self:SetMoveType(MOVETYPE_NONE)
         self:SetSolid(SOLID_NONE)

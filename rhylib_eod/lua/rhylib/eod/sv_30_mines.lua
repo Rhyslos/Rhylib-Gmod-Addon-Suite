@@ -20,20 +20,49 @@ local function holdsTool(p)
 end
 
 function E.SetupMine(mine)
-    local lap = mine.MineType == "lap"
+    if mine.IsTrainingMine and E.ArmedBeep then E.ArmedBeep(mine) end
+    local lap = mine:IsLarge()
+    -- (training mines: 1 easy = wider zone, slower needle; 3 hard)
+    local lvl = mine:GetLevel()
+    local wm = lvl == 1 and 1.6 or lvl == 3 and 0.65 or 1
+    local pm = lvl == 1 and 1.4 or lvl == 3 and 0.75 or 1
     mine.eodm = {
         center = math.random(18, 82),
-        width = lap and 10 or 16,
-        period = lap and math.Rand(0.95, 1.25) or math.Rand(1.4, 1.9),
+        width = (lap and 10 or 16) * wm,
+        period = (lap and math.Rand(0.95, 1.25) or math.Rand(1.4, 1.9)) * pm,
         ph = math.Rand(0, 6.283),
         armAt = CurTime() + 2,
     }
     E.mines[mine] = true
 end
 
+-- Training mines: back in the ground, ready to try again.
+function E.MineReset(mine)
+    local pr = mine:GetPresser()
+    if IsValid(pr) and pr:GetNW2Entity("rhylib_onMine") == mine then pr:SetNW2Entity("rhylib_onMine", NULL) end
+    mine:SetPresser(NULL)
+    mine:SetDug(false)
+    mine:SetSafe(false)
+    mine:SetPins(0)
+    mine:SetMarked(false)
+    mine.eodOver = nil
+    mine:SetupBox()
+    E.BuryMine(mine)
+    E.SetupMine(mine)
+end
+
+-- Half buried: the top third shows (again after a training mine switches
+-- AP/LAP, since the model and its size change).
+function E.BuryMine(mine)
+    local g = mine.eodGround
+    if not g then return end
+    local mn, mx = mine:OBBMins(), mine:OBBMaxs()
+    mine:SetPos(g[1] + g[2] * (-mn.z - (mx.z - mn.z) * 0.62))
+end
+
 -- Toolgun: n mines around the aimed spot (spread 0 = exactly there),
 -- lapShare = chance each is a LAP. Half buried. Returns the entities.
-function E.PlaceMines(tr, n, spread, lapShare)
+function E.PlaceMines(tr, n, spread, lapShare, cls)
     local out, spots = {}, {}
     n = math.Clamp(n or 1, 1, 40)
     for i = 1, n do
@@ -57,14 +86,13 @@ function E.PlaceMines(tr, n, spread, lapShare)
         if pos then
             spots[#spots + 1] = pos
             local lap = lapShare >= 1 or (lapShare > 0 and math.random() < lapShare)
-            local ent = ents.Create(lap and "rhylib_eod_mine_lap" or "rhylib_eod_mine")
+            local ent = ents.Create(cls or (lap and "rhylib_eod_mine_lap" or "rhylib_eod_mine"))
             if IsValid(ent) then
                 ent:SetPos(pos)
                 ent:SetAngles(Angle(0, math.random(0, 359), 0))
                 ent:Spawn()
-                -- half buried: the top third shows
-                local mn, mx = ent:OBBMins(), ent:OBBMaxs()
-                ent:SetPos(pos + normal * (-mn.z - (mx.z - mn.z) * 0.62))
+                ent.eodGround = { pos, normal }
+                E.BuryMine(ent)
                 out[#out + 1] = ent
             end
         end
@@ -79,8 +107,25 @@ end
 function E.MineBoom(mine, cause)
     if not IsValid(mine) or mine.eodOver or mine:GetSafe() then return end
     mine.eodOver = true
+    -- Training mine: a spark and the reason, then it re-buries itself.
+    if mine.IsTrainingMine then
+        local c = E.CAUSES[cause or "mine"] or E.CAUSES.mine
+        local told = {}
+        local pr = mine:GetPresser()
+        if IsValid(pr) then told[pr] = true end
+        for p in pairs(mine.viewers or {}) do if IsValid(p) then told[p] = true end end
+        for p in pairs(told) do E.Msg(p, "Training: that would have gone off. " .. c[1] .. ": " .. c[3], true) end
+        if IsValid(pr) then pr:SetNW2Entity("rhylib_onMine", NULL) end
+        mine:SetPresser(NULL)
+        local ed = EffectData()
+        ed:SetOrigin(E.MineTop(mine))
+        util.Effect("StunstickImpact", ed, true, true)
+        sound.Play("buttons/button10.wav", mine:GetPos(), 75, 80)
+        timer.Simple(3, function() if IsValid(mine) then E.MineReset(mine) end end)
+        return
+    end
     local pos = E.MineTop(mine) + mine:GetUp() * 8
-    local lap = mine.MineType == "lap"
+    local lap = mine:IsLarge()
     local presser = mine:GetPresser()
     if IsValid(presser) then
         presser:SetNW2Entity("rhylib_onMine", NULL)
@@ -113,7 +158,7 @@ Rhylib.Hook.Add("Rhylib.Explosion", "eod.mines", function(pos, reach, tier, atta
     if IsValid(attacker) and attacker.IsRhylibDroid then return end   -- (droids know their mines)
     local r2 = math.max(reach or 0, 60) ^ 2
     for m in pairs(E.mines) do
-        if IsValid(m) and m ~= inflictor and not m.eodOver and not m:GetSafe() and m:GetPos():DistToSqr(pos) <= r2 then
+        if IsValid(m) and m ~= inflictor and not m.IsTrainingMine and not m.eodOver and not m:GetSafe() and m:GetPos():DistToSqr(pos) <= r2 then
             timer.Simple(math.Rand(0.08, 0.25), function() E.MineBoom(m, "mine") end)
         end
     end
@@ -121,7 +166,7 @@ end)
 
 -- Shot (bolts, bullets, blasts that reach it): it goes off.
 function E.MineShot(mine, dmg)
-    if mine.eodOver or mine:GetSafe() or dmg:GetDamage() < 8 then return end
+    if mine.eodOver or mine:GetSafe() or mine.IsTrainingMine or dmg:GetDamage() < 8 then return end
     if dmg:IsDamageType(DMG_BLAST) then return end   -- (blasts: the Rhylib.Explosion hook above, with its own reach)
     local a = dmg:GetAttacker()
     if IsValid(a) and a:IsPlayer() and holdsTool(a) then return end
@@ -189,7 +234,7 @@ local function tick()
                     E.MineBoom(m, "mine")
                 end
             elseif m.eodm and now >= m.eodm.armAt and not m:GetDug() then
-                local trig = E.Cfg(m.MineType == "lap" and "lapTrigger" or "apTrigger") or 26
+                local trig = E.Cfg(m:IsLarge() and "lapTrigger" or "apTrigger") or 26
                 for _, w in ipairs(walk) do
                     local p, from, to = w[1], w[2], w[3]
                     if math.abs(to.z - mp.z) < 40 and to:DistToSqr(mp) < 600 * 600 and segDist2D(mp, from, to) <= trig then
@@ -200,7 +245,7 @@ local function tick()
                     end
                 end
                 -- clone NPCs set it off at once (droids know their own mines)
-                if not IsValid(m:GetPresser()) and D and D.clones then
+                if not IsValid(m:GetPresser()) and not m.IsTrainingMine and D and D.clones then
                     for c in pairs(D.clones) do
                         if IsValid(c) and c:Health() > 0 then
                             local cp = c:GetPos()
@@ -304,6 +349,12 @@ Net.Receive("eod.mineact", function(p)
         p.eodMineHold = nil
         local need = E.Cfg("mineLiftTime") or 2
         if not m:GetSafe() or not h or h.m ~= m or h.op ~= 3 or now - h.t < need * 0.9 then return end
+        if m.IsTrainingMine then
+            E.Msg(p, "Training mine lifted: well done. It re-buries itself to go again.")
+            m.eodOver = true
+            timer.Simple(2, function() if IsValid(m) then E.MineReset(m) end end)
+            return
+        end
         E.mines[m] = nil
         E.KeepForNextMap(m)
         m:Remove()
@@ -330,3 +381,21 @@ Net.Receive("eod.minemark", function(p)
     m:SetMarked(not m:GetMarked())
     sound.Play("buttons/blip1.wav", p:GetPos(), 60, m:GetMarked() and 130 or 90)
 end, { rate = 8, burst = 8 })
+
+-- Training mine setup (from its window, anyone near it): large, always
+-- shown, level 1-3, pins 0 (by type) to 3.
+Net.Receive("eod.trainmine", function(p)
+    local m = net.ReadEntity()
+    local large = net.ReadBool()
+    local shown = net.ReadBool()
+    local lvl = net.ReadUInt(2)
+    local pins = net.ReadUInt(2)
+    if not (IsValid(m) and m.IsTrainingMine) or not nearMine(p, m) or IsValid(m:GetPresser()) then return end
+    m:SetLarge(large)
+    m:SetShown(shown)
+    m:SetLevel(math.Clamp(lvl, 1, 3))
+    m:SetPinsNeed(pins)
+    E.MineReset(m)
+    for v in pairs(m.viewers or {}) do if IsValid(v) then sendOpen(v, m) end end
+    E.Msg(p, "Training mine set up")
+end, { rate = 4, burst = 4 })

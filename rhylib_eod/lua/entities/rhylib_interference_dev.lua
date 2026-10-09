@@ -24,6 +24,7 @@ ENT.Category = "Rhylib: EOD"
 ENT.Spawnable = false
 ENT.RenderGroup = RENDERGROUP_BOTH
 ENT.Model = "models/props_lab/reciever01a.mdl"
+ENT.ModelFromConfig = true   -- (eod modelDevice)
 
 function ENT:SetupDataTables()
     self:NetworkVar("Bool", 0, "Active")

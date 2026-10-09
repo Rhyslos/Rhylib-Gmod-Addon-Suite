@@ -42,7 +42,7 @@ reg("largeDamage", 450, "Large bomb: damage just outside the kill radius (falls 
 reg("gasRadius", 550, "Gas and virus charges: cloud radius (units)")
 reg("gasTime", 25, "Gas and virus charges: seconds the cloud lasts")
 reg("gasLoad", 35, "Gas and virus charges: illness load given (rhylib_medical; simplified medical: damage instead)")
-reg("sensorRange", 520, "Motion sensors: range (units, ~10 m)")
+reg("sensorRange", 315, "Motion sensors: range (units, ~6 m)")
 reg("timerWake", 900, "Timer bombs start counting once a player comes this close (units), unless the GM starts them")
 reg("capDrain", 15, "Capacitor: seconds to drain after the supply is cut")
 reg("jumpers", 3, "Jumper wires per bomb")
@@ -60,8 +60,8 @@ reg("hopEvery", 25, "Frequency hopping receivers: seconds between hops")
 reg("popperChance", 0.1, "Chance a droid popper's EMP fries a bomb")
 reg("deviceMaxRadius", 15, "Interference device: largest radius (metres)")
 reg("deviceDrain", 3840, "Interference device: one cell lasts this / radius² seconds in wideband (×4 tuned), at most 900 s (×4)")
-reg("modelSmall", "models/props_c17/consolebox01a.mdl", "Small and simplified bomb model")
-reg("modelLarge", "models/props_lab/powerbox01a.mdl", "Large and custom bomb model")
+reg("modelSmall", "models/props/starwars/weapons/seismic_charge.mdl", "Small, simplified and training bomb model (HL2 console box if missing)")
+reg("modelLarge", "models/cire992/props2/gethbomb01.mdl", "Large and custom bomb model (HL2 power box if missing)")
 reg("modelDevice", "models/props_lab/reciever01a.mdl", "Interference device model")
 -- Mines (2026-10-09y)
 reg("apRadius", 260, "AP mine: blast radius (units)")
@@ -76,7 +76,9 @@ reg("mineDigTime", 3, "Mines: seconds to dig one out")
 reg("mineLiftTime", 2, "Mines: seconds to lift a pinned mine away")
 reg("mineScanRange", 700, "Mine scanner: reach of its beam (units)")
 reg("mineScanCone", 22, "Mine scanner: half-angle of its beam (degrees)")
-reg("mineModel", "models/props_combine/combine_mine01.mdl", "Mine model")
+reg("mineModel", "models/props/starwars/weapons/ap_mine.mdl", "AP mine model (HL2 hopper mine if missing)")
+reg("mineModelLarge", "models/props/starwars/weapons/lasertrap.mdl", "LAP (large AP) mine model (HL2 hopper mine if missing)")
+reg("mineSize", 20, "AP mine: width it is drawn at (units; the model is scaled to fit, LAP ×1.4)")
 reg("mineChain", 140, "Mines: another mine within this (units) of an explosion goes off too")
 
 E.KIT = "eod_kit"
@@ -104,6 +106,7 @@ E.TIERS = {
     small = { budget = 3, max = 2, name = "Small bomb", big = false },
     large = { budget = 6, max = 3, name = "Large bomb", big = true },
     custom = { budget = 99, max = 99, name = "Custom bomb", big = true },
+    training = { budget = 99, max = 99, name = "Training bomb", big = false },
 }
 
 -- Logic chip: blink pattern (S short, L long) -> switch setting.
@@ -125,7 +128,7 @@ E.COLOURS = {
 
 -- Detonation causes: title, what happened, what the manual says.
 E.CAUSES = {
-    motion = { "Motion sensor", "Someone moved too fast inside the bomb's motion sensor range.", "Walk inside 10 m (crouch-walk for a sensitive sensor), or blind the sensor with a wideband interference device." },
+    motion = { "Motion sensor", "Someone moved too fast inside the bomb's motion sensor range.", "Walk inside 6 m (crouch-walk for a sensitive sensor), or blind the sensor with a wideband interference device." },
     antijam = { "Anti-jam safeguard", "An interference device blocked the bomb's remote signal, and its anti-jam safeguard fires when the signal is lost.", "Inspect before jamming. With anti-jam, cut the MON line first, or redirect a relay." },
     lid = { "Lid switch", "Lifting the lid closed the lid switch.", "Release the lid-switch tab before lifting the lid." },
     collapse = { "Collapse circuit", "The supply was cut while the collapse circuit was armed.", "Cut the collapse sense line (LOOP 3V) before the battery supply." },
@@ -252,6 +255,10 @@ Rhylib.Hook.Add("Rhylib.ToolEntries", "eod.tool", function(list)
           place = function(ply, tr) return E.PlaceMines and E.PlaceMines(tr, 14, 520, 0.25) end },
         { id = "minefield_big", name = "Minefield, large (30 mines over ~20 m)", cat = "EOD", class = "rhylib_eod_mine",
           place = function(ply, tr) return E.PlaceMines and E.PlaceMines(tr, 30, 1050, 0.25) end },
+        -- Training (nobody gets hurt; set up from their own windows)
+        { id = "eod_training", name = "Training bomb (set it up in its window)", cat = "Training", class = "rhylib_eod_bomb_training" },
+        { id = "mine_training", name = "Training mine (count = scattered; set up in its window)", cat = "Training", class = "rhylib_eod_mine_training", count = true,
+          place = function(ply, tr, n) return E.PlaceMines and E.PlaceMines(tr, n, n > 1 and 40 + n * 22 or 0, 0, "rhylib_eod_mine_training") end },
     }) do
         e.perm = "rhylib.eod.gm"   -- (gamemasters may place these without full toolgun access)
         if scripted_ents.GetStored(e.class) then list[#list + 1] = e end

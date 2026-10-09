@@ -304,6 +304,10 @@ Rhylib.Hook.Add("OnPauseMenuShow", "menus.pause", function()
     if input.IsShiftDown() then return end
     -- Esc while setting a key in the settings: cancels that, nothing else.
     if Menus.keyTrapping then return false end
+    -- Esc while picking a model for the Server settings page: cancels the
+    -- pick only (the page stays open behind it).
+    local SP = Menus.Spawn
+    if SP and SP.pick and SP.Close and SP.Close() then return false end
     if Menus.CloseAll() then return false end
     Menus.OpenPause()
     return false
