@@ -1,0 +1,6 @@
+{
+	"title": "Rhylib Admin",
+	"type": "servercontent",
+	"tags": ["roleplay", "fun"],
+	"ignore": ["*.md", "*.psd", "*.bat"]
+}

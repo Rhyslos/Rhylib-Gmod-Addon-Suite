@@ -1,0 +1,6 @@
+{
+	"title": "Rhylib Third Person",
+	"type": "servercontent",
+	"tags": ["roleplay", "realism"],
+	"ignore": ["*.md", "*.psd", "*.bat"]
+}

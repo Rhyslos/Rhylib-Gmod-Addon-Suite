@@ -1,0 +1,6 @@
+{
+	"title": "Rhylib Droids",
+	"type": "servercontent",
+	"tags": ["roleplay", "fun"],
+	"ignore": ["*.md", "*.psd", "*.bat"]
+}

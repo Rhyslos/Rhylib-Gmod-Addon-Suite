@@ -4,16 +4,25 @@ A free, modular Clone Wars roleplay suite for Garry's Mod, built for performance
 
 Rhylib is a set of addons that run on top of DarkRP / StarWarsRP. One required core addon holds shared code, and every other system (weapons, HUD, stamina, medic, inventory and so on) is a separate addon that hosts can add or leave out.
 
+## Documentation
+
+**Start at [docs/README.md](docs/README.md).** It lists every addon, explains how the code is organised and how the core APIs fit together, and walks through making your own addon. Each addon has its own guide in [docs/addons/](docs/addons/) with every setting, command, permission, hook, net message and saved key, plus examples. Every Lua file starts with a header explaining what it does, and functions other code may call are commented with examples.
+
 ## Repository layout
 
 ```
 addons/
-  rhylib_core/          required: loader, config, hook bus, networking, data, permissions, profiler, UI kit
-    addon.json
+  rhylib_core/          required: loader, config, hook bus, networking, data, permissions, profiler, lying bodies
     lua/autorun/_rhylib_core.lua
     lua/rhylib/core/*.lua
-docs/                   design notes and the host config example
+  rhylib_<name>/        every other system, one Garry's Mod addon each (24 in total)
+docs/
+  README.md             start here
+  addons/*.md           one guide per addon
+  config-example.lua    host config to copy
 tools/link-addons.bat   links the addons into Garry's Mod for live testing
+tools/tests/            offline tests (lua5.1)
+CLAUDE.md               full development log: designs, numbers and the reasons behind them
 ```
 
 Each folder in `addons/` is a complete Garry's Mod addon.

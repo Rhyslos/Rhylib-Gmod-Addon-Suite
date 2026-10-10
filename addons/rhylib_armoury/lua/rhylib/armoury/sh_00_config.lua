@@ -1,0 +1,159 @@
+--[[
+    Armoury: where troopers get their gear.
+
+      Weapons armoury   endless: one of each gun. Drag one out to take it,
+                        drag it back to hand it in. (rhylib_armoury)
+      Ammo cabinet      endless: magazines, power cells, rockets and
+                        grapple hooks. (rhylib_ammo_cabinet)
+      Supply crates     one per magazine size, about 20 slots of it. Run
+                        out, and stay empty until an admin refills them.
+                        (rhylib_crate_small / _medium / _large)
+      Medical crate     an assortment of medical kits; runs out like the
+                        supply crates. (rhylib_med_crate)
+      Specialist        role gear: the weapons rack (rhylib_spec_weapons)
+      armouries         and the gear rack (rhylib_spec_gear) show only
+                        what your role may take (config "roles").
+      Personal locker   36 slots (6 x 6). Press E on a free one to claim it
+                        (one per player); the owner can lock it. Contents
+                        belong to the owner's SteamID and are saved.
+                        (rhylib_locker)
+      Training deposit  a cloakroom, one per player: "Store all" puts
+                        everything you carry in (not job gear or the
+                        backpack you wear, but what's in it), only while
+                        it's empty; "Take all" gives it back; "Empty"
+                        deletes it. No taking or adding single items.
+                        Whatever is still in it after depositTime of online
+                        time is deleted (guns and ammo are free at the
+                        armoury). Saved under your SteamID; every deposit
+                        on the map shows the same contents.
+                        (rhylib_training_deposit)
+
+    Gear from the armoury and ammo cabinet is "issued": dropping it hands
+    it back instead of leaving it on the ground.
+
+    Gear cabinet      backpacks, jetpacks (config gearStock) and, with
+                        rhylib_gear, the body parts your model can show and
+                        your rank allows. (rhylib_gear_cabinet)
+      Training armoury  training copies of the guns, and training ammo
+      and ammo          (rhylib_training_armoury, rhylib_training_ammo).
+
+    Admins place them from the spawn menu (Rhylib tab), then make them
+    permanent with the toolgun's Permanent tool (or run
+    rhylib_armoury_save). They come back at every map start, frozen in
+    place.
+
+    Shared file: the tables and settings both realms need. Adds
+    Rhylib.Armoury (A): MODELS, CLASSES, CRATES, AMMO_STOCK,
+    TRAINING_AMMO_STOCK, A.Roles(ply), and the config module "armoury".
+    The storages themselves are rhylib_inventory's (Inv.CreateStorage); this
+    addon only says what goes in them (sv_10_armoury.lua).
+]]
+
+Rhylib.Armoury = Rhylib.Armoury or {}
+local A = Rhylib.Armoury
+
+-- Model per armoury kind (ENT.ModelKey). Changeable in Server settings >
+-- Models (hook Rhylib.ModelCatalogue below); needs a map change for things
+-- already placed.
+A.MODELS = {
+    armoury = "models/reizer_props/srsp/sci_fi/armory_01/armory_01.mdl",
+    ammo = "models/reizer_props/srsp/sci_fi/armory_02_3/armory_02_3.mdl",
+    locker = "models/reizer_props/srsp/sci_fi/console_02_1/console_02_1.mdl",
+    crate = "models/reizer_props/srsp/sci_fi/crate_01/crate_01.mdl",
+    medcrate = "models/reizer_props/srsp/sci_fi/crate_03/crate_03.mdl",
+    specWeapons = "models/reizer_props/srsp/sci_fi/armory_02/armory_02.mdl",
+    specGear = "models/reizer_props/srsp/sci_fi/armory_02_2/armory_02_2.mdl",
+    gear = "models/reizer_props/srsp/sci_fi/armory_02_1/armory_02_1.mdl",
+}
+
+-- Server settings > Models.
+local MODEL_NAMES = {
+    armoury = "Weapons armoury", ammo = "Ammo cabinet", locker = "Personal locker", crate = "Supply crate",
+    medcrate = "Medical crate", specWeapons = "Specialist weapons armoury", specGear = "Specialist gear armoury", gear = "Gear cabinet",
+}
+Rhylib.Hook.Add("Rhylib.ModelCatalogue", "armoury.models", function(add)
+    for key, name in SortedPairs(MODEL_NAMES) do
+        add("armoury." .. key, name, "Armoury & storage", function() return A.MODELS end, key)
+    end
+end)
+
+-- Every armoury entity class, for saving and loading placements
+-- (A.SavePlacements and the toolgun's Permanent tool).
+A.CLASSES = {
+    rhylib_armoury = true,
+    rhylib_ammo_cabinet = true,
+    rhylib_locker = true,
+    rhylib_crate_small = true,
+    rhylib_crate_medium = true,
+    rhylib_crate_large = true,
+    rhylib_med_crate = true,
+    rhylib_spec_weapons = true,
+    rhylib_spec_gear = true,
+    rhylib_gear_cabinet = true,
+    rhylib_training_armoury = true,
+    rhylib_training_ammo = true,
+    rhylib_training_deposit = true,
+}
+-- Classes rhylib_crate_refill works on.
+A.CRATES = { "rhylib_crate_small", "rhylib_crate_medium", "rhylib_crate_large", "rhylib_med_crate" }
+
+-- What the ammo cabinets hand out, in shelf order (item ids; ids that don't
+-- exist, e.g. an addon not installed, are skipped). Other addons may add to
+-- A.AMMO_STOCK before a cabinet is first opened (rhylib_eod adds its kits).
+-- Example: table.insert(Rhylib.Armoury.AMMO_STOCK, "my_item")
+A.TRAINING_AMMO_STOCK = { "mag_small_t", "mag_medium_t", "mag_large_t", "cell", "rocket_t", "rhylib_thermal_training", "rhylib_droidpopper_training" }
+A.AMMO_STOCK = { "mag_small", "mag_medium", "mag_large", "cell", "rocket", "grapple", "rhylib_thermal", "rhylib_droidpopper", "rhylib_ammo_pack", "rhylib_he_charge" }
+
+-- Settings (module "armoury"). Lists are read when a storage is first
+-- opened after a map start, so changes show after a map change.
+local Config = Rhylib.Config
+Config.Register("armoury", "weapons", {}, "Weapon classes in the armoury, in order. Empty = every Rhylib weapon")
+Config.Register("armoury", "trainingWeapons", {}, "Weapon classes in the training armoury, in order. Empty = every training weapon")
+Config.Register("armoury", "gearStock", { "backpack", "jetpack" }, "Gear cabinet: equipment it hands out (endless, issued)")
+Config.Register("armoury", "lockerW", 6, "Personal locker width in cells")
+Config.Register("armoury", "depositTime", 7200, "Training deposit: seconds of online time before what's left in it is deleted")
+Config.Register("armoury", "lockerH", 6, "Personal locker height in cells")
+Config.Register("armoury", "crateW", 5, "Supply crate width in cells")
+Config.Register("armoury", "crateH", 4, "Supply crate height in cells")
+
+Config.Register("armoury", "medCrate", {
+    { "rhylib_medkit", 10 }, { "rhylib_firstaid", 2 }, { "rhylib_revivekit", 3 },
+    { "rhylib_antiviral", 20 }, { "rhylib_antidote", 20 }, { "rhylib_antibiotics", 20 },   -- (units)
+    { "rhylib_splint", 4 }, { "rhylib_burngel", 3 }, { "rhylib_painkiller", 4 },
+    { "rhylib_bloodpack", 2 }, { "rhylib_med_supplies", 10 },
+    { "rhylib_blood_kit", 3 }, { "rhylib_test_strip", 5 },
+}, "What a medical crate is filled with: { item, count }")
+
+-- Everyone has the "trooper" role; mp / medic come from the DarkRP job
+-- (mp = true, medic = true), others from a job's role = "name" (or a list).
+-- Items listed here are kept out of the normal weapons armoury.
+Config.Register("armoury", "roles", {
+    trooper = { weapons = {}, gear = { "sw_datapad" } },
+    mp = { weapons = { "rhylib_riotshield" }, gear = { "rhylib_stunbaton", "rhylib_handcuffs", "rhylib_flashcharge" } },   -- (stun is a fire mode for MPs)
+    medic = { weapons = {}, gear = { "rhylib_medkit", "rhylib_firstaid", "rhylib_revivekit", "rhylib_antiviral", "rhylib_antidote", "rhylib_antibiotics",
+        "rhylib_med_supplies", "rhylib_blood_kit", "rhylib_test_strip" } },
+}, "Specialist armoury stock per role: { weapons = {...}, gear = {...} }")
+
+-- A.Roles(ply) -> sorted list of role names: always "trooper", "mp" (rhylib_mp
+-- MP.IsMP), "medic" (rhylib_medical Med.IsMedic), the DarkRP job's `role`
+-- (string or list), and whatever hook Rhylib.PlayerRoles(ply) returns (a
+-- list; rhylib_roster adds qualification ids). Sorted, so the same set
+-- always gives the same key. Shared (needs RPExtraTeams for jobs).
+-- Example: for _, r in ipairs(Rhylib.Armoury.Roles(ply)) do print(r) end
+function A.Roles(ply)
+    local out, seen = {}, {}
+    local function add(r)
+        if isstring(r) and r ~= "" and not seen[r] then seen[r] = true out[#out + 1] = r end
+    end
+    add("trooper")
+    if Rhylib.MP and Rhylib.MP.IsMP and Rhylib.MP.IsMP(ply) then add("mp") end
+    if Rhylib.Medical and Rhylib.Medical.IsMedic and Rhylib.Medical.IsMedic(ply) then add("medic") end
+    local job = RPExtraTeams and RPExtraTeams[ply:Team()]
+    if job then
+        if istable(job.role) then for _, r in ipairs(job.role) do add(r) end else add(job.role) end
+    end
+    local extra = hook.Run("Rhylib.PlayerRoles", ply)
+    if istable(extra) then for _, r in ipairs(extra) do add(r) end end
+    table.sort(out)
+    return out
+end

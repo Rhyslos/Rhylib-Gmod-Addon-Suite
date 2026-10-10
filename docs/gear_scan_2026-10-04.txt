@@ -1,0 +1,182 @@
+Rhylib bodygroup scan, 2026-10-04 20:37, 14 job models
+
+models/327th_bly/pm_327th_bly.mdl
+  jobs: 327th Commander
+  [1] Helmet: trooper_helmet.smd | trooper_head.smd
+  [2] kama: co_kama.smd | empty
+  [3] pauldron: co_pauldron.smd | empty
+  [4] Holster_Left: co_Holster_Left_reference.smd | empty
+  [5] Holster_Right: co_Holster_Right_reference | empty
+  [6] binos: trooper_binosup.smd | trooper_binosdown.smd | empty
+  [7] flashlighthelmet: empty | trooper_flashlight.smd
+  [8] backpack: empty | backpack.smd | strap.smd | jetpack.smd
+
+models/327th_medic/pm_327th_medic.mdl
+  jobs: 327th Medic
+  [1] Helmet: trooper_helmet.smd | trooper_head.smd
+  [2] antenna: empty | co_antennaup.smd
+  [3] kama: co_kama.smd | empty
+  [4] pauldron: co_pauldron.smd | empty
+  [5] Holster_Left: co_Holster_Left_reference.smd | empty
+  [6] Holster_Right: co_Holster_Right_reference | empty
+  [7] binos: empty | trooper_binosup.smd | trooper_binosdown.smd
+  [8] flashlighthelmet: empty | trooper_flashlight.smd
+  [9] backpack: backpack.smd | strap.smd | jetpack.smd | empty
+  [10] hair: empty | hair_reg.smd | hair_parted.smd | hair_spike.smd | hair_short.smd | hair_long.smd | hair_mohawk.smd | hair_gree.smd | hair_cornwall.smd | hair_tail.smd | hair_long2.smd | hair_slick.smd
+  [11] fhair: empty | fhair.smd | fhair_goatee.smd | fhair2.smd | fhair_stache.smd | fhair3.smd | fhair_beard.smd
+
+models/327th_trp/pm_327th_trp.mdl
+  jobs: 327th Clone Trooper, 327th Sergeant, 327th Officer
+  [1] Helmet: trooper_helmet.smd | trooper_head.smd
+  [2] antenna: empty | co_antennaup.smd
+  [3] kama: co_kama.smd | empty
+  [4] pauldron: co_pauldron.smd | empty
+  [5] Holster_Left: co_Holster_Left_reference.smd | empty
+  [6] Holster_Right: co_Holster_Right_reference | empty
+  [7] binos: empty | trooper_binosup.smd | trooper_binosdown.smd
+  [8] flashlighthelmet: empty | trooper_flashlight.smd
+  [9] backpack: empty | backpack.smd | strap.smd | jetpack.smd
+  [10] hair: empty | hair_reg.smd | hair_parted.smd | hair_spike.smd | hair_short.smd | hair_long.smd | hair_mohawk.smd | hair_gree.smd | hair_cornwall.smd | hair_tail.smd | hair_long2.smd | hair_slick.smd
+  [11] fhair: empty | fhair.smd | fhair_goatee.smd | fhair2.smd | fhair_stache.smd | fhair3.smd | fhair_beard.smd
+
+models/501st_medic/pm_501st_medic.mdl
+  jobs: 501st Medic
+  [1] Helmet: trooper_helmet.smd | trooper_head.smd
+  [2] binos: empty | trooper_binosup.smd | trooper_binosdown.smd
+  [3] flashlighthelmet: empty | trooper_flashlight.smd
+  [4] backpack: backpack.smd | strap.smd | jetpack.smd | empty
+  [5] hair: empty | hair_reg.smd | hair_parted.smd | hair_spike.smd | hair_short.smd | hair_long.smd | hair_mohawk.smd | hair_gree.smd | hair_cornwall.smd | hair_tail.smd | hair_long2.smd | hair_slick.smd
+  [6] fhair: empty | fhair.smd | fhair_goatee.smd | fhair2.smd | fhair_stache.smd | fhair3.smd | fhair_beard.smd
+
+models/501st_rex/pm_501st_rex.mdl
+  jobs: 501st Commander
+  [1] Helmet: trooper_helmet.smd | trooper_head.smd
+  [2] antenna: co_antennaup.smd | empty
+  [3] kama: co_kama.smd | empty
+  [4] pauldron: co_pauldron.smd | empty
+  [5] Holster_Left: co_Holster_Left_reference.smd | empty
+  [6] Holster_Right: co_Holster_Right_reference | empty
+  [7] flashlighthelmet: empty | trooper_flashlight.smd
+  [8] backpack: empty | comms_backpackcomms_2.smd
+
+models/501st_trp/pm_501st_trp.mdl
+  jobs: 501st Clone Trooper, 501st Sergeant, 501st Officer
+  [1] Helmet: trooper_helmet.smd | trooper_head.smd
+  [2] binos: empty | trooper_binosup.smd | trooper_binosdown.smd
+  [3] flashlighthelmet: empty | trooper_flashlight.smd
+  [4] backpack: empty | backpack.smd | strap.smd | jetpack.smd
+  [5] hair: empty | hair_reg.smd | hair_parted.smd | hair_spike.smd | hair_short.smd | hair_long.smd | hair_mohawk.smd | hair_gree.smd | hair_cornwall.smd | hair_tail.smd | hair_long2.smd | hair_slick.smd
+  [6] fhair: empty | fhair.smd | fhair_goatee.smd | fhair2.smd | fhair_stache.smd | fhair3.smd | fhair_beard.smd
+
+models/cadet_green/pm_training_cadet_domino.mdl
+  jobs: Cadet
+  [1] Head: head.smd | head2.smd
+  [2] Helmet: helmet.smd | empty
+  [3] back: empty | backpack.smd | strap.smd
+
+models/cg_fox/pm_cg_fox.mdl
+  jobs: Coruscant Guard Commander
+  [1] Helmet: trooper_helmet.smd | trooper_head.smd
+  [2] sunvisor: sunvisor.smd | empty
+  [3] kama: co_kama.smd | empty
+  [4] Holster_Left: co_Holster_Left_reference.smd | empty
+  [5] Holster_Right: co_Holster_Right_reference | empty
+  [6] flashlighthelmet: empty | trooper_flashlight.smd
+  [7] backpack: empty | backpack.smd | strap.smd | jetpack.smd
+
+models/cg_medic/pm_cg_medic.mdl
+  jobs: Coruscant Guard Medic
+  [1] Helmet: trooper_helmet.smd | trooper_head.smd
+  [2] binos: empty | trooper_binosup.smd | trooper_binosdown.smd
+  [3] flashlighthelmet: empty | trooper_flashlight.smd
+  [4] backpack: backpack.smd | strap.smd | jetpack.smd | empty
+  [5] hair: empty | hair_reg.smd | hair_parted.smd | hair_spike.smd | hair_short.smd | hair_long.smd | hair_mohawk.smd | hair_gree.smd | hair_cornwall.smd | hair_tail.smd | hair_long2.smd | hair_slick.smd
+  [6] fhair: empty | fhair.smd | fhair_goatee.smd | fhair2.smd | fhair_stache.smd | fhair3.smd | fhair_beard.smd
+
+models/cg_trp/pm_cg_trp.mdl
+  jobs: Coruscant Guard Clone Trooper, Coruscant Guard Sergeant, Coruscant Guard Officer
+  [1] Helmet: trooper_helmet.smd | trooper_head.smd
+  [2] binos: empty | trooper_binosup.smd | trooper_binosdown.smd
+  [3] flashlighthelmet: empty | trooper_flashlight.smd
+  [4] backpack: empty | backpack.smd | strap.smd | jetpack.smd
+  [5] hair: empty | hair_reg.smd | hair_parted.smd | hair_spike.smd | hair_short.smd | hair_long.smd | hair_mohawk.smd | hair_gree.smd | hair_cornwall.smd | hair_tail.smd | hair_long2.smd | hair_slick.smd
+  [6] fhair: empty | fhair.smd | fhair_goatee.smd | fhair2.smd | fhair_stache.smd | fhair3.smd | fhair_beard.smd
+
+models/ct_trp/pm_ct_trp.mdl
+  jobs: Clone Trooper
+  [1] Helmet: trooper_helmet.smd | trooper_head.smd
+  [2] binos: empty | trooper_binosup.smd | trooper_binosdown.smd
+  [3] flashlighthelmet: empty | trooper_flashlight.smd
+  [4] backpack: empty | backpack.smd | strap.smd | jetpack.smd
+  [5] hair: empty | hair_reg.smd | hair_parted.smd | hair_spike.smd | hair_short.smd | hair_long.smd | hair_mohawk.smd | hair_gree.smd | hair_cornwall.smd | hair_tail.smd | hair_long2.smd | hair_slick.smd
+  [6] fhair: empty | fhair.smd | fhair_goatee.smd | fhair2.smd | fhair_stache.smd | fhair3.smd | fhair_beard.smd
+
+models/finch/vrp/104th/base/medic.mdl
+  jobs: 104th Medic
+  [1] Helmet: trooper_helmet.smd | trooper_head.smd
+  [2] binos: empty | trooper_binosup.smd | trooper_binosdown.smd | sunvisor.smd
+  [3] kama: empty | co_kama.smd | arc2_ARC_Kama_Strap_reference.smd
+  [4] pauldron: empty | co_pauldron.smd | arc2_arcpauldron.smd
+  [5] forearms: empty | arc2_ARC_Forearm_Right_Reference.smd
+  [6] Holster_Left: empty | co_Holster_Left_reference.smd
+  [7] Holster_Right: empty | co_Holster_Right_reference.smd
+  [8] rangefinder: empty | co_antennaup.smd | co_antennadown.smd
+  [9] shoulderantenna: empty | s_ant.smd
+  [10] flashlighthelmet: empty | trooper_flashlight.smd
+  [11] belt: empty | arc2_ARC_Belt_Pouches_reference.smd
+  [12] backpack: empty | backpack.smd | gunbelt_rifle.smd | gunbelt.smd | jetpack.smd | arc2_ARC_Backpack_reference.smd
+  [13] hair: empty | hair_reg.smd | hair_parted.smd | hair_spike.smd | hair_short.smd | hair_long.smd | hair_mohawk.smd | hair_gree.smd | hair_cornwall.smd | hair_tail.smd | hair_long2.smd | hair_slick.smd
+  [14] fhair: empty | fhair.smd | fhair_goatee.smd | fhair2.smd | fhair_stache.smd | fhair3.smd | fhair_beard.smd
+
+models/finch/vrp/104th/base/trooper.mdl
+  jobs: 104th Clone Trooper, 104th Sergeant, 104th Officer
+  [1] Helmet: trooper_helmet.smd | trooper_head.smd
+  [2] binos: empty | trooper_binosup.smd | trooper_binosdown.smd | sunvisor.smd
+  [3] kama: empty | co_kama.smd | arc2_ARC_Kama_Strap_reference.smd
+  [4] pauldron: empty | co_pauldron.smd | arc2_arcpauldron.smd
+  [5] forearms: empty | arc2_ARC_Forearm_Right_Reference.smd
+  [6] Holster_Left: empty | co_Holster_Left_reference.smd
+  [7] Holster_Right: empty | co_Holster_Right_reference.smd
+  [8] rangefinder: empty | co_antennaup.smd | co_antennadown.smd
+  [9] shoulderantenna: empty | s_ant.smd
+  [10] flashlighthelmet: empty | trooper_flashlight.smd
+  [11] belt: empty | arc2_ARC_Belt_Pouches_reference.smd
+  [12] backpack: empty | backpack.smd | gunbelt_rifle.smd | gunbelt.smd | jetpack.smd | arc2_ARC_Backpack_reference.smd
+  [13] hair: empty | hair_reg.smd | hair_parted.smd | hair_spike.smd | hair_short.smd | hair_long.smd | hair_mohawk.smd | hair_gree.smd | hair_cornwall.smd | hair_tail.smd | hair_long2.smd | hair_slick.smd
+  [14] fhair: empty | fhair.smd | fhair_goatee.smd | fhair2.smd | fhair_stache.smd | fhair3.smd | fhair_beard.smd
+
+models/finch/vrp/104th/wolffe.mdl
+  jobs: 104th Commander
+  [1] Helmet: trooper_helmet.smd | trooper_head.smd
+  [2] binos: empty | trooper_binosup.smd | trooper_binosdown.smd | sunvisor.smd
+  [3] kama: co_kama.smd | arc2_ARC_Kama_Strap_reference.smd | empty
+  [4] pauldron: empty | co_pauldron.smd | arc2_arcpauldron.smd
+  [5] forearms: empty | arc2_ARC_Forearm_Right_Reference.smd
+  [6] Holster_Left: co_Holster_Left_reference.smd | empty
+  [7] Holster_Right: co_Holster_Right_reference.smd | empty
+  [8] rangefinder: co_antennaup.smd | empty | co_antennadown.smd
+  [9] shoulderantenna: s_ant.smd | empty
+  [10] flashlighthelmet: empty | trooper_flashlight.smd
+  [11] belt: empty | arc2_ARC_Belt_Pouches_reference.smd
+  [12] backpack: empty | backpack.smd | gunbelt_rifle.smd | gunbelt.smd | jetpack.smd | arc2_ARC_Backpack_reference.smd
+  [13] hair: empty | hair_reg.smd
+
+Bodygroup names (how many models have each):
+  antenna: 3 of 14
+  back: 1 of 14
+  backpack: 13 of 14
+  belt: 3 of 14
+  binos: 11 of 14
+  fhair: 9 of 14
+  flashlighthelmet: 13 of 14
+  forearms: 3 of 14
+  hair: 10 of 14
+  head: 1 of 14
+  helmet: 14 of 14
+  holster_left: 8 of 14
+  holster_right: 8 of 14
+  kama: 8 of 14
+  pauldron: 7 of 14
+  rangefinder: 3 of 14
+  shoulderantenna: 3 of 14
+  sunvisor: 1 of 14

@@ -1,0 +1,6 @@
+{
+	"title": "Rhylib Inventory",
+	"type": "servercontent",
+	"tags": ["roleplay", "realism"],
+	"ignore": ["*.md", "*.psd", "*.bat"]
+}

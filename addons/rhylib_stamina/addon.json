@@ -1,0 +1,6 @@
+{
+	"title": "Rhylib Stamina",
+	"type": "servercontent",
+	"tags": ["roleplay", "realism"],
+	"ignore": ["*.md", "*.psd", "*.bat"]
+}

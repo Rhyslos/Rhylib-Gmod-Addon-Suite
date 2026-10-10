@@ -1,0 +1,6 @@
+{
+	"title": "Rhylib Core",
+	"type": "servercontent",
+	"tags": ["roleplay", "realism"],
+	"ignore": ["*.md", "*.psd", "*.bat"]
+}
