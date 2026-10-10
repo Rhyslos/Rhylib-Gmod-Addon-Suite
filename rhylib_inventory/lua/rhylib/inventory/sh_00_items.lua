@@ -1,7 +1,13 @@
 --[[
-    Item registry and shared grid rules.
+    Item registry and shared grid rules (shared: runs on server and client).
 
-    Register an item (shared, at load time):
+    Adds the global Rhylib.Items (item types, containers, placement rules,
+    weight, network encoding) and starts Rhylib.Inventory (the rest of the
+    inventory lives in sv_10_inventory / cl_10_inventory). Both realms run
+    the same placement rules: the server to check requests, the client to
+    show a preview before it asks.
+
+    Register an item (shared, at load time, the same on both realms):
         Rhylib.Items.Register("mag", {
             name = "Blaster magazine",
             w = 1, h = 1,          -- size in cells
@@ -14,11 +20,26 @@
     in the back slot), grid = { 5, 2 } (a worn item that adds a grid),
     weight = 0.5 (kg, per item), carry = 6 (worn item that raises the
     carry cap by this many kg), rounds = 60 (magazines: shots when full).
+    More optional fields read by this addon:
+        group       shelf group in depots (see Items.GROUP_ORDER)
+        hand = true can be held from the hotbar with rhylib_hand (magazines, cells)
+        desc        extra tooltip line
+        note = true carries a short text in data.note (sent to the owner)
+        unit        word after the count in the tooltip ("uses"; default "rounds")
+        iconModel   model for the inventory picture (cl_15_icons)
+        slotOnly    only fits its worn slot (or an outside storage)
+        holster     fits the holster grid
+        gridCid / gridName   which container a worn `grid` makes (default the backpack)
+        extraGrids  { { cid, w, h, name } }: more containers a worn item adds
+        weightMults { [id] = mult }: worn, makes those items lighter
+        stackMax    highest stack a skill may give (see Items.StackFor)
+        carrySkill  skill needed to carry it (rhylib_skills)
 
     Weapons become items automatically if their SWEP table sets InvW/InvH.
     Optional SWEP fields: InvStack (stack size, e.g. medical kits),
     InvUses (uses when full; stored as fill), InvCharge (a 0-1 charge
-    shown as %), InvCategory, InvWeight.
+    shown as %), InvCategory, InvWeight, InvGroup, InvLarge, InvSlot,
+    InvSlotOnly, InvHolster, CarrySkill (see Items.RegisterWeapons).
     Per-player stack size: Items.StackFor(def, ply) (hook Rhylib.ItemStack
     can lower it, e.g. medkits 3 for troopers, 5 for medics).
 
@@ -28,7 +49,8 @@
     Only items with fill = true stack when full; partly used ones stay single.
 
     On the network each item type is a small number (netId), assigned by
-    sorting ids, so server and client agree without sending names.
+    sorting ids, so server and client agree without sending names. That
+    only works if both realms register the same items.
 ]]
 
 Rhylib.Items = Rhylib.Items or {}
@@ -38,11 +60,18 @@ Items.defs = Items.defs or {}
 Items.byNet = Items.byNet or {}
 Items.finalized = false
 
-Items.UID_BITS = 16
+-- Bit sizes on the wire (every inventory and storage message uses them).
+Items.UID_BITS = 16       -- item uids 1-65535, per player / per storage
 Items.NET_BITS = 10       -- up to 1023 item types
 Items.POS_BITS = 5        -- containers up to 32 x 32 (the training deposit grows to 31 rows)
-Items.COUNT_BITS = 8
+Items.COUNT_BITS = 8      -- stack count, at most 255
 
+-- Items.Register(id, def): adds (or replaces) an item type. Fills in the
+-- defaults (name = id, 1x1, stack 1, category "misc") and stores def.id.
+-- Shared: call it on both realms at load time. Returns nothing.
+-- Example:
+--   Rhylib.Items.Register("ration", { name = "Ration bar", w = 1, h = 1, stack = 4,
+--       weight = 0.2, category = "misc", model = "models/props_junk/garbage_bag001a.mdl" })
 function Items.Register(id, def)
     def.id = id
     def.name = def.name or id
@@ -54,6 +83,7 @@ function Items.Register(id, def)
     Items.finalized = false
 end
 
+-- Items.Get(id): the item's def table, or nil.
 function Items.Get(id)
     return Items.defs[id]
 end
@@ -85,6 +115,8 @@ function Items.Unique(def)
     return def and def.weapon and def.stack <= 1 or false
 end
 
+-- Items.Finalize(): gives every registered item its netId (1..n in id
+-- order). Runs again by itself after any new Register (via EnsureReady).
 function Items.Finalize()
     local ids = {}
     for id in pairs(Items.defs) do ids[#ids + 1] = id end
@@ -97,7 +129,8 @@ function Items.Finalize()
     Items.finalized = true
 end
 
--- Weapons are registered as items once, then ids are assigned.
+-- Items.EnsureReady(): weapons are registered as items once, then ids are
+-- assigned. Call it before reading Items.defs for weapons or net ids.
 function Items.EnsureReady()
     if not Items.weaponsDone then
         Items.RegisterWeapons()
@@ -106,6 +139,7 @@ function Items.EnsureReady()
     if not Items.finalized then Items.Finalize() end
 end
 
+-- Items.NetId(id) / Items.FromNet(n): item id <-> network number (0 = unknown).
 function Items.NetId(id)
     Items.EnsureReady()
     local def = Items.defs[id]
@@ -118,6 +152,13 @@ function Items.FromNet(n)
 end
 
 -- Any weapon that declares an inventory size becomes an item.
+-- SWEP field -> item field: PrintName -> name, InvW/InvH -> w/h,
+-- WorldModel -> model, InvCategory -> category (default "weapon"),
+-- InvGroup -> group, InvLarge -> large, InvWeight -> weight, InvStack ->
+-- stack, InvUses or InvCharge -> fill (InvUses also -> rounds, unit "uses"),
+-- CarrySkill -> carrySkill, InvSlot / InvSlotOnly -> slot / slotOnly,
+-- InvHolster (or a small pistol) -> holster. def.weapon = the class.
+-- Weapons already registered by hand are left alone.
 function Items.RegisterWeapons()
     for _, stored in ipairs(weapons.GetList()) do
         local class = stored.ClassName
@@ -155,7 +196,9 @@ function Items.RegisterWeapons()
     end
 end
 
--- Weapons are registered by now on both server and client.
+-- Weapons are registered by now on both server and client. (Anything that
+-- called EnsureReady earlier may have seen only part of the weapon list,
+-- so it's done again here.)
 Rhylib.Hook.Add("InitPostEntity", "inventory.items", function()
     Items.weaponsDone = false
     Items.EnsureReady()
@@ -189,7 +232,8 @@ Config.Register("inventory", "giveRange", 130, "How close you must be to give so
 Config.Register("inventory", "backpackWeightMult", 0.8, "Items inside a backpack count at this fraction of their weight")
 Config.Register("inventory", "contraband", {}, "Contraband item ids: players can hide up to 3 of them from searches, and they're never returned from jail")
 
--- Contraband (config list), cached per change of the list.
+-- Items.IsContraband(id): true if id is in config inventory "contraband".
+-- (The set is cached and rebuilt when the list changes.)
 local cbList, cbSet
 function Items.IsContraband(id)
     local list = Config.Get("inventory", "contraband")
@@ -200,9 +244,12 @@ function Items.IsContraband(id)
     return cbSet[id] == true
 end
 
-Items.HIDE_MAX = 3   -- hidden items per player (data.hidden = their SteamID64)
+Items.HIDE_MAX = 3   -- hidden items per player (data.hidden = their SteamID64; rhylib_mp searches)
 
--- state: { cont = { [cid] = { items } } }. Returns weight, cap in kg.
+-- Items.Weight(state): state is { cont = { [cid] = { items } } } (the
+-- server state, or the client's Rhylib.Inventory). Returns weight, cap in
+-- kg. Skills can change both afterwards (rhylib_skills K.AdjustWeight).
+-- Example: local kg, cap = Rhylib.Items.Weight(Rhylib.Inventory)   -- client
 function Items.Weight(state)
     local total, cap = 0, Config.Get("inventory", "baseCarry")
     local packMult = Config.Get("inventory", "backpackWeightMult")
@@ -234,7 +281,8 @@ function Items.Weight(state)
     return total, cap
 end
 
--- Weight and cap for any player, from the networked values.
+-- Items.PlayerWeight(ply): weight and cap for any player, from the NW2
+-- floats the server sets (rhylib_weight / rhylib_carry). Shared.
 function Items.PlayerWeight(ply)
     return ply:GetNW2Float("rhylib_weight", 0), ply:GetNW2Float("rhylib_carry", Config.Get("inventory", "baseCarry"))
 end
@@ -243,6 +291,7 @@ end
 -- Grid rules (used by the server to validate and the client to preview)
 --------------------------------------------------------------------------
 
+-- Items.Size(id, rot): width, height in cells (swapped when rot).
 function Items.Size(id, rot)
     local def = Items.defs[id]
     if not def then return 1, 1 end
@@ -250,6 +299,8 @@ function Items.Size(id, rot)
     return def.w, def.h
 end
 
+-- Items.IsFull(inst): false only for a partly used fill item (a magazine
+-- or cell below 100%). Only full ones stack.
 function Items.IsFull(inst)
     local def = Items.defs[inst.id]
     return not (def and def.fill) or (inst.data and inst.data.fill or 1) >= 1
@@ -331,18 +382,21 @@ end
 --------------------------------------------------------------------------
 -- Containers
 --
--- A player has up to four containers, each with its own items table:
+-- A player has several containers, each with its own items table:
 --   1  main grid (6 x 3, config inventory width / height)
 --   2  backpack grid, only while a backpack is worn (size from the backpack)
 --   3  back slot: holds one item with slot = "back"
+--   4  an outside container the player has open (locker, armoury, crate),
+--      see sv_30_storage.lua. Its items have their own uids.
 --   5  cell rack: only power cells, opened by a skill (rhylib_skills)
 --   6  ammo belt (rhylib_skills)
 --   7  holster: pistols, while a holster is worn
 --   8-17 worn gear slots (kama, pauldron, binoculars, rangefinder, helmet
 --      light, holster, sun visor, forearm, shoulder antenna, belt pouches),
 --      one item each with that `slot` (rhylib_gear)
---   4  an outside container the player has open (locker, armoury, crate),
---      see sv_30_storage.lua. Its items have their own uids.
+--   18 belt pouches' grid, while they're worn
+--   19 ARC backpack's cell pouch (cells only), while it's worn
+--   20 belt cell pouch every player has (config inventory beltCells)
 -- Worn slots (the back slot and the gear slots) hold one item each; a worn
 -- item with `grid` adds a container (gridCid, default the backpack grid)
 -- and can only come off while that container is empty.
@@ -360,7 +414,7 @@ Items.HOLSTER = 7    -- pistols (def.holster), while a holster is worn (2x2: bot
 Items.POUCH = 18     -- belt pouches (worn belt pouches): like the ammo belt
 Items.CELLPACK = 19  -- ARC backpack's side pouch: power cells only
 Items.CELLBELT = 20  -- belt cell pouch every clone carries (config inventory beltCells): power cells only
-Items.CONT_BITS = 5   -- (containers 0-31; gear slots 8-17)
+Items.CONT_BITS = 5   -- (containers 0-31; gear slots 8-17; free ids: 0, 21-31)
 
 -- Worn slots: [cid] = { slot = def.slot, title }. GEAR_SLOTS in display order.
 Items.WORN = {
@@ -405,6 +459,7 @@ end
 Items.HOTBAR = 4
 Items.HOTBAR_PACK = 6
 
+-- Items.HotbarSize(state): 4, or 6 while a backpack grid exists.
 function Items.HotbarSize(state)
     return state.cont[Items.BACK] and Items.HOTBAR_PACK or Items.HOTBAR
 end
@@ -476,8 +531,16 @@ end
 --------------------------------------------------------------------------
 -- Network encoding: about 6 bytes per item. data.issued (gear from an
 -- armoury or ammo cabinet) is one bit.
+--
+-- One item on the wire, in this order:
+--   uid UID_BITS (16), container CONT_BITS (5), netId NET_BITS (10),
+--   x POS_BITS (5), y POS_BITS (5), rot 1, count 8, issued 1,
+--   hotbar slot 3 (0 = none), hidden 1,
+--   fill 8 (0-255) only for fill items, note string only for note items.
+-- Only these parts of inst.data travel; the rest stays on the server.
 --------------------------------------------------------------------------
 
+-- Items.WriteInstance(inst): writes one item (inside a net message).
 function Items.WriteInstance(inst)
     local def = Items.defs[inst.id]
     net.WriteUInt(inst.uid, Items.UID_BITS)
@@ -501,6 +564,8 @@ function Items.WriteInstance(inst)
     end
 end
 
+-- Items.ReadInstance(): reads one item; returns an inst table (id nil if
+-- the client doesn't know the item type).
 function Items.ReadInstance()
     local uid = net.ReadUInt(Items.UID_BITS)
     local c = net.ReadUInt(Items.CONT_BITS)

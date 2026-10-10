@@ -1,8 +1,20 @@
--- Small drawing helpers shared by the HUD files.
+--[[
+    Drawing helpers shared by the HUD files (client). Other addons use
+    them too (medical, weapons, datapad, menus, radio, chat), always
+    behind an "if HUD and HUD.X" check.
+
+    Adds: HUD.Colors, HUD.Style (house style colours), HUD.Scale,
+    HUD.SimHealth, HUD.HeaderH, HUD.Frame (the house-style plate),
+    HUD.Bar, HUD.Panel, HUD.Text, HUD.Margins, HUD.Hidden and HUD.Plate
+    (the third-person corner plates). No hooks.
+]]
 
 local HUD = Rhylib.HUD
 local UI = Rhylib.UI
 
+-- Colours used across the HUD. text/dim/accent/bad come from
+-- Rhylib.UI.Colors. (rhylib_skills swaps accent to the order colour
+-- while a command order is active.)
 HUD.Colors = {
     panel = Color(20, 22, 20, 170),
     track = Color(255, 255, 255, 28),
@@ -18,8 +30,10 @@ HUD.Colors = {
     bad = UI.Colors.bad,
 }
 
--- Holding a training gun (rhylib_training): the health readouts show sim
--- health in yellow instead. Returns hp, max, or nil (normal health).
+-- HUD.SimHealth(ply): while ply holds a training gun (rhylib_training,
+-- weapon.Training), the health readouts show sim health in yellow
+-- instead. Returns hp, max; or nil (normal health, or no rhylib_training).
+-- Example: local hp, max = Rhylib.HUD.SimHealth(LocalPlayer())
 function HUD.SimHealth(ply)
     local T = Rhylib.Training
     if not T then return nil end
@@ -28,6 +42,8 @@ function HUD.SimHealth(ply)
     return T.Health(ply), math.max(T.Cfg("simHealth"), 1)
 end
 
+-- HUD.Scale(): screen height / 1080. Every size in the HUD is written
+-- for 1080p and multiplied by this.
 function HUD.Scale()
     return ScrH() / 1080
 end
@@ -54,7 +70,7 @@ local function setCol(c, alpha)
     surface.SetDrawColor(fc)
 end
 
--- Header band height for HUD.Frame titles.
+-- HUD.HeaderH(): header band height for HUD.Frame titles, in pixels.
 function HUD.HeaderH()
     return math.floor(18 * HUD.Scale())
 end
@@ -71,6 +87,7 @@ end
       cutLeft true: cut the top-left corner instead (things on the right)
       ticks   false to leave out the corner ticks
     Returns the y where content below the header starts.
+    Example: local top = Rhylib.HUD.Frame(x, y, 300, 120, { title = "Squad", rule = col })
 ]]
 function HUD.Frame(x, y, w, h, opts)
     opts = opts or {}
@@ -153,7 +170,8 @@ function HUD.Frame(x, y, w, h, opts)
     return top
 end
 
--- A flat bar: dark track with a filled part. frac is 0..1.
+-- HUD.Bar(x, y, w, h, frac, col, alpha): a flat bar: dark track with a
+-- filled part from the left. frac is 0..1 (clamped), alpha 0-255 (default 255).
 function HUD.Bar(x, y, w, h, frac, col, alpha)
     alpha = alpha or 255
     local track = HUD.Colors.track
@@ -173,19 +191,25 @@ local function faded(col, alpha)
     return scratch
 end
 
--- A plain plate in the house style (no title, no ticks).
+-- HUD.Panel(x, y, w, h, alpha): a plain plate in the house style (no
+-- title, no ticks).
 function HUD.Panel(x, y, w, h, alpha)
     HUD.Frame(x, y, w, h, { alpha = alpha, ticks = false })
 end
 
+-- HUD.Text(text, size, x, y, col, ax, ay, alpha): draw.SimpleText with
+-- Rhylib.UI.Font(size). ax/ay default to left/top; alpha (optional)
+-- fades col without changing it. Returns the text width and height.
 function HUD.Text(text, size, x, y, col, ax, ay, alpha)
     if alpha and alpha < 255 then col = faded(col, alpha) end
     return draw.SimpleText(text, UI.Font(size), x, y, col, ax or TEXT_ALIGN_LEFT, ay or TEXT_ALIGN_TOP)
 end
 
--- Distance from the screen edges for a HUD box. kind: "ammo", "hotbar"
--- or "status". While the helmet visor is showing, the ammo box sits on
+-- HUD.Margins(kind): distance from the screen edges for a HUD box, as
+-- two numbers: side, bottom (pixels). kind: "ammo", "hotbar" or
+-- "status". While the helmet visor is showing, the ammo box sits on
 -- the lower-right cheek and the hotbar low in the chin opening.
+-- (The chat and radio use the "ammo" margins so they line up.)
 function HUD.Margins(kind)
     if HUD.VisorActive and HUD.VisorActive() then
         -- (low: the visor parts sit close to the bottom edge, like the stamina strips)
@@ -197,7 +221,8 @@ function HUD.Margins(kind)
     return m, m
 end
 
--- True while something should hide the HUD (camera tool, dead, etc.).
+-- HUD.Hidden(): true while the HUD should not draw: no local player,
+-- dead, or holding the camera (gmod_camera).
 function HUD.Hidden()
     local ply = LocalPlayer()
     if not IsValid(ply) or not ply:Alive() then return true end
@@ -212,6 +237,7 @@ end
     slants down to the screen bottom.
     side: -1 = bottom left, 1 = bottom right.
     Returns the content box: x, y, w, h.
+    Used by the third-person status (left) and ammo (right) plates.
 ]]
 local plateVerts = { { x = 0, y = 0 }, { x = 0, y = 0 }, { x = 0, y = 0 }, { x = 0, y = 0 } }
 local COL_PLATE = Color(14, 16, 15, 225)
@@ -220,6 +246,8 @@ local COL_PLATE_HI = Color(170, 176, 180, 90)
 
 HUD.PLATE_W = 300   -- content size at 1080p, same for both plates
 HUD.PLATE_H = 100
+
+-- HUD.Plate(side): draws the corner plate and returns its content box.
 
 function HUD.Plate(side)
     local W, H = ScrW(), ScrH()

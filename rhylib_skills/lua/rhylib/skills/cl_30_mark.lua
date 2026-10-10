@@ -8,6 +8,8 @@
     marks, spots and Called shot marks orange.
     Sun visor down: a white ring on the spotted enemy nearest the aim; Q
     locks that one. Your own locks get a red ring (only you see rings).
+    Client only. K.visorTarget = the ringed enemy this frame (sent with Q).
+    Distances on the diamonds use 0.019 m per unit.
 ]]
 
 local K = Rhylib.Skills

@@ -6,6 +6,11 @@
     first person by the trooper hands with the DC-15A's values (CarrierVM,
     safety pose included). The model's addon must be installed. Tune with
     rhylib_vm_editor / rhylib_wm_editor, then paste the lines below.
+
+    Class rhylib_dp23. Shared: one file for server and client (AddCSLuaFile).
+    Base rhylib_base (rhylib_weapons), where every SWEP field is explained;
+    only the fields that differ are set here.
+    Training copy: rhylib_dp23_training.
 ]]
 
 AddCSLuaFile()
@@ -63,6 +68,9 @@ SWEP.Secondary = {
 }
 
 SWEP.FireRate = 580
+-- Recoil: view kick per shot (rhylib_weapons cl_50_recoil): up = degrees up,
+-- side = random sideways, bias = lean -1 (left) .. 1 (right), recover = share
+-- of the climb that settles back, aimMult = multiplier while aiming.
 SWEP.Recoil = { up = 0.85, side = 0.3, bias = 0, recover = 0.6, aimMult = 0.65 }
 SWEP.Damage = 20
 SWEP.BoltSpeed = 7000
@@ -78,6 +86,7 @@ SWEP.FireModes = { "semi", "auto", "stun" }   -- (stun: military police only)
 SWEP.UsesCell = true
 SWEP.CellShots = 500
 SWEP.CellReloadMult = 1.6
+-- Spare magazines / cells put in your pouch when you pick it up (rhylib_base).
 SWEP.StartMags = 8
 SWEP.StartCells = 1
 
@@ -86,6 +95,11 @@ SWEP.InvH = 1
 SWEP.InvLarge = true
 SWEP.InvWeight = 3.5         -- kg
 
+-- Spread: cone angles in degrees (rhylib_weapons sh_10_spread): hip / aim =
+-- resting cone, kickMain / kickSide = how far the crosshair arcs move per shot,
+-- bloomPerShot (up to bloomMax) = growth of the whole cone, aimKickMult /
+-- aimOffsetMult = share of that while aiming. Each value is also a setting
+-- in Server settings > guns (rhylib_weapons sh_70_gunstats).
 SWEP.Spread = {
     hip = 1.5,
     aim = 0.75,

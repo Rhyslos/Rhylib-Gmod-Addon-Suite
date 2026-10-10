@@ -16,7 +16,11 @@
 
     Staff (perm rhylib.spawns.admin) press E on a point to rename it, set
     its battalion, switch an event spawn on or off, or teleport everyone
-    there. rhylib_spawns_save keeps them on the map (the toolgun runs it).
+    there. Only permanent points are saved (toolgun Permanent tool, or
+    rhylib_spawns_save saves the permanent ones now).
+
+    Shared file: Rhylib.Spawns (S) with InBattalion, IsPoint, Options;
+    server functions in sv_10_spawns.lua, the menus in cl_10_spawns.lua.
 ]]
 
 Rhylib.Spawns = Rhylib.Spawns or {}
@@ -28,8 +32,9 @@ S.EVENT = "rhylib_event_spawn"
 Rhylib.Config.Register("spawns", "model", "models/props_combine/combine_mine01.mdl", "Spawn point model")
 Rhylib.Perms.Register("rhylib.spawns.admin", "admin", "Edit and save spawn points, run event teleports")
 
--- Does a point's battalion fit this player? Matches their roster
--- battalion, their job's battalion or their DarkRP job category.
+-- S.InBattalion(ply, bn): does a point's battalion fit this player?
+-- Matches their roster battalion (NW2 rhylib_bn), their job's battalion or
+-- their DarkRP job category. "" fits everyone.
 function S.InBattalion(ply, bn)
     if bn == "" then return true end
     if ply:GetNW2String("rhylib_bn", "") == bn then return true end
@@ -37,11 +42,14 @@ function S.InBattalion(ply, bn)
     return job ~= nil and (job.battalion == bn or job.category == bn)
 end
 
+-- S.IsPoint(ent): a spawn point or event spawn.
 function S.IsPoint(ent)
     return IsValid(ent) and (ent:GetClass() == S.POINT or ent:GetClass() == S.EVENT)
 end
 
--- Points this player may respawn at, best first: { ent, event }.
+-- S.Options(ply): points this player may respawn at, best first:
+-- { { ent, event }, ... }: open event spawns, their battalion's points,
+-- then everyone points. Empty = the map's own spawns are used.
 function S.Options(ply)
     local list = {}
     for _, e in ipairs(ents.FindByClass(S.EVENT)) do

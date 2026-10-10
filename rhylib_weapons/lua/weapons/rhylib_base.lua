@@ -30,7 +30,49 @@
 
     Derived weapons set their own values below. Note: GMod does NOT merge
     the Primary, Secondary and Spread tables from the base, so a weapon
-    that changes any field in them must define the whole table.
+    that changes any field in them must define the whole table (Recoil too).
+
+    Realm: shared (SWEP). The parts it uses live in rhylib/weapons/:
+    sh_10_spread (cone maths), sv_10_bolts / cl_10_bolts (bolts),
+    cl_20_crosshair, cl_30_reload (R key, reload wheel), cl_50_recoil,
+    sv_20_pouch (where magazines come from), sh_30_grapple (grapple mode).
+    The guns themselves are in rhylib_republic; a gun file only sets
+    fields (see docs/addons/rhylib_weapons.md, "Making your own gun").
+
+    Methods other code calls (shared unless marked):
+      IsLowered, GetFireModeName, ModeAllowed(i), FixFireMode, InGrappleMode,
+      GetMag, GetMagSize, MagRounds(m), FirstMagFor(owner), TakesMag(id),
+      IsReloading, CurrentFireRate, GetCellDamageMult, GetMoveMult,
+      InfiniteAmmo, NoAmmoUse, UsesCarrier, GetInventoryData /
+      SetInventoryData (rhylib_inventory), CarriedCount
+      server: CycleFireMode, ToggleSafety, StartReload(kind, magId),
+              FinishReload, ChooseMag, TrimClip, LeaveGrappleMode
+      client: GetAimFrac, Scoped, GetPropMuzzle, CarrierPose(key), DrawScope
+    Methods a gun may define to change behaviour: GetMoveMult,
+    ExtraPoseOffset(e) (a moving offset for ExtraProps), RhylibModelsChanged
+    (called by rhylib_core after a model override), and any of the usual
+    SWEP hooks (CanPrimaryAttack, FireShot...) to change one part.
+
+    Fields read here but not set below (nil = off / default):
+      LoweredHold          hold type while lowered (nil = "normal" for pistol
+                           grips, else "passive")
+      PistolLowerTilt      degrees a pistol tips up while lowered (12)
+      PistolLowerPos       its offset then: right, forward, up (0, -1, -3)
+      PistolLowerPivot     turn point for that tilt: forward, right, up in
+                           the view (nil = the eyes)
+      ModeProxies          { mode = { model, bone, boneMove, PropBonePos,
+                           PropBoneAng, PropBoneScale, VMOffset } }: another
+                           viewmodel drawn for a fire mode (client copy)
+      MagSkills            { mag id = skill id } (for the "needs a skill" note;
+                           the real check is rhylib_skills K.MagAllowed)
+      SpinSound            sound when the barrels start spinning (SpinUp)
+      PlayerFireAnim       false = no third-person firing gesture
+      Training, TrainingOf training copy of a gun (rhylib_training)
+      Stun                 every bolt is a stun bolt (rhylib_mp)
+    Fields other addons read: InvW/InvH/InvWeight/InvLarge/InvGroup/
+    InvSlot/InvCategory (rhylib_inventory items), CarrySkill /
+    RequiresSkill (rhylib_skills), NoArmoury (rhylib_armoury),
+    NoGunStats (sh_70_gunstats).
 ]]
 
 AddCSLuaFile()
@@ -68,8 +110,8 @@ SWEP.Secondary = {
 -- Rhylib settings
 SWEP.FireRate = 600                 -- rounds per minute
 SWEP.Damage = 25
-SWEP.BoltSpeed = 7000               -- units per second (max 16383)
-SWEP.BoltColor = 1                  -- 1 blue, 2 red, 3 green
+SWEP.BoltSpeed = 7000               -- units per second, x config boltSpeedMult (max 32767: 15 bits on the wire)
+SWEP.BoltColor = 1                  -- 1 blue, 2 red, 3 green (all styles: cl_10_bolts.lua)
 -- Sounds from the Star Wars shared resources pack (Workshop dependency; owner
 -- 2026-10-09). FireSound may be a list (one picked per shot); FireSoundLevel
 -- in dB (owner: 80 didn't carry far: rifles ~110 are heard across a big room
@@ -227,6 +269,9 @@ SWEP.VMOffset = nil                 -- viewmodel offset with the carrier: right,
 
 local RELOAD_NONE, RELOAD_MAG, RELOAD_CELL = 0, 1, 2
 
+-- Network vars (predicted, sent to everyone who can see the weapon, so a
+-- shot changes as few as possible: Recoil, RecoilB, KickTime, Clip1).
+-- ReloadKind: 0 none, 1 magazine, 2 power cell.
 function SWEP:SetupDataTables()
     -- The three arc kicks (Recoil) and bloom, streak and last arc
     -- (RecoilB), packed into two Ints (see sh_10_spread.lua), so a shot
@@ -445,11 +490,15 @@ function SWEP:NoAmmoUse()
     return K and K.OrderIs and K.OrderIs(self:GetOwner(), "open") or false
 end
 
--- Is the carrier viewmodel in use? (set in Initialize)
+-- Is the carrier viewmodel in use? (set in Initialize: CarrierVM,
+-- CarrierBone and PropModel set and the carrier model installed)
 function SWEP:UsesCarrier()
     return self.rhylibCarrier == true
 end
 
+-- Picks the carrier, sets the hold type, a full cell, the first fire mode
+-- and the preferred magazine type. A gun that overrides Initialize should
+-- call the base's (DEFINE_BASECLASS / self.BaseClass.Initialize).
 function SWEP:Initialize()
     local c = self.CarrierVM
     if c and self.CarrierBone and self.PropModel and self.PropFirstPerson ~= false and (util.IsValidModel(c) or file.Exists(c, "GAME")) then   -- (client: a model nobody has loaded yet isn't "valid")
@@ -630,6 +679,8 @@ if SERVER then
     end
 end
 
+-- Taking the gun out: Quick draw (skills), no aim, a fire mode the owner
+-- may still use, the right viewmodel for the mode.
 function SWEP:Deploy()
     self:QuickDraw()
     self:SetAiming(false)
@@ -720,6 +771,9 @@ function SWEP:TooHeavyToFire()
     return true
 end
 
+-- Can a shot go now? Not lowered, not reloading (or waiting for the
+-- server's reload answer), not too heavy to fire in flight, rounds in the
+-- clip and charge in the cell. Plays the empty click when empty.
 function SWEP:CanPrimaryAttack()
     if self:IsLowered() then return false end
     if self:GetReloadKind() ~= RELOAD_NONE then
@@ -826,7 +880,10 @@ local function firePellets(self, owner, origin, dir, pellets, cone, damage, stun
     end
 end
 
--- One shot: spread, recoil, ammo, sound and the bolt.
+-- One shot: spread, recoil, ammo, sound and the bolt. Shared and
+-- predicted: the server fires the real bolts (Bolts.Fire), the shooter's
+-- client draws its own at once (Bolts.FireLocal). A gun can override it
+-- for something that isn't a bolt (rhylib_republic's grenade launcher).
 function SWEP:FireShot()
     local owner = self:GetOwner()
     if not IsValid(owner) then return end
@@ -1174,7 +1231,8 @@ if SERVER then
 end
 
 -- Clip, magazine type and cell are kept in the inventory item while the
--- weapon is stored.
+-- weapon is stored. rhylib_inventory calls GetInventoryData when the gun
+-- is put away and SetInventoryData(data) when it's given back.
 function SWEP:GetInventoryData()
     return {
         clip = self:Clip1(),
@@ -1235,6 +1293,8 @@ function SWEP:UpdateLowered(owner)
     end
 end
 
+-- Every tick (predicted): finish reloads, auto reload, sprint lowering,
+-- spin-up, trigger release, bursts and the aim (right mouse).
 function SWEP:Think()
     local owner = self:GetOwner()
     if not IsValid(owner) or not owner:IsPlayer() then return end

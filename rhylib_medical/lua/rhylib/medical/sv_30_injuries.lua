@@ -14,6 +14,19 @@
     while, and parts with nothing else wrong slowly recover.
     State goes to the owner, and to anyone with the owner's H menu open
     (in range, in sight), at most once per tick, when it changes.
+
+    Also here: the Recovery medic skill timer, H menu treatments
+    (Med.TreatPart, net med.treat), the bacta tank's healing step
+    (Med.TankTick) and switching the simplified system on.
+    Public: Med.MarkInjuries, Med.ClearInjuries, Med.BleedRate,
+    Med.CanFracture, Med.TreatPart, Med.TankTick.
+    Hooks asked: Rhylib.CanFracture(ply, limb) (false = can't break),
+    Rhylib.FractureChance(ply, limb) (0-1), Rhylib.BlastPartMult(ply, limb)
+    (blast damage multiplier for that part). Fired: Rhylib.PlayerHealed.
+    Nets: med.inj (server -> owner + viewers, see sh_30_injuries.lua),
+    med.view (client -> server) entity: "I opened this patient's H menu"
+    (NULL = closed), med.treat (client -> server) patient entity, part
+    3 bits (index into Med.LIMBS), kind 3 bits (Med.TREAT_ITEMS).
 ]]
 
 local Med = Rhylib.Medical
@@ -90,6 +103,11 @@ local function signature(t)
     return a, b
 end
 
+-- Med.MarkInjuries(ply): call after changing a player's parts. Drops the
+-- table if everything healed and queues a send for the next tick (only
+-- sent if the rounded numbers changed).
+-- Example: local t = Rhylib.Medical.inj[ply]
+--          if t then t.torso.bleed = 0 Rhylib.Medical.MarkInjuries(ply) end
 function Med.MarkInjuries(ply)
     local t = inj[ply]
     if t and healthy(t) then inj[ply] = nil end
@@ -118,6 +136,8 @@ Rhylib.Hook.Add("Tick", "medical.injuries.send", function()
     end
 end)
 
+-- Med.ClearInjuries(ply): heals every part and ends painkillers (health
+-- is not changed). Run on spawn and death.
 function Med.ClearInjuries(ply)
     if IsValid(ply) and ply:GetNW2Float("rhylib_painkill", 0) ~= 0 then ply:SetNW2Float("rhylib_painkill", 0) end
     if inj[ply] then
@@ -158,6 +178,9 @@ local function canBreak(ply, limb)
 end
 Med.CanFracture = canBreak
 
+-- Adds damage to a part: a hit of heavyBleedAt (or a part at 80+) bleeds
+-- heavily, lightBleedAt lightly (stops after lightBleedStops s); a limb hit
+-- of fractureAt breaks the bone (clearing any splint).
 local function hurt(ply, t, limb, amount, canBleed, now)
     local p = t[limb]
     p.dmg = math.min(100, p.dmg + amount)
@@ -174,6 +197,8 @@ local function hurt(ply, t, limb, amount, canBleed, now)
     end
 end
 
+-- Every hit that took (after armour and the downed check) becomes an
+-- injury. Bleed-out damage (rhylibBleedTick) is skipped. Priority 50.
 Rhylib.Hook.Add("PostEntityTakeDamage", "medical.injuries", function(ply, dmg, took)
     if not took or not ply:IsPlayer() or ply.rhylibBleedTick then return end
     if not cfg("injuries") or Med.Simple() or not ply:Alive() then
@@ -235,6 +260,8 @@ Rhylib.Hook.Add("PlayerDisconnected", "medical.injuries", function(ply)
 end)
 
 -- Opening (or closing, with no patient) someone's injury menu.
+-- med.view: one entity. The viewer is dropped from every other patient,
+-- then added if in viewRange and sight; they get the state at once.
 Rhylib.Net.Receive("med.view", function(ply)
     local patient = net.ReadEntity()
     for p, v in pairs(viewers) do
@@ -253,7 +280,8 @@ end, { rate = 4, burst = 4 })
 -- Bleeding and recovery (once a second, injured players only)
 --------------------------------------------------------------------------
 
--- Health lost per second from bleeding right now.
+-- Med.BleedRate(ply): health lost per second from bleeding right now
+-- (lightBleed per light part + heavyBleed per heavy part).
 function Med.BleedRate(ply)
     local t = inj[ply]
     if not t then return 0 end
@@ -403,7 +431,10 @@ local function wontHelp(kit, p, hurtHP, helper, patient)
     end
 end
 
--- The effect of a part treatment, when its timer ends (sv_20_actions.lua).
+-- Med.TreatPart(helper, patient, limb, kit): the effect of a part
+-- treatment, when its timer ends (A_TREAT in sv_20_actions.lua). kit is an
+-- item id from Med.TREAT_ITEMS. Checks again that it still helps, uses
+-- the item, changes the part, notes the helper, fires Rhylib.PlayerHealed.
 function Med.TreatPart(helper, patient, limb, kit)
     local t = getState(patient)
     local p = t[limb]
@@ -505,7 +536,11 @@ end, { rate = 4, burst = 4 })
 -- Bacta tank (rhylib_bacta_tank): heals the occupant over time
 --------------------------------------------------------------------------
 
--- dt seconds in a tank at rate mult. Returns true when nothing is left.
+-- Med.TankTick(ply, dt, mult): dt seconds in a bacta tank at rate mult
+-- (2 with a Bacta specialist near). Heals tankHeal/s (simplified: % of
+-- max per second, at least 1 per step), stops all bleeding, repairs
+-- tankRepair/s of damage and burns, sets bones after tankSetBones s.
+-- Returns true when nothing is left to heal. Called by sv_40_medbay.lua.
 function Med.TankTick(ply, dt, mult)
     local heal = cfg("tankHeal") * dt * mult
     if Med.Simple() then heal = heal * ply:GetMaxHealth() / 100 end   -- (simplified: tankHeal = percent per second)

@@ -3,10 +3,15 @@
     maps/thumb/<map>.png when the client has it), search box, current map
     marked. Admin.MapPicker(done(map)); the staff menu's Change map row and
     a bare !map open it. Needs rhylib_menus (the kit).
+    Client only. The list comes from the server (Admin.RequestList(0), at
+    most 255 maps); picking a map calls done(map), which runs !map.
 ]]
 
 local Admin = Rhylib.Admin
 
+-- Thumbnail per map: Material, or false when there is none (so the file
+-- checks run only once per map). Tries maps/thumb/<map>.png, then
+-- maps/<map>.png, each as given and with "../" in front.
 local mats = {}
 local function thumb(m)
     local c = mats[m]
@@ -32,6 +37,9 @@ local function split(m)
     return string.upper(pre), string.gsub(rest, "_", " ")
 end
 
+-- Admin.MapPicker(done): opens the map window (only one at a time).
+-- Returns the panel, or nil without rhylib_menus (a chat hint instead).
+-- Example: Rhylib.Admin.MapPicker(function(m) Rhylib.Admin.Run("map", { m }) end)
 local picker
 function Admin.MapPicker(done)
     local Menus = Rhylib.Menus

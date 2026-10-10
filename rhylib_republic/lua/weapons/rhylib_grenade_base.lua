@@ -12,18 +12,35 @@
     blast, forces doors open; see rhylib_grenade).
     SWEP.RequiresSkill: a skill (rhylib_skills) needed to throw it.
     SWEP.GrenadeKind: "fuse" (explodes FuseTime after the throw), "impact"
-    (explodes on the first hit) or "emp" (fuse; kills Rhylib droids in
-    range, harmless to everything else). Blast numbers are on the entity.
+    (explodes on the first hit), "emp" (fuse; kills Rhylib droids in
+    range, stuns players there, no other damage) or "flash" (fuse; stuns
+    players in sight, droids aim worse). Blast numbers are on the entity
+    (rhylib_grenade: ENT.Radius / Damage / FlashRadius, weapons empRadius).
     First person: GMod's HL2 grenade hands (c_grenade, player hands) play
-    draw / idle / throw; its grenade bones are shrunk away and the prop is
-    drawn on the grenade bone, so it follows the throw. Third person: the
-    prop in the right hand (PropWMPos/Ang, tune with rhylib_wm_editor).
+    draw / idle / throw; the c_grenade model itself is drawn see-through
+    (render blend 0) and the prop is drawn on its grenade bone, so it
+    follows the throw. Third person: the prop in the right hand
+    (PropWMPos/Ang, tune with rhylib_wm_editor).
     Prop offsets are from the model's centre (the thermal's origin is off
     to one side).
+
+    Shared (AddCSLuaFile). Built on GMod's weapon_base, not rhylib_base, so
+    it has no magazines and isn't IsRhylib (the weapons armoury skips it;
+    the ammo cabinet stocks grenades). Each grenade is an inventory item
+    (InvStack per stack); throwing uses one up (SWEP:UseOne).
+    Grenades built on it: rhylib_thermal, rhylib_thermal_impact (retired),
+    rhylib_thermal_training, rhylib_droidpopper, rhylib_droidpopper_training,
+    rhylib_flashcharge, rhylib_he_charge (its own placing code), and
+    rhylib_rep_mine in rhylib_eod.
+
+    Make your own: a small file in lua/weapons/ with SWEP.Base =
+    "rhylib_grenade_base" and the fields below (GrenadeKind, FuseTime,
+    PropColor, ImpactMode, RequiresSkill...). See docs/addons/rhylib_republic.md.
 ]]
 
 AddCSLuaFile()
 
+-- Settings (module "weapons"; registered here, so only with rhylib_republic).
 local Config = Rhylib.Config
 Config.Register("weapons", "breachFuse", 6, "Breaching charge: seconds from placing to the blast")
 Config.Register("weapons", "breachRadius", 130, "Breaching charge: blast radius (units, 130 = 2.5 m)")
@@ -50,14 +67,15 @@ SWEP.HoldType = "grenade"
 SWEP.Primary = { ClipSize = -1, DefaultClip = -1, Automatic = false, Ammo = "none" }
 SWEP.Secondary = { ClipSize = -1, DefaultClip = -1, Automatic = false, Ammo = "none" }
 
+-- Inventory item (rhylib_inventory): size in cells, how many stack, kg each.
 SWEP.InvW = 1
 SWEP.InvH = 1
 SWEP.InvStack = 3
 SWEP.InvWeight = 0.6
 SWEP.InvCategory = "gear"
 
-SWEP.GrenadeKind = "fuse"
-SWEP.FuseTime = 3
+SWEP.GrenadeKind = "fuse"     -- see the header: fuse / impact / emp / flash
+SWEP.FuseTime = 3             -- seconds (timed kinds)
 SWEP.ThrowForce = 1000       -- LMB
 SWEP.LobForce = 450          -- RMB
 SWEP.ThrowDelay = 1          -- seconds between throws
@@ -72,6 +90,9 @@ SWEP.PropWMPos = Vector(-5, -1, -5)    -- third person: forward, right, up from 
 SWEP.PropWMAng = Angle(0, 0, 0)
 SWEP.RedrawTime = 0.7                  -- after a throw, the next one comes up
 
+-- LastThrow: CurTime() of the last throw. NeedDraw: the hand is empty until
+-- RedrawTime after it (then the draw animation plays).
+-- (A grenade that adds its own vars calls this first: rhylib_he_charge.)
 function SWEP:SetupDataTables()
     self:NetworkVar("Float", 0, "LastThrow")
     self:NetworkVar("Bool", 0, "NeedDraw")
@@ -83,7 +104,11 @@ function SWEP:Deploy()
     return true
 end
 
--- Each grenade type remembers its own mode (thermal: rhylib_nadeImpact).
+-- SWEP:ImpactKey() -> the player NW2Bool name that holds this grenade's
+-- impact choice. Each grenade type remembers its own mode (thermal:
+-- rhylib_nadeImpact, others rhylib_nadeImpact_<class>); breach mode is the
+-- same name + "_breach". (Training thermals have their own class, so their
+-- own key.)
 function SWEP:ImpactKey()
     local c = self:GetClass()
     return c == "rhylib_thermal" and "rhylib_nadeImpact" or ("rhylib_nadeImpact_" .. c)
@@ -104,6 +129,8 @@ function SWEP:IsImpact()
     return self.ImpactMode and IsValid(o) and o:GetNW2Bool(self:ImpactKey()) and not self:IsBreach() or false
 end
 
+-- SWEP:CanBreach(): BreachMode grenade and the owner has the "breaching"
+-- skill (always true without rhylib_skills).
 function SWEP:CanBreach()
     if not self.BreachMode then return false end
     local K = Rhylib.Skills
@@ -117,7 +144,8 @@ function SWEP:SkillOK()
     return K.Has(self:GetOwner(), self.RequiresSkill)
 end
 
--- The next grenade comes up after a throw.
+-- Think: E + R cycles the mode (server; chat line + click), and the next
+-- grenade comes up after a throw.
 function SWEP:Think()
     -- E + R: timed / impact.
     local o = self:GetOwner()
@@ -166,7 +194,10 @@ function SWEP:SecondaryAttack()
     self:Throw(self.LobForce, 0.25)
 end
 
--- Breach mode: stick a charge on the surface you look at.
+-- SWEP:PlaceBreach(): breach mode. Sticks a charge (rhylib_grenade kind
+-- "breach", fuse weapons breachFuse) on the surface within breachReach you
+-- look at, parented to what it hit (a door moves it). Not on players or
+-- NPCs, not the sky.
 function SWEP:PlaceBreach()
     local o = self:GetOwner()
     if not IsValid(o) or not o:IsPlayer() then return end
@@ -205,7 +236,11 @@ function SWEP:PlaceBreach()
     self:UseOne(o)
 end
 
--- force: speed along the aim; lift: extra upward share of it.
+-- SWEP:Throw(force, lift): throws one. force = speed along the aim; lift =
+-- extra upward share of it (LMB 0.05, RMB 0.25). Refuses without
+-- RequiresSkill. Spawns rhylib_grenade with kind, fuse, thrower, training
+-- and tint, then applies the Grenadier and Demolitions skill multipliers
+-- (rhylib_skills) before Spawn. Server side does the spawning.
 function SWEP:Throw(force, lift)
     local o = self:GetOwner()
     if not IsValid(o) or not o:IsPlayer() then return end

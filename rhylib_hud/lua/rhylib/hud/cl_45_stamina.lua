@@ -1,5 +1,6 @@
 --[[
-    Stamina bar (needs rhylib_stamina). It shrinks toward the middle from
+    Stamina bar (client; needs rhylib_stamina, reads Rhylib.Stamina.Frac
+    and Exhausted; draws nothing without it). It shrinks toward the middle from
     both ends as stamina runs down, blinks gently at 20% or less, turns
     red while you're exhausted, and fades out after 2 seconds at full.
 
@@ -9,6 +10,9 @@
                     as thick as those bars, always shown.
                     Together they're one bar whose middle is the chin, so
                     each half shrinks toward the chin.
+
+    The visor strips use HUD.VisorStrip (cl_60_visor.lua); the radio's
+    own voice meter sits under them (rhylib_radio cl_20_hud.lua).
 ]]
 
 local HUD = Rhylib.HUD
@@ -119,6 +123,8 @@ Rhylib.Hook.Add("HUDPaint", "hud.stamina", function()
     end
 
     local s = HUD.Scale()
+    -- The hotbar draws after us (priority 0 vs -9), so HotbarRect is from
+    -- the last frame; accept it if it is at most one frame old.
     local r = HUD.HotbarRect
     local w, x, y
     local barH = math.max(2, math.floor(6 * s))

@@ -1,15 +1,26 @@
 --[[
-    Battalion computers and the medical holotable (server).
+    Battalion computers and the medical holotable (server): who may do
+    what at a computer, uploading, moderation, the admin commands and
+    saving placements. The other computer tabs (board, stats, unit,
+    personnel, missions) use the helpers exported below (D.TermRecv...).
 
-      dp.term    server -> player: the computer's state and its entries
-      dp.tread   entity, entry id -> dp.tbody
+    Every client -> server message here starts with the computer entity;
+    the player must be alive and within useRange of it.
+      dp.term    server -> player: entity, battalion, view, mod, admin,
+                 foreign (admin inspection), banned, notes to upload (8),
+                 entries (count 8; id 20, author, title, patient, time 32,
+                 mp), bans for moderators (count 8; sid, name)
+      dp.tread   entity, entry id (20) -> dp.tbody (id 20, text)
       dp.tup     upload your notes here
-      dp.tdel    moderator: delete an entry
-      dp.tban    moderator: ban the author of an entry from uploading here
+      dp.tdel    moderator: delete an entry (id 20)
+      dp.tban    moderator: ban the author of an entry from uploading here (id 20)
       dp.tunban  moderator: lift a ban (sid)
-      dp.tset    admin: set the battalion of a computer
+      dp.tset    admin: set the battalion of a computer that has none
 
-    Placements: rhylib_datapad_save (Data "dp_places"/map, with battalion).
+    Commands: rhylib_datapad_inspect, rhylib_datapad_setbattalion <name>,
+    rhylib_datapad_save (all need perm rhylib.datapad.admin).
+    Placements: Data "dp_places"/map = list { class, pos, ang, bn }; only
+    permanent computers are saved (toolgun Permanent tool, core Rhylib.Perma).
 ]]
 
 local D = Rhylib.Datapad
@@ -30,6 +41,9 @@ end
 -- What a player may do here. admin comes from the permission check.
 -- Only members read a computer (medics the holotable). Admins too only use
 -- their own, unless inspecting (rhylib_datapad_inspect).
+-- Returns { view, upload, mod (delete/ban), admin (admin rights here:
+-- own computer, a new one, or inspecting), foreign (inspecting someone
+-- else's), rawAdmin (has the permission at all) }.
 local function access(ply, ent, admin)
     local insp = admin and ply.rhylibDpInspect or false
     local a = {}
@@ -69,6 +83,8 @@ local function uploadable(ply, ent)
     return n
 end
 
+-- D.SendTerminal(ply, ent): send dp.term (opens or refreshes the computer
+-- window). Entries only if they may view; the ban list only for moderators.
 function D.SendTerminal(ply, ent)
     withAdmin(ply, function(admin)
         if not near(ply, ent) then return end
@@ -112,6 +128,7 @@ function D.SendTerminal(ply, ent)
     end)
 end
 
+-- D.UseTerminal(ent, ply): what E on a computer does (ENT:Use calls it).
 function D.UseTerminal(ent, ply)
     if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return end
     D.SendTerminal(ply, ent)
@@ -131,7 +148,10 @@ local function recv(name, h, limits)
     end, limits or { rate = 4, burst = 6 })
 end
 
--- For the board, search and stats files.
+-- For the board, search, stats, unit, personnel and mission files:
+--   D.TermRecv(name, { read = fn() -> arg, run = fn(ply, ent, access, arg) }, limits)
+--   D.TermAccess(ply, ent, admin) -> the access table above
+--   D.TermNear(ply, ent), D.IsMedTerm(ent), D.TermKey(ent) (battalion or D.MED_KEY)
 D.TermRecv, D.TermAccess, D.TermNear, D.IsMedTerm, D.TermKey = recv, access, near, isMed, keyOf
 
 local function findEntry(book, id)
@@ -154,6 +174,10 @@ recv("dp.tread", {
     end,
 })
 
+-- Upload: every pad note of the matching kind (logs here, medical records
+-- at the holotable) goes into the book, newest first; the rest stays on the
+-- pad. The book is trimmed to logCap / medCap. A first upload adds the
+-- battalion to the "__index" list (MP lookups).
 recv("dp.tup", {
     run = function(ply, ent, a)
         local key = keyOf(ent)
@@ -299,7 +323,10 @@ end)
 
 local CLASSES = { "rhylib_bn_computer", "rhylib_med_holotable" }
 
+-- D.SavePlacements(quiet): save the permanent computers of this map (with
+-- their battalion) to Data "dp_places"/map; returns how many.
 -- quiet: only re-save a map that was saved before (keeps a battalion change).
+-- Without Rhylib.Perma (older core) every computer is saved.
 function D.SavePlacements(quiet)
     if quiet and not istable(Rhylib.Data.Get("dp_places", game.GetMap())) then return 0 end
     local rows = {}
@@ -316,6 +343,8 @@ function D.SavePlacements(quiet)
     return #rows
 end
 
+-- Replace the computers on the map with the saved ones (InitPostEntity +1 s,
+-- PostCleanupMap), marked permanent. Nothing saved = the map is left alone.
 local function loadPlaces()
     local rows = Rhylib.Data.Get("dp_places", game.GetMap())
     if not istable(rows) then return end

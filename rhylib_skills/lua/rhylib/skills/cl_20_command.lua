@@ -3,6 +3,9 @@
     its colour (Rhylib.UI.Tint for the crosshair, the UI accent swapped for
     the length of HUDPaint, a soft edge glow) and a bar near the top shows
     the order, who gave it and the time left.
+    Also the squad wheel: hold R (+reload) with the comlink out opens a
+    rhylib_menus wheel of clone orders; the pick goes to the server as
+    skills.squad (index into K.SQUAD_OPS, 3 bits). Client only.
 ]]
 
 local K = Rhylib.Skills
@@ -27,7 +30,7 @@ local function edgeGlow(col, alpha, w, h)
     end
 end
 
-K.orderFrom = K.orderFrom or ""
+K.orderFrom = K.orderFrom or ""   -- (name of whoever gave your current order, for the bar)
 
 Rhylib.Net.Receive("skills.order", function()
     local o = K.ORDERS[net.ReadUInt(3)]

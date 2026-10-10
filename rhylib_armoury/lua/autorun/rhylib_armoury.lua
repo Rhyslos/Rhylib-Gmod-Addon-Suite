@@ -1,3 +1,6 @@
+-- rhylib_armoury loader (shared, runs on server and client). Loads the
+-- module files in lua/rhylib/armoury/ through rhylib_core: sh_ first, then
+-- sv_, then cl_. The entities in lua/entities/ load the normal GMod way.
 if not Rhylib then
     print("[Rhylib] rhylib_armoury needs rhylib_core. Install it and restart the map.")
     return

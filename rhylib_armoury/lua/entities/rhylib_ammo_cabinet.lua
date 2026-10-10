@@ -1,4 +1,5 @@
--- Ammo cabinet: magazines, power cells, rockets and grapple hooks, endless.
+-- Ammo cabinet: magazines, power cells, rockets, grapple hooks, grenades,
+-- ammo packs and HE charges (Rhylib.Armoury.AMMO_STOCK), endless and issued.
 AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "rhylib_armoury_base"

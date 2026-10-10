@@ -1,5 +1,7 @@
 --[[
-    The Radio page (pause menu, also the radio page key, default T).
+    The Radio page (client; pause menu group "unit", also the radio page
+    key, default T, or the console command rhylib_radio). Needs
+    rhylib_menus (Menus.AddPage and its Kit); without it there is no page.
 
     Left:   your radio (on, mute, deafen), your channels (Local, Squad,
             Channel 1, Channel 2: talk on it, leave, create) and the open
@@ -67,8 +69,11 @@ local function heading(parent, text, top)
     return h
 end
 
--- A small choice window on top of everything (a DermaMenu opened from a
--- prompt ended up behind the pause menu). options = { { label, fn }, ... }
+-- R.Choose(title, options): a small choice window on top of everything
+-- (a DermaMenu opened from a prompt ended up behind the pause menu).
+-- options = { { label, fn }, ... }; a Cancel button is added. Opens a
+-- frame later; Esc closes it (registered in Menus.prompts).
+-- Example: Rhylib.Radio.Choose("Pick one", { { "Yes", function() end } })
 function R.Choose(title, options)
     timer.Simple(0, function()
         local Kit = K()

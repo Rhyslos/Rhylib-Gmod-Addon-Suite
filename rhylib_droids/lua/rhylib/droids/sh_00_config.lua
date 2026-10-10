@@ -2,7 +2,7 @@
     Droids: lightweight NextBot enemies that fire real bolts (rhylib_weapons),
     so hits, hit markers and kill markers work like against players.
 
-      B1 battle droid (rhylib_b1): 200 health, E-5 blaster with red bolts,
+      B1 battle droid (rhylib_b1): b1Health health, E-5 blaster with red bolts,
       now and then a grenade at someone who just ducked behind cover.
       B1 variants (rhylib_b1_<variant>): aat, geonosis, marine, security,
       snow fight like a B1 (other model); heavy fires long fast bursts;
@@ -32,6 +32,23 @@
     Spawn menu: NPCs tab, "Rhylib: B1 battle droids", "Rhylib: B2 super
     battle droids" and "Rhylib: Training droids"
     (admins). Droids don't hurt each other. At most maxActive droids exist at once.
+
+    Clone troopers (rhylib_ct_*, spawn menu "Rhylib: Clone troopers"):
+    friendly NPCs on the same brain that fight droids (sv_30_clones,
+    entities/rhylib_clone.lua). Own cap cloneMax.
+
+    This file (shared) holds: the Rhylib.Droids table (D), every config
+    key, the model paths, D.KINDS (one row per NPC kind), D.CLASSES (kind
+    -> entity class, also builds the spawn menu list), mode and
+    aggression names, D.Aggro, D.Gun, the Server settings > Models entries
+    and the player/clone no-collide rule. The brain is in
+    entities/rhylib_b1.lua; server lists and caps in sv_10_droids, orders
+    and markers in sv_20_orders, clones/presets/medics/artillery
+    spotting/command wheel in sv_30_clones.
+
+    Adding a kind: a D.KINDS row (below), a D.CLASSES entry, and a
+    one-line entity file with ENT.Base = "rhylib_b1" (or "rhylib_clone")
+    and ENT.DroidKind = "<kind>". See docs/addons/rhylib_droids.md.
 ]]
 
 Rhylib.Droids = Rhylib.Droids or {}
@@ -73,9 +90,11 @@ Config.Register("droids", "b2DirectSpeed", 1300, "B2 rocket droid: rocket speed 
 Config.Register("droids", "b2SlowTime", 1, "B2 rocket droid: seconds before the dive over which the rocket slows down")
 Config.Register("droids", "b2SlowMult", 0.65, "B2 rocket droid: speed share it slows to by the dive (kept through the curve)")
 Config.Register("droids", "b2DiveDist", 220, "B2 rocket droid: how far before its target the rocket starts curving down into the floor")
--- Artillery (2026-10-06be, owner: genuine artillery to fight against):
--- the mortar squad's mortars fire mostly rockets, at anything any droid
--- sees within artyRange, walking their shots in on a target.
+-- Command wheel (rhylib_skills, D.SquadOrder in sv_30_clones): the two
+-- cmd* keys below. Then artillery (2026-10-06be, owner: genuine artillery
+-- to fight against): the mortar squad's mortars fire mostly rockets, at
+-- anything any droid sees within artyRange, walking their shots in on a
+-- target.
 Config.Register("droids", "cmdFollowRadius", 900, "Command wheel Follow me: free clones this close join you")
 Config.Register("droids", "cmdMaxFollowers", 8, "Command wheel: most clones following one commander")
 Config.Register("droids", "artyRange", 8000, "Mortar squad artillery: how far its mortars fire (any droid spotting a target is enough)")
@@ -195,6 +214,8 @@ Config.Register("droids", "reviveShield", 0.6, "Players got up by a clone medic:
 Config.Register("droids", "reviveShieldTime", 5, "Players got up by a clone medic: seconds the damage reduction lasts")
 Config.Register("droids", "ctDownRadius", 1500, "Clones this close to a downed player can be sent to guard them")
 
+-- D.Cfg(key): shortcut for Rhylib.Config.Get("droids", key). Shared.
+-- Example: local hp = Rhylib.Droids.Cfg("b1Health")
 function D.Cfg(k) return Config.Get("droids", k) end
 
 D.B1_MODEL = "models/aussiwozzi/cgi/b1droids/b1_battledroid.mdl"   -- (same pack as the variants, B2s and training droids)
@@ -210,6 +231,28 @@ D.B2T_MODEL = "models/aussiwozzi/cgi/b1droids/b2_battledroid_training.mdl"
     Droid kinds (ENT.DroidKind). Numbers are config keys. training: yellow
     bolts and blasts that only take sim health (rhylib_training), no kill
     credit. Training droids take normal damage (and training bolts).
+
+    Fields of a row (all read by entities/rhylib_b1.lua):
+      name        shown in the spawn menu and toolgun
+      model       model path (a missing model falls back to the B1's;
+                  clones to D.CLONE_FALLBACK)
+      modelCfg    config key holding the model instead (clones)
+      health, speed, range, reaction, damage, rpm, spread
+                  config KEY names (strings), read when used, so a
+                  Server settings change applies to new shots/spawns
+      burst       { min, max } shots per burst
+      color       bolt colour index (rhylib_weapons BoltColor: 1 blue,
+                  2 red, 8 training)
+      gun         gun model drawn in the right hand (none: no prop, e.g. B2)
+      sound, pitch  fire sound and pitch % (default D.E5_SOUND, 100)
+      nades       throws B1 grenades     poppers  throws droid poppers (clones)
+      cover       takes cover when hit   big      bigger hull and eye (B2s)
+      dual        fires from both hands  rockets  B2 wrist rockets (mortar)
+      direct      rockets fly level and dive (rocket droid; needs rockets)
+      commander   boosts its side within cmdRadius
+      medic       heals, treats and revives (clones)
+      training    sim-only bolts and blasts, no kill credit
+      side        "republic" = a clone (no side = droid)
 ]]
 D.KINDS = {
     b1 = { name = "B1 battle droid", model = D.B1_MODEL, health = "b1Health", speed = "b1Speed", range = "b1Range", reaction = "b1Reaction",
@@ -219,6 +262,8 @@ D.KINDS = {
 }
 
 -- B1 variants: a B1 with another model, and a few changes.
+-- variant(base, name, model, changes): a copy of D.KINDS[base] with a new
+-- name and model (nil model keeps the base's) and the fields in changes.
 local B1V = "models/aussiwozzi/cgi/b1droids/b1_battledroid_"
 local function variant(base, name, model, changes)
     local k = table.Copy(D.KINDS[base])
@@ -275,7 +320,9 @@ Rhylib.Hook.Add("Rhylib.ModelCatalogue", "droids.models", function(add)
     end
 end)
 
--- The model a kind uses (config for clones).
+-- D.KindModel(kindRow) -> model path: the config model for kinds with
+-- modelCfg (clones), else the row's model. Takes the row, not the name.
+-- Example: local mdl = D.KindModel(D.KINDS.ct_medic)
 function D.KindModel(k)
     if k.modelCfg then
         local m = D.Cfg(k.modelCfg)
@@ -284,7 +331,11 @@ function D.KindModel(k)
     return k.model
 end
 
-D.CLASSES = { b1 = "rhylib_b1", b2 = "rhylib_b2", b1t = "rhylib_b1_training", b2t = "rhylib_b2_training", b2_cannon = "rhylib_b2_cannon", b2_rocket = "rhylib_b2_rocketdroid",
+-- D.CLASSES: kind name -> entity class. Every entry is added to the
+-- spawn menu's NPC list at the bottom of this file, and presets and
+-- D.SpawnClone create NPCs through it. New kinds need one.
+D.CLASSES = { b1 = 
+"rhylib_b1", b2 = "rhylib_b2", b1t = "rhylib_b1_training", b2t = "rhylib_b2_training", b2_cannon = "rhylib_b2_cannon", b2_rocket = "rhylib_b2_rocketdroid",
     ct_trooper = "rhylib_ct_trooper", ct_rifleman = "rhylib_ct_rifleman", ct_heavy = "rhylib_ct_heavy", ct_medic = "rhylib_ct_medic", ct_commander = "rhylib_ct_commander" }
 for _, v in ipairs({ "aat", "commander", "geonosis", "heavy", "marine", "security", "snow" }) do
     D.CLASSES["b1_" .. v] = "rhylib_b1_" .. v
@@ -297,7 +348,9 @@ D.AGGRO_NAMES = { "Retreat", "Fall back", "Moderate", "March", "Charge" }
 -- A commander's own clones (command wheel): 3 = by the odds (their doctrine).
 D.SQUAD_AGGRO_NAMES = { "Retreat", "Fall back to me", "By the odds", "March", "Charge" }
 
--- Aggression 1-5 (server: config, live; clients: Global2Int).
+-- D.Aggro() -> 1-5: the droids' aggression. Server: the live level set by
+-- D.SetAggro, else config "aggression". Client: Global2Int
+-- rhylib_droidAggro. Clones use ENT:Aggro() instead.
 function D.Aggro()
     local v
     if SERVER then v = D.aggroLive or D.Cfg("aggression") else v = GetGlobal2Int("rhylib_droidAggro", 3) end
@@ -305,6 +358,9 @@ function D.Aggro()
 end
 
 -- A droid's blaster as rhylib_weapons sees it (BoltColor 2 = red, 8 = training).
+-- D.Gun(kindName) -> the cached "weapon" table passed to Bolts.Fire
+-- { BoltSpeed, BoltColor, Training, Damage }. Damage is re-read from
+-- config on every call.
 D.guns = D.guns or {}
 function D.Gun(kind)
     local k = D.KINDS[kind] or D.KINDS.b1
@@ -318,7 +374,9 @@ function D.Gun(kind)
 end
 function D.E5() return D.Gun("b1") end   -- (older callers)
 
+-- Spawn menu (NPCs tab): one entry per D.CLASSES row, admin only.
 for kind, class in pairs(D.CLASSES) do
+
     list.Set("NPC", class, {
         Name = D.KINDS[kind].name,
         Class = class,

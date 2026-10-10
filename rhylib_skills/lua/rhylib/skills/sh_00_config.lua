@@ -10,7 +10,14 @@
           needs = { ids } (all of them),
           needsGroups = { { ids }, { ids } } (all of one group),
           needsLabel = text for needsGroups, exclusive = group (one per set),
-          rankCfg = config key of the lowest rank allowed }
+          rankCfg = config key of the lowest rank allowed,
+          icon = glyph name for the menu (cl_10_menu GLYPHS; else ICONS),
+          order = base command order id (cmd_x) for order skills,
+          redundantWith / redundantWhy = refused while you have that skill,
+          reinforce = marks a Reinforcements capstone }
+    A node's position in K.NODES is its index (n.index): skills.learn and
+    skills.unlearn send it in 8 bits, so keep the list at 255 or fewer and
+    add new nodes anywhere (saves store ids, not indexes).
     Rules (K.CanLearn, used by the server and to grey out the menu):
       - one category at a time (config onePath),
       - one specialisation per category, one end branch per specialisation,
@@ -35,7 +42,12 @@ Config.Register("skills", "startPoints", 24, "Skill points everyone has while fr
 Config.Register("skills", "commandRank", "LT", "Lowest rank (roster prefix) that can learn and issue command orders")
 Config.Register("skills", "onePath", true, "Only one category (Trooper, Support, Officer, Airborne, Medic, Shock Trooper) at a time")
 
+-- K.Cfg(key): a "skills" config value (registered here, in sh_10_effects
+-- and in sh_20_command). Example: Rhylib.Skills.Cfg("markTime") -> 15
 function K.Cfg(key) return Config.Get("skills", key) end
+
+-- Categories: the tabs of the Skills page. { id, name, desc, medicOnly,
+-- mpOnly, specs = { { id, name, desc, branches = { { id, name, desc } } } } }.
 
 K.CATEGORIES = {
     { id = "trooper", name = "Trooper", desc = "Frontline riflemen",
@@ -434,7 +446,8 @@ K.NODES = {
       needs = { "hold_line", "flash_charge" } },
 }
 
--- Lookups (rebuilt on refresh).
+-- Lookups (rebuilt on refresh): K.byId[id] = node, K.catById[id] =
+-- category, K.specById[id] = specialisation.
 K.byId, K.catById, K.specById = {}, {}, {}
 for i, n in ipairs(K.NODES) do
     K.byId[n.id] = n
@@ -451,7 +464,9 @@ end
 
 local EMPTY = {}
 
--- Set of learned ids, parsed once per change of the NW2 string.
+-- K.Set(ply): set of learned ids ({ [id] = true }), parsed once per change
+-- of the NW2 string, so it's cheap anywhere. Both realms. Don't change
+-- the table it returns (it's the cache). Non-players get an empty set.
 function K.Set(ply)
     if not IsValid(ply) or not ply:IsPlayer() then return EMPTY end
     local str = ply:GetNW2String("rhylib_skills", "")
@@ -470,6 +485,11 @@ function K.Set(ply)
     return set
 end
 
+-- K.Has(ply, id): has this player learned skill id? Both realms, cheap.
+-- In class mode it answers for the class's skills.
+-- Example (another addon, guarded so it works without rhylib_skills):
+--   local K = Rhylib.Skills
+--   if K and K.Has and K.Has(ply, "hard_landings") then ... end
 function K.Has(ply, id)
     return K.Set(ply)[id] == true
 end
@@ -489,19 +509,20 @@ function K.Borrowed(set, id)
     return n.spec ~= nil and own ~= nil and n.spec ~= own
 end
 
--- A Commander officer (any skill of the commander specialisation that
--- isn't borrowed)? Only they give clone squad orders (comlink R wheel).
--- Either officer path's Reinforcements capstone.
+-- K.HasReinforcements(ply): either officer path's Reinforcements capstone
+-- (reinforcements or reinforcements_p). Used by the comlink and rhylib_droids.
 function K.HasReinforcements(ply)
     return K.Has(ply, "reinforcements") or K.Has(ply, "reinforcements_p")
 end
 
--- May give clones squad orders: a Commander officer, or anyone who can
--- call reinforcements (the Pistol officer's capstone).
+-- K.CanCommandSquad(ply): may give clones squad orders: a Commander
+-- officer, or anyone who can call reinforcements (the Pistol officer's capstone).
 function K.CanCommandSquad(ply)
     return K.IsCommanderSpec(ply) or K.HasReinforcements(ply)
 end
 
+-- K.IsCommanderSpec(ply): a Commander officer (any skill of the commander
+-- specialisation that isn't borrowed)?
 function K.IsCommanderSpec(ply)
     local set = K.Set(ply)
     for id in pairs(set) do
@@ -518,7 +539,7 @@ function K.Redundant(set, n)
     end
 end
 
--- Tier caps of the set's Adaptable slots, highest first.
+-- K.AdaptSlots(set): tier caps of the set's Adaptable slots, highest first.
 function K.AdaptSlots(set)
     local out = {}
     for i = #K.ADAPT, 1, -1 do
@@ -527,7 +548,8 @@ function K.AdaptSlots(set)
     return out
 end
 
--- Do these borrowed tiers fit the slots? (highest tier into the highest cap)
+-- K.FitsSlots(tiers, slots): do these borrowed tiers fit the slots?
+-- (highest tier into the highest cap; sorts tiers in place)
 function K.FitsSlots(tiers, slots)
     if #tiers > #slots then return false end
     table.sort(tiers, function(a, b) return a > b end)
@@ -537,8 +559,9 @@ function K.FitsSlots(tiers, slots)
     return true
 end
 
--- The category, spec and branch a set of skills is committed to
--- (borrowed skills don't count).
+-- K.Commitments(set): the category, spec and branch a set of skills is
+-- committed to (borrowed skills don't count). Returns three tables:
+-- { [cat] = true }, { [cat] = spec }, { [spec] = branch }.
 function K.Commitments(set)
     local cat, spec, branch = {}, {}, {}
     for id in pairs(set) do
@@ -552,7 +575,10 @@ function K.Commitments(set)
     return cat, spec, branch
 end
 
--- Rank check for rankCfg nodes and command orders. Returns ok, reason.
+-- K.RankOk(ply, key): rank check for rankCfg nodes and command orders.
+-- key is a skills config key holding a roster rank prefix (default
+-- "commandRank"). Without rhylib_roster (or an empty prefix) it passes.
+-- Returns ok, reason. Example: local ok, why = K.RankOk(ply, "commandRank")
 function K.RankOk(ply, key)
     local prefix = K.Cfg(key or "commandRank")
     local R = Rhylib.Roster
@@ -564,6 +590,7 @@ function K.RankOk(ply, key)
     return true
 end
 
+-- K.Spent(set): points spent on a set (sum of node costs).
 function K.Spent(set)
     local total = 0
     for id in pairs(set) do
@@ -573,7 +600,9 @@ function K.Spent(set)
     return total
 end
 
--- Points to spend (freePoints: unlimited). Hook Rhylib.SkillPoints(ply) can answer.
+-- K.Points(ply): points to spend (freePoints: math.huge). Hook
+-- Rhylib.SkillPoints(ply) can answer with a number (e.g. points from
+-- rank or play time); else config startPoints.
 function K.Points(ply)
     if K.Cfg("freePoints") then return math.huge end
     local r = hook.Run("Rhylib.SkillPoints", ply)
@@ -581,7 +610,12 @@ function K.Points(ply)
     return K.Cfg("startPoints")
 end
 
--- Can a player with this set learn node id? Returns ok, reason.
+-- K.CanLearn(ply, set, id): can a player with this set learn node id?
+-- Returns ok, reason. Shared: the server decides with it, the menu uses it
+-- to colour the tree. Order of checks: class mode, job (medicOnly/mpOnly),
+-- redundancy, Adaptable borrowing, one path, spec, branch, exclusive
+-- group, needs, needsGroups, rank, points.
+-- Example: local ok, why = K.CanLearn(ply, K.Set(ply), "momentum")
 function K.CanLearn(ply, set, id)
     local n = K.byId[id]
     if not n then return false, "No such skill" end

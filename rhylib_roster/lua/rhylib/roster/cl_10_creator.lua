@@ -3,6 +3,10 @@
     until a character is saved. Clone number + nickname, with a live
     preview of the name: CC-1234 Nickname, and looks (hair, facial hair)
     with a preview (cl_15_look.lua).
+    Client only. Needs rhylib_menus (Rhylib.Menus.Kit); without it no
+    window opens. Sends roster.create (number, nickname, looks via
+    R.WriteLook); the server answers roster.created (ok, message).
+    Registers a Menus closer so Esc can't close it.
 ]]
 
 local R = Rhylib.Roster

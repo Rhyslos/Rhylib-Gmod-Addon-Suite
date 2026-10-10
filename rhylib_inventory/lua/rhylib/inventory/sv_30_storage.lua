@@ -1,12 +1,14 @@
 --[[
-    Outside containers ("storages"): anything a player opens next to their
-    own inventory, like a locker, a supply crate or an armoury.
+    Outside containers ("storages", server only): anything a player opens
+    next to their own inventory, like a locker, a supply crate or an
+    armoury. This addon has no storage entities of its own: rhylib_armoury,
+    rhylib_mp, rhylib_training... make them with Inv.CreateStorage.
 
     Two kinds:
       grid   a normal container with its own items (lockers, crates).
       depot  an endless supply: one of each stocked item, always there.
-             Taking one gives a fresh, full, *issued* item; putting a
-             stocked item back just removes it.
+             Taking one gives a fresh, full, *issued* item; anything put
+             into a depot is handed in (removed), stocked or not.
 
     Other addons create them on an entity:
         Inv.CreateStorage(ent, {
@@ -17,6 +19,10 @@
         Inv.CreateStorage(ent, { kind = "depot", title = "Armoury", stock = { "rhylib_dc15s", ... } })
         Inv.OpenStorage(ply, ent)
 
+    Options (all optional): kind, w (default 6), h (default 6; depots
+    work out their own height), title, stock (depot: list of item ids),
+    onChanged, controls, variant, returnable (kept on the storage; nothing
+    here reads it now that depots take anything back), and:
     noDeposit = true: items can only be taken out (property lockers).
     bulk = true: "Store all" / "Take all" / "Empty" buttons (training deposit).
     bulkOnly = true: only those buttons, no dragging in, out or around and
@@ -32,14 +38,22 @@
     Storages close when you walk away, die, or the entity is removed.
 
     Network:
-      inv.ext     (to one player) open with the full contents, or closed
-      inv.extupd  (batched, to viewers) item changed / removed
-      inv.take    (request) storage item -> your container at x, y
-      inv.extmove (request) move within a grid storage
-      inv.close   (request) you closed the window
-      inv.quick   (request) right-click quick take: storage item -> anywhere it fits
-      inv.bulk    (request) store all / take all / empty (bulk storages)
+      inv.ext     (to one player) open with the full contents, or closed:
+                  open bool; then title string, depot bool, w 5, h 5,
+                  canLock bool, locked bool, bulk mode 2 (0 none, 1 bulk,
+                  2 bulkOnly), item count 8, items (WriteInstance)
+      inv.extupd  (batched, to viewers) op 1 bit: 1 = item (WriteInstance),
+                  0 = removed uid 16
+      inv.take    (request) storage uid 16, your container 5, x 5, y 5, rot 1, single 1
+      inv.extmove (request) storage uid 16, x 5, y 5, rot 1, single 1
+      inv.close   (request) you closed the window (nothing)
+      inv.quick   (request) right-click quick take: storage uid 16, single 1
+      inv.bulk    (request) action 2 bits: store all / take all / empty
       inv.took    (to one player) something came in or went out: play the sound
+
+    Hooks: asks Rhylib.CanTakeStock(ply, storage, id) -> false, reason
+    before a take (rhylib_gear unlocks); fires Rhylib.LoadoutDropped(ply, id)
+    when job gear is handed in to a depot.
 ]]
 
 local Inv = Rhylib.Inventory
@@ -49,7 +63,7 @@ local I = Inv.Internal
 local EXT = Items.EXT
 local SLOT_BACK = Items.SLOT_BACK
 local OP_REMOVE, OP_SET = 0, 1
-local MAX_DIST = 160
+local MAX_DIST = 160   -- storages close beyond this distance (units) from the entity
 local GROW_MIN, GROW_MAX = 6, 31   -- (rows; 31 is the most inv.ext can send)
 Inv.STORAGE_DIST = MAX_DIST  -- also used by rhylib_armoury (claiming lockers)
 
@@ -131,7 +145,9 @@ local function layoutDepot(storage)
     storage.headed = headed
 end
 
--- A storage that isn't registered on the entity (a variant's sub-storage).
+-- Inv.NewStorage(ent, opts): a storage that isn't registered on the
+-- entity (a variant's sub-storage). Same opts as Inv.CreateStorage.
+-- Returns the storage table.
 function Inv.NewStorage(ent, opts)
     local storage = {
         ent = ent,
@@ -158,6 +174,13 @@ function Inv.NewStorage(ent, opts)
     return storage
 end
 
+-- Inv.CreateStorage(ent, opts): makes ent a storage (see the header for
+-- opts). Returns the storage table. Removed with Inv.RemoveStorage, or
+-- swept within 5 s once the entity is gone.
+-- Example (a crate entity's Initialize, server):
+--   local s = Rhylib.Inventory.CreateStorage(self, { kind = "grid", w = 5, h = 4, title = "Supply crate" })
+--   Rhylib.Inventory.StorageAdd(s, "mag_medium", 6)
+--   -- and in ENT:Use(ply): Rhylib.Inventory.OpenStorage(ply, self)
 function Inv.CreateStorage(ent, opts)
     local storage = Inv.NewStorage(ent, opts)
     Inv.storages[ent] = storage
@@ -170,12 +193,15 @@ local function eachStorage(storage, fn)
     for _, sub in pairs(storage.subs) do fn(sub) end
 end
 
+-- Inv.GetStorage(ent): the storage made on ent, or nil.
 function Inv.GetStorage(ent)
     return Inv.storages[ent]
 end
 
--- Adds items to a grid storage (for filling crates, loading lockers).
--- Returns how many didn't fit.
+-- Inv.StorageAdd(storage, id, count, data, x, y, rot): adds items to a
+-- grid storage (for filling crates, loading lockers), at x, y if given
+-- and free, else the first free spot. Doesn't tell viewers (refresh with
+-- Inv.RefreshStorage). Returns how many didn't fit.
 function Inv.StorageAdd(storage, id, count, data, x, y, rot)
     local def = Items.defs[id]
     if not def then return count end
@@ -196,7 +222,8 @@ function Inv.StorageAdd(storage, id, count, data, x, y, rot)
     return left
 end
 
--- For saving: plain rows.
+-- Inv.StorageSerialize(storage): for saving: plain rows
+-- { id, x, y, rot (0/1), count, data } (what Inv.StorageLoad reads).
 function Inv.StorageSerialize(storage)
     local out = {}
     for _, o in pairs(storage.items) do
@@ -220,6 +247,8 @@ local function fitHeight(storage)
     return true
 end
 
+-- Inv.StorageLoad(storage, rows): replaces the contents with saved rows
+-- (from Inv.StorageSerialize). Unknown item ids are skipped.
 function Inv.StorageLoad(storage, rows)
     storage.items = {}
     if storage.grow then storage.h = GROW_MAX end
@@ -282,6 +311,9 @@ function sendOpen(ply, storage)
     net.Send(ply)
 end
 
+-- Inv.OpenStorage(ply, ent): opens ent's storage (or the player's variant
+-- of it) next to their inventory; closes any other one first. The client
+-- opens its window if it isn't open.
 function Inv.OpenStorage(ply, ent)
     local storage = Inv.storages[ent]
     if not storage then return end
@@ -295,7 +327,8 @@ function Inv.OpenStorage(ply, ent)
     sendOpen(ply, storage)
 end
 
--- Resend the whole storage to everyone looking at it (after lock changes etc.).
+-- Inv.RefreshStorage(ent): resend the whole storage to everyone looking at
+-- it (after lock changes, or items added with StorageAdd).
 function Inv.RefreshStorage(ent)
     local storage = Inv.storages[ent]
     if not storage then return end
@@ -306,6 +339,7 @@ function Inv.RefreshStorage(ent)
     end)
 end
 
+-- Inv.CloseStorage(ply, quiet): closes the player's open storage.
 -- quiet: don't tell the client (it closed the window itself, or another opens).
 function Inv.CloseStorage(ply, quiet)
     local st = Inv.states[ply]
@@ -320,6 +354,8 @@ function Inv.CloseStorage(ply, quiet)
     end
 end
 
+-- Inv.RemoveStorage(ent): closes it for everyone and forgets it (call
+-- from the entity's OnRemove; the 5 s sweep catches it otherwise).
 function Inv.RemoveStorage(ent)
     local storage = Inv.storages[ent]
     if not storage then return end
@@ -372,7 +408,9 @@ local function openStorage(ply)
     return st, storage
 end
 
--- Your item -> the storage (dragged onto it at x, y).
+-- Inv.Deposit(ply, uid, x, y, rot, single): your item -> the open
+-- storage (dragged onto it at x, y). Depots remove it (hand in); grid
+-- storages merge or place it. Job gear can't go into a grid storage.
 function Inv.Deposit(ply, uid, x, y, rot, single)
     if Inv.Locked and Inv.Locked(ply) then return end
     local st, storage = openStorage(ply)
@@ -440,7 +478,10 @@ function Inv.Deposit(ply, uid, x, y, rot, single)
     changedStorage(storage, ply)
 end
 
--- Storage item -> your container cid at x, y.
+-- Inv.Take(ply, suid, cid, x, y, rot, single): storage item -> your
+-- container cid at x, y. From a depot you get a fresh, full, issued item
+-- (and a one-only gun up to your carry limit); from a grid storage the
+-- item itself.
 function Inv.Take(ply, suid, cid, x, y, rot, single)
     if Inv.Locked and Inv.Locked(ply) then return end
     local st, storage = openStorage(ply)
@@ -520,8 +561,8 @@ local function tookSound(ply)
     net.Send(ply)
 end
 
--- Right-click quick take: storage item -> wherever it fits in your
--- inventory (stacks first). single: just one.
+-- Inv.QuickTake(ply, suid, single): right-click quick take: storage item
+-- -> wherever it fits in your inventory (stacks first). single: just one.
 function Inv.QuickTake(ply, suid, single)
     if Inv.Locked and Inv.Locked(ply) then return end
     local st, storage = openStorage(ply)
@@ -655,7 +696,9 @@ local function takeAll(ply, st, storage)
     return took
 end
 
--- action 0: store all, 1: take all, 2: empty (deletes everything in it).
+-- Inv.Bulk(ply, action): bulk storages (opts.bulk / bulkOnly, grid kind
+-- only). action 0: store all, 1: take all, 2: empty (deletes everything
+-- in it). The whole storage is resent afterwards.
 function Inv.Bulk(ply, action)
     if Inv.Locked and Inv.Locked(ply) then return end
     local st, storage = openStorage(ply)
@@ -681,7 +724,8 @@ function Inv.Bulk(ply, action)
     end
 end
 
--- Rearranging inside a grid storage.
+-- Inv.StorageMove(ply, suid, x, y, rot, single): rearranging inside a
+-- grid storage (merge, split one off, or move).
 function Inv.StorageMove(ply, suid, x, y, rot, single)
     local st, storage = openStorage(ply)
     if not st or storage.kind == "depot" then return end

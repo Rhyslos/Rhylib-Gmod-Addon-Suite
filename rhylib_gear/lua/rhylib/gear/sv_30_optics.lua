@@ -1,6 +1,10 @@
 --[[
     Optics (server): gear.optics (kind 2 bits, 0 = down) raises or lowers
     them if that part is worn and you can use your hands.
+    Server only. Nets (client -> server):
+      rhylib.gear.optics  UInt 2 kind (0 = down), Bool weapon mode; rate 8/s
+      rhylib.gear.visor   Bool down; rate 6/s
+    A 0.5 s timer puts optics and the visor away when you can't use them.
 ]]
 
 local G = Rhylib.Gear
@@ -17,7 +21,8 @@ local function busy(ply)
     return false
 end
 
--- The sun visor down or up (one or the other with the optics: same mount).
+-- G.SetVisor(ply, on): sun visor down or up (one or the other with the
+-- optics: same mount). Server.
 function G.SetVisor(ply, on)
     on = on == true
     if on then G.SetOptics(ply, 0) end
@@ -26,6 +31,9 @@ function G.SetVisor(ply, on)
     ply:EmitSound("buttons/lightswitch2.wav", 50, on and 95 or 80)
 end
 
+-- G.SetOptics(ply, kind, fire): optics up (kind 1 / 2) or down (0); fire =
+-- weapon mode. Doesn't check the gear: the net handler does. Server.
+-- Example: Rhylib.Gear.SetOptics(ply, 0)   -- put them away
 function G.SetOptics(ply, kind, fire)
     fire = kind ~= 0 and fire == true
     if kind ~= 0 and ply:GetNW2Bool("rhylib_visorDown", false) then ply:SetNW2Bool("rhylib_visorDown", false) end

@@ -1,6 +1,9 @@
 --[[
-    Hotbar. Replaces the default weapon selection. Third person: a row at
-    the bottom centre. Helmet visor: a console plate next to the ammo box.
+    Hotbar (client). Replaces the default weapon selection. Third person:
+    a row at the bottom centre. Helmet visor with rhylib_inventory: drawn
+    by the f4/f5 layouts (HUD.DrawVisorLayout in cl_42_layouts.lua); the
+    older "console" plate next to the ammo box (drawConsole below) is only
+    a fallback if that file is missing.
 
     With rhylib_inventory: fixed numbered slots that you fill yourself by
     dragging items onto the hotbar row in the inventory window (4 slots,
@@ -14,12 +17,16 @@
 
     Number keys pick a slot. An empty slot, or the slot you're already
     holding, puts your gun away (the empty "Stowed" weapon). The scroll
-    wheel steps through every weapon on the bar, "lastinv" (Q by default)
-    swaps to the previous one. The bar
+    wheel steps through every weapon on the bar, the "lastinv" bind swaps
+    to the previous one. The bar
     is bright right after switching and fades back after a moment.
 
     The bar is rebuilt five times a second (or at once if a weapon on it
     was removed), not every frame.
+
+    Client convar rhylib_hud_hotbar_fade (default 1, Settings): fade the
+    bar when you're not switching.
+    Shares HUD.HotbarRect with the stamina bar (cl_45_stamina.lua).
 ]]
 
 local HUD = Rhylib.HUD
@@ -27,15 +34,19 @@ local UI = Rhylib.UI
 
 local fadeVar = CreateClientConVar("rhylib_hud_hotbar_fade", "1", true, false, "Fade the hotbar when you're not switching weapons (0/1)")
 
+-- Where the hotbar was last drawn (screen pixels) and on which frame.
+-- The stamina bar sits on top of it; it checks `frame` so a stale rect
+-- (hotbar not drawn) isn't used.
 HUD.HotbarRect = HUD.HotbarRect or { x = 0, y = 0, w = 0, h = 0, frame = 0 }
 
 -- entries[i] = { key = number shown, wep = weapon or nil, name, sub, empty, overflow = { weapons } }
+-- (also hold = item uid for hand-held items like magazines, see rebuild)
 local entries = {}
 local nextBuild = 0
 local lastSwitch = 0
 local previous = nil
 
-local STOWED = "rhylib_stowed"
+local STOWED = "rhylib_stowed"   -- the empty "hands" weapon (rhylib_inventory)
 
 local function inventory()
     local Inv = Rhylib.Inventory
@@ -142,11 +153,16 @@ local function cycleList()
     return list
 end
 
+-- True while number keys / the wheel belong to something else: the
+-- inventory window or the weapons' radial menu is open.
 local function busy()
     local Inv = Rhylib.Inventory
     return (Inv and IsValid(Inv.panel)) or (Rhylib.Weapons and Rhylib.Weapons.Radial and Rhylib.Weapons.Radial.open)
 end
 
+-- Slot keys (slot1..), the scroll wheel (invnext/invprev) and lastinv.
+-- Returning true swallows the bind so the default weapon selection
+-- never runs.
 Rhylib.Hook.Add("PlayerBindPress", "hud.hotbar", function(ply, bind, pressed)
     if not pressed or not ply:Alive() or ply:InVehicle() then return end
 

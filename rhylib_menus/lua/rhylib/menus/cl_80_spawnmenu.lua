@@ -4,6 +4,12 @@
     toolgun (R twice; one R opens our spawn window, cl_85_spawn.lua):
     Menus.OpenSpawnMenu(). Pressing Q
     while it's open closes it.
+
+    Client only, so it hides the menu but doesn't take spawn rights away:
+    gm_spawn and the other sandbox commands still work for players the
+    server lets spawn. Adds Menus.spawnAllowed, Menus.SpawnMenuOpen,
+    Menus.OpenSpawnMenu, Menus.CloseSpawnMenu. Hooks: SpawnMenuOpen and
+    PlayerBindPress at -100; fires Rhylib.MarkKey (no arguments) on Q.
 ]]
 
 local Menus = Rhylib.Menus

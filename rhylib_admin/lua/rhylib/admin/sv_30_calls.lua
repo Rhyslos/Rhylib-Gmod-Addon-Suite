@@ -12,6 +12,7 @@
 
     Admin.StartCall(title, sub, seconds, byName), Admin.EndCall()
     Presets: config admin.calls; !call <preset|custom> [minutes] [text].
+    Server only. No net messages: clients watch rhylib_call_n change.
 ]]
 
 local Admin = Rhylib.Admin
@@ -19,6 +20,11 @@ local H = Admin.handlers
 
 local function bump() SetGlobal2Int("rhylib_call_n", GetGlobal2Int("rhylib_call_n", 0) + 1) end
 
+-- Admin.StartCall(title, sub, seconds, byName): puts up a call for
+-- everyone (replaces any call that's up). seconds 0 = untimed. Title is cut
+-- to 60 characters, sub to 120. When a timer runs out the call stays up
+-- (clients show "Time's up") and the log notes it.
+-- Example: Rhylib.Admin.StartCall("Mission prep", "Grab your gear", 600, "Event bot")
 function Admin.StartCall(title, sub, seconds, byName)
     SetGlobal2String("rhylib_call_title", string.sub(title, 1, 60))
     SetGlobal2String("rhylib_call_sub", string.sub(sub or "", 1, 120))
@@ -34,6 +40,7 @@ function Admin.StartCall(title, sub, seconds, byName)
     end
 end
 
+-- Admin.EndCall(): takes the call down. Returns false if none was up.
 function Admin.EndCall()
     if GetGlobal2String("rhylib_call_title", "") == "" then return false end
     timer.Remove("rhylib_admin_call")
@@ -45,6 +52,8 @@ end
 
 local function presets() return Admin.Cfg("calls") or {} end
 
+-- !call <preset|custom> [minutes] [text]. minutes -1 (left out or "d") =
+-- the preset's own timer; custom uses the text as the title.
 H.call = function(caller, t, a)
     local id = string.lower(a.preset or "")
     local text = string.Trim(a.text or "")

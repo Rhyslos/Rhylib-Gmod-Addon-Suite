@@ -5,18 +5,34 @@
     Channels: R.channels[id] = { id, name, mode, pass, bn, members = { [ply] = true }, n }
     A player: ply.rhylibRadio = { slots = { [1] = chanId, [2] = chanId }, call = callId }
 
-    Messages
-      radio.dir     server -> everyone (0.5 s after a change), or one player
-                    on request: squads and channels (no passwords)
-      radio.me      server -> player: own channel slots and call
-      radio.pos     server -> squad members, every second: squad mates' positions
-      radio.note    server -> player: a short message
-      radio.state   client: off, muted, deafened
-      radio.role    client: role index
-      radio.tx      client: radio key down (slot) / up
-      radio.squad   client: create / join / leave / lock / rename / kick / leader / RO
-      radio.chan    client: create / join / leave a channel in slot 1 or 2
-      radio.dirreq  client: send me the directory
+    Messages (rates are per player: rate/s, burst)
+      radio.dir     server -> everyone (next tick after a change, then at
+                    most once per 1.5 s), or one player on request:
+                    squad count (9), per squad id (9), name, open (bool),
+                    leader, RO (entities), member count (8), per member
+                    entindex (8) + role (5); channel count (9), per channel
+                    id (9), name, mode (2), battalion ("" unless mode 2),
+                    listeners (8). No passwords.
+      radio.me      server -> player: own channel slot 1, slot 2, call id
+                    (9 bits each, 0 = none)
+      radio.pos     server -> squad members, every second: count (8), per
+                    mate entindex (8) + x, y, z (Int 16 each)
+      radio.note    server -> player: a short message (string) for chat
+      radio.txev    server -> everyone who hears the old or new target:
+                    talker entindex (8), tx kind (2), id (9)
+      radio.state   client: off, muted, deafened (3 bools). 6, 6
+      radio.role    client: role index (5). 3, 4
+      radio.tx      client: radio key down: true + slot (2: 1 squad,
+                    2 channel 1, 3 channel 2), or false (up). 12, 8
+      radio.txoff   client: radio key up (no data). 40, 40
+      radio.squad   client: op (3) + create/rename name | join squad id (9)
+                    | kick/leader/RO player entity. 4, 6
+      radio.chan    client: op (2) + slot - 1 (1) + create: name, mode (2),
+                    password | join: channel id (9), password. 4, 6
+      radio.dirreq  client: send me the directory and my slots. 1, 3
+
+    State lives in memory only: a map change or restart clears every
+    squad, channel and call.
 ]]
 
 local R = Rhylib.Radio
@@ -27,6 +43,8 @@ R.channels = R.channels or {}
 
 for _, n in ipairs({ "radio.dir", "radio.me", "radio.pos", "radio.note", "radio.txev" }) do Rhylib.Net.Register(n) end
 
+-- R.P(ply): the server-side radio table of a player (made on first use):
+-- { slots = { [1] = chanId, [2] = chanId }, call = callId }.
 function R.P(ply)
     local p = ply.rhylibRadio
     if not p then
@@ -36,6 +54,8 @@ function R.P(ply)
     return p
 end
 
+-- R.Note(ply, text): a "[Radio] text" chat line for one player. Server.
+-- (The client has its own R.Note(text) in cl_10_client.lua.)
 function R.Note(ply, text)
     if not IsValid(ply) then return end
     Rhylib.Net.Start("radio.note")
@@ -43,7 +63,10 @@ function R.Note(ply, text)
     net.Send(ply)
 end
 
--- Change some fields of a player's radio state.
+-- R.Set(ply, fields): change some fields of a player's radio state
+-- (names as in R.Unpack); writes the NW2Int only if it changed. Use
+-- R.SetTx for txKind/txId so listeners get radio.txev too. Server.
+-- Example: Rhylib.Radio.Set(ply, { muted = true })
 function R.Set(ply, fields)
     local t = R.Unpack(R.Raw(ply))
     for k, v in pairs(fields) do t[k] = v end
@@ -67,9 +90,11 @@ local function hearers(kind, id)
     return list
 end
 
--- Start / stop sending. Besides the NW2 state (late for players out of
--- view), the people who hear that target get a small event so their
--- meters and voice list know at once.
+-- R.SetTx(ply, kind, id): start / stop sending (kind R.TX_*, id of the
+-- squad / channel / call; 0, 0 = stop). Besides the NW2 state (late for
+-- players out of view), the people who hear that target get a small
+-- event (radio.txev) so their meters and voice list know at once.
+-- Example: Rhylib.Radio.SetTx(ply, 0, 0)   -- let go of the radio key
 function R.SetTx(ply, kind, id)
     local t = R.State(ply)
     if t.txKind == kind and t.txId == id then return end
@@ -97,6 +122,7 @@ local function clearTx(ply, kind, id)
 end
 R.ClearTx = clearTx
 
+-- Lowest unused id in a table keyed 1..R.MAX_ID (nil when full).
 local function freeId(tbl)
     for i = 1, R.MAX_ID do
         if not tbl[i] then return i end
@@ -145,6 +171,7 @@ local function sendDir(target)
     if target then net.Send(target) else net.Broadcast() end
 end
 
+-- R.Dirty(): the directory changed; schedule a radio.dir broadcast.
 -- At most one broadcast per 1.5 s: the first change goes out next tick,
 -- a burst after it (event start, many joins) goes out once at the end.
 local lastDir = 0
@@ -157,6 +184,7 @@ function R.Dirty()
     end)
 end
 
+-- R.SendMe(ply): sends radio.me (own channel slots and call) to ply.
 function R.SendMe(ply)
     if not IsValid(ply) then return end
     local p = R.P(ply)
@@ -177,6 +205,10 @@ local function setRanks(sq)
     end
 end
 
+-- R.LeaveSquad(ply): takes ply out of their squad (stops their squad
+-- talk). If they led it, the RO takes over, else whoever joined first.
+-- An empty squad (or one left with no valid leader) is removed.
+-- (`quiet` is unused.) Server.
 function R.LeaveSquad(ply, quiet)
     local id = R.SquadOf(ply)
     local sq = R.squads[id]
@@ -212,6 +244,10 @@ function R.LeaveSquad(ply, quiet)
     R.Dirty()
 end
 
+-- R.JoinSquad(ply, sq): puts ply in squad table sq (from R.squads),
+-- leaving their old squad first. Does not check sq.open (the net
+-- handler does). Server.
+-- Example: Rhylib.Radio.JoinSquad(ply, Rhylib.Radio.squads[3])
 function R.JoinSquad(ply, sq)
     if R.SquadOf(ply) == sq.id then return end
     if R.SquadOf(ply) ~= 0 then R.LeaveSquad(ply) end
@@ -232,6 +268,8 @@ local function newSquad(ply, name)
     setRanks(sq)
 end
 
+-- radio.squad ops (client side: R.SQ in cl_10_client.lua). Lock, rename,
+-- kick, leader and RO need the sender to lead the squad.
 local SQ_CREATE, SQ_JOIN, SQ_LEAVE, SQ_LOCK, SQ_RENAME, SQ_KICK, SQ_LEADER, SQ_RO = 0, 1, 2, 3, 4, 5, 6, 7
 
 Rhylib.Net.Receive("radio.squad", function(ply)
@@ -276,6 +314,8 @@ end, { rate = 4, burst = 6 })
 -- Channels
 --------------------------------------------------------------------------
 
+-- R.LeaveChannel(ply, slot): leaves the channel in slot 1 or 2; a channel
+-- with nobody left is removed. Server.
 function R.LeaveChannel(ply, slot)
     local p = R.P(ply)
     local id = p.slots[slot]
@@ -306,6 +346,8 @@ local function joinChannel(ply, slot, c)
 end
 
 local CH_CREATE, CH_JOIN, CH_LEAVE = 0, 1, 2
+-- (create: an empty name is refused, mode password with no password
+-- becomes open, the creator's battalion is stored for battalion mode)
 
 Rhylib.Net.Receive("radio.chan", function(ply)
     local op = net.ReadUInt(2)
@@ -390,6 +432,8 @@ end, { rate = 1, burst = 3 })
 -- Who hears whom (called by the engine for every pair, often: lookups only)
 --------------------------------------------------------------------------
 
+-- Local voice range squared, re-read from config every 5 s (so a
+-- Server settings change applies without a map change).
 local range2 = 800 * 800
 timer.Create("Rhylib.Radio.Range", 5, 0, function()
     local r = R.Cfg("localRange") or 800
@@ -417,6 +461,12 @@ local function snap(p)
     return s
 end
 
+-- Returns hear, 3D. Radio (not 3D) when the talker sends on a target the
+-- listener is in, both radios on, talker not muted, listener not
+-- deafened, neither jammed; otherwise local 3D voice within localRange.
+-- Dead talkers are heard by nobody. Priority 10: after rhylib_admin's
+-- gag (-50). The bit tests: band(tv, 3) == 0 = not off and not muted,
+-- band(lv, 5) == 0 = not off and not deafened (see sh_00_config).
 Rhylib.Hook.Add("PlayerCanHearPlayersVoice", "radio.voice", function(listener, talker)
     if listener == talker then return end
     local ts = snap(talker)
@@ -500,6 +550,9 @@ end)
 -- Comms jammers (2026-10-07): who is inside one, twice a second
 --------------------------------------------------------------------------
 
+-- Every jammer entity: [ent] = true. Jammers add themselves in
+-- Initialize (rhylib_eod's interference devices too); any entry needs
+-- GetActive() and is measured with R.JammerRange.
 R.jammers = R.jammers or {}
 
 -- Per player: inside a jammer's range = jammed. In the fringe outside it
@@ -580,9 +633,11 @@ timer.Create("Rhylib.Radio.Jam", 0.5, 0, function()
     end
 end)
 
--- Explosions (hook Rhylib.Explosion from rhylib_republic grenades and HE
--- charges, rhylib_weapons rockets): jammers within reach (nearest point of
--- the model) get hit. Only players' explosions count.
+-- Explosions (hook Rhylib.Explosion(pos, reach, tier, attacker, inflictor,
+-- kind) from rhylib_republic grenades and HE charges, rhylib_weapons
+-- rockets): jammers within reach (nearest point of the model) get
+-- ENT:ExplosiveHit(tier, attacker, kind). Only players' explosions count
+-- (or an inflictor flagged rhylibPlayerCharge).
 Rhylib.Hook.Add("Rhylib.Explosion", "radio.jammers", function(pos, reach, tier, attacker, inflictor, kind)
     local byPlayer = IsValid(attacker) and attacker:IsPlayer()
     if not byPlayer and not (IsValid(inflictor) and inflictor.rhylibPlayerCharge) then return end
@@ -597,6 +652,10 @@ end)
 -- Saved per map with rhylib_radio_save (toolgun entries jammer*).
 local JAMMER = "rhylib_comms_jammer"
 
+-- R.SaveJammers(): writes Data "radio_jammers" / <map> = list of
+-- { pos = {x,y,z}, ang = {p,y,r}, on, class } for every jammer that is
+-- permanent (rhylib_core Rhylib.Perma; without it, every jammer).
+-- Returns how many were saved. Server.
 function R.SaveJammers()
     local rows = {}
     for _, j in ipairs(ents.FindByClass(JAMMER .. "*")) do
@@ -611,6 +670,9 @@ function R.SaveJammers()
     return #rows
 end
 
+-- R.SpawnJammers(): spawns the saved jammers for this map and marks them
+-- permanent. Runs 1 s after InitPostEntity and after every map cleanup.
+-- Old rows without a class load as small jammers. Server.
 function R.SpawnJammers()
     local rows = Rhylib.Data.Get("radio_jammers", game.GetMap())
     if not istable(rows) then return end
@@ -629,6 +691,8 @@ end
 
 Rhylib.Hook.Add("InitPostEntity", "radio.jammers", function() timer.Simple(1, R.SpawnJammers) end)
 Rhylib.Hook.Add("PostCleanupMap", "radio.jammers", R.SpawnJammers)
+-- Placement classes (rhylib_admin's !freezeprops leaves them alone), and
+-- the Permanent tool's saver for these classes (rhylib_core Rhylib.Perma).
 Rhylib.PLACEMENT_CLASSES = Rhylib.PLACEMENT_CLASSES or {}
 for class in pairs(R.JAMMER_SIZES) do Rhylib.PLACEMENT_CLASSES[class] = true end
 if Rhylib.Perma and Rhylib.Perma.Register then
@@ -638,6 +702,8 @@ if Rhylib.Perma and Rhylib.Perma.Register then
 end
 
 Rhylib.Perms.Register("rhylib.radio.admin", "admin", "Place, switch and save comms jammers")
+-- rhylib_radio_save: save the jammers now (perm rhylib.radio.admin, or the
+-- server console).
 concommand.Add("rhylib_radio_save", function(ply)
     local function reply(m) if IsValid(ply) then ply:ChatPrint(m) else print(m) end end
     Rhylib.Perms.Check(ply, "rhylib.radio.admin", function(ok)

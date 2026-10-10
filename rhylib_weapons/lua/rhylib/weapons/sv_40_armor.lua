@@ -19,6 +19,9 @@
 
     Mitigation runs late (priority 100) so other Rhylib damage changes
     come first; the restore runs first (priority -1000).
+
+    Realm: server. Fires hook Rhylib.ArmorDrainMult(ply): return a number
+    to scale how much armour a hit costs (rhylib_gear's pauldron).
 ]]
 
 local A = Rhylib.Armor
@@ -28,7 +31,9 @@ A.pending = A.pending or {}   -- [ply] = { before, after, costs = { per open hit
 local pending = A.pending
 local flushQueued = false
 
--- Armour now, counting a hit that is still being worked out.
+-- A.Get(ply): armour now, counting a hit that is still being worked out.
+-- Use it instead of ply:Armor() inside damage hooks. Server.
+-- Example: local armour = Rhylib.Armor.Get(ply)
 function A.Get(ply)
     local p = pending[ply]
     if p then return p.after end
@@ -101,8 +106,9 @@ Rhylib.Hook.Add("PlayerDisconnected", "armor.cleanup", function(ply)
     pending[ply] = nil
 end)
 
--- Spawn armour: the job's armor field, else the config value. Set a tick
--- late so the gamemode's own spawn code can't reset it.
+-- A.SpawnArmor(ply): the armour this player spawns with: the DarkRP job's
+-- armor field, else config armor spawnArmor. Server. (Set a tick after
+-- spawning, below, so the gamemode's own spawn code can't reset it.)
 function A.SpawnArmor(ply)
     local job = RPExtraTeams and RPExtraTeams[ply:Team()]
     local n = job and tonumber(job.armor) or cfgNum("spawnArmor", 100)

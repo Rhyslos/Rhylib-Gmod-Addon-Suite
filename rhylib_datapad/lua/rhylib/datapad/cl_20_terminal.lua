@@ -1,11 +1,16 @@
 --[[
-    Battalion computer / medical holotable window.
+    Battalion computer / medical holotable window (client). Opens on
+    dp.term (E on the computer); closes when you walk out of useRange.
+    Needs rhylib_menus (Kit). Every request starts with the computer
+    entity (send() below); the server checks range and rights again.
 
     Top: upload your notes; admins set the battalion. Tabs:
-      Logs     search (title, text, author), time filter;
+      Logs     search (title, text, author, patient), time filter;
                reader; moderators delete entries and ban authors
-      Board    battalion computers: Info, Plans and Sessions posts, pinned
-               first, upcoming sessions with a countdown, past ones archived
+      Board    battalion computers: the battalion info, Session and AAR
+               posts (old Info/Plans posts under "Older posts"), pinned
+               first, upcoming sessions with a countdown, past ones archived;
+               "Write AAR" on a past session fills in a template
       Missions the current mission (run from officers' datapads) and the
                archive of ended ones (officers delete)
       Orders   orders to the battalion or named members, with a status;
@@ -19,6 +24,9 @@
     Outsiders (CTs without a battalion) can apply here instead.
     Session posts get sign-ups (attending / maybe / can't) and a check-in.
     The medical holotable has Records (and Bans) only.
+    Each tab asks for its data the first time it is shown; replies are
+    ignored if they are for another computer. The application popup
+    (dp.uprompt) also lives here and works anywhere.
 ]]
 
 local D = Rhylib.Datapad
@@ -52,6 +60,7 @@ local RSVP = { "Attending", "Maybe", "Can't" }
 local APP_STATUS = { [0] = "Pending", [1] = "Accepted", [2] = "Declined", [3] = "Withdrawn" }
 local PERIOD_NAMES = { "Today", "This week", "Last week", "This month", "All time" }
 
+-- Send a computer message: the computer entity first, then fn() writes the rest.
 local function send(name, fn)
     Rhylib.Net.Start(name)
     net.WriteEntity(term.ent)
@@ -375,6 +384,7 @@ local function editor(parent, p)
                 Derma_Message("Write the date as YYYY-MM-DD and the time as HH:MM.", "Session time", "OK")
                 return
             end
+            -- os.time on the client = the poster's own time zone; every viewer sees it in theirs.
             t = os.time({ year = tonumber(y), month = tonumber(mo), day = tonumber(d), hour = tonumber(hh), min = tonumber(mm), sec = 0 }) or 0
         end
         send("dp.bsave", function()
@@ -1623,6 +1633,7 @@ end
 -- Window
 --------------------------------------------------------------------------
 
+-- The tabs this player gets: { id, label, build(body), highlight }.
 local function tabs()
     local list = { { "logs", term.med and "Records" or "Logs", logsTab } }
     if not term.med then
@@ -1925,6 +1936,7 @@ local function acceptedPopup(bn, by)
     join:Dock(FILL)
 end
 
+-- Esc closes the popup (Menus.RegisterCloser).
 -- (rhylib_menus loads after this module, so register once everything has)
 local function registerAcceptedCloser()
     if Rhylib.Menus and Rhylib.Menus.RegisterCloser then

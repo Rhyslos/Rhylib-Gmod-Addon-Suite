@@ -1,3 +1,5 @@
+-- Pick-up: one full power cell (shared). Press E to take it. See rhylib_item_base.
+
 AddCSLuaFile()
 
 ENT.Type = "anim"

@@ -1,4 +1,5 @@
--- Training deposit: your own endless storage, with Store all / Take all (see rhylib/armoury/sh_00_config.lua).
+-- Training deposit: your own storage (6 wide, grows to fit), with Store all /
+-- Take all / Empty only (see rhylib/armoury/sh_00_config.lua).
 AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "rhylib_armoury_base"

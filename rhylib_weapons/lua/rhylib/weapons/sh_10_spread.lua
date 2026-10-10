@@ -8,6 +8,14 @@
     All spread values are cone angles in degrees. State is stored in the
     weapon's predicted network vars, so server and client always agree:
         Recoil (kicks 1-3), RecoilB (bloom, streak, last arc), KickTime, Aiming
+    (declared in rhylib_base SWEP:SetupDataTables). The cone sizes come
+    from the gun's SWEP.Spread table:
+        hip, aim         resting cone (degrees) hip-fire / aiming
+        kickMain         kick on the arc nearest the shot (x the streak, up to 4)
+        kickSide         kick on the other two arcs
+        bloomPerShot     shared bloom added per shot, up to bloomMax
+        aimKickMult      kicks and bloom added while aiming are multiplied by this
+        aimOffsetMult    every arc offset while aiming is multiplied by this
     Values decay over time, calculated from KickTime, so nothing has to
     be sent while they settle.
 
@@ -17,7 +25,7 @@
 ]]
 
 local Spread = {}
-Rhylib.Weapons.Spread = Spread
+Rhylib.Weapons.Spread = Spread   -- (W.Spread; the functions below are shared)
 
 -- Arc centre directions in screen space (0 = right, 90 = down):
 -- 1 = down-left, 2 = top, 3 = down-right.
@@ -43,7 +51,8 @@ local function q(v, step, maxQ)
     return v
 end
 
--- Raw stored values: bloom, kick1, kick2, kick3, streak, last arc.
+-- Spread.Unpack(wep): raw stored values, not decayed: bloom, kick1, kick2,
+-- kick3 (degrees), streak (0-7), last arc (1-3, 0 = none yet).
 function Spread.Unpack(wep)
     local p = wep:GetRecoil()
     local k1 = p % 1024 p = floor(p / 1024)
@@ -56,6 +65,8 @@ function Spread.Unpack(wep)
     return b * BLOOM_STEP, k1 * KICK_STEP, k2 * KICK_STEP, k3 * KICK_STEP, streak, arc
 end
 
+-- Spread.Pack(wep, bloom, k1, k2, k3, streak, arc): writes them back
+-- (values are rounded to the steps above and capped).
 function Spread.Pack(wep, bloom, k1, k2, k3, streak, arc)
     local p = q(k3, KICK_STEP, KICK_MAX_Q)
     p = p * 1024 + q(k2, KICK_STEP, KICK_MAX_Q)
@@ -65,7 +76,9 @@ function Spread.Pack(wep, bloom, k1, k2, k3, streak, arc)
     wep:SetRecoilB(r * 1024 + q(bloom, BLOOM_STEP, BLOOM_MAX_Q))
 end
 
--- Decayed values at time t: bloom, kick1, kick2, kick3.
+-- Spread.GetState(wep, t): decayed values at time t (CurTime()): bloom,
+-- kick1, kick2, kick3 in degrees. Kicks fade with KICK_TAU, bloom with
+-- BLOOM_TAU, both counted from the last shot (KickTime).
 function Spread.GetState(wep, t)
     local dt = math.max(0, t - wep:GetKickTime())
     local kd = math.exp(-dt / Spread.KICK_TAU)
@@ -92,8 +105,9 @@ function Spread.StanceMult(owner)
     return 1 + (m - 1) * f
 end
 
--- Skills (rhylib_skills): sprint-firing, Z-6 and pistol handling; and the
--- crouch bonus above.
+-- Spread.SkillMult(wep): multiplier on every cone of this weapon right
+-- now: skills (rhylib_skills K.SpreadMult: sprint-firing, Z-6 and pistol
+-- handling...) times the crouch bonus above. 1 = no change.
 function Spread.SkillMult(wep)
     local owner = wep:GetOwner()
     local m = Spread.StanceMult(owner)
@@ -102,13 +116,15 @@ function Spread.SkillMult(wep)
     return K.SpreadMult(owner, wep) * m
 end
 
--- Resting cone size (the arc radius).
+-- Spread.BaseCone(wep): resting cone size in degrees (the arc radius):
+-- Spread.aim while aiming, else Spread.hip, times SkillMult.
 function Spread.BaseCone(wep)
     return (wep:GetAiming() and wep.Spread.aim or wep.Spread.hip) * Spread.SkillMult(wep)
 end
 
--- How far each arc has moved outward, in degrees. Low stamina (with
--- rhylib_stamina) pushes all three arcs out evenly.
+-- Spread.Offsets(wep, t): how far each arc has moved outward, in degrees
+-- (three numbers). Low stamina (rhylib_stamina S.SpreadPenalty) and hurt
+-- arms or burns (rhylib_medical Med.SpreadPenalty) push all three out evenly.
 function Spread.Offsets(wep, t)
     local bloom, k1, k2, k3 = Spread.GetState(wep, t)
     local m = (wep:GetAiming() and wep.Spread.aimOffsetMult or 1) * Spread.SkillMult(wep)
@@ -126,12 +142,16 @@ function Spread.Offsets(wep, t)
     return (bloom + k1) * m + tired, (bloom + k2) * m + tired, (bloom + k3) * m + tired
 end
 
--- Average cone: the area shots actually land in.
+-- Spread.MeanCone(wep, t): average cone in degrees, the area shots actually
+-- land in (base cone + the mean of the three offsets).
+-- Example: local deg = Rhylib.Weapons.Spread.MeanCone(wep, CurTime())
 function Spread.MeanCone(wep, t)
     local o1, o2, o3 = Spread.Offsets(wep, t)
     return Spread.BaseCone(wep) + (o1 + o2 + o3) / 3
 end
 
+-- Spread.NearestArc(a): 1-3, the arc whose centre is closest to screen
+-- angle a (radians, as returned by ShotDirection).
 function Spread.NearestArc(a)
     local best, bestD = 1, math.huge
     for i = 1, 3 do
@@ -148,6 +168,8 @@ end
     player's command, so the server and the shooter's client pick the same
     direction without sending anything.
     Returns the direction and the screen angle the shot went to.
+    aimAng: the shooter's eye angles. index: a number to vary the random
+    seed (0 for a normal shot).
 ]]
 function Spread.ShotDirection(wep, aimAng, index)
     local now = CurTime()
@@ -167,7 +189,9 @@ function Spread.ShotDirection(wep, aimAng, index)
     return dir, a
 end
 
--- Record a shot that went toward the given arc: decay, then add kicks.
+-- Spread.AddShot(wep, arc, t): record a shot that went toward the given
+-- arc (1-3): decay, then add kicks and bloom, and set KickTime = t.
+-- Shots at the same arc within STREAK_WINDOW grow the main kick (streak).
 function Spread.AddShot(wep, arc, t)
     local cfg = wep.Spread
     local bloom, k1, k2, k3 = Spread.GetState(wep, t)

@@ -3,6 +3,7 @@
       - the landing marker that replaces the crosshair in grapple mode
         (turn it off with the grapple.showLanding config)
       - the short line from a climber's belt to the rope
+    Realm: client.
 ]]
 
 local W = Rhylib.Weapons
@@ -24,7 +25,8 @@ local function ring(x, y, r, col, s)
     surface.DrawCircle(x, y, r + math.max(1, math.floor(s)), col.r, col.g, col.b, col.a)
 end
 
--- Called by the crosshair while the weapon is in grapple mode.
+-- X.DrawGrapple(wep, x, y): called by the crosshair (X.Draw) instead of
+-- the arcs while the weapon is in grapple mode; x, y = screen centre.
 function X.DrawGrapple(wep, x, y)
     local ply = LocalPlayer()
     local s = ScrH() / 1080

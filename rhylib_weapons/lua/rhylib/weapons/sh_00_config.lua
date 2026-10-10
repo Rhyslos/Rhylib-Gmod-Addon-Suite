@@ -1,3 +1,19 @@
+--[[
+    Weapons settings, magazine types and ammo types (shared, loads first).
+
+    Adds:
+      Rhylib.Weapons (W)        the module table every other file uses
+      config module "weapons"   the general gun settings below (shown on the
+                                Staff > Server settings page)
+      W.MagTypes, W.MagByIndex  magazine types (and their training copies)
+      W.BaseMag, W.TrainingMag  map between a magazine and its training copy
+      W.BoltRange()             the optional bolt reach cap
+      ammo types rhylib_<mag id> and rhylib_cell: their counts mirror the
+                                inventory so the client HUD can read them
+      inventory items for every magazine type and the power cell (only
+                                if rhylib_inventory is installed)
+]]
+
 Rhylib.Weapons = Rhylib.Weapons or {}
 
 local Config = Rhylib.Config
@@ -11,7 +27,9 @@ Config.Register("weapons", "firstShotMult", 0.35, "Spread of a first shot from r
 Config.Register("weapons", "shotRange", 6000, "Players further than this from a shot don't receive it")
 Config.Register("weapons", "boltRange", 0, "Bolts stop (no damage, no impact) after this many units; 0 = off, they fly their full life. Scoped guns and rockets never stop early. Admins change it live with rhylib_boltrange")
 
--- Bolt reach cap in units (0 = none). Clients get it as a Global2Int.
+-- W.BoltRange(): the bolt reach cap in units (0 = none). Shared: the
+-- server reads the config, clients the Global2Int "rhylib_boltRange"
+-- (set by sv_10_bolts.lua). Example: if Rhylib.Weapons.BoltRange() > 0 then ... end
 function Rhylib.Weapons.BoltRange()
     if SERVER then return tonumber(Config.Get("weapons", "boltRange")) or 0 end
     return GetGlobal2Int("rhylib_boltRange", 0)
@@ -41,6 +59,10 @@ Config.Register("weapons", "maxCells", 4, "Without rhylib_inventory: spare power
     A rocket is a one-shot "magazine" for the RPS-6.
 
     index: sent on the network and stored in the weapon (keep them stable).
+    Other fields: name / short (labels), rounds (shots in a full one),
+    w / h (inventory cells), stack (how many full ones stack), weight (kg),
+    model (world model). Added below: id, ammo (the mirror ammo type),
+    and on training copies: training = true, base = the normal id.
 ]]
 local W = Rhylib.Weapons
 W.MagTypes = {
@@ -64,19 +86,21 @@ for id, m in pairs(W.MagTypes) do
     m.ammo = "rhylib_" .. id  -- ammo type that mirrors the count for the HUD
     W.MagByIndex[m.index] = m
 end
--- The normal type a magazine copies ("mag_small_t" -> "mag_small").
+-- W.BaseMag(id): the normal type a magazine copies ("mag_small_t" -> "mag_small");
+-- any other id comes back unchanged.
 function W.BaseMag(id)
     local m = W.MagTypes[id]
     return m and m.base or id
 end
 
--- The training copy of a magazine type.
+-- W.TrainingMag(id): the training copy of a magazine type ("mag_small" ->
+-- "mag_small_t"), or id itself if there is none.
 function W.TrainingMag(id)
     return W.MagTypes[id .. W.TRAINING_SUFFIX] and (id .. W.TRAINING_SUFFIX) or id
 end
 
-W.CELL = "cell"
-W.CELL_WEIGHT = 1.5
+W.CELL = "cell"          -- item id of a power cell
+W.CELL_WEIGHT = 1.5      -- kg
 
 -- Reload request sent by the client: 0 = best magazine, 1-14 = that
 -- magazine type (index), 15 = power cell.

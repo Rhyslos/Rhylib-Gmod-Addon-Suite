@@ -5,6 +5,10 @@
 
     The game still sends its normal death notice messages; this only
     changes how they're shown (GAMEMODE.AddDeathNotice / DrawDeathNotice).
+
+    Client only. Config "menus": killfeedTime (seconds a line stays),
+    killfeedMax (lines at once). Sits top right; lower down while the
+    helmet visor HUD is on. Adds Menus.AddKill.
 ]]
 
 local Menus = Rhylib.Menus
@@ -64,6 +68,10 @@ local function teamCol(t)
     return team.GetColor(t)
 end
 
+-- Menus.AddKill(attacker, attackerTeam, inflictor, victim, victimTeam): adds
+-- a killfeed line. attacker / victim: a name or an entity; inflictor: a class
+-- name or an entity; teams: team index, -1 or nil for NPCs. Newest on top.
+-- Example: Rhylib.Menus.AddKill(ply, ply:Team(), "rhylib_dc15a", "B1 droid", -1)
 function Menus.AddKill(attacker, attackerTeam, inflictor, victim, victimTeam)
     attacker, victim = niceName(attacker), niceName(victim)
     if not isstring(inflictor) then inflictor = IsValid(inflictor) and inflictor:GetClass() or "" end
@@ -84,6 +92,8 @@ function Menus.AddKill(attacker, attackerTeam, inflictor, victim, victimTeam)
     for i = #feed, max + 1, -1 do feed[i] = nil end
 end
 
+-- Replace the gamemode's death notice functions (run at load, Initialize and
+-- InitPostEntity, since the gamemode may set its own after us).
 local function take()
     local gm = GAMEMODE or GM
     if not gm then return end

@@ -7,6 +7,11 @@
     the trooper hands (CarrierVM). The model's addon must be installed.
     Tune with rhylib_vm_editor, then paste its lines below.
     All numbers are first guesses for tuning.
+
+    Class rhylib_z6. Shared: one file for server and client (AddCSLuaFile).
+    Base rhylib_base (rhylib_weapons), where every SWEP field is explained;
+    only the fields that differ are set here.
+    Training copy: rhylib_z6_training.
 ]]
 
 AddCSLuaFile()
@@ -56,6 +61,9 @@ SWEP.Secondary = {
 }
 
 SWEP.FireRate = 900
+-- Recoil: view kick per shot (rhylib_weapons cl_50_recoil): up = degrees up,
+-- side = random sideways, bias = lean -1 (left) .. 1 (right), recover = share
+-- of the climb that settles back, aimMult = multiplier while aiming.
 SWEP.Recoil = { up = 0.32, side = 0.4, bias = 0.25, recover = 0.4, aimMult = 0.7 }  -- view kick per shot
 SWEP.Damage = 18
 SWEP.BoltSpeed = 7500
@@ -79,6 +87,7 @@ SWEP.SpinSound = "weapons/physcannon/physcannon_charge.wav"  -- placeholder (pac
 SWEP.UsesCell = true
 SWEP.CellShots = 1000
 SWEP.CellReloadMult = 1.3
+-- Spare magazines / cells put in your pouch when you pick it up (rhylib_base).
 SWEP.StartMags = 3
 SWEP.StartCells = 1
 
@@ -88,6 +97,11 @@ SWEP.InvH = 1
 SWEP.InvLarge = true
 SWEP.InvWeight = 12          -- kg
 
+-- Spread: cone angles in degrees (rhylib_weapons sh_10_spread): hip / aim =
+-- resting cone, kickMain / kickSide = how far the crosshair arcs move per shot,
+-- bloomPerShot (up to bloomMax) = growth of the whole cone, aimKickMult /
+-- aimOffsetMult = share of that while aiming. Each value is also a setting
+-- in Server settings > guns (rhylib_weapons sh_70_gunstats).
 SWEP.Spread = {
     hip = 2.2,
     aim = 1.4,

@@ -7,6 +7,13 @@
     The real bolt flies from the eyes. The visual flies in a straight line
     from the muzzle to where that eye line ends (the impact, or its far
     end), so it never bends and lands exactly where the shot lands.
+
+    Realm: client. Public: Bolts.Spawn, Bolts.FireLocal, Bolts.NearMiss,
+    Bolts.COLOR_* numbers. Client convar rhylib_whizz (near-miss sounds).
+    Receives net "wep.shot" (format in sv_10_bolts.lua).
+    BoltColor styles (SWEP.BoltColor or opts.color): 1 blue, 2 red,
+    3 green, 4 rocket, 5 grapple hook, 6 stun ring, 7 training yellow,
+    8 training droids, 9 training rocket, 10 overcharged.
 ]]
 
 local W = Rhylib.Weapons
@@ -82,6 +89,8 @@ local WHIZZ_DIST = 90
 local nextWhizz = 0
 -- lead: head start the visual catches up on (CATCHUP, see Bolts.Spawn).
 local CATCHUP = 3
+-- Bolts.NearMiss(shooter, from, dir, len, speed, tr, lead): plays the
+-- whizz if this visual bolt passes close to your head (called by Spawn).
 function Bolts.NearMiss(shooter, from, dir, len, speed, tr, lead)
     local me = LocalPlayer()
     if not IsValid(me) or shooter == me or not whizzVar:GetBool() or not me:Alive() then return end
@@ -120,6 +129,10 @@ end
 -- ahead: seconds the server's bolt is ahead (its lag-compensated first
 -- leg). The visual still leaves the muzzle but flies up to CATCHUP times
 -- as fast until it has made that up (not hooks or stun rings).
+-- Bolts.Spawn(shooter, origin, dir, speed, colorIndex, left, ahead): adds
+-- one visual bolt. origin/dir: the real (eye) line; the visual starts at
+-- the shooter's muzzle (SWEP:GetPropMuzzle). Returns nothing.
+-- Example: Rhylib.Weapons.Bolts.Spawn(ply, ply:GetShootPos(), ply:GetAimVector(), 7000, 1)
 function Bolts.Spawn(shooter, origin, dir, speed, colorIndex, left, ahead)
     local style = STYLES[colorIndex] or STYLES[1]
     local muzzle = muzzlePos(shooter, origin, left)
@@ -177,7 +190,9 @@ function Bolts.Spawn(shooter, origin, dir, speed, colorIndex, left, ahead)
     }
 end
 
--- Called by the weapon on the shooter's own client (first prediction only).
+-- Bolts.FireLocal(owner, weapon, origin, dir, opts): called by the weapon
+-- on the shooter's own client (first prediction only), so your own bolts
+-- show at once. Same speed rules as the server's Bolts.Speed.
 function Bolts.FireLocal(owner, weapon, origin, dir, opts)
     local speed = opts and opts.speed or weapon.BoltSpeed or 7000
     if not weapon.Explosive and not (opts and opts.speed) then speed = speed * (Rhylib.Config.Get("weapons", "boltSpeedMult") or 1) end

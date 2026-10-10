@@ -21,6 +21,7 @@ local L = Rhylib.Lying
 local softRags = {}   -- [ply] = client ragdoll
 L.softRags = softRags
 
+-- (wraps the shared L.Ragdoll: a server ragdoll first, else our own)
 local serverRagdoll = L.Ragdoll
 function L.Ragdoll(ply)
     local r = serverRagdoll(ply)

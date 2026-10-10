@@ -1,5 +1,21 @@
 --[[
     Stun, cuffs and escort (server).
+
+    Stun: MP.Stun lays a player down for stunTime seconds (rhylib_core
+    Rhylib.Lying draws the body), with a low view and their weapon stowed.
+    Only MPs' stun bolts count (hook Rhylib.StunHit from rhylib_weapons).
+    After getting up they can't be stunned again for stunImmune seconds.
+
+    Cuffs: MP.Cuff / MP.Uncuff set NW2 rhylib_cuffed. MP.cuffed lists
+    cuffed players so the escort timer only walks those.
+
+    Escort: MP.SetEscort links prisoner (rhylib_escortBy) and MP
+    (rhylib_escorting); the pull itself is in sh_10_move. A 0.5 s timer
+    ends escorts when the MP dies, is downed, cuffed or 400+ units away.
+
+    Also here: clearing everything on death/spawn/leave, re-cuffing
+    players who left while cuffed, blocks on job change / vehicles /
+    suicide / weapon pickups, and the interaction wheel actions (mp.wheel).
 ]]
 
 local MP = Rhylib.MP
@@ -28,12 +44,16 @@ local function getUp(ply)
     if Rhylib.Lying and not ply.rhylibDown then Rhylib.Lying.End(ply) end
 end
 
--- Ends a stun now (rhylib_admin !free).
+-- MP.EndStun(ply): ends a stun now (used by rhylib_admin !free). Server.
 function MP.EndStun(ply)
     if IsValid(ply) and MP.IsStunned(ply) then getUp(ply) end
 end
 
--- Collapse for stunTime seconds. by: who stunned them (for logs/hooks).
+-- MP.Stun(ply, by): ply collapses for stunTime seconds. by = who stunned
+-- them (passed to hooks). Does nothing if ply is dead, downed, knocked
+-- down, already stunned, still immune, or hook Rhylib.CanStun returns
+-- false. Does not check that by is an MP (callers do). Server only.
+-- Example: Rhylib.MP.Stun(target, mp)
 function MP.Stun(ply, by)
     if not IsValid(ply) or not ply:Alive() then return end
     if ply.rhylibDown then return end                         -- already downed (rhylib_medical)
@@ -77,6 +97,9 @@ end)
 -- Cuffs
 --------------------------------------------------------------------------
 
+-- MP.Cuff(ply, by): cuffs ply (no checks on who or range: callers do that).
+-- Stows their weapon and fires Rhylib.PlayerCuffed(ply, by). Server only.
+-- Example: Rhylib.MP.Cuff(target, mp)
 function MP.Cuff(ply, by)
     if not IsValid(ply) or MP.IsCuffed(ply) then return end
     ply:SetNW2Bool("rhylib_cuffed", true)
@@ -88,6 +111,8 @@ function MP.Cuff(ply, by)
     hook.Run("Rhylib.PlayerCuffed", ply, by)
 end
 
+-- MP.Uncuff(ply, by): removes cuffs and any escort. by may be nil (system
+-- uncuff, no sound). Fires Rhylib.PlayerUncuffed(ply, by). Server only.
 function MP.Uncuff(ply, by)
     if not IsValid(ply) then return end
     ply:SetNW2Bool("rhylib_cuffed", false)
@@ -110,6 +135,9 @@ function MP.ClearEscorter(ply)
     by:SetNW2Entity("rhylib_escorting", other)
 end
 
+-- MP.SetEscort(ply, by): the cuffed ply is now escorted by MP by (nil = let
+-- go). Only works on cuffed players. Server only.
+-- Example: Rhylib.MP.SetEscort(prisoner, mp)
 function MP.SetEscort(ply, by)
     if not MP.IsCuffed(ply) then return end
     MP.ClearEscorter(ply)

@@ -1,5 +1,5 @@
 --[[
-    Clone helmet visor, first person only.
+    Clone helmet visor, first person only (client).
 
     The see-through area is a T shape: wide across the top, narrowing to
     a chin opening at the bottom centre. Around it: a curved brow along
@@ -16,6 +16,11 @@
 
     The shape is built once per screen size as cached triangles, so each
     frame is only a few dozen cheap draw calls.
+
+    Also exports the helpers other HUD parts use to sit on the cheeks:
+    HUD.VisorActive, HUD.VisorCheekX/Y, HUD.VisorStrip, HUD.VISOR_BAR_*,
+    HUD.VisorShellTris (rhylib_gear masks the sun visor with it) and
+    HUD.OpticsWeaponMode. Settings rows for the brow sliders at the end.
 ]]
 
 local HUD = Rhylib.HUD
@@ -52,14 +57,18 @@ local BAR_TO = 0.3           -- ends here (the chin opening starts at 0.4)
 local BAR_GAP = 0.006        -- gap between the four bars (share of the width)
 local BAR_STEPS = 10         -- pieces per bar (sets how smoothly a bar fills)
 
--- The cheek curve, as in build() below: x and y shares at t.
+-- The cheek curve, as in build() below: x and y shares at t (0..1).
+-- A cubic Bezier from the screen side (x 0, y 0.75) to the chin opening's
+-- bottom corner (x 0.4, y 1). x grows with t, so a share can be turned
+-- back into t by halving (see cheekY / VisorCheekX).
 local function cheekPoint(t)
     local u = 1 - t
     local function bz(p0, p1, p2, p3) return u * u * u * p0 + 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t * p3 end
     return bz(0, 0.3, 0.39, 0.4), bz(0.75, 0.8, 0.86, 1.0)
 end
 
--- Height share of the cheek edge at width share fx (0..0.4).
+-- Height share of the cheek edge at width share fx (0..0.4): finds t by
+-- 30 halvings (plenty for pixels), then reads y there.
 local function cheekY(fx)
     local lo, hi = 0, 1
     for _ = 1, 30 do
@@ -70,6 +79,12 @@ local function cheekY(fx)
     return y
 end
 
+-- HUD.VisorActive(): true while the visor is drawn: rhylib_hud_visor on,
+-- layout isn't "thirdperson", alive, first person, not in a vehicle,
+-- helmet on (rhylib_gear NW2Bool rhylib_helmetOff), binoculars not in
+-- weapon mode, and not holding the camera. Most HUD files ask this to
+-- pick their visor or third-person look. Client only.
+-- Example: if Rhylib.HUD.VisorActive and Rhylib.HUD.VisorActive() then ... end
 function HUD.VisorActive()
     if not visorVar:GetBool() then return false end
     if HUD.VisorLayout and HUD.VisorLayout() == "thirdperson" then return false end
@@ -217,8 +232,9 @@ local function drawBars(list, frac, fill, line)
     end
 end
 
--- Binoculars / rangefinder in weapon mode (rhylib_gear): no visor; the
--- third-person HUD shows over the binocular view instead (owner).
+-- HUD.OpticsWeaponMode(): true while binoculars / rangefinder are in
+-- weapon mode (rhylib_gear): no visor; the third-person HUD shows over
+-- the binocular view instead (owner).
 function HUD.OpticsWeaponMode()
     local ply = LocalPlayer()
     return IsValid(ply) and ply:GetNW2Int("rhylib_optics", 0) ~= 0 and ply:GetNW2Bool("rhylib_opticsFire", false)
@@ -235,7 +251,8 @@ local function ensureShell()
     return cache
 end
 
--- The shell's triangles (brow + cheeks) while the visor shows, else nil.
+-- HUD.VisorShellTris(): the shell's triangles (brow + cheeks), each a
+-- 3-vertex table for surface.DrawPoly, while the visor shows; else nil.
 -- Read only. rhylib_gear masks the sun visor layer with them.
 function HUD.VisorShellTris()
     if not HUD.VisorActive() then return nil end
@@ -243,6 +260,7 @@ function HUD.VisorShellTris()
 end
 
 -- Drawn before the other HUD parts (priority -10), so they sit on top.
+-- Armour is drawn against GetMaxArmor (100 if the game has none).
 Rhylib.Hook.Add("HUDPaint", "hud.visor", function()
     if not HUD.VisorActive() then return end
     local shell = ensureShell()
@@ -278,7 +296,8 @@ end, -10)
 -- Helpers for other HUD parts that sit on the cheeks (stamina, hotbar).
 --------------------------------------------------------------------------
 
--- Screen x of the cheek edge at screen y. side -1 = left cheek, 1 = right.
+-- HUD.VisorCheekX(y, side): screen x of the cheek edge at screen y.
+-- side -1 = left cheek, 1 = right.
 -- (Above the cheek: the screen side; below the chin: the chin edge.)
 function HUD.VisorCheekX(y, side)
     local W, H = ScrW(), ScrH()
@@ -293,8 +312,10 @@ function HUD.VisorCheekX(y, side)
     return side < 0 and fx * W or (1 - fx) * W
 end
 
--- Screen y of the cheek edge at screen x. side -1 = left cheek, 1 = right.
+-- HUD.VisorCheekY(x, side): screen y of the cheek edge at screen x.
+-- side -1 = left cheek, 1 = right.
 -- Past the chin end of the curve: the bottom of the screen.
+-- Example: local y = Rhylib.HUD.VisorCheekY(ScrW() * 0.2, -1)
 function HUD.VisorCheekY(x, side)
     local W, H = ScrW(), ScrH()
     local fx = side < 0 and x / W or (W - x) / W
@@ -309,6 +330,14 @@ end
     thickness where the edge gets steep near the chin). Shares of the
     screen height for offset and thickness. Quads are ordered from fx0
     to fx1 and wound for surface.DrawPoly. Cached per screen size.
+
+    HUD.VisorStrip(side, fx0, fx1, offset, thick, steps) returns
+      { quads = { quad, ... }, outer = { {x, y}, ... }, inner = { {x, y}, ... } }
+    (outer/inner: the steps + 1 points along each long edge). Read only:
+    the table is cached and shared.
+    Example (the radio's meter under the stamina strip):
+      local strip = Rhylib.HUD.VisorStrip(-1, 0.306, 0.4, 0.005, 0.009, 28)
+      for _, q in ipairs(strip.quads) do surface.DrawPoly(q) end
 ]]
 local stripCache = {}
 function HUD.VisorStrip(side, fx0, fx1, offset, thick, steps)
@@ -365,6 +394,8 @@ function HUD.VisorStrip(side, fx0, fx1, offset, thick, steps)
 end
 
 -- Where the armour/health bars end, so others can carry on from there.
+-- Width shares (FROM/TO) and height shares (OFFSET/THICK); see the BAR_*
+-- locals above.
 HUD.VISOR_BAR_FROM = BAR_FROM
 HUD.VISOR_BAR_TO = BAR_TO
 HUD.VISOR_BAR_OFFSET = BAR_OFFSET

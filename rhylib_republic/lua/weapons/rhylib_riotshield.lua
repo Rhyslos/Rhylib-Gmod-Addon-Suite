@@ -21,8 +21,16 @@
 
     First person: the DC-15S's own viewmodel (left arm folded away), the
     shield placed in the view: out on the left, or with right mouse flat in
-    front with its viewport on the crosshair. Third person: the shield in
-    front of the chest.
+    front with its viewport on the crosshair (the CG shield stays angled,
+    only pulled closer). Third person: the shield held in the left hand
+    (anim_attachment_LH, "duel" hold type).
+
+    Shared (AddCSLuaFile). Class rhylib_riotshield, base rhylib_dc15s.
+    Blocking, Hold the line and Phalanx live in rhylib_weapons
+    sh_60_shield.lua (W.ShieldBlocks etc.); this file is the weapon, its
+    look and the bash. Net message rhylib.wep.shieldbash (client -> server,
+    empty; rate 3 a second): the bash key was pressed. Client convar
+    rhylib_shield_bash_key (default x, Settings > Controls).
 ]]
 
 AddCSLuaFile()
@@ -101,15 +109,20 @@ SWEP.Spread = {
 -- Republic shield may not.
 SWEP.AimFireSkill = "riot_shield"
 
+-- Third person: extra turns of the left arm bones (client side, not while
+-- lowered). All zero now; tune with rhylib_extra_editor.
 -- Third person: the left arm off the pistol grip (start: none; rhylib_extra_editor).
 SWEP.WorldBoneMods = {
     ["ValveBiped.Bip01_L_UpperArm"] = Angle(0, 0, 0),
     ["ValveBiped.Bip01_L_Forearm"] = Angle(0, 0, 0),
 }
 
--- Shield models and where they sit (first person on the left hand, third
--- person on the left forearm). The cs574 numbers are starting guesses:
--- tune with rhylib_extra_editor and paste them here.
+-- Shield models and where they sit. Each entry becomes one rhylib_base
+-- ExtraProps prop (see rhylib_base for vmAnchor / vmAimAnchor / wmAttach
+-- etc.). The cs574 entries are placed in the view (first person) and in
+-- the left hand (third person); the old packs' entries use the left hand /
+-- forearm bones. The cs574 numbers are starting guesses: tune with
+-- rhylib_extra_editor and paste them here.
 local SHIELDS = {
     -- cs574's models: 36 wide (X), ~5 thick (front face -Y), ~69 tall (Z),
     -- the handle near the origin. Placed in the view (first person) and at
@@ -160,6 +173,7 @@ local SHIELDS = {
         vmPos = Vector(-3, 4.21, 2.9), vmAng = Angle(0, 90, 0), vmScale = 0.7,
         wmPos = Vector(4, 2, 0), wmAng = Angle(0, 90, 90), wmScale = 0.92 },
 }
+-- Fallback order per ShieldKind: the first installed model wins.
 local ORDER = { cg = { "cg", "rep", "riot", "heavy", "tf2", "hevy" }, rep = { "rep", "cg", "riot", "heavy", "tf2", "hevy" } }
 -- Inventory picture: the shield itself (rhylib_inventory cl_15_icons, first installed).
 SWEP.InvIconModels = { SHIELDS.cg.model, SHIELDS.riot.model, SHIELDS.heavy.model, SHIELDS.hevy.model, SHIELDS.tf2.model }
@@ -219,6 +233,9 @@ function SWEP:RhylibModelsChanged()
     end
 end
 
+-- SWEP:AimFireBlocked(): true while aiming without the AimFireSkill
+-- ("riot_shield"); without rhylib_skills only the CG shield may fire
+-- through the viewport. Shared (CanPrimaryAttack and the HUD use it).
 function SWEP:AimFireBlocked()
     if not (self.GetAiming and self:GetAiming()) then return false end
     local o = self:GetOwner()
@@ -264,6 +281,11 @@ end
 -- Shield bash (own key, net wep.shieldbash; owner 2026-10-08: right mouse
 -- aims). CG shield: needs the Shield bash skill and stuns a player (MPs);
 -- the Republic shield: anyone, only shoves.
+-- SWEP:CanBash(): off cooldown (BashDelay), not lowered, BashSkill if set.
+-- SWEP:Bash(): server. A hull trace BashRange ahead: a player is stunned
+-- (BashStun + the basher is an MP, rhylib_mp) or shoved; an NPC / NextBot
+-- takes skills bashDamage (DMG_CLUB) and is pushed back. Downed (lying)
+-- players are skipped.
 function SWEP:CanBash()
     local o = self:GetOwner()
     if not (IsValid(o) and o:IsPlayer()) then return false end

@@ -11,6 +11,17 @@
     of craftTime seconds. Supplies are taken at the end; walking away
     stops it. Batch brewing makes two. Items made from issued supplies
     are issued too.
+
+    Med sofa: Med.SofaUse(sofa, ply) lays the player's lying body on it
+    (looks only; blood can be drawn there, sv_50_illness.lua).
+
+    Nets: chem.open (server -> client) bench entity + bool "may craft";
+    chem.use (client -> server) bench entity: Crafting from the wheel;
+    chem.make (client -> server) bench entity + recipe index 5 bits (into
+    config chemRecipes).
+    Saved data: Data "med_places" / <map> = list of { class, pos, ang } for
+    every permanent tank, bench and sofa.
+    Permission: rhylib.medical.admin (admin) for rhylib_medical_save.
 ]]
 
 local Med = Rhylib.Medical
@@ -22,6 +33,8 @@ Rhylib.Net.Register("chem.open")
 -- Bacta tank
 --------------------------------------------------------------------------
 
+-- Where the occupant stands: bottom centre of the model + tankOffset
+-- (in the tank's own axes).
 local function inside(tank)
     local mins, maxs = tank:OBBMins(), tank:OBBMaxs()
     local off = cfg("tankOffset")
@@ -43,6 +56,9 @@ local function outside(tank, ply)
     return base + dirs[1] * r
 end
 
+-- Med.TankExit(ply, why): takes ply out of their tank (placed beside it,
+-- if alive and still held), with an optional note. Safe to call when not
+-- in a tank.
 function Med.TankExit(ply, why)
     if not IsValid(ply) then return end
     local tank = ply.rhylibTank
@@ -57,6 +73,8 @@ function Med.TankExit(ply, why)
     if why then Med.Note(ply, why) end
 end
 
+-- Med.TankEnter(tank, ply): puts ply in the tank (alive, not down, not
+-- dragging/dragged, not cuffed/stunned, walking, and hurt or injured).
 function Med.TankEnter(tank, ply)
     if not ply:Alive() or ply.rhylibDown or Med.Dragging(ply) or Med.DraggedBy(ply) then return end
     local MP = Rhylib.MP
@@ -78,6 +96,8 @@ function Med.TankEnter(tank, ply)
     tank:EmitSound("ambient/water/water_splash" .. math.random(1, 3) .. ".wav", 65)
 end
 
+-- Med.TankUse(tank, ply): E on a tank (ENT:Use): out if inside, else in
+-- if it's free. Ignores the E that just let them out (0.6 s).
 function Med.TankUse(tank, ply)
     if ply.rhylibTank == tank then return Med.TankExit(ply) end
     if CurTime() - (ply.rhylibTankLeft or 0) < 0.6 then return end   -- (the E that just let them out)
@@ -154,7 +174,10 @@ local function near(ply, bench)
     return IsValid(bench) and ply:GetPos():DistToSqr(bench:GetPos()) <= BENCH_RANGE * BENCH_RANGE
 end
 
--- The bench menu: the blood analyser (medics) and crafting (Chemists).
+-- Med.BenchUse(bench, ply): E on a chemistry bench (or "Crafting" on the
+-- wheel): medics get the bench menu (chem.open), with crafting only for
+-- Chemists (skill chem_bench). Refused in the simplified system and
+-- without rhylib_inventory.
 function Med.BenchUse(bench, ply)
     if not ply:Alive() or ply.rhylibDown then return end
     if Med.Simple() then return Med.Note(ply, "Not used in the simplified medical system") end
@@ -194,6 +217,8 @@ local function takeN(Inv, ply, id, n)
     return true, issued
 end
 
+-- chem.make: start one batch. Supplies are only checked now and taken at
+-- the end (the craft timer below).
 Rhylib.Net.Receive("chem.make", function(ply)
     local bench = net.ReadEntity()
     local r = (cfg("chemRecipes") or {})[net.ReadUInt(5)]
@@ -256,6 +281,8 @@ Rhylib.Hook.Add("PlayerDisconnected", "medical.craft", function(ply) crafting[pl
 -- for a moment and it is frozen. E or Jump gets up.
 --------------------------------------------------------------------------
 
+-- Get up from the sofa. quiet = only clear the sofa state and leave the
+-- body alone (downed, stunned, dead: another system owns it now).
 local function sofaUp(ply, quiet)
     local sofa = ply.rhylibSofa
     if not sofa then return end
@@ -275,8 +302,12 @@ local function sofaUp(ply, quiet)
         end
     end
 end
+-- Med.SofaUp(ply, quiet): see sofaUp above (the sofa entity calls it when
+-- removed).
 Med.SofaUp = sofaUp
 
+-- Med.SofaUse(sofa, ply): E on a med sofa (ENT:Use): lie down, or get up
+-- if already lying on it. Needs rhylib_core's Lying (ragdoll bodies).
 function Med.SofaUse(sofa, ply)
     if ply.rhylibSofa == sofa then return sofaUp(ply) end
     if CurTime() - (ply.rhylibSofaLeft or 0) < 0.6 then return end
@@ -309,6 +340,9 @@ function Med.SofaUse(sofa, ply)
     -- so its lowest point is just above the surface. The pelvis and spine
     -- are frozen there; arms, legs and head settle (heavily slowed) for a
     -- moment, then the Lying code freezes the rest (rag.rhylibFreezeAt).
+    -- Each physics part is moved from the standing frame (`from`, around the
+    -- player's feet) into the lying frame (`to`, pointing up with its
+    -- forward along the sofa) at `base`, keeping its place in the body.
     local from = Angle(0, ply:EyeAngles().y, 0)
     local to = Vector(0, 0, 1):AngleEx(axis)
     local origin = ply:GetPos()
@@ -398,10 +432,14 @@ Rhylib.Hook.Add("Rhylib.PlayerDowned", "medical.sofa", sofaQuiet)
 --------------------------------------------------------------------------
 
 local CLASSES = { "rhylib_bacta_tank", "rhylib_chem_bench", "rhylib_med_sofa" }
--- (rhylib_admin's cleanup leaves these alone)
+-- (Rhylib.PLACEMENT_CLASSES marks Rhylib fixtures for other addons, e.g.
+-- rhylib_admin's !freezeprops skips them; !cleanup now keeps only
+-- permanent ones)
 Rhylib.PLACEMENT_CLASSES = Rhylib.PLACEMENT_CLASSES or {}
 for _, c in ipairs(CLASSES) do Rhylib.PLACEMENT_CLASSES[c] = true end
 
+-- Saves every permanent tank/bench/sofa (all of them when rhylib_core has
+-- no Rhylib.Perma) to Data "med_places"/<map>. Returns how many.
 local function savePlaces()
     local rows = {}
     for _, class in ipairs(CLASSES) do
@@ -416,6 +454,8 @@ local function savePlaces()
     return #rows
 end
 
+-- Removes the existing ones and spawns the saved list (marked permanent).
+-- Runs 1 s after InitPostEntity and after a map cleanup.
 local function loadPlaces()
     local rows = Rhylib.Data.Get("med_places", game.GetMap())
     if not istable(rows) then return end
@@ -436,6 +476,8 @@ if Rhylib.Perma and Rhylib.Perma.Register then Rhylib.Perma.Register(CLASSES, sa
 Rhylib.Hook.Add("InitPostEntity", "medical.places", function() timer.Simple(1, loadPlaces) end)
 Rhylib.Hook.Add("PostCleanupMap", "medical.places", loadPlaces)
 
+-- Console: rhylib_medical_save (admins, or the server console) saves now.
+-- The toolgun's Permanent tool also saves through Rhylib.Perma.Register.
 Rhylib.Perms.Register("rhylib.medical.admin", "admin", "Save bacta tank and chemistry bench placements")
 concommand.Add("rhylib_medical_save", function(ply)
     Rhylib.Perms.Check(ply, "rhylib.medical.admin", function(ok)

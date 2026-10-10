@@ -2,6 +2,14 @@
     Server settings overrides on the client (see sv_15_settings.lua): kept
     in Config.overrides so shared code reads the same values as the server.
     Rhylib.Settings.list is the catalogue the staff page asked for.
+
+    The overrides arrive after this client's Lua has loaded (it asks at
+    InitPostEntity), so client code that copied a Config value at file
+    load keeps the base value. Read Config.Get when needed, or listen to
+    hook Rhylib.ConfigChanged (fires here for every override received).
+
+    The page (rhylib_menus) sets S.onList() (catalogue arrived) and
+    S.onChanged(m, k) (one setting changed) to redraw itself.
 ]]
 
 local Config = Rhylib.Config
@@ -75,12 +83,16 @@ Rhylib.Net.Receive("core.cfglist", function()
     if S.onList then S.onList() end
 end)
 
+-- S.Request(): ask the server for the catalogue (answer: S.list, then S.onList()).
 function S.Request()
     Rhylib.Net.Start("core.cfgreq")
     net.SendToServer()
 end
 
--- Ask for a change (value nil = back to the default / host file).
+-- S.Set(m, k, value): ask for a change (value nil = back to the default /
+-- host file). The server checks the permission and the value; a refused
+-- value gets a chat line saying why.
+-- Example: Rhylib.Settings.Set("jetpack", "fuelTime", 12)
 function S.Set(m, k, value)
     Rhylib.Net.Start("core.cfgset")
     net.WriteString(m)

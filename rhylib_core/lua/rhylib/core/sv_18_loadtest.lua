@@ -16,6 +16,11 @@
     Watch it on the Staff > Profiler page (or rhylib_profile_report).
     Bots run no client code, so this measures the server and bandwidth,
     not anyone's FPS. Load bots respawn 5 s after dying.
+
+    Load bots: p.rhylibLoadBot, NW2Bool rhylib_infammo (infinite test
+    ammo), state in p.rhylibLoad. They don't hurt each other
+    (EntityTakeDamage -1300). Droids made here are in LT.droids.
+    Example: rhylib_loadtest 40 1 20   -- 40 firing bots and 20 droids
 ]]
 
 Rhylib.LoadTest = Rhylib.LoadTest or {}
@@ -26,6 +31,7 @@ LT.droids = LT.droids or {}   -- [droid] = true
 
 local GUNS = { "rhylib_dc15a", "rhylib_dc15s", "rhylib_westarm5", "rhylib_dp23" }
 
+-- LT.Bots(): the load bots now on the server; LT.Count(): how many.
 function LT.Bots()
     local out = {}
     for _, p in ipairs(player.GetBots()) do
@@ -208,7 +214,7 @@ local function freeSpot(p, pos)
     end
 end
 
--- Spread a bot out from its spawn (80 on one spawn point stack up, and the
+-- LT.Place(bot): spread a bot out from its spawn (80 on one spawn point stack up, and the
 -- unstick pushed some under the map), or rescue one that's out of the world.
 function LT.Place(p)
     if not (IsValid(p) and p:Alive()) then return end

@@ -3,7 +3,14 @@
       LMB     cuff a stunned or downed player (takes cuffTime; keep aiming)
       RMB     uncuff the cuffed player you look at
       Reload  escort the cuffed player you look at (again: let go)
+
+    Shared SWEP. Cuffing is predicted: the progress is two DT vars
+    (CuffTarget, CuffEnd) so the bar in DrawHUD matches the server;
+    only the server actually cuffs (MP.Cuff), and only if the owner is
+    an MP. Letting go of LMB or aiming away resets it.
+    Also an inventory item (InvW/InvH/InvWeight/InvCategory, rhylib_inventory).
 ]]
+
 
 AddCSLuaFile()
 

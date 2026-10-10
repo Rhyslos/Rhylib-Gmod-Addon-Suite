@@ -2,15 +2,25 @@
     Toolgun (server): placing and removing, checked against the
     permission and the player's own aim.
 
-    Messages
-      tool.place   client: entry id, count 3 bits, name (named entries)
-      tool.spawn   client: kind 3 bits (prop, entity, npc, vehicle, weapon),
-                   name, skin 6 bits, bodygroups, NPC weapon: a spawn-window
-                   thing at the aimed spot, through sandbox's own spawn code
-                   (so the gamemode's spawn rules and limits apply)
-      tool.remove  client
-      tool.perma   client: bool: the Permanent tool on the aimed thing (on / off)
-      tool.save    client: save every permanent thing again now
+    Messages (all client -> server; the server traces the player's own aim)
+      tool.place   String entry id, UInt 3 count (1-5), String name (named
+                   entries, else ""), UInt 3 droid mode (1 guard, 2 patrol,
+                   3 attack, 4 roam); rate 20/s
+      tool.spawn   UInt 3 kind (1 prop, 2 entity, 3 npc, 4 vehicle, 5 weapon),
+                   String name, UInt 6 skin, String bodygroups, String NPC
+                   weapon: a spawn-window thing at the aimed spot, through
+                   sandbox's own spawn code (so the gamemode's spawn rules
+                   and limits apply); full access only; rate 20/s
+      tool.remove  empty; rate 20/s
+      tool.perma   Bool: the Permanent tool on the aimed thing (on / off); rate 10/s
+      tool.follow  empty: clone follow tool RMB; rate 10/s
+      tool.save    empty: save every permanent thing again now; rate 1/s
+      tool.give    empty: give me a toolgun (console rhylib_toolgun); rate 1/s
+    Every message needs the toolgun in hand (except tool.give) and the
+    permission (rhylib.toolgun, or the entry's own perm).
+
+    Saved: Data "toolgun"/"keep_<SteamID64>" = true for !keeptoolgun.
+    Chat: !toolgun or /toolgun, !keeptoolgun or /keeptoolgun.
 
     Placing no longer saves anything (owner 2026-10-09u): staff make a thing
     permanent with the Permanent tool (rhylib_core sh_62_perma.lua).
@@ -47,6 +57,8 @@ local function anyAccess(ply, cb)
         try(1)
     end)
 end
+-- Tool.AnyAccess(ply, cb(ok)): cb(true) if they have rhylib.toolgun or any
+-- entry's perm (enough to hold the toolgun).
 Tool.AnyAccess = anyAccess
 
 -- Runs fn(full) if they may use this entry (full access, or the entry's perm).
@@ -96,6 +108,9 @@ Rhylib.Net.Receive("tool.perma", function(ply)
     allowed(ply, function() perma(ply, on) end)
 end, { rate = 10, burst = 10 })
 
+-- LMB with an entry: orders, presets, follow pick, own place functions,
+-- or ents.Create of the entry's class (count of them in a ring), each
+-- with an undo entry. Droids and clones stop at their caps.
 local function place(ply, e, count, name, mode)
     if e.perma then return perma(ply, true) end
     local tr = aim(ply)
@@ -325,6 +340,8 @@ Rhylib.Net.Receive("tool.spawn", function(ply)
 end, { rate = 20, burst = 20 })
 
 -- Rhylib things and what the toolgun spawned (never players or map entities).
+-- Returns a table with .class (and .ent when the parent is the one to
+-- remove), or nil.
 local function removable(ent)
     if not IsValid(ent) or ent:IsPlayer() or ent:IsWorld() or ent:CreatedByMap() then return nil end
     if ent.rhylibToolSpawned then return { class = ent:GetClass() } end
@@ -412,6 +429,7 @@ local function give(ply)
         ply:SelectWeapon(CLASS)
     end)
 end
+-- Tool.Give(ply): give and select the toolgun (checks access).
 Tool.Give = give
 
 Rhylib.Net.Receive("tool.give", give, { rate = 1, burst = 2 })
@@ -420,6 +438,8 @@ Rhylib.Net.Receive("tool.give", give, { rate = 1, burst = 2 })
 -- after every respawn (saved per player; say it again to stop).
 local function keepKey(ply) return "keep_" .. ply:SteamID64() end
 
+-- Tool.KeepsToolgun(ply): true if they turned on !keeptoolgun (cached on
+-- the player, read from Data once).
 function Tool.KeepsToolgun(ply)
     if ply.rhylibKeepTool == nil then
         ply.rhylibKeepTool = not ply:IsBot() and Rhylib.Data.Get("toolgun", keepKey(ply)) == true or false

@@ -1,9 +1,11 @@
 --[[
-    Low ammo warning under the crosshair (Rhylib guns): "LAST MAGAZINE"
+    Low ammo warning under the crosshair (client, Rhylib guns): "LAST MAGAZINE"
     when no spare magazine the gun takes is left, "OUT OF AMMO" when the
     clip is empty too, "CELL LOW" / "CELL EMPTY" when the power cell is
     under 15% with no spare cell. Not with test ammo or the Open up order.
-    Client convar rhylib_lowammo (Settings > HUD).
+    Not shown for the toolgun, or while looking through binoculars
+    (rhylib_gear G.Looking). Red warnings pulse faster than amber ones.
+    Client convar rhylib_lowammo (Settings > HUD, default on).
 ]]
 
 local HUD = Rhylib.HUD
@@ -14,7 +16,10 @@ local AMBER = Color(255, 190, 60)
 local RED = Color(255, 80, 70)
 local CELL_LOW = 0.15
 
--- text, colour (most urgent first), or nil
+-- HUD.LowAmmo(ply, wep): the warning to show for that weapon: text,
+-- colour (most urgent first), or nil when there is nothing to warn
+-- about (or it isn't a Rhylib gun with magazines). Client.
+-- Example: local text = Rhylib.HUD.LowAmmo(ply, ply:GetActiveWeapon())
 local function warning(ply, wep)
     if not (IsValid(wep) and wep.IsRhylib and istable(wep.Mags) and #wep.Mags > 0) or wep.ToolGun then return nil end
     if (wep.InfiniteAmmo and wep:InfiniteAmmo()) or (wep.NoAmmoUse and wep:NoAmmoUse()) then return nil end

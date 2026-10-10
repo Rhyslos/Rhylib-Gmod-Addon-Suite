@@ -1,7 +1,15 @@
 --[[
-    Battalion computer: troopers upload their datapad logs here and read the
-    battalion's logs. An admin sets the battalion (a DarkRP job category)
-    from its window; rhylib_datapad_save keeps it on the map.
+    Battalion computer (entity, shared): troopers upload their datapad logs
+    here and use the battalion's computer window (logs, board, orders,
+    missions, LOA, personnel, stats, applications; cl_20_terminal.lua).
+    An admin sets the battalion (a DarkRP job category) from its window,
+    or later with rhylib_datapad_setbattalion. Make it permanent with the
+    toolgun's Permanent tool (or rhylib_datapad_save) to keep it after a
+    map change; the battalion is saved with it.
+
+    E runs Rhylib.Datapad.UseTerminal (sv_20_terminals.lua). The model is
+    Rhylib.Datapad.MODELS[ENT.ModelKey] (Server settings > Models).
+    The medical holotable is built on this class.
 ]]
 
 AddCSLuaFile()
@@ -12,10 +20,10 @@ ENT.PrintName = "Battalion computer"
 ENT.Category = "Rhylib: Terminals"
 ENT.Spawnable = true
 ENT.AdminOnly = true
-ENT.ModelKey = "battalion"
+ENT.ModelKey = "battalion"   -- key in Rhylib.Datapad.MODELS
 
 function ENT:SetupDataTables()
-    self:NetworkVar("String", 0, "Battalion")
+    self:NetworkVar("String", 0, "Battalion")   -- "" = not set yet (the holotable never uses it)
 end
 
 function ENT:Initialize()
@@ -36,6 +44,8 @@ if SERVER then
 end
 
 if CLIENT then
+    -- ENT:LabelText(): title and sub line of the floating label. Override it
+    -- in a class built on this one (the holotable does).
     function ENT:LabelText()
         local bn = self:GetBattalion()
         return bn ~= "" and (bn .. " computer") or self.PrintName, "Press E to upload and read logs"

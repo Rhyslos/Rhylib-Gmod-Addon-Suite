@@ -1,7 +1,16 @@
 --[[
     Admin commands (shared list; the server runs them, sv_10_admin.lua).
+    Shared so the client's staff menu and pickers know every command, its
+    arguments and its permission. What a command does is its server
+    handler, Admin.handlers[id] (sv_20_handlers.lua, sv_30_calls.lua).
+    Also here: Admin.SECTIONS (staff menu layout), Admin.byId / byAlias,
+    and the helpers ParseDuration, FormatMinutes and Split.
 
     { id, name, cat, perm (default = id), target, args, desc, aliases }
+      id: the chat / console word (!id). name: label in the menu.
+      cat: a group name (only used for display). desc: menu tooltip.
+      perm: the permission a rank needs; "<perm>.self" in a rank's perms
+      lets it use a targeted command on itself only.
       target: "player"  an online player (required)
               "self"    an online player, or yourself when left out
               "opt"     an online player, or nobody when left out
@@ -13,7 +22,12 @@
               text (the rest of the line), word, number, duration ("30m",
               "2h", "1d", "1w", "perm"), rank, rosterrank, battalion,
               qual, onoff, map (picker), class, job, minutes, scale, mult,
-              model, sound, call (a preset id), callmins
+              model, sound, call (a preset id), callmins,
+              illness (viral / bacterial / poison), illload (1-100, 40 when
+              left out)
+            Number kinds are checked on the server (sv_10_admin parseArg);
+            the rest arrive as the word typed and the handler checks them.
+            The kind also picks the client's menu of choices (cl_10_admin).
       mass: true = "*" targets everyone you outrank (not you).
     Chat: !id target args  (or /id); quotes for names with spaces.
     Targets: name (or part of it), SteamID, SteamID64, ^ = you, @ = the
@@ -113,7 +127,10 @@ Admin.COMMANDS = {
 }
 
 -- How the staff menu groups the commands (rhylib_menus cl_30_commands.lua).
--- Anything not listed lands in "Other"; call/endcall have their own block.
+-- player = buttons on the selected player; server = the Server tab.
+-- Each entry: { section title, { command ids } }.
+-- Anything not listed lands in "Other"; call/endcall have their own block,
+-- unban is a button on the Bans list (skip = not shown as a button).
 Admin.SECTIONS = {
     player = {
         { "Info & messages", { "info", "warnings", "tell", "warn", "unwarn" } },
@@ -136,6 +153,8 @@ Admin.SECTIONS = {
     skip = { call = true, endcall = true, unban = true },
 }
 
+-- Lookups: Admin.byId[id] = command; Admin.byAlias[id or alias] = command.
+-- Also fills in c.order (list position) and c.perm (defaults to the id).
 Admin.byId = {}
 Admin.byAlias = {}
 for i, c in ipairs(Admin.COMMANDS) do
@@ -146,7 +165,10 @@ for i, c in ipairs(Admin.COMMANDS) do
     for _, a in ipairs(c.aliases or {}) do Admin.byAlias[a] = c end
 end
 
--- "30m" / "2h" / "1d" / "1w" / "perm" / "0" / "45" (minutes) -> minutes (0 = forever), or nil.
+-- Admin.ParseDuration(text): "30m" / "2h" / "1d" / "1w" / "1y" / "perm" /
+-- "0" / "45" (a bare number = minutes) -> minutes (0 = forever), or nil if
+-- it can't be read. Rounds up, at least 1 minute.
+-- Example: Rhylib.Admin.ParseDuration("2h")   -- 120
 function Admin.ParseDuration(s)
     s = string.lower(string.Trim(s or ""))
     if s == "perm" or s == "permanent" or s == "forever" or s == "0" then return 0 end
@@ -157,6 +179,8 @@ function Admin.ParseDuration(s)
     return math.max(1, math.ceil(n * mult[u]))   -- never 0 (that's "perm")
 end
 
+-- Admin.FormatMinutes(m): minutes as text: "2 hours", "1 week",
+-- "45 minutes"; 0 or nil = "permanently".
 function Admin.FormatMinutes(m)
     if not m or m <= 0 then return "permanently" end
     if m % 10080 == 0 then return (m / 10080) .. " week" .. (m == 10080 and "" or "s") end
@@ -165,7 +189,9 @@ function Admin.FormatMinutes(m)
     return m .. " minute" .. (m == 1 and "" or "s")
 end
 
--- Splits a command line into words; "quoted text" stays one word.
+-- Admin.Split(line): splits a command line into a list of words;
+-- "quoted text" stays one word (a missing closing quote runs to the end).
+-- Example: Rhylib.Admin.Split('kick "Big Bob" spam')   -- { "kick", "Big Bob", "spam" }
 function Admin.Split(line)
     local out = {}
     line = line or ""

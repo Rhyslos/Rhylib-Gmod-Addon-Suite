@@ -1,22 +1,26 @@
 --[[
-    Radio on the HUD.
+    Radio on the HUD (client).
 
     Helmet visor (rhylib_hud): four channel squares between the chat and
     the chin on the left cheek (Local, Squad, Channel 1, Channel 2; the top
     one cut to the armour slope), your mic meter under the stamina strip on
-    the left, the incoming meter mirrored on the right. Shapes are worked
-    out once per screen size. Third person: the same parts as a small
-    plate next to the chat.
+    the left, the incoming meter mirrored on the right, and the squad
+    compass (when switched on) between the chat and the squares. Shapes
+    are worked out once per screen size. Third person: the same parts as a
+    panel at the right edge, 56% down (hidden while the radio is off).
 
     Squares: grey = not joined, dim = joined, bright = talking on it, red =
     radio muted, dark grey = radio off; a small notch marks the radio
-    channel the radio key talks on. Meters: real voice levels for incoming
-    voices (Player:VoiceVolume), yours too when the game reports it, else a
-    level pattern while you talk. Incoming turns solid red when deafened,
-    dark grey when the radio is off. Gold on a hail call.
+    channel the radio key talks on. Meters: real voice levels
+    (Player:VoiceVolume) for incoming voices and your own. Incoming turns
+    solid red when deafened, dark grey when the radio is off, flickers
+    randomly while jammed. Gold on a hail call.
 
     Also: diamond markers over squad mates, a card while a hail rings, and
     a line while you're on a call.
+
+    Public: R.CompassChatWidth, R.VisorGeo, R.MatePos, R.RADAR_M,
+    R.JamShown, R.DrawRadar.
 ]]
 
 local R = Rhylib.Radio
@@ -25,8 +29,9 @@ local UI = Rhylib.UI
 local geo = { key = "" }
 
 
--- Visor: how wide the chat may be (up to the compass, or the squares when
--- the compass is off).
+-- R.CompassChatWidth(): visor only: how wide the chat may be, in pixels
+-- (up to the compass, or the squares when the compass is off); nil
+-- without rhylib_hud. rhylib_chat's Chat.Rect asks this.
 function R.CompassChatWidth()
     local HUD = Rhylib.HUD
     if not (HUD and HUD.Margins and HUD.VisorCheekY) then return nil end
@@ -35,6 +40,8 @@ function R.CompassChatWidth()
     return R.RadarOn() and g.chatW or g.chatWNoCompass
 end
 
+-- Works out every visor shape once per screen size (geo.key) and caches
+-- it in `geo`: squares, compass spot, chat widths, meter bars.
 local function buildVisor(HUD)
     local W, H = ScrW(), ScrH()
     local s = H / 1080
@@ -117,6 +124,8 @@ local function buildVisor(HUD)
     return geo
 end
 
+-- R.VisorGeo(): the cached visor layout (see buildVisor), or nil without
+-- rhylib_hud's visor helpers. Read only.
 function R.VisorGeo()
     local HUD = Rhylib.HUD
     if not (HUD and HUD.Margins and HUD.VisorCheekY and HUD.VisorStrip) then return nil end
@@ -385,6 +394,8 @@ end
 
 local UNITS_TO_M = 0.01905
 
+-- R.MatePos(p): where a squad mate is: their real position while they're
+-- networked to us, else the last radio.pos (if under 3 s old), else nil.
 function R.MatePos(p)
     if not p:IsDormant() then return p:GetPos() end
     local m = R.mates[p:EntIndex()]
@@ -396,7 +407,7 @@ end
 -- the rim (the visor's left cheek, the third-person panel, the page).
 --------------------------------------------------------------------------
 
-R.RADAR_M = 40
+R.RADAR_M = 40   -- metres from the compass centre to its rim
 local UNITS_PER_M = 1 / 0.01905
 local discs = {}
 local function disc(r)
@@ -573,6 +584,9 @@ local function drawCore(cx, cy, r, names)
         surface.SetDrawColor(80, 90, 98, 90)
         surface.DrawLine(cx + d2[i][1], cy + d2[i][2], cx + d2[j][1], cy + d2[j][2])
     end
+    -- Rotate the world into "you facing up": fx, fy = your forward on the
+    -- ground; a point's forward part goes up the screen, its right part
+    -- (dot with (fy, -fx), Source's right vector) goes right.
     local me = LocalPlayer()
     local yaw = math.rad(me:EyeAngles().y)
     local fx, fy = math.cos(yaw), math.sin(yaw)
@@ -615,9 +629,9 @@ local function drawCore(cx, cy, r, names)
     if R.DrawPingsOnRadar then R.DrawPingsOnRadar(cx, cy, r, mp, fx, fy, k) end
 end
 
--- ox, oy: screen position of the drawing origin when drawn inside a panel.
--- Shown jamming strength, eased so the fringe steps and the reconnect
--- fade look smooth (once per frame, shared by every compass).
+-- R.JamShown(): shown jamming strength 0-1, eased from R.JamLevel so the
+-- fringe steps and the reconnect fade look smooth (worked out once per
+-- frame, shared by every compass).
 local shownK, shownFrame = 0, -1
 function R.JamShown()
     local f = FrameNumber()
@@ -631,6 +645,15 @@ function R.JamShown()
     return shownK
 end
 
+-- R.DrawRadar(cx, cy, r, names, ox, oy): draws the squad compass centred
+-- at cx, cy with radius r (R.RADAR_M metres to the rim). names = also
+-- write squad mates' names. ox, oy: screen position of the drawing
+-- origin when drawn inside a panel (needed for the jammer glitch, which
+-- clips with screen-space scissor rects). Jammed or near a jammer it
+-- draws the desync effect and the JAMMED / RECONNECTING / UPLINK banner.
+-- Example (inside a panel's Paint):
+--   local ox, oy = self:LocalToScreen(0, 0)
+--   Rhylib.Radio.DrawRadar(w / 2, h / 2, w / 2 - 8, true, ox, oy)
 function R.DrawRadar(cx, cy, r, names, ox, oy)
     local jammed = R.Jammed(LocalPlayer())
     local k = R.JamShown()
@@ -710,6 +733,8 @@ local function drawHail(s)
     end
 end
 
+-- Drawn while alive and not holding the camera: the visor parts or the
+-- third-person panel, then mate markers and the hail card / call line.
 Rhylib.Hook.Add("HUDPaint", "radio.hud", function()
     local ply = LocalPlayer()
     if not IsValid(ply) or not ply:Alive() then return end

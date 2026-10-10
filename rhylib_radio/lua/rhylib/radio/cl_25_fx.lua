@@ -1,5 +1,5 @@
 --[[
-    Radio sound (2026-10-07, owner: radio should sound like radio, break up
+    Radio sound (client; 2026-10-07, owner: radio should sound like radio, break up
     for the tiniest moment now and then, and have the odd interference).
 
     GMod gives Lua no way to filter voice audio itself, so the radio feel
@@ -15,7 +15,14 @@
     loop instead (others only hear you as local voice; the server routes
     that). The incoming meter goes haywire (cl_20_hud.lua).
 
-    Client convars: rhylib_radio_fx (on/off), rhylib_radio_fx_volume (0-1).
+    Client convars: rhylib_radio_fx (on/off, default 1),
+    rhylib_radio_fx_volume (0-1, default 0.6). Sounds and timings come
+    from the radio fx* config settings (sh_00_config.lua).
+
+    Near a jammer (the fringe) drop-outs and interference come more
+    often and a static loop plays under radio voices. Sets R.jamBanner
+    on each jammed / not jammed change for the compass (cl_20_hud.lua)
+    and prints the chat notes. R._fxAny = a radio voice is being heard.
 ]]
 
 local R = Rhylib.Radio

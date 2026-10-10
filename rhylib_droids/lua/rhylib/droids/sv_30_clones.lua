@@ -9,10 +9,27 @@
     first walks a few steps toward the nearest droid (advanceTo) so it
     draws fire, and is pulled out after `life` seconds (0 = stays) or when
     the officer leaves the server.
+
+    Also in this file:
+      - clone medics: a 1 s timer heals players/clones in ctMedicRadius,
+        treats their injuries (rhylib_medical), and sends free medics to
+        downed players (ENT:DoRevive does the walk and the crouch)
+      - downed guards: up to ctDownGuards clones stand over each downed player
+      - revive shield (less damage just after a medic NPC revive) and the
+        medic's own shield while reviving
+      - spread out (roam pairs), calls for help, the odds (clone doctrine)
+      - preset squads (D.SpawnPreset, the toolgun's ps_* entries)
+      - the follow tool (D.ToggleFollowPick, D.AssignFollow)
+      - artillery spotting (D.SpottedTarget)
+      - the command wheel's squad orders (D.SquadOrder, from rhylib_skills)
+    Console: rhylib_medic_debug 1 prints medic revive steps (server).
 ]]
 
 local D = Rhylib.Droids
 
+-- D.SpawnClone(kindName, pos, yaw) -> the clone, or nil (not a clone kind,
+-- over cloneMax, or failed to spawn). Server.
+-- Example: local c = Rhylib.Droids.SpawnClone("ct_medic", pos, 90)
 function D.SpawnClone(kind, pos, yaw)
     local class = D.CLASSES[kind]
     local k = D.KINDS[kind]
@@ -80,6 +97,11 @@ end
 local SLOTS = { Vector(20, -130, 0), Vector(20, 130, 0), Vector(-40, -210, 0), Vector(-40, 210, 0),
     Vector(60, -260, 0), Vector(60, 260, 0), Vector(-100, -150, 0), Vector(-100, 150, 0) }
 
+-- D.CallSquad(leader, kinds, life) -> how many spawned. kinds = list of
+-- clone kind names; life = seconds before they are pulled out (nil/0 =
+-- stay). Each needs a free spot on an arc behind the leader, in their
+-- sight. Called by rhylib_skills (Reinforcements). Server.
+-- Example: Rhylib.Droids.CallSquad(ply, { "ct_trooper", "ct_medic" }, 300)
 function D.CallSquad(leader, kinds, life)
     if not (IsValid(leader) and istable(kinds)) then return 0 end
     local n = #kinds
@@ -128,22 +150,27 @@ end
 -- Debug (owner: medics seemed to skip other players): rhylib_medic_debug 1
 -- prints each step to the server console.
 local medicDebug = CreateConVar("rhylib_medic_debug", "0", FCVAR_ARCHIVE, "Print clone medic revive steps to the server console")
+-- D.MedicLog(fmt, ...): prints a line when rhylib_medic_debug is 1.
 function D.MedicLog(fmt, ...)
     if medicDebug:GetBool() then print("[Rhylib medic] " .. string.format(fmt, ...)) end
 end
 
--- Can a medic NPC still get this player up? Downed only.
+-- D.PatientPending(p) -> bool: can a medic NPC still get this player up?
+-- Downed (rhylib_medical rhylibDown) and alive only.
 function D.PatientPending(p)
     return IsValid(p) and p:IsPlayer() and p:Alive() and p.rhylibDown == true
 end
 
--- Where the body is.
+-- D.BodyPos(p) -> where the player's body is (rhylib_core Lying.BodyPos,
+-- else their position).
 function D.BodyPos(p)
     local L = Rhylib.Lying
     return L and L.BodyPos and L.BodyPos(p) or p:GetPos()
 end
 
--- Up again with ctMedicReviveHealth.
+-- D.NpcRevive(p): revives a downed player with ctMedicReviveHealth of
+-- their max health (rhylib_medical Med.Revive, no "by"), then the
+-- revive shield. Server.
 function D.NpcRevive(p)
     local Med = Rhylib.Medical
     if not (Med and Med.Revive and p:Alive() and p.rhylibDown) then
@@ -158,6 +185,8 @@ end
 -- Just got up by a medic NPC (owner: they were killed again at once):
 -- reviveShield less damage for reviveShieldTime, to get away. It ends
 -- the moment they fire: an escape tool, not a combat bonus.
+-- D.ReviveShield(p): starts it (p.rhylibReviveShield = end time). Off when
+-- reviveShield or reviveShieldTime is 0.
 function D.ReviveShield(p)
     local secs = D.Cfg("reviveShieldTime")
     if secs <= 0 or D.Cfg("reviveShield") <= 0 then return end
@@ -352,7 +381,9 @@ end)
 
 D.GroundAt = ground
 
--- b walks beside lead (a roaming pair). When lead dies, b roams alone.
+-- D.Buddy(b, lead): b walks beside lead (a roaming pair). When lead dies,
+-- b roams alone. b's mode becomes "follow" with an NPC leader; its label
+-- shows "roam".
 function D.Buddy(b, lead)
     if not (IsValid(b) and IsValid(lead)) then return end
     b.mode = "follow"
@@ -363,6 +394,8 @@ end
 
 -- A random navmesh spot for roaming: within roamRadius, at least 600 away.
 -- (The area list is fetched once per map; empty = no navmesh yet, retried.)
+-- D.RoamPoint(from) -> a random navmesh point (or nil): an area at least
+-- 48x48, not underwater, 600 to roamRadius away.
 local areas, areasRetry = nil, 0
 function D.RoamPoint(from)
     if not (navmesh and navmesh.GetAllNavAreas) then return nil end
@@ -387,6 +420,8 @@ end
 
 -- A clone spotted droids: up to ctCallHelpers idle clones within
 -- ctCallRadius come to it (guards/patrols take up the new spot).
+-- D.CloneCall(caller, enemy): called from ENT:Look on fresh contact; one
+-- call per clone every ctCallCooldown s. enemy is not used yet.
 function D.CloneCall(caller, enemy)
     local now = CurTime()
     if (caller.callReady or 0) > now then return end
@@ -419,6 +454,8 @@ end
 -- The odds around a clone: friends (clones and players) within
 -- ctOddsFriends, enemies (B2s count double) within ctOddsEnemies, and
 -- where the enemies are (their middle).
+-- D.CloneOdds(clone) -> friends, enemies, middle (Vector or nil). The
+-- clone counts itself as a friend.
 function D.CloneOdds(c)
     local pos = c:GetPos()
     local fr2, er2 = D.Cfg("ctOddsFriends") ^ 2, D.Cfg("ctOddsEnemies") ^ 2
@@ -471,7 +508,14 @@ local PRESETS = {
 }
 D.PRESETS = PRESETS
 
--- Returns the spawned list and how many the preset has.
+-- D.SpawnPreset(name, origin, yaw, mode) -> spawned list, how many the
+-- preset has. name = a key of D.PRESETS. origin = front row centre; rows
+-- go back 85 units each (away from yaw's forward), 75 apart sideways.
+-- Spots that aren't free, or NPCs over the caps, are skipped. Each NPC
+-- gets D.ToolPlaced(e, mode). Server. Called by the toolgun.
+-- Example: Rhylib.Droids.SpawnPreset("droid_small", tr.HitPos, ply:EyeAngles().y + 180, "guard")
+-- (a new preset: add a row to PRESETS above; the toolgun needs its own
+-- entry with preset = "<name>" to place it)
 function D.SpawnPreset(name, origin, yaw, mode)
     local pr = PRESETS[name]
     if not pr then return {}, 0 end
@@ -527,6 +571,7 @@ end
 
 -- Follow tool: LMB picks (a clone aimed at, else every clone near the
 -- spot); RMB hands them to a player. Picks show as NW2Entity rhylib_pickBy.
+-- D.ToggleFollowPick(ply, trace) -> how many clones ply has picked now.
 function D.ToggleFollowPick(ply, tr)
     ply.rhylibPicks = ply.rhylibPicks or {}
     local picks = ply.rhylibPicks
@@ -557,6 +602,8 @@ function D.ToggleFollowPick(ply, tr)
     return n
 end
 
+-- D.AssignFollow(ply, target) -> how many: ply's picked clones now follow
+-- target (a player), beside them, until killed or re-ordered.
 function D.AssignFollow(ply, target)
     local picks = ply.rhylibPicks
     if not picks or not IsValid(target) then return 0 end
@@ -581,6 +628,7 @@ end
 
 -- Artillery spotting: an enemy some droid (not training) saw in the last
 -- 3 s, within range of the mortar and not too close; nearest first.
+-- D.SpottedTarget(mortar, range) -> target or nil.
 function D.SpottedTarget(mortar, range)
     local pos = mortar:GetPos()
     local r2, min2 = range * range, D.Cfg("b2RocketMin") ^ 2
@@ -605,9 +653,13 @@ end
 -- Command wheel (2026-10-06be, owner): a commander's own squad of clones
 --------------------------------------------------------------------------
 
+-- Order names (rhylib_skills keeps its own copy and passes the name to
+-- D.SquadOrder). ply.rhylibSquadAggro and
+-- NW2Int rhylib_squadAggro hold the commander's squad aggression (3 = by
+-- the odds: the clones' doctrine decides).
 D.SQUAD_OPS = { "follow", "hold", "move", "aggroUp", "aggroDown", "dismiss", "regroup" }
 
--- Clones following this player.
+-- D.Followers(ply) -> list of living clones following this player.
 function D.Followers(ply)
     local out = {}
     for c in pairs(D.clones) do
@@ -616,8 +668,15 @@ function D.Followers(ply)
     return out
 end
 
--- Give the order; returns a line for the commander.
+-- D.SquadOrder(ply, op) -> a chat line for the commander. op = one of
+-- D.SQUAD_OPS. follow: free clones within cmdFollowRadius join (up to
+-- cmdMaxFollowers) and regroup; regroup: only current followers; hold:
+-- stay here; move: hold at the spot aimed at; aggroUp/aggroDown: squad
+-- aggression; dismiss: they guard where they stand. Unknown op: nil. Server.
+
+-- Example: ply:ChatPrint(Rhylib.Droids.SquadOrder(ply, "hold"))
 function D.SquadOrder(ply, op)
+
     local list = D.Followers(ply)
     local level = ply.rhylibSquadAggro or 3
     if op == "follow" or op == "regroup" then

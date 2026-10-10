@@ -17,6 +17,17 @@
     Changes go through Rhylib.Settings (rhylib_core cl_15_settings.lua);
     the server checks the permission and the value, saves it and sends it
     to everyone. Reset = back to the host file's value or the default.
+
+    Client only. One page: "serversettings" (Staff group, order 60), shown
+    to holders of rhylib.settings (superadmin by default).
+    Each catalogue entry from Rhylib.Settings.list has these fields:
+      m module, k key, d default, b base (host file value or default),
+      o override set in game (nil = none), s description, x meta
+      ({ name, group } for model settings), p true = a model change that
+      needs a map change.
+    To give a new module its own place: add it to a category in
+    CATEGORIES, a name in NAMES and, if it has many keys, SECTIONS.
+    Modules in no category go under "Other".
 ]]
 
 local Menus = Rhylib.Menus
@@ -192,6 +203,7 @@ local function sectionOf(e)
     return "Other"
 end
 
+-- A value as short text for the "Default ... · host file ..." line.
 local function show(v)
     if v == nil then return "none" end
     if isbool(v) then return v and "on" or "off" end
@@ -206,6 +218,7 @@ local function show(v)
     return tostring(v)
 end
 
+-- The value in use: the in-game override, else the host file / default.
 local function current(e)
     if e.o ~= nil then return e.o end
     return e.b
@@ -233,6 +246,9 @@ end
 --------------------------------------------------------------------------
 
 -- The control for one plain entry, in holder. Returns a refresh function.
+-- The type of the default decides the control: bool = toggle; number,
+-- string, table (JSON), Vector / Angle ("x y z") = a text box applied on
+-- Enter (red outline and a buzz when it can't be read).
 local function control(holder, e)
     local S = Rhylib.Settings
     local d = e.d
@@ -312,6 +328,8 @@ local function rowFrame(parent, e, tall)
     return row
 end
 
+-- A plain setting row: title + raw key, description, default / host file
+-- line on the left; control and Reset on the right. Grows with its text.
 local function makeRow(parent, e, refreshers, showModule)
     local row = rowFrame(parent, e, K.S(70))
     row:DockPadding(K.S(12), K.S(28), K.S(12), K.S(8))
@@ -437,6 +455,9 @@ local function modelPicture(parent)
     return pic
 end
 
+-- A model setting row: picture, title, "Now:" / "Ships with" lines, and a
+-- path box with Pick / Apply / Reset and a status line. The picture shows
+-- the typed path (marked PREVIEW) while it is a real model on your game.
 local function makeModelRow(parent, e, refreshers, showModule)
     local S = Rhylib.Settings
     local row = rowFrame(parent, e, K.S(124))
@@ -602,6 +623,8 @@ end
 
 local function viewKey(v) return v.kind .. ":" .. tostring(v.id or "") end
 
+-- The page: search bar on top, side bar (views and modules) on the left,
+-- a header (title, map-change bar, section chips) and the rows on the right.
 local function build(page)
     local S = Rhylib.Settings
     if not S then

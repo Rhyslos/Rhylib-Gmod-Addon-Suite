@@ -6,12 +6,30 @@
     client so shared code agrees. "Reset" removes the override (back to
     the host file's value or the default).
 
-    Saved: Data "core" "settings" = { { m, k, v }, ... }.
-    Nets: core.cfgreq -> core.cfglist (compressed JSON catalogue: m, k,
-    default, base (host file or default), override?, desc), core.cfgset
-    (module, key, has bool, JSON {v=}), core.cfgsync (to everyone: module,
-    key, has, JSON), core.cfgallreq -> core.cfgall (all overrides; the
-    client asks once its Lua is loaded).
+    Perm rhylib.settings (superadmin).
+    Saved: Data "core" "settings" = { { m, k, v }, ... }, loaded when this
+    file loads (before the other addons load, so they see the overrides
+    from the start).
+    Nets:
+      core.cfgreq      client -> server, empty: "send me the catalogue"
+                       (rate 1/s, burst 3)
+      core.cfglist     server -> that client: catalogue, compressed JSON in
+                       parts, rows { m, k, d = default, b = base (host file
+                       or default), o = override, s = desc, x = meta,
+                       p = map change needed }; an empty list when denied
+      core.cfgset      client -> server: module string, key string, has
+                       bool, then (if has) JSON {v=value}; has false = reset
+                       (rate 4/s, burst 8)
+      core.cfgsync     server -> everyone: module, key, has, JSON (one change)
+      core.cfgallreq   client -> server once its Lua is loaded (once per player)
+      core.cfgall      server -> that client: every override, compressed
+                       JSON in parts { { m, k, v } }
+    Parts: UInt 8 part, UInt 8 part count, UInt 32 length, data
+    (60000-byte parts).
+    Checks on cfgset: the setting must exist, same type as the default,
+    numbers finite and |v| <= 1e6, not negative when the default isn't,
+    arrays stay arrays with the same kind of first item; model settings
+    must be a models/...mdl path the server has (see badModel).
     The admin module's settings (ranks, owners, levels) aren't editable
     here: a bad value could lock everyone out or promote someone.
     Console: rhylib_settings_reset <module> [key] (no key = the whole module).
@@ -44,6 +62,8 @@ local function fixColors(v)
     return v
 end
 Rhylib.Settings = Rhylib.Settings or {}
+-- Rhylib.Settings.FixColors(value): turns {r,g,b[,a]} tables (anywhere in
+-- value) back into Colors. Server copy; the client has its own.
 Rhylib.Settings.FixColors = fixColors
 
 local function saved()

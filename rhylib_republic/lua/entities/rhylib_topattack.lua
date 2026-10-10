@@ -1,15 +1,24 @@
 --[[
     RPS-6 top-attack rocket (lock-on mode, EOD Top attack skill).
     Climbs first (up to topClimb units, less under a ceiling), then turns
-    over and dives onto the locked target (it follows it if it moves; a
-    target that's gone: its last spot). Moved by hand each tick with one
-    trace, like rhylib_b2_rocket. Blast = the RPS-6's (Explosive radius /
-    damage), strength 2 for comms jammers (kind "rocket").
+    over and dives onto its goal:
+      locked   the target (it follows it if it moves; a target that's
+               gone: its last spot)
+      no lock  laser guided: the spot the shooter aims at (ENT:LaserSpot),
+               while they live and hold the same gun; after that, the last
+               spot
+    Moved by hand each tick with one trace, like rhylib_b2_rocket. Blast =
+    the RPS-6's (Explosive radius / damage), hook Rhylib.Explosion strength
+    2 for comms jammers (kind "rocket"). Gives up after 12 s (explodes
+    where it is).
     Spawned by rhylib_rps6 with: dir, target, owner, weapon, explosive.
+    Shared (AddCSLuaFile): server flies it; client draws it, the flame and
+    every guided rocket's red laser dot (everyone sees the dot).
 ]]
 
 AddCSLuaFile()
 
+-- Settings (module "weapons"; registered here, so only with rhylib_republic).
 local Config = Rhylib.Config
 Config.Register("weapons", "topClimb", 900, "RPS-6 top attack: highest climb before the dive (units)")
 Config.Register("weapons", "topSpeed", 1500, "RPS-6 top attack: rocket speed (units/s)")
@@ -27,6 +36,10 @@ function ENT:SetupDataTables()
     self:NetworkVar("Entity", 0, "Guide")
 end
 
+-- ENT:LaserSpot() -> where the guide's laser lands, or nil if it isn't
+-- steering any more (dead, other gun out, aiming at the sky). Shared: the
+-- server steers by it, clients draw the dot. The gun class is in NW2String
+-- rhylib_guideGun.
 -- Where the guide's laser lands (nil if it isn't steering any more).
 local GUIDE_RANGE = 12000
 function ENT:LaserSpot()

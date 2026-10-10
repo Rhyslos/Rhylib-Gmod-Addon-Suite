@@ -2,6 +2,8 @@
     First-person arms: everyone's hands model is config handsModel (a
     c_arms model), unless their DarkRP job sets handsModel = "...".
     An empty config keeps the player model's own hands.
+    Realm: server. Config weapons "handsModel" (sh_00_config.lua).
+    Example DarkRP job field: handsModel = "models/weapons/c_arms_combine.mdl"
 ]]
 
 local Config = Rhylib.Config

@@ -1,6 +1,10 @@
 --[[
     Spawn point (rhylib_spawns): a named respawn spot for one battalion
     ("" = everyone). rhylib_event_spawn is the same with ENT.Event.
+    Shared entity. Frozen, players walk through it (COLLISION_GROUP_WEAPON).
+    Model: config spawns "model". E (Use) opens the staff edit menu
+    (S.OpenEdit checks the permission). The ring and name are drawn within
+    600 / 400 units.
 ]]
 
 AddCSLuaFile()
@@ -34,7 +38,7 @@ function ENT:Initialize()
     if self:GetBeaconName() == "" then self:SetBeaconName(self.Event and "Event" or "Spawn") end
 end
 
--- Where a player appears: on top of it.
+-- ENT:SpawnPos(): where a player appears: on top of it.
 function ENT:SpawnPos()
     return self:GetPos() + Vector(0, 0, self:OBBMaxs().z + 2)
 end

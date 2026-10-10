@@ -2,6 +2,11 @@
     Illness (client): symptoms on screen, the analyser window, the dose
     window, test strips (inventory right-click) and the interaction wheel
     options (draw blood, give medicine; staff: infect / cure).
+
+    Public: Med.LooksIll, Med.IllSigns, Med.OpenAnalyser.
+    Hooks used: Rhylib.WheelOptions / Rhylib.WheelEntityOptions
+    (rhylib_menus), Rhylib.ItemMenu (rhylib_inventory right-click).
+    The windows need rhylib_menus' Kit; without it they don't open.
 ]]
 
 local Med = Rhylib.Medical
@@ -23,12 +28,14 @@ end
 
 local function chemist(ply) return Med.Skill(ply, "chem_bench") end
 
+-- Med.LooksIll(ply): true if ply shows signs of an illness (stage 1+).
 -- Medics can tell someone is ill (not what it is: that takes a blood test).
 function Med.LooksIll(ply)
     local kind, stage = Med.IllState(ply)
     return kind > 0 and stage > 0
 end
 
+-- Med.IllSigns(ply): a short text and the stage (1-3), or nil if not ill.
 local SIGNS = { "Looks a little off", "Looks sick: coughing, pale", "Looks very ill" }
 function Med.IllSigns(ply)
     local kind, stage = Med.IllState(ply)
@@ -174,6 +181,8 @@ local function openAnalyser(ent)
     end
 end
 
+-- Med.OpenAnalyser(bench): opens the blood analyser window for that bench
+-- (lists your samples; "Analyse" sends ill.scan). Client only.
 Med.OpenAnalyser = openAnalyser
 
 net.Receive(Rhylib.Net.Name("ill.open"), function()
@@ -391,6 +400,8 @@ local function openDose(t)
     local pick, units = nil, 1
     -- Your newest analysed sample from this patient fills in the dose; the
     -- medicine is your call (the strip's colour).
+    -- The sample note starts with the patient's name (cut to 22 letters on
+    -- the server), so the first 20 bytes are compared.
     local info
     local who = IsValid(t) and t:Nick() or ""
     for _, o in ipairs(samples()) do

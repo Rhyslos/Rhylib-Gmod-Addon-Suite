@@ -28,19 +28,26 @@
     player as they load in; every picture is made right after loading in.
 
     Tiles are opaque, in the item category's body colour; alpha writes are
-    locked so models can't punch holes. Made a few per frame from a
-    PreRender hook that only exists while something waits; errors can't
-    leave the render state broken (pcall).
+    locked so models can't punch holes. Made one per frame from a
+    PreRender hook that only exists while something waits (each one reads
+    its silhouette back from the GPU); errors can't leave the render state
+    broken (pcall). A picture that fails is tried again after 2, 4, 6, 8 s,
+    then the reason is printed.
 
         Inv.Icons.Fit(def, x, y, w, h, rot) -> dx, dy, dw, dh (or nil)
         Inv.Icons.Draw(def, x, y, w, h, rot, alpha) -> drawn?
-        rhylib_inventory_icons: make every picture again.
+        Inv.Icons.Reset() / PrebuildAll() / RedrawGear() / OpenEditor(id)
+        rhylib_icons_redraw (old name rhylib_inventory_icons): make every
+        picture again. rhylib_inventory_icon_edit <id>: the editor.
+    Also owns Inv.CATEGORY_COLORS (the window uses them too).
 ]]
 
 local Inv = Rhylib.Inventory
 local Items = Rhylib.Items
 
 -- Item body and stripe colours per category (the window uses them too).
+-- An unknown category draws as misc; add your own category here (client)
+-- to give it colours.
 Inv.CATEGORY_COLORS = {
     weapon = { body = Color(30, 37, 46), stripe = Color(96, 140, 196) },
     ammo = { body = Color(42, 36, 25), stripe = Color(206, 152, 62) },
@@ -105,6 +112,8 @@ end
 -- (camera, or nil = automatic), z (zoom), ox, oy (move) }.
 Icons.TUNE = Icons.TUNE or {}
 
+-- Icons.Spec(def): which model and view the item's picture uses (the list
+-- in the header), with its saved settings in spec.tune.
 function Icons.Spec(def)
     local sp = autoSpec(def)
     sp.id = def.id
@@ -279,6 +288,8 @@ local function viewAngle(spec, auto)
     return auto
 end
 
+-- Icons.AngleToView(ang): camera angle -> p (tilt), y (turn), r (roll) as
+-- the editor's sliders use them.
 function Icons.AngleToView(ang)
     local d = -ang:Forward()
     local p = math.deg(math.asin(math.Clamp(d.z, -1, 1)))
@@ -621,8 +632,8 @@ function Icons.Draw(def, x, y, w, h, rot, alpha)
     return true
 end
 
--- Make every picture again (all of them right away once we've loaded in,
--- so storages and armouries never wait for one).
+-- Icons.Reset(): make every picture again (all of them right away once
+-- we've loaded in, so storages and armouries never wait for one).
 function Icons.Reset()
     entries, queue, queued, builtFor, reuse = {}, {}, {}, nil, {}
     tries, generation = {}, generation + 1
@@ -654,8 +665,8 @@ Rhylib.Hook.Add("OnScreenSizeChanged", "inventory.icons", function() Icons.Reset
 Rhylib.Hook.Add("Rhylib.ModelsChanged", "inventory.icons", function()
     timer.Create("Rhylib.Inventory.IconsModels", 0.5, 1, function() Icons.Reset() end)
 end)
--- Only the wearable parts (they're cut out of your own player model): made
--- again in their old spots, right away.
+-- Icons.RedrawGear(): only the wearable parts (they're cut out of your own
+-- player model): made again in their old spots, right away.
 function Icons.RedrawGear()
     local GG = Rhylib.Gear
     if not (GG and GG.SHOWS) then return end
@@ -690,9 +701,8 @@ end)
 -- Saved settings (sv_25_icons) and making every picture at load-in
 --------------------------------------------------------------------------
 
--- Queue every item's picture, so the inventory is ready when opened.
--- Every model an item picture can use (guns' props and world models,
--- item models, explicit picture models).
+-- Icons.ItemModels(): every model an item picture can use (guns' props
+-- and world models, item models, explicit picture models), as a list.
 function Icons.ItemModels()
     local out, seen = {}, {}
     local function add(m)
@@ -712,6 +722,8 @@ function Icons.ItemModels()
     return out
 end
 
+-- Icons.PrebuildAll(): queue every item's picture (models precached
+-- first), so the inventory is ready when opened.
 function Icons.PrebuildAll()
     Icons.loadedIn = true
     if Items.EnsureReady then Items.EnsureReady() end
@@ -819,6 +831,9 @@ local function send(id, t)
     net.SendToServer()
 end
 
+-- Icons.OpenEditor(id): opens the picture editor for item id (needs
+-- rhylib_menus for its widgets). Anyone can open it; only staff with
+-- rhylib.inventory.icons can save (the server checks).
 function Icons.OpenEditor(id)
     local def = Items.Get(id)
     local M = Rhylib.Menus

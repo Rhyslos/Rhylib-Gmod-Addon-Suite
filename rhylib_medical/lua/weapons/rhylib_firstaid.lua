@@ -1,3 +1,6 @@
+-- First aid kit (shared SWEP, base rhylib_med_base). Medics only. LMB on
+-- a downed player revives, LMB someone standing / RMB yourself opens the
+-- injury menu (simplified system: heals to full at once). Holds a charge.
 AddCSLuaFile()
 
 SWEP.Base = "rhylib_med_base"
@@ -15,6 +18,8 @@ SWEP.InvW, SWEP.InvH = 2, 1
 SWEP.InvCharge = true
 SWEP.InvWeight = 0.8
 
+-- Charge (0-1) is networked so the HUD hint can show it; the server keeps
+-- it in step with the inventory item (Med.SpendCharge).
 function SWEP:SetupDataTables()
     self:NetworkVar("Float", 0, "Charge")
 end
@@ -24,6 +29,7 @@ function SWEP:Initialize()
     if SERVER then self:SetCharge(1) end
 end
 
+-- rhylib_inventory hands the item's data (fill) to the weapon it gives.
 function SWEP:SetInventoryData(data)
     self:SetCharge(data and data.fill or 1)
 end

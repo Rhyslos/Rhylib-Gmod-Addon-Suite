@@ -10,6 +10,8 @@
         lean), recover = share of the climb that settles back, aimMult }
     Third person turns the camera (TP.camAng) instead; its aim correction
     then follows the camera.
+    Config weapons recoilMult scales every gun; rhylib_skills
+    K.RecoilMult scales per player.
 ]]
 
 local W = Rhylib.Weapons
@@ -25,6 +27,8 @@ local back = 0               -- climb that will settle back (degrees, positive)
 local lastShot = 0
 local lastPitch              -- pitch after our last change, to see your own mouse pull
 
+-- R.Kick(wep): adds one shot's kick (client). Called by rhylib_base
+-- FireShot on the first prediction (singleplayer: SWEP:RhylibRecoilKick).
 function R.Kick(wep)
     local cfg = wep.Recoil
     if not cfg then return end

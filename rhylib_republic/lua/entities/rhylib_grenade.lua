@@ -14,10 +14,27 @@
       flash   fuse; players in range and in sight are stunned (rhylib_mp),
               droids aim worse for a few seconds (Rhylib.Droids.Suppress)
     Blinks (red, blue for EMP) faster as the fuse runs down.
+
+    Shared (AddCSLuaFile): the server does physics and the blast, the
+    client draws the model, the blinking light and the debug view.
+    Not spawnable. Set these fields after ents.Create and before Spawn:
+      kind      "fuse" / "impact" / "emp" / "emp_impact" / "breach" / "flash"
+      fuse      seconds (timed kinds; default 3, breach 6)
+      thrower   who gets the kill (player or NPC)
+      training  true = the blast only takes sim health (rhylib_training)
+      noStun    true = an EMP that never stuns players (clone NPCs' poppers)
+      stuckTo   breach only: the entity it's parented to
+      Damage / Radius / EmpRadius / FlashRadius   per-grenade overrides
+    Also spawned by rhylib_grenade_launcher and by rhylib_droids (B1
+    grenades, clone poppers).
+    Fires hook Rhylib.Explosion(pos, reach, strength, attacker, inflictor,
+    kind) for player grenades (comms jammers, rhylib_radio) and
+    Rhylib.EMP(pos, radius, attacker, inflictor) for real EMPs (rhylib_eod).
 ]]
 
 AddCSLuaFile()
 
+-- Setting (module "weapons"; registered here, so only with rhylib_republic).
 local Config = Rhylib.Config
 -- (2026-10-07, owner: halved from 380, it was too strong)
 Config.Register("weapons", "empRadius", 190, "Droid popper (EMP): radius it kills droids and stuns players in (units)")
@@ -29,6 +46,7 @@ ENT.Category = "Rhylib: Grenades & charges"
 ENT.Model = "models/jajoff/sps/cgiweapons/tc13j/thermalgrenade.mdl"
 ENT.Spawnable = false
 
+-- Kind names -> the Int in the Kind network var (clients only see the number).
 local KIND = { fuse = 1, impact = 2, emp = 3, emp_impact = 4, breach = 5, flash = 6 }   -- (4: EMP on impact)
 ENT.KIND_BREACH = 5
 
@@ -38,12 +56,14 @@ ENT.Radius = 300        -- frag: blast radius
 ENT.Damage = 140        -- frag: damage at the centre
 ENT.EmpRadius = nil     -- EMP: droids within this (nil = weapons empRadius)
 
--- EMP radius: set on this grenade (Grenadier skill), else the config.
+-- ENT:EmpR() -> EMP radius: set on this grenade (Grenadier skill), else
+-- the config. Server.
 function ENT:EmpR()
     return self.EmpRadius or Config.Get("weapons", "empRadius") or 190
 end
 
--- Where the grenade really is: the ball's centre.
+-- ENT:Centre() -> where the grenade really is: the ball's centre (the
+-- entity's origin; the model is drawn offset around it). Shared.
 function ENT:Centre()
     return self:GetPos()
 end
@@ -146,6 +166,8 @@ if SERVER then
         return true
     end
 
+    -- ENT:Explode(): runs once (self.done). Picks the effect by kind, tells
+    -- comms jammers (hook Rhylib.Explosion) and removes the grenade.
     function ENT:Explode()
         if self.done then return end
         self.done = true
@@ -223,6 +245,9 @@ if SERVER then
         timer.Create("Rhylib.Breach." .. door:EntIndex(), hold, 1, function() restoreDoor(door) end)
     end
 
+    -- Breach: small blast (breachRadius / breachDamage), then every door
+    -- within breachDoors (and the one it's stuck to) is unlocked, opened and
+    -- held open for breachHold seconds. Its old wait / lock comes back after.
     function ENT:Breach(pos, attacker)
         local ed = EffectData()
         ed:SetOrigin(pos)
@@ -247,6 +272,9 @@ if SERVER then
         for door in pairs(doors) do forceDoor(door, attacker, hold) end
     end
 
+    -- Flash: players within FlashRadius with a clear line (brushes) to their
+    -- eyes get a white fade and MP.Stun (rhylib_mp); droids in range and in
+    -- sight are suppressed (droids flashTime / flashSuppress). No damage.
     function ENT:Flash(pos, attacker)
         sound.Play("ambient/explosions/explode_9.wav", pos, 90, 160)
         sound.Play("ambient/energy/whiteflash.wav", pos, 85, 120)
@@ -277,6 +305,9 @@ if SERVER then
         end
     end
 
+    -- EMP: kills (DMG_SHOCK, credited to the thrower) every droid in
+    -- EmpR() with a clear line, stuns players there (unless noStun), then
+    -- hook Rhylib.EMP. Training EMPs only take out training droids.
     function ENT:Emp(pos, attacker)
         local ed = EffectData()
         ed:SetOrigin(pos)

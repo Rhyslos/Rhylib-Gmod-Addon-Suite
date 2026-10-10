@@ -1,10 +1,14 @@
 --[[
-    Small vector symbols for roles, squad leader and radio operator, drawn
-    in a 0-1 box: R = rect, P = convex polygon, C = disc, O = ring,
+    Small vector symbols (client) for roles, squad leader, radio operator,
+    hails and pings, drawn in a 0-1 box: R = rect, P = convex polygon, C = disc, O = ring,
     L = thick line, A = arc (cx, cy, r, thickness, from, to in degrees,
     0 = right, -90 = up), S = star. A trailing true draws in bg (a cut-out).
 
         R.DrawIcon(name, x, y, size, col, bg)
+
+    Add your own by putting a list in R.ICONS (cl_40_pings.lua adds the
+    ping symbols this way). Polygons are re-wound if needed, since
+    surface.DrawPoly only draws clockwise ones.
 ]]
 
 local R = Rhylib.Radio
@@ -72,6 +76,10 @@ end
 
 local BG = Color(10, 12, 14)
 
+-- R.DrawIcon(name, x, y, s, col, bg): draws R.ICONS[name] in an s-by-s
+-- box at x, y in colour col; cut-out parts use bg (default near black).
+-- Unknown names draw nothing.
+-- Example: Rhylib.Radio.DrawIcon("hail", 10, 10, 32, Color(242, 193, 78))
 function R.DrawIcon(name, x, y, s, col, bg)
     local g = R.ICONS[name]
     if not g then return end
@@ -110,7 +118,9 @@ function R.DrawIcon(name, x, y, s, col, bg)
     end
 end
 
--- The symbols shown next to a player's name: leader, RO, then the role.
+-- R.DrawTags(ply, x, y, s, col): the symbols shown next to a player's
+-- name: leader (gold), RO (blue), then the role (col). Returns the width
+-- used.
 function R.DrawTags(ply, x, y, s, col)
     local dx = 0
     if R.IsLeader(ply) then

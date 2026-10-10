@@ -6,6 +6,12 @@
     rate and slowest tick, Rhylib hook time per tick (with a 60 s graph),
     memory and counts, then modules, the busiest hook handlers and the
     biggest net messages. Your own FPS is in the corner.
+
+    Client only. Page "profiler" (Staff group, order 70). State in
+    Menus.Prof: history (last 60 samples), last, panel.
+    Net: sends core.profsub (bool: on/off); receives core.profdata (UInt 16
+    length, then that many bytes of compressed JSON, once a second).
+    Everything on the page is drawn in one Paint from P.last.
 ]]
 
 local Menus = Rhylib.Menus

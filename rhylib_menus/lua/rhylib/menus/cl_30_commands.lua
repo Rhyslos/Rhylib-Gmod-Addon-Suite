@@ -14,7 +14,16 @@
             id = "x", title = "Do X", desc = "...", order = 50,
             run = function() RunConsoleCommand("x") end,
             -- or choices = { { "arg", "Label" }, ... }, run = function(arg) end
+            --    current = function() return "arg" end   (which choice is lit)
         })
+    The group name is the heading ("Server" is shown as "Rhylib tools").
+    Same id in the same group = replaced.
+
+    Client only: every button runs a chat/console command, and the server
+    (the admin mod, or Rhylib's own command) checks the rights. The page is
+    only listed for staff (Menus.IsStaff).
+    Adds: Menus.AdminMod, Menus.RunPlayerAction, Menus.AddCommand,
+    Menus.commands, Menus.IsStaff, page "commands" (Staff group, order 50).
 ]]
 
 local Menus = Rhylib.Menus
@@ -38,6 +47,8 @@ local MODS = {
       run = function(...) RunConsoleCommand("sam", ...) end },
 }
 
+-- Menus.AdminMod(): the first admin mod found, as its MODS row
+-- ({ id = "rhylib" | "ulx" | "sam", name, ... }), or nil.
 function Menus.AdminMod()
     for _, m in ipairs(MODS) do
         if m.detect() then return m end
@@ -82,6 +93,10 @@ local function runAction(mod, act, ply)
         mod.run(act[2], target)
     end
 end
+-- Menus.RunPlayerAction(verb, ply): runs one ACTIONS verb on ply through
+-- ULX or SAM (asking kick/ban questions first). Nothing without an admin
+-- mod. With rhylib_admin, call Rhylib.Admin.Run instead (as AddStaffOptions does).
+-- Example: Rhylib.Menus.RunPlayerAction("goto", ply)
 Menus.RunPlayerAction = function(verb, ply)
     local mod = Menus.AdminMod()
     if not mod then return end
@@ -94,7 +109,8 @@ end
 -- Server commands
 --------------------------------------------------------------------------
 
-Menus.commands = Menus.commands or {}
+-- Menus.AddCommand(group, cmd): adds a row to the Server tab (see header).
+Menus.commands = Menus.commands or {}   -- [group] = list of commands
 function Menus.AddCommand(group, cmd)
     local list = Menus.commands[group]
     if not list then
@@ -155,6 +171,8 @@ Menus.AddCommand("Server", {
 -- The page
 --------------------------------------------------------------------------
 
+-- Menus.IsStaff(): rhylib_admin level > 0, else IsAdmin, else ULX/SAM kick
+-- rights. Only decides what the client shows.
 local function isStaff()
     local ply = LocalPlayer()
     if not IsValid(ply) then return false end
@@ -166,6 +184,8 @@ local function isStaff()
 end
 Menus.IsStaff = isStaff
 
+-- Players tab: player list with search on the left, the chosen player's
+-- actions on the right.
 local function buildPlayers(parent)
     local s = K.S
     local mod = Menus.AdminMod()

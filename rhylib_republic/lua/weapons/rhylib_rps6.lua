@@ -1,5 +1,6 @@
 --[[
-    RPS-6 rocket launcher. One rocket at a time, unguided.
+    RPS-6 rocket launcher. One rocket at a time; in the normal ("semi")
+    mode it flies straight (unguided).
     The rocket is a slow explosive bolt: blast damage where it hits.
     Reload with R after each shot.
     Too heavy to fire while flying.
@@ -13,6 +14,11 @@
     first person by the trooper hands on the HL2 launcher (CarrierVM). The model's addon must be
     installed. Tune with rhylib_vm_editor, then paste its lines below.
     All numbers are first guesses for tuning.
+
+    Class rhylib_rps6. Shared: one file for server and client (AddCSLuaFile).
+    Base rhylib_base (rhylib_weapons), where every SWEP field is explained;
+    only the fields that differ are set here.
+    Training copy: rhylib_rps6_training.
 ]]
 
 AddCSLuaFile()
@@ -58,6 +64,9 @@ SWEP.Primary = {
 }
 
 SWEP.FireRate = 60
+-- Recoil: view kick per shot (rhylib_weapons cl_50_recoil): up = degrees up,
+-- side = random sideways, bias = lean -1 (left) .. 1 (right), recover = share
+-- of the climb that settles back, aimMult = multiplier while aiming.
 SWEP.Recoil = { up = 4.5, side = 0.8, bias = 0, recover = 0.85, aimMult = 0.8 }  -- view kick per shot
 SWEP.Damage = 0               -- all damage comes from the blast
 SWEP.BoltSpeed = 2200
@@ -66,7 +75,7 @@ SWEP.BoltLife = 5
 SWEP.FireSound = { "weapons/explosives_cannons_superlazers/wpn_rocket_launcher_shoot_01.ogg", "weapons/explosives_cannons_superlazers/wpn_rocket_launcher_shoot_02.ogg", "weapons/explosives_cannons_superlazers/wpn_rocket_launcher_shoot_03.ogg" }
 SWEP.FireSoundLevel = 150
 
-SWEP.Explosive = { radius = 200, damage = 250 }
+SWEP.Explosive = { radius = 200, damage = 250 }   -- blast where the rocket lands (units, damage at the centre)
 
 SWEP.Mags = { "rocket" }
 SWEP.FireModes = { "semi", "lockon" }
@@ -75,6 +84,7 @@ SWEP.ReloadTime = 3
 SWEP.AutoReload = false     -- reload with R like every other gun
 
 SWEP.UsesCell = false
+-- Spare magazines / cells put in your pouch when you pick it up (rhylib_base).
 SWEP.StartMags = 3
 SWEP.StartCells = 0
 
@@ -84,6 +94,11 @@ SWEP.InvH = 1
 SWEP.InvLarge = true
 SWEP.InvWeight = 8           -- kg
 
+-- Spread: cone angles in degrees (rhylib_weapons sh_10_spread): hip / aim =
+-- resting cone, kickMain / kickSide = how far the crosshair arcs move per shot,
+-- bloomPerShot (up to bloomMax) = growth of the whole cone, aimKickMult /
+-- aimOffsetMult = share of that while aiming. Each value is also a setting
+-- in Server settings > guns (rhylib_weapons sh_70_gunstats).
 SWEP.Spread = {
     hip = 0.8,
     aim = 0.25,
@@ -103,21 +118,27 @@ SWEP.AimFov = 0.75
 --------------------------------------------------------------------------
 
 local Config = Rhylib.Config
+-- Settings (module "weapons"). Registered here, so they exist only while
+-- rhylib_republic is installed.
 Config.Register("weapons", "lockRange", 6000, "RPS-6 lock-on: longest lock (units)")
 Config.Register("weapons", "lockCone", 6, "RPS-6 lock-on: how close to the crosshair a target must be (degrees)")
 Config.Register("weapons", "lockTime", 1.2, "RPS-6 lock-on: seconds of aiming at a target to lock it")
 
+-- LockTarget: what the lock is on (NULL = nothing). LockStart: CurTime()
+-- when that target was first held (0 = none). Set by the server only.
 function SWEP:SetupDataTables()
     BaseClass.SetupDataTables(self)
     self:NetworkVar("Entity", 0, "LockTarget")
     self:NetworkVar("Float", 0, "LockStart")
 end
 
+-- SWEP:LockOn(): true while the fire mode is "lockon". Shared.
 function SWEP:LockOn()
     return self:GetFireModeName() == "lockon"
 end
 
--- The locked target, or nil (still locking / none).
+-- SWEP:LockedTarget(): the locked target, or nil (still locking / none).
+-- A target counts as locked once it has been held for weapons lockTime. Shared.
 function SWEP:LockedTarget()
     local t = self:GetLockTarget()
     local st = self:GetLockStart()
@@ -126,6 +147,9 @@ function SWEP:LockedTarget()
     return t
 end
 
+-- SWEP:FireShot(): rhylib_base calls this for each shot. Normal mode uses
+-- the base (an explosive bolt). Lock-on mode spawns rhylib_topattack instead
+-- and passes it: dir, target (nil = laser guided), owner, weapon, explosive.
 function SWEP:FireShot()
     if not self:LockOn() then return BaseClass.FireShot(self) end
     -- Lock-on mode: always the top-attack rocket. Locked = it homes on the
@@ -182,7 +206,10 @@ if SERVER then
         return not e.destroyed
     end
 
-    -- Best target in the cone, in sight, nearest the crosshair.
+    -- Lockable: a live, non-training Rhylib droid, or a jammer that isn't
+    -- destroyed.
+    -- SWEP:FindLockTarget(owner): best target within lockRange and lockCone,
+    -- in sight (brushes only), nearest the crosshair; or nil. Server only.
     function SWEP:FindLockTarget(owner)
         local eye = owner:GetShootPos()
         local aim = owner:GetAimVector()
@@ -207,6 +234,9 @@ if SERVER then
         return best
     end
 
+    -- SWEP:UpdateLock(): run from Think, at most every 0.1 s. Keeps
+    -- LockTarget / LockStart up to date while the owner aims in lock-on mode
+    -- with a rocket loaded. Server only.
     function SWEP:UpdateLock()
         local now = CurTime()
         if now < (self.rhylibLockCheck or 0) then return end
@@ -250,6 +280,8 @@ if CLIENT then
         surface.DrawRect(x + w - len, y + h - 2, len, 2) surface.DrawRect(x + w - 2, y + h - len, 2, len)
     end
 
+    -- Lock-on HUD: a hint line with no target; with one, a box of corners
+    -- that closes in while it locks, "LOCKING n%" / "LOCKED · FIRE" and beeps.
     function SWEP:DrawHUD()
         if BaseClass.DrawHUD then BaseClass.DrawHUD(self) end
         if not self:LockOn() then return end

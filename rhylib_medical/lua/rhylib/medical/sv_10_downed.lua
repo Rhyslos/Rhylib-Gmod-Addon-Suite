@@ -10,6 +10,12 @@
     A 0.1 s timer runs while anyone is down, dragging or helping: it bleeds
     out, checks stabilisers, drags and actions (sv_20_actions.lua). With
     nobody down it returns at once.
+
+    Public: Med.Down, Med.Revive, Med.GiveUp, Med.StartDrag, Med.StopDrag,
+    Med.Note, Med.CanSee, Med.InRange.
+    Hooks fired: Rhylib.PlayerDowned(ply, attacker), Rhylib.PlayerRevived(ply, by).
+    Net: med.note (server -> one player) string: a short message under
+    the crosshair (cl_10_hud.lua).
 ]]
 
 local Med = Rhylib.Medical
@@ -28,7 +34,9 @@ end
 
 Rhylib.Net.Register("med.note")
 
--- A short message under the crosshair.
+-- Med.Note(ply, text): shows a short message under ply's crosshair for
+-- 2.5 s (net med.note). Server only.
+-- Example: Rhylib.Medical.Note(ply, "Too far away")
 function Med.Note(ply, text)
     Rhylib.Net.Start("med.note")
     net.WriteString(text)
@@ -50,6 +58,8 @@ local function seeClear(helper, target, pos)
     return not seeTr.Hit
 end
 
+-- Med.CanSee(helper, target): true if nothing solid is between helper's
+-- eyes and the target (a downed target: its spot or its lying body).
 function Med.CanSee(helper, target)
     if not target.rhylibDown then return seeClear(helper, target, target:WorldSpaceCenter()) end
     -- Downed: the position or the measured body is enough.
@@ -60,7 +70,9 @@ local function near(a, b, range)
     return math.abs(a.z - b.z) < 72 and (a.x - b.x) ^ 2 + (a.y - b.y) ^ 2 <= range * range
 end
 
--- Downed targets: their position or the measured body, with extra room
+-- Med.InRange(helper, target, slack): true if helper is within config
+-- range + slack (flat distance, less than 72 units apart in height).
+-- Downed targets: their position or the measured body, with 40 more
 -- (each client's ragdoll lies a little differently).
 function Med.InRange(helper, target, slack)
     local a = helper:GetPos()
@@ -73,6 +85,12 @@ end
 -- Going down and getting up
 --------------------------------------------------------------------------
 
+-- Med.Down(ply, attacker, inflictor): puts a living player in the downed
+-- state (health = the downed pool, bleed-out timer, lying body). Does
+-- nothing if they're already down or dead. attacker/inflictor are who
+-- gets the kill if they die while down. Fires Rhylib.PlayerDowned(ply,
+-- attacker). Returns nothing. Server only.
+-- Example: Rhylib.Medical.Down(ply, ply, ply)   -- down them "by themselves" (no frag)
 function Med.Down(ply, attacker, inflictor)
     if Med.down[ply] or not ply:Alive() then return end
     Med.down[ply] = { attacker = attacker, inflictor = inflictor }
@@ -117,6 +135,9 @@ function Med.Down(ply, attacker, inflictor)
     -- A ragdoll body (rhylib_core); a stunned player keeps theirs.
     if Rhylib.Lying then Rhylib.Lying.Begin(ply) end
 
+    -- Hook Rhylib.PlayerDowned(ply, attacker): ply just went down. Return
+    -- value ignored. (Used by rhylib_skills, rhylib_mp, rhylib_training,
+    -- rhylib_core's knockdown, and the tank/sofa code in sv_40_medbay.lua.)
     hook.Run("Rhylib.PlayerDowned", ply, attacker)
 end
 
@@ -173,14 +194,22 @@ local function unstick(ply)
     end
 end
 
+-- Med.Revive(ply, health, by): gets a downed player up with `health`
+-- (clamped 1 .. max health), moved to a clear spot if stuck. by = the
+-- reviver (may be nil, e.g. NPC medics). Does nothing if ply isn't down.
+-- Fires Rhylib.PlayerRevived(ply, by). Server only.
+-- Example: Rhylib.Medical.Revive(ply, ply:GetMaxHealth() * 0.3, nil)
 function Med.Revive(ply, health, by)
     if not clear(ply) then return end
     unstick(ply)
     ply:SetHealth(math.Clamp(math.floor(health), 1, ply:GetMaxHealth()))
+    -- Hook Rhylib.PlayerRevived(ply, by): ply got up. Return value ignored.
     hook.Run("Rhylib.PlayerRevived", ply, by)
 end
 
--- Dies now, credited to whoever downed them.
+-- Dies now, credited to whoever downed them. DMG_DIRECT passes the grace
+-- hook and rhylib_core's lying-body damage block; Kill() is the fallback
+-- when the damage was blocked anyway.
 local function finish(ply)
     local d = Med.down[ply]
     if not d or ply.rhylibDying then return end
@@ -196,6 +225,8 @@ local function finish(ply)
     ply.rhylibDying = nil
 end
 
+-- Med.GiveUp(ply): a downed player dies next tick, credited to whoever
+-- downed them (holding Jump, "kill" in console). Server only.
 function Med.GiveUp(ply)
     if Med.down[ply] then timer.Simple(0, function() if IsValid(ply) then finish(ply) end end) end
 end
@@ -204,6 +235,10 @@ end
 -- Damage
 --------------------------------------------------------------------------
 
+-- Lethal hit: leave 1 HP and mark ply.rhylibGoingDown; the downing itself
+-- waits for PostEntityTakeDamage, so a hit another hook blocks later
+-- (took = false) never downs anyone. Priority 150: after armour (100) has
+-- scaled the damage.
 Rhylib.Hook.Add("EntityTakeDamage", "medical.down", function(ent, dmg)
     if not ent:IsPlayer() or ent.rhylibDown or not ent:Alive() then return end
     if not Med.Cfg("enabled") then return end
@@ -290,6 +325,9 @@ end, -10)  -- before the state is cleared
 -- Dragging
 --------------------------------------------------------------------------
 
+-- Med.StartDrag(ply, target): ply starts dragging the downed target (in
+-- range, in sight, not already dragged). Stops anyone stabilising them.
+-- Medevac skill: the bleed-out pauses while dragging. Server only.
 function Med.StartDrag(ply, target)
     if not Med.down[target] or Med.DraggedBy(target) or Med.Dragging(ply) then return end
     if ply.rhylibDown or not Med.InRange(ply, target, 40) or not Med.CanSee(ply, target) then return end
@@ -306,6 +344,9 @@ function Med.StartDrag(ply, target)
     end
 end
 
+-- Med.StopDrag(ply): ply lets go of whoever they drag (safe to call when
+-- not dragging). Cancels a revive on the move, and hands a Medevac pause
+-- to another helper or restarts the bleed-out. Server only.
 function Med.StopDrag(ply)
     -- (a revive while dragging stops with the drag)
     local act = Med.acts and Med.acts[ply]

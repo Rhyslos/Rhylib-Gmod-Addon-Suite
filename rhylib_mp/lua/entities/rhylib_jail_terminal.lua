@@ -1,7 +1,13 @@
 --[[
     Jail terminal: MPs press E to jail cuffed prisoners standing near it
     (or escorted by them), release prisoners, and go through evidence.
+
+    Shared entity, frozen in place. Model: config mp terminalModel (falls
+    back to the HL2 combine_interface001 when that model isn't installed).
+    E calls MP.OpenTerminal (sv_30_jail), which checks the player is an MP.
+    Saved with rhylib_mp_save or the toolgun's Permanent tool.
 ]]
+
 
 AddCSLuaFile()
 

@@ -7,6 +7,10 @@
         Admin.RequestList(which, arg, cb)  0 maps, 1 bans, 2 log, 3 warnings (SteamID64)
         Admin.MapPicker(done(map))         the map window (cl_20_maps.lua)
         Admin.PickPlayer(cmd, done(word))  a player menu for a command
+        Admin.TargetWord(ply)              how a picked player is sent (SteamID64)
+        Admin.TrackAsk(panel)              free the mouse while a picker is open
+    Client only. Pickers need rhylib_menus (its Kit); without it they do
+    nothing and chat commands must be typed in full.
 ]]
 
 local Admin = Rhylib.Admin
@@ -46,6 +50,11 @@ Rhylib.Hook.Add("HUDPaint", "admin.countdown", function()
     draw.SimpleTextOutlined("Map change: " .. countdown.map .. " in " .. left, font, ScrW() * 0.5, ScrH() * 0.12, ACCENT, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, Color(0, 0, 0, 200))
 end)
 
+-- Admin.Run(id, words): asks the server to run a command (net admin.run).
+-- The server checks everything. At most 15 words; each is cut to 200
+-- characters on the server, so a long text argument should be one word.
+-- Example: Rhylib.Admin.Run("bring", { Rhylib.Admin.TargetWord(ply) })
+-- Example: Rhylib.Admin.Run("announce", { "Event starts in 5 minutes" })
 function Admin.Run(id, words)
     words = words or {}
     Rhylib.Net.Start("admin.run")
@@ -55,7 +64,8 @@ function Admin.Run(id, words)
     net.SendToServer()
 end
 
--- How the menu names a player for a command.
+-- How the menu names a player for a command: SteamID64 (bots: their
+-- name; invalid: "^" = you).
 function Admin.TargetWord(p)
     if not IsValid(p) then return "^" end
     if p:IsBot() then return p:Nick() end
@@ -63,6 +73,7 @@ function Admin.TargetWord(p)
 end
 
 -- Choices for an argument kind, or nil (= type it). "?" = type your own.
+-- Each choice: { word sent, label shown }.
 local function choices(kind)
     if kind == "rank" then
         local out = {}
@@ -125,6 +136,7 @@ local function choices(kind)
     end
 end
 
+-- Hints shown in the text prompt for kinds you type.
 local HINT = {
     number = "A number", text = "", word = "", class = "Weapon class, e.g. rhylib_dc15a",
     map = "Map name, e.g. rp_venator", duration = "30m, 2h, 1d, 1w or perm", minutes = "Minutes",
@@ -133,6 +145,8 @@ local HINT = {
 }
 
 -- Pickers opened from chat need the mouse; it's freed while any is open.
+-- Admin.TrackAsk(panel): adds a panel; a 0.2 s timer drops closed ones and
+-- gives the mouse back when none are left. Returns the panel.
 local askPanels = {}
 local cursorOn = false
 local function track(p)
@@ -157,6 +171,7 @@ end
 Admin.TrackAsk = track
 
 -- Pick a player you can use cmd on (players you outrank, you, and * for mass commands).
+-- done(word) gets "^", "*" or Admin.TargetWord(player).
 function Admin.PickPlayer(cmd, done)
     local K = Rhylib.Menus and Rhylib.Menus.Kit
     if not K then return end
@@ -179,6 +194,10 @@ function Admin.PickPlayer(cmd, done)
 end
 
 -- Asks for each argument in turn from index `from` (default 1); done(words).
+-- A kind with choices opens a menu, "map" opens the map picker, anything
+-- else a text prompt. done gets only the words asked for (no target).
+-- Example: Rhylib.Admin.AskArgs(Rhylib.Admin.byId.kick, function(w)
+--     Rhylib.Admin.Run("kick", { Rhylib.Admin.TargetWord(ply), w[1] }) end)
 function Admin.AskArgs(cmd, done, from)
     local K = Rhylib.Menus and Rhylib.Menus.Kit
     local words = {}
@@ -250,6 +269,12 @@ Rhylib.Net.Receive("admin.client", function()
     end
 end)
 
+-- Admin.RequestList(which, arg, cb): asks the server for a list (0 maps,
+-- 1 bans, 2 log, 3 warnings of SteamID64 arg); cb(rows) gets a list of
+-- string lists (see admin.listget in sv_10_admin.lua). One callback per
+-- list kind: a newer request replaces the older callback. No reply if you
+-- lack the permission.
+-- Example: Rhylib.Admin.RequestList(2, "", function(rows) PrintTable(rows) end)
 Admin.listCb = Admin.listCb or {}
 function Admin.RequestList(which, arg, cb)
     Admin.listCb[which] = cb

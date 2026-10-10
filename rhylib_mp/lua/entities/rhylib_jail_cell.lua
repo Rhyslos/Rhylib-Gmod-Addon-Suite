@@ -2,7 +2,14 @@
     Jail cell marker (admins place it where a prisoner should stand, then
     rhylib_mp_save). Invisible to normal players; MPs and admins see a
     faint ring, unless an admin hid them all (!hidecells).
+
+    Shared entity. No collisions (SOLID_NONE). The jail (sv_30_jail) puts
+    a prisoner at the marker's position, facing its yaw, and pulls them
+    back when they go further than config jailRadius from it.
+    Placed by the spawn menu (admin only), saved with rhylib_mp_save or
+    the toolgun's Permanent tool.
 ]]
+
 
 AddCSLuaFile()
 

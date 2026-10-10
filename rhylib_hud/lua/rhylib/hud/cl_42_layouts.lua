@@ -1,7 +1,9 @@
 --[[
     First-person (helmet visor) layouts that draw the hotbar and the ammo
-    together, on the right cheek. An admin picks one for the server with
-    rhylib_hud_layout (sv_20_layout.lua):
+    together, on the right cheek (client; only with rhylib_inventory).
+    An admin picks the server default with rhylib_hud_layout
+    (sv_20_layout.lua); each player can override it in Settings
+    (rhylib_hud_firstperson):
 
       f4  Ammo strip. A row of hotbar tiles along the bottom, as long as
           the health bars; their tops lean a little with the cheek. Right
@@ -14,6 +16,10 @@
     The hotbar fades like before; the ammo parts never fade.
     Shapes are drawn as strips of trapezoids with vertical sides, which
     are always convex, so surface.DrawPoly draws them safely.
+
+    Both layouts span the same width as the health bars on the right
+    cheek (HUD.VISOR_BAR_TO .. HUD.VISOR_BAR_FROM from cl_60_visor.lua)
+    and write HUD.HotbarRect for the stamina bar.
 ]]
 
 local HUD = Rhylib.HUD
@@ -32,7 +38,9 @@ local function inventory()
     return Inv and Inv.HotbarItem and Rhylib.Items and Inv or nil
 end
 
--- True while one of these layouts is drawing the ammo (cl_30_ammo.lua skips).
+-- HUD.LayoutDrawsAmmo(): true while one of these layouts is drawing the
+-- ammo (cl_30_ammo.lua then skips its own box): visor showing and
+-- rhylib_inventory loaded.
 function HUD.LayoutDrawsAmmo()
     return HUD.VisorActive and HUD.VisorActive() and inventory() ~= nil and HUD.VisorLayout() ~= "console"
 end
@@ -158,7 +166,8 @@ local function pips(x, y, n, w, h, gap, a, max)
     return used
 end
 
--- How many round ticks to draw, and how many are lit.
+-- How many round ticks to draw, and how many are lit. Big magazines
+-- (over 60 rounds, e.g. the Z-6) are shown as 60 ticks lit in proportion.
 local function tickCounts(ai)
     if ai.unarmed or ai.noAmmo or not ai.maxClip or ai.maxClip <= 0 then return 30, 0 end
     if ai.maxClip <= 60 then return ai.maxClip, ai.clip end
@@ -492,7 +501,11 @@ local function drawF5(entries, active, alpha, s, ai)
     end
 end
 
--- Called by cl_40_hotbar.lua in the visor (with the inventory).
+-- HUD.DrawVisorLayout(name, entries, active, alpha, s): draws layout
+-- "f5", or f4 for any other name. Called by cl_40_hotbar.lua's HUDPaint
+-- in the visor (with the inventory). entries = the hotbar entries,
+-- active = the held weapon, alpha = the hotbar's fade (the ammo parts
+-- ignore it), s = HUD.Scale().
 function HUD.DrawVisorLayout(name, entries, active, alpha, s)
     local ply = LocalPlayer()
     local ai = HUD.AmmoInfo(ply, ply:GetActiveWeapon())

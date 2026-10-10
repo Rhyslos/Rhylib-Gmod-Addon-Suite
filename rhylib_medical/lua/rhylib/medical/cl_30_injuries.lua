@@ -11,6 +11,14 @@
     their own effects), and can only stop bleeding with a medkit.
 
     Same look as the other Rhylib windows (dark plates, caps labels).
+
+    Client only. The window is the vgui panel "RhylibInjuries". Opening
+    someone else's sends med.view (patient) so the server streams their
+    injuries (med.inj); closing sends med.view(NULL). Dropping an item on
+    a part sends med.treat (patient, part 3 bits, kind 3 bits).
+    Public: Med.OpenInjuries(target), Med.ToggleInjuries().
+    Console: rhylib_injuries (toggle). Client convar rhylib_medical_key
+    (default "h"; Settings > Controls). Hidden in the simplified system.
 ]]
 
 local Med = Rhylib.Medical
@@ -329,6 +337,8 @@ function PANEL:Paint(w, h)
             sub = math.ceil((inst.data and inst.data.fill or 1) * 100) .. "% charge"
         end
         if inst.id == Med.FIRST_AID and not usable then sub = "medics only" end
+        -- (any other item with a description: its count, or "no effect yet"
+        -- when it isn't a usable item)
         if def and def.desc and not usable then sub = def.usable and (inst.count and inst.count > 1 and ("x" .. inst.count) or "") or "no effect yet" end
         draw.SimpleText(name, font(14, usable and 600 or 400), lx + s(12), ry + rh * 0.5, usable and UI.Colors.text or UI.Colors.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
         draw.SimpleText(sub, font(12), lx + lw - s(10), ry + rh * 0.5, UI.Colors.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
@@ -452,7 +462,10 @@ local function lookTarget()
     return Med.FindDowned and Med.FindDowned(me) or nil
 end
 
--- Open the injury menu for patient (a player), or your own (nil).
+-- Med.OpenInjuries(target): opens the injury menu for target (a player),
+-- or your own with nil / yourself. Does nothing while dead, downed or in
+-- the simplified system. Client only.
+-- Example: Rhylib.Medical.OpenInjuries(LocalPlayer():GetEyeTrace().Entity)
 function Med.OpenInjuries(target)
     if IsValid(Med.injuryPanel) then Med.injuryPanel:Remove() end
     local me = LocalPlayer()
@@ -469,6 +482,8 @@ function Med.OpenInjuries(target)
     Med.injuryPanel = p
 end
 
+-- Med.ToggleInjuries(): closes the menu, or opens it on whoever you look
+-- at within viewRange (else your own). The H key and rhylib_injuries.
 function Med.ToggleInjuries()
     if IsValid(Med.injuryPanel) then
         Med.injuryPanel:Remove()

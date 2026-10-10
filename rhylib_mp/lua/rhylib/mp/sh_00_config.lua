@@ -28,6 +28,22 @@
 
     Who is an MP: a DarkRP job with mp = true (or answer Rhylib.IsMP).
 
+    This file (shared) loads first: the Rhylib.MP table, config keys,
+    the state readers (IsStunned, IsCuffed, ...) and MP.Target. Then
+    sh_10_move (input and movement), sv_10_stun (stun, cuffs, escort),
+    sv_20_search, sv_30_jail, sv_40_property and the client windows.
+
+    Hooks fired by this addon:
+      Rhylib.IsMP(ply)                     return true/false to decide who is an MP
+      Rhylib.CanStun(ply, by)              return false to block a stun
+      Rhylib.PlayerStunned(ply, by)        after a stun starts
+      Rhylib.PlayerCuffed(ply, by)         after cuffing
+      Rhylib.PlayerUncuffed(ply, by)       after uncuffing (by is nil when the system does it)
+      Rhylib.MPConfiscated(mp, target, id, count)  after an MP takes an item in a search
+      Rhylib.PlayerJailed(ply, by, minutes, why)   after jailing
+      Rhylib.PlayerReleased(ply, by)       after processing (out of jail)
+      Rhylib.MPSearchTool(ply, weapon)     return true or a reach to let another tool search
+
     State is NW2 on the player, changed only on events:
       rhylib_stunEnd (CurTime), rhylib_stunYaw, rhylib_cuffed (bool),
       rhylib_escortBy (entity), rhylib_escorting (entity, on the MP),
@@ -57,10 +73,15 @@ Config.Register("mp", "jailRadius", 350, "A prisoner further than this from thei
 Config.Register("mp", "terminalRange", 400, "Cuffed prisoners this close to a jail terminal can be jailed there")
 Config.Register("mp", "poses", { "death_04", "death_03", "death_02", "death_01", "zombie_slump_idle_02" }, "Lying poses while stunned, first that exists on the model wins")
 
+-- MP.Cfg(key): shortcut for Rhylib.Config.Get("mp", key). Shared.
+-- Example: local secs = Rhylib.MP.Cfg("stunTime")
 function MP.Cfg(k) return Config.Get("mp", k) end
 
 MP.TERM_USE = 180   -- how close an MP must stay to a terminal to use it
 
+-- MP.IsMP(ply): true if ply is military police. Asks hook Rhylib.IsMP first
+-- (any non-nil answer wins), else the DarkRP job's `mp = true` field. Shared.
+-- Example: if Rhylib.MP.IsMP(ply) then ... end
 function MP.IsMP(ply)
     if not IsValid(ply) then return false end
     local r = hook.Run("Rhylib.IsMP", ply)
@@ -69,6 +90,9 @@ function MP.IsMP(ply)
     return job and job.mp == true or false
 end
 
+-- State readers (shared, read the NW2 values above):
+--   MP.IsStunned(ply) -> bool, MP.IsCuffed(ply) -> bool,
+--   MP.EscortedBy(ply) -> the MP pulling this prisoner, or nil.
 function MP.IsStunned(ply) return ply:GetNW2Float("rhylib_stunEnd", 0) > CurTime() end
 function MP.IsCuffed(ply) return ply:GetNW2Bool("rhylib_cuffed", false) end
 function MP.EscortedBy(ply)
@@ -80,6 +104,8 @@ function MP.Escorting(ply)
     local e = ply:GetNW2Entity("rhylib_escorting")
     if IsValid(e) and e:GetNW2Entity("rhylib_escortBy") == ply then return e end
 end
+-- MP.IsJailed(ply) -> bool (also true while awaiting processing).
+-- MP.JailLeft(ply) -> seconds of sentence left (0 while awaiting).
 function MP.IsJailed(ply) return ply:GetNW2Float("rhylib_jailEnd", 0) > 0 end
 function MP.JailLeft(ply) return math.max(0, ply:GetNW2Float("rhylib_jailEnd", 0) - CurTime()) end
 
@@ -88,8 +114,12 @@ Rhylib.Hook.Add("Rhylib.InventoryLocked", "mp.lock", function(ply)
     if MP.IsCuffed(ply) or MP.IsStunned(ply) or MP.IsJailed(ply) then return true end
 end)
 
--- The player an MP is aiming at, within range.
+-- MP.Target(ply, range): the living player ply aims at within range units,
+-- or nil. A lying player's ragdoll counts as that player. Two hull traces:
+-- straight ahead, then aimed a little lower for bodies on the floor. Shared.
+-- Example: local t = Rhylib.MP.Target(ply, Rhylib.MP.Cfg("cuffRange"))
 function MP.Target(ply, range)
+
     local tr = util.TraceHull({
         start = ply:EyePos(),
         endpos = ply:EyePos() + ply:GetAimVector() * range,

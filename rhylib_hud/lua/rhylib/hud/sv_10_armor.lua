@@ -1,14 +1,18 @@
 --[[
+    Armour for other players (server).
+
     Armour isn't sent to other players by the engine, so the player info
     box couldn't show it. Every quarter second we copy each player's
-    armour into a networked int, but only when it has changed; the
-    engine then sends it once. Cost: one loop over the players, four
-    times a second.
+    armour into the NW2Int "rhylib_armor", but only when it has changed;
+    the engine then sends it once. Cost: one loop over the players, four
+    times a second. Read on clients by cl_50_players.lua.
 
-    Also turns off the default voice icon above heads (we draw our own).
+    Also turns off the default voice icon above heads (we draw our own in
+    cl_50_players.lua): mp_show_voice_icons 0, at file load and again at
+    Initialize in case the convar didn't exist yet.
 ]]
 
-local last = {}
+local last = {}   -- [ply] = armour value last written to NW2
 
 timer.Create("Rhylib.HUD.Armor", 0.25, 0, function()
     for _, ply in ipairs(player.GetAll()) do

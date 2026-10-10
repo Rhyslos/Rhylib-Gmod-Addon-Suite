@@ -18,6 +18,7 @@ local function repMines()
 end
 
 -- Your mines out, and how many you may have (for the weapon's HUD line).
+-- E.RepCountClient() -> mines out, limit (client; for the HUD line).
 function E.RepCountClient()
     local me = LocalPlayer()
     local n = 0
@@ -56,6 +57,8 @@ local function ownMineAtAim()
     return best
 end
 
+-- E on your own mine: eod.reppick, and the +use is swallowed. Runs
+-- early (priority -35) so it wins over other +use handlers.
 Rhylib.Hook.Add("PlayerBindPress", "eod.reppick", function(ply, bind, pressed)
     if not pressed or not string.find(bind, "+use", 1, true) then return end
     local m = ownMineAtAim()

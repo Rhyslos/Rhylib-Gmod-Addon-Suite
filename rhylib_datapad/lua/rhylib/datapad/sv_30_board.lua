@@ -1,29 +1,38 @@
 --[[
-    Battalion computer: log search, and the battalion board.
+    Battalion computer (server): log search, and the battalion board.
 
     Search (logs and medical records):
-      dp.tfind   entity, text, days (0 = any time) -> dp.tfound: matching ids
-                 (title, text, author or patient contain the text)
+      dp.tfind   entity, text, days (10 bits, 0 = any time) -> dp.tfound:
+                 matching ids (count 8, ids 20). Matches when the title,
+                 text, author or patient contain the text.
 
     Battalion info: one living text per battalion (Data "dp_info"/bn =
     { txt, by, t }), edited over time by those who can post; sent with
     the board and in the datapad download.
 
-    Board (battalion computers only): posts in sections Session and AAR
-    (Info and Plans are old sections: their posts stay readable, no new ones) (after-action reports, with an outcome: 1 success,
-    2 partial, 3 failure, and the session they report on). Managers (SGT+)
-    may write AARs and edit or delete their own. A session has a time (os.time, shown in each player's own
-    time zone); past sessions are listed as an archive. Posts can be pinned.
-    Who may post: admins and the battalion's commander for now, or anyone
-    the Rhylib.CanPostBoard(ply, battalion) hook allows (the rank system).
-      dp.bopen   entity -> dp.board: canPost, posts (no text)
-      dp.bget    entity, id -> dp.bbody
-      dp.bsave   entity, id (0 = new), section, title, text, time, outcome, session id
-      dp.bdel    entity, id
-      dp.bpin    entity, id
+    Board (battalion computers only): posts in sections Session (3) and
+    AAR (4, after-action reports, with an outcome: 1 success, 2 partial,
+    3 failure, and the session they report on). Info (1) and Plans (2) are
+    old sections: their posts stay readable, no new ones. Managers (SGT+)
+    may write AARs and edit or delete their own. A session has a time
+    (os.time, shown in each player's own time zone); past sessions are
+    listed as an archive. Posts can be pinned. At most 120 posts (oldest
+    dropped).
+    Who may post: admins and the battalion's commander, or anyone the
+    Rhylib.CanPostBoard(ply, battalion) hook allows (rhylib_roster: rank
+    boardRank, LT, and up).
+      dp.bopen   entity -> dp.board: entity, canPost, canAAR, posts (count 8;
+                 id 16, section 3, title, author, time 32, session time 32,
+                 pinned, outcome 2, session id 16, mine), then the info
+      dp.bget    entity, id (16) -> dp.bbody (D.SendPost: text, sign-ups, check-ins)
+      dp.bsave   entity, id (16, 0 = new), section (3), title, text,
+                 session time (32), outcome (2), session id (16)
+      dp.bdel    entity, id (16)
+      dp.bpin    entity, id (16)
       dp.binfo   entity, text: save the battalion info
 
-    Data "dp_board"/battalion = { next, list }.
+    Data "dp_board"/battalion = { next, list } (post: { id, sec, ti, b, at,
+    oc, ses, a, s, t, pin, rv, ci }; rv/ci: see sv_60_unit).
 ]]
 
 local D = Rhylib.Datapad
@@ -32,7 +41,7 @@ Rhylib.Net.Register("dp.tfound")
 Rhylib.Net.Register("dp.board")
 Rhylib.Net.Register("dp.bbody")
 
-D.SEC_INFO, D.SEC_PLANS, D.SEC_SESSION, D.SEC_AAR = 1, 2, 3, 4
+D.SEC_INFO, D.SEC_PLANS, D.SEC_SESSION, D.SEC_AAR = 1, 2, 3, 4   -- board sections (3 bits on the wire)
 local BOARD_CAP = 120
 
 --------------------------------------------------------------------------
@@ -64,12 +73,17 @@ D.TermRecv("dp.tfind", {
 -- Board
 --------------------------------------------------------------------------
 
+-- D.Board(bn): the battalion's board { next, list (newest first) }.
 function D.Board(bn)
     local b = D.Load("dp_board", bn, nil)
     if not b.list then b.next, b.list = 1, {} end
     return b
 end
 
+-- D.CanPost(ply, bn, admin): full posting rights on bn's board (sessions,
+-- pins, any post, the battalion info). admin = the computer's a.admin.
+-- Order: admin, then hook Rhylib.CanPostBoard(ply, bn) (true/false wins),
+-- else a member with D.IsCommander.
 function D.CanPost(ply, bn, admin)
     if admin then return true end
     local r = hook.Run("Rhylib.CanPostBoard", ply, bn)
@@ -88,6 +102,8 @@ local function canChange(ply, bn, admin, p)
     return p.sec == D.SEC_AAR and p.s == ply:SteamID64() and canAAR(ply, bn, admin)
 end
 
+-- D.WriteInfo(bn): write the battalion info into the current net message:
+-- text, edited by, time 32 ("" bn = empty).
 function D.WriteInfo(bn)
     local i = bn ~= "" and D.Load("dp_info", bn, {}) or {}
     net.WriteString(i.txt or "")
@@ -136,8 +152,9 @@ D.TermRecv("dp.bopen", {
     end,
 }, { rate = 3, burst = 4 })
 
--- A post's text, plus sign-ups and check-ins for sessions:
--- id, text, n x (name, choice 1-3), my choice, n x checked-in name, me checked in.
+-- D.SendPost(ply, p): send dp.bbody, a post's text plus sign-ups and
+-- check-ins for sessions: id 16, text, count 8 x (name, choice 2 bits 1-3),
+-- my choice (2), count 8 x checked-in name, me checked in (bool).
 function D.SendPost(ply, p)
     local me = "s" .. (ply:SteamID64() or "")
     Rhylib.Net.Start("dp.bbody")
@@ -199,7 +216,7 @@ D.TermRecv("dp.bsave", {
         local aar = arg.sec == D.SEC_AAR
         local oc = aar and arg.oc or 0
         local ses = aar and arg.ses or 0
-        if arg.sec ~= D.SEC_AAR then arg.b = D.Clip(arg.b, D.Cfg("bodyMax"), true) end
+        if arg.sec ~= D.SEC_AAR then arg.b = D.Clip(arg.b, D.Cfg("bodyMax"), true) end   -- (AARs may be twice bodyMax)
         local board = D.Board(bn)
         if arg.id == 0 then
             table.insert(board.list, 1, {

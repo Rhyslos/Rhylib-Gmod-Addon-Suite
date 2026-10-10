@@ -13,9 +13,16 @@
     Place with the toolgun; rhylib_radio_save keeps them on the map.
 
     This is the small one and the base of the others (R.JAMMER_SIZES):
-    rhylib_comms_jammer_medium / _large / _map only change the config keys
-    (range, health, model). A model that isn't installed falls back to
-    radio jammerFallbackModel.
+    rhylib_comms_jammer_medium / _large / _map only change PrintName; the
+    class name picks the config keys (range, model, what destroys it).
+    A model that isn't installed falls back to radio jammerFallbackModel.
+
+    Shared entity (server: physics, use, damage; client: model, blinking
+    red light, range ring for admins holding the toolgun). The jamming
+    itself is worked out by sv_10_radio.lua's timer from R.jammers.
+    NetworkVar Bool "Active" (on / off). Server fields: startOff (set
+    before Spawn: start switched off), destroyed, wasOn (state before it
+    was destroyed, kept for saves), jamDamage / heHits (damage so far).
 ]]
 
 AddCSLuaFile()
@@ -60,6 +67,7 @@ if SERVER then
         if self.hum and self:GetActive() then self.hum:PlayEx(0.35, 140) end
     end
 
+    -- ENT:SetOn(on): switch it on or off (hum and click sound). Server.
     function ENT:SetOn(on)
         self:SetActive(on)
         if self.hum then
@@ -68,6 +76,8 @@ if SERVER then
         self:EmitSound(on and "buttons/button1.wav" or "buttons/button18.wav", 65)
     end
 
+    -- E: staff (rhylib.radio.admin) switch it on / off; that also saves the
+    -- jammers (R.SaveJammers). Others: nothing.
     function ENT:Use(ply)
         if not (IsValid(ply) and ply:IsPlayer()) or self.destroyed then return end
         Rhylib.Perms.Check(ply, "rhylib.radio.admin", function(ok)
@@ -108,7 +118,9 @@ if SERVER then
         note(self, dmg:GetAttacker(), "That won't do it: the " .. string.lower(self.PrintName) .. " needs " .. text)
     end
 
-    -- Wrecked, not removed: a later save must still keep it on the map.
+    -- ENT:Destroy(by): explode and go dark (invisible, not solid, stops
+    -- jamming). Wrecked, not removed: a later save must still keep it on
+    -- the map. by (a player) gets a note. Server.
     function ENT:Destroy(by)
         if self.destroyed then return end
         self.wasOn = self:GetActive()
@@ -131,8 +143,12 @@ if SERVER then
         end
     end
 
-    -- An explosion of strength tier (R.JAMMER_TIERS) reached it. kind:
-    -- "grenade", "breach", "rocket" or "he".
+    -- ENT:ExplosiveHit(tier, by, kind): an explosion of strength tier
+    -- (R.JAMMER_TIERS) reached it; called by sv_10_radio.lua's
+    -- Rhylib.Explosion hook. kind: "grenade", "breach", "rocket" or "he"
+    -- (others count only by tier). Weaker than the size's tier: a note,
+    -- no harm. Large: damage points add up. Whole map: needs that many
+    -- tier-3 hits within jammerChargeWindow. Otherwise one hit destroys.
     local POINTS = { he = "jamPointsHE", rocket = "jamPointsRocket", breach = "jamPointsBreach" }
     function ENT:ExplosiveHit(tier, by, kind)
         if self.destroyed then return end

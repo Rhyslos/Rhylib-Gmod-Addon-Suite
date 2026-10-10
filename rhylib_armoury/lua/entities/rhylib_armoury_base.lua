@@ -1,7 +1,14 @@
 --[[
     Base for armoury entities: a frozen prop you press E on. What it holds
     is set up by rhylib/armoury/sv_10_armoury.lua from ENT.ArmouryKind.
-    Placed by admins from the spawn menu; rhylib_armoury_save keeps them.
+    Placed by admins from the spawn menu; the toolgun's Permanent tool (or
+    rhylib_armoury_save) keeps them.
+
+    Shared (AddCSLuaFile). Server: model, frozen physics, E -> A.Use.
+    Client: the name plate above it (within 250 units).
+    Make your own kind: a small entity file with ENT.Base =
+    "rhylib_armoury_base" and the fields below (copy rhylib_crate_small.lua),
+    and add its class to Rhylib.Armoury.CLASSES so it can be saved.
 ]]
 
 AddCSLuaFile()
@@ -13,9 +20,12 @@ ENT.Category = "Rhylib: Armoury & storage"
 ENT.Spawnable = false
 ENT.AdminOnly = true
 
-ENT.ArmouryKind = nil   -- "armoury", "ammo", "crate" or "locker"
+ENT.ArmouryKind = nil   -- what A.Setup builds: "armoury", "ammo", "crate", "locker", "spec",
+                        -- "gear", "trainingArmoury", "trainingAmmo" or "trainingDeposit"
 ENT.ModelKey = "crate"  -- key in Rhylib.Armoury.MODELS
-ENT.Hint = "Press E"
+ENT.Hint = "Press E"     -- second line of the name plate
+-- Optional: ENT.Tint (Color), ENT.CrateMag (item id) / ENT.CrateStock (config
+-- key) for crates, ENT.SpecKind ("weapons" / "gear") for specialist racks.
 
 function ENT:SetupDataTables()
     -- Only lockers use these.
@@ -53,7 +63,8 @@ if CLIENT then
     local COL_BG = Color(20, 22, 20, 190)
     local RANGE = 250
 
-    -- Second line under the name (lockers show who owns them).
+    -- ENT:SubText() -> second line under the name (lockers override it to
+    -- show who owns them). Client.
     function ENT:SubText()
         return self.Hint
     end

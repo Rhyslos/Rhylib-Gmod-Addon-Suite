@@ -1,6 +1,16 @@
 --[[
     Toolgun (client): what's chosen (client convars), its tab in the spawn
     window and the R key, the HUD line and the aim marker.
+
+    Client convars: rhylib_tool_entry (chosen id, "@custom" = a spawn-window
+    thing), rhylib_tool_count (1-5), rhylib_tool_name (beacon/spawn point
+    name), rhylib_tool_droidmode (1-4), rhylib_tool_custom
+    (kind|name|skin|body|weapon|label). Console: rhylib_toolgun.
+    The spawn window and its tab need rhylib_menus; without it R prints a
+    note and rhylib_tool_entry <id> picks an entry. The droid mode and
+    aggression row needs rhylib_droids.
+    R: a tap opens the window (stays open), held 0.3 s+ closes on release,
+    a tap while open closes, two taps within 0.35 s open the old Q menu.
 ]]
 
 local Tool = Rhylib.Tool
@@ -29,6 +39,8 @@ local function customEntry()
     return e
 end
 
+-- Tool.Chosen(): the entry LMB uses now (only ones this player may use;
+-- never falls back to the Permanent tool).
 function Tool.Chosen()
     local id = cvEntry:GetString()
     if id == "@custom" and Tool.FullAccess(LocalPlayer()) then
@@ -271,6 +283,8 @@ Rhylib.Hook.Add("Think", "toolgun.rhold", function()
     end
 end)
 
+-- Tool.Click(wep, which): send the click ("1" LMB place/spawn, "2" RMB
+-- remove / follow / stop keeping).
 function Tool.Click(wep, which)
     if which == "3" then return end   -- (R is read from the key, above)
     if which == "2" then
@@ -314,6 +328,7 @@ end
 local COL = Color(255, 210, 80)
 local COL_RED = Color(255, 90, 80)
 
+-- Tool.DrawHUD(wep): the text under the crosshair (SWEP:DrawHUD calls it).
 function Tool.DrawHUD(wep)
     local e = Tool.Chosen()
     if not e then return end

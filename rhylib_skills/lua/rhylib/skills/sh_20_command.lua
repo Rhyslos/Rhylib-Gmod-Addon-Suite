@@ -17,6 +17,12 @@
         K.OrderRadius(ply), K.OrderTime(ply), K.OrderCooldownTime(ply)
                             with Command presence / Standing orders /
                             Seasoned command (Commander)
+        K.OrderLeft(ply), K.OrderCooldown(ply), K.ReinfCooldown(ply)
+                            seconds left (0 = none / ready)
+        K.CarryOk(ply, skill) who may carry an item with CarrySkill
+                            (rhylib_inventory Inv.MayHold asks)
+    Also the squad wheel's option list (K.SQUAD_OPS) and the hand-signal
+    chat words (K.IsSignalText), shared by sv_ and cl_20_command.
 ]]
 
 local K = Rhylib.Skills
@@ -51,6 +57,7 @@ K.SQUAD_OPS = { "follow", "hold", "move", "aggroUp", "aggroDown", "dismiss", "re
 
 -- Hand-signal chat commands hidden from chat (typed or from the wheel; owner:
 -- they showed as plain text). Plus every squadSignals value.
+-- K.IsSignalText(text): true if text is one of them (any case, trimmed).
 K.SIGNAL_WORDS = { ["/advance"] = true, ["/stop"] = true, ["/group"] = true, ["/come"] = true, ["/yes"] = true, ["/no"] = true }
 function K.IsSignalText(text)
     if not isstring(text) then return false end
@@ -65,6 +72,10 @@ function K.IsSignalText(text)
     return false
 end
 
+-- The six orders. key: what effects check (K.OrderIs(ply, "focus")),
+-- skill: the Pistol spec's node id (the Commander's copy is skill .. "_c"),
+-- col: HUD tint, text: the effect line on the HUD bar. The index (position)
+-- is sent in 3 bits and stored in NW2Int rhylib_order.
 K.ORDERS = {
     { key = "wind", skill = "cmd_wind", name = "Second wind", col = Color(242, 209, 75), text = "No stamina drain, fast refill" },
     { key = "triage", skill = "cmd_triage", name = "Field triage", col = Color(91, 201, 122), text = "Downed get up, healing, afflictions muted" },
@@ -79,11 +90,15 @@ for i, o in ipairs(K.ORDERS) do
     K.orderByKey[o.key] = o
 end
 
+-- K.Order(ply): the active order table on ply (from K.ORDERS), or nil.
 function K.Order(ply)
     if ply:GetNW2Float("rhylib_orderEnd", 0) <= CurTime() then return nil end
     return K.ORDERS[ply:GetNW2Int("rhylib_order", 0)]
 end
 
+-- K.OrderIs(ply, key): is this order active on ply? Shared; reads NW2, so
+-- predicted code may be a tick off at the start and end.
+-- Example: if K.OrderIs(ply, "open") then return true end   -- (rhylib_base NoAmmoUse)
 function K.OrderIs(ply, key)
     if not (IsValid(ply) and ply:IsPlayer()) then return false end
     local o = K.Order(ply)
@@ -95,6 +110,7 @@ function K.OrderLeft(ply)
     return math.max(0, ply:GetNW2Float("rhylib_orderEnd", 0) - CurTime())
 end
 
+-- K.OrderOf(ply): the order this officer can give (from cmd_x or cmd_x_c), or nil.
 function K.OrderOf(ply)
     if not (IsValid(ply) and ply:IsPlayer()) then return nil end
     local set = K.Set(ply)
@@ -103,6 +119,9 @@ function K.OrderOf(ply)
     end
 end
 
+-- K.OrderRadius(ply): reach in units (Command presence: x presenceMult).
+-- K.OrderTime(ply): seconds an order lasts (Standing orders: standingTime).
+-- K.OrderCooldownTime(ply): seconds before the next (Seasoned command).
 function K.OrderRadius(ply)
     local r = cfg("commandRadius")
     if K.Has(ply, "cmd_presence") then r = r * cfg("presenceMult") end
@@ -129,6 +148,8 @@ end
 
 -- The comlink is carried by anyone with a command order skill
 -- (CarrySkill "command", see Inv.MayHold).
+-- K.CARRY_NAMES: names for CarrySkill values that aren't skill ids (for
+-- the inventory's "needs ..." message).
 K.COMMLINK = "rhylib_commlink"
 K.CARRY_NAMES = { command = "a command order" }
 function K.CarryOk(ply, skill)

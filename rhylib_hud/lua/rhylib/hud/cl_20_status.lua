@@ -1,7 +1,12 @@
 --[[
-    Health and armour on a plate in the bottom-left corner (third person).
-    With DarkRP, also job and money. In the helmet visor the armour and
-    health blocks replace this, so nothing is drawn here then.
+    Health and armour on a plate in the bottom-left corner (client, third
+    person). With DarkRP, also job and money. In the helmet visor the
+    armour and health bars (cl_60_visor.lua) replace this, so nothing is
+    drawn here then.
+
+    With a training gun in hand the health row shows sim health in yellow
+    (HUD.SimHealth). With rhylib_medical's simplified system on, health
+    shows as a percent (Med.HealthPct). Health turns red under 30%.
 ]]
 
 local HUD = Rhylib.HUD

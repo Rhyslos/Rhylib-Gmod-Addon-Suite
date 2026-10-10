@@ -3,6 +3,7 @@
     hands to see its numbers, with your skills applied. The context menu
     stays as it was with anything else in your hands (the toolgun too).
     Drawn in HUDPaint while the key is held; nothing is networked.
+    Guns with no SWEP.Mags (toolgun, grenade launcher) keep the context menu.
 ]]
 
 local W = Rhylib.Weapons

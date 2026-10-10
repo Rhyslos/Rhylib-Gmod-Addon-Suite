@@ -8,6 +8,9 @@
     Server sv_30_pings.lua: net radio.ping (kind 4 bits) → checks (alive,
     in a squad, not jammed, cooldown), traces the aim, sends radio.ping
     (sender, kind, pos, tracked entity) to the squad (not to jammed mates).
+
+    To add a ping type, add a row to R.PINGS (at the end; the index is
+    sent as 4 bits, so at most 15 types).
 ]]
 
 local R = Rhylib.Radio
@@ -29,4 +32,4 @@ R.PINGS = {
     { id = "medic", label = "Need a medic", short = "MEDIC", icon = "cross", col = Color(110, 220, 120), life = 20, self = true, chat = "I need a medic" },
     { id = "ammo", label = "Need ammo", short = "AMMO", icon = "ammo", col = Color(205, 205, 215), life = 20, self = true, chat = "I need ammo" },
 }
-R.PING_BITS = 4
+R.PING_BITS = 4   -- bits for a ping type index on the wire

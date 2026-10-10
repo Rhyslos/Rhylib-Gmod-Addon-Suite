@@ -1,5 +1,5 @@
 --[[
-    Missions: the one thing uploaded from the datapad. A battalion has at
+    Missions (server): the one thing uploaded from the datapad. A battalion has at
     most one mission at a time; officers (rank boardRank+) post it from
     their datapad (title, date, objectives, sub objectives, info), edit it,
     start it and end it. Everyone else gets it with the datapad download.
@@ -14,8 +14,17 @@
     Data "dp_misarc"/bn = { next, list { id, ti, date, obj, sub, info, by, t,
         started, ended, endedBy, people } } (newest first, 100 kept)
 
-      datapad:   dp.mget -> dp.mcur     dp.msave (5 strings)   dp.mstart   dp.mend
-      computer:  dp.mlist -> dp.mlistr  dp.mread id -> dp.mfull  dp.mdel id
+      datapad:   dp.mget -> dp.mcur (can edit, mission)
+                 dp.msave (title, date, objectives, sub objectives, info)
+                 dp.mstart   dp.mend    (officers; each answers dp.mcur)
+      computer:  dp.mlist -> dp.mlistr (entity, can delete, current mission,
+                 archive: count 7; id 16, title, date, by, started 32,
+                 ended 32, people 8)
+                 dp.mread id (16) -> dp.mfull (id, objectives, sub
+                 objectives, info, ended by, people: count 8, names)
+                 dp.mdel id (16) (officers)
+    Text limits: title 80, date 40, objectives / sub objectives 1000,
+    info 3000 characters.
 ]]
 
 local D = Rhylib.Datapad
@@ -39,8 +48,10 @@ local function names(people)
     return out
 end
 
--- exists; title, date, objectives, sub objectives, info, by, time, active,
--- started, people count, up to 40 names.
+-- D.WriteMission(bn): write bn's current mission into the net message (read
+-- with D.ReadMission on the client): exists (bool); then title, date,
+-- objectives, sub objectives, info, by, time 32, active, started 32,
+-- people count (8), up to 40 names (6).
 function D.WriteMission(bn)
     local m = bn ~= "" and current(bn) or {}
     net.WriteBool(exists(m))

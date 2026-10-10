@@ -12,6 +12,24 @@
 
     Menus.Spawn.AddTab(id, { title, order, build(body), onShow(body),
         search(body, text) }) adds a tab; Open / Close / IsOpen.
+      title   tab button text        order   left to right (low first;
+                                             Rhylib 0, Props 10, Entities 20,
+                                             Weapons 30, NPCs 40, Vehicles 50,
+                                             Tools 60)
+      build   fills body the first time the tab is shown (errors are caught
+              and shown in the tab)
+      onShow  every time the tab is shown again (optional)
+      search  called as the search box (top right) changes (optional)
+    Adding a new tab id rebuilds the window the next time it opens.
+
+    Other helpers: SP.Tile, SP.ModelTile, SP.CatalogueTab (a ready-made
+    categories + tiles tab), SP.Preview (hover preview), SP.ModelOf,
+    SP.AddToolOption / SP.PickForTool (set by rhylib_toolgun),
+    SP.PickModel / SP.TakePick (pick mode for the Server settings page),
+    SP.NpcWeapon, SP.IconMat, SP.L, SP.BG.
+
+    Client only. Spawning uses the sandbox commands gm_spawn, gm_spawnsent,
+    gm_giveswep, gm_spawnswep, gmod_spawnnpc and gm_spawnvehicle.
 ]]
 
 local Menus = Rhylib.Menus
@@ -22,7 +40,7 @@ SP.tabs = SP.tabs or {}
 local K = Menus.Kit
 local C = K.C
 
--- "#tool.weld.name" style names to text.
+-- SP.L(s): "#tool.weld.name" style names to text (language phrases).
 local function L(s)
     s = tostring(s or "")
     if string.sub(s, 1, 1) == "#" then return language.GetPhrase(string.sub(s, 2)) end
@@ -32,7 +50,8 @@ SP.L = L
 
 local function lower(s) return string.lower(L(s)) end
 
--- Icon materials, cached (false = none).
+-- SP.IconMat(paths): the first of the given material paths that exists, as
+-- a Material, or nil. Cached (false = none).
 local mats = {}
 local function iconMat(paths)
     for _, p in ipairs(paths) do
@@ -53,6 +72,7 @@ SP.IconMat = iconMat
 -- The window's background: solid dark grey (owner 2026-10-07: not see-through; 2026-10-08: a little darker, closer to the rest of the UI).
 SP.BG = Color(44, 47, 49, 255)
 
+-- SP.AddTab(id, def): adds or replaces a tab (see the header).
 function SP.AddTab(id, def)
     def.id = id
     if not SP.tabs[id] then SP.dirty = true end   -- (a re-add of the same tab needs no rebuild)
@@ -63,8 +83,13 @@ end
 -- Tiles and catalogue tabs
 --------------------------------------------------------------------------
 
--- A square tile: icon (or initials) and name. it = { name, mat, run,
--- menu(m), admin, selected() , tip }.
+-- SP.Tile(parent, it): a square tile (104 px): icon (or initials) and name.
+-- it = { name, mat (Material), model (path: a 3D picture when there's no
+-- mat, and the hover preview), run() on click, menu(m) adds right-click
+-- options, spec (for "Spawn with Rhy's toolgun"), admin (ADMIN tag),
+-- selected() (accent outline), tip (tooltip), extra (shown in the preview,
+-- and searched) }. In pick mode a click hands the tile's model over instead.
+-- Returns the DButton (add it to a DIconLayout).
 function SP.Tile(parent, it)
     local S = K.S
     local b = vgui.Create("DButton", parent)
@@ -144,7 +169,9 @@ function SP.AddToolOption(m, spec)
     m:AddSpacer()
 end
 
--- A model tile (props): the engine's spawn icon with our outline.
+-- SP.ModelTile(parent, model, skin, body, run): a model tile (props): the
+-- engine's spawn icon with our outline. body = bodygroup digits string.
+-- run() on click (not in pick mode). Right-click: toolgun / copy path.
 function SP.ModelTile(parent, model, skin, body, run)
     local S = K.S
     local ic = vgui.Create("SpawnIcon", parent)
@@ -314,15 +341,21 @@ local function previewThink()
     placePreview(p)
 end
 
--- Start (or switch) the preview for a hovered tile.
+-- SP.Preview(owner, info): start (or switch) the preview for a hovered
+-- panel. info = { model, skin, body, mat, title, sub }. It hides itself
+-- once owner is no longer hovered. Usable from any panel, not only tiles
+-- (the Server settings pictures use it).
+-- Example: function pnl:OnCursorEntered() Rhylib.Menus.Spawn.Preview(self, { model = mdl, title = "Locker" }) end
 function SP.Preview(owner, info)
     SP.pvOwner, SP.pvInfo, SP.pvAt = owner, info, RealTime()
     if IsValid(SP.pv) and SP.pv:IsVisible() then SP.pvAt = 0 end   -- (already showing: switch at once)
     Rhylib.Hook.Add("Think", "menus.spawnpreview", previewThink)
 end
 
--- A tab with categories on the left and tiles on the right.
--- getItems() = { { cat, name, ...tile fields } } (built when first shown).
+-- SP.CatalogueTab(getItems, catOrder): returns a tab def (build + search)
+-- with categories on the left and tiles on the right. Set title/order on
+-- it, then SP.AddTab it.
+-- getItems() = { { cat, name, ...SP.Tile fields } } (built when first shown).
 -- A search shows matches from every category.
 -- catOrder (optional): category names that come first, in that order;
 -- the rest follow alphabetically.
@@ -518,7 +551,12 @@ local function build()
     show((SP.lastTab and SP.tabs[SP.lastTab]) and SP.lastTab or sortedTabs()[1].id)
 end
 
+-- SP.IsOpen(): true while the window is shown.
 function SP.IsOpen() return IsValid(SP.win) and SP.win:IsVisible() end
+
+-- SP.Open(): shows the window (built on first use, after a new tab was
+-- added, or when the screen size changed). The mouse is free; the
+-- keyboard stays with the game.
 
 function SP.Open()
     if not IsValid(SP.win) or SP.dirty or SP.win.builtW ~= ScrW() or SP.win.builtH ~= ScrH() then
@@ -532,6 +570,7 @@ function SP.Open()
     if def and def.onShow and IsValid(SP.win.bodies[SP.win.tabId]) then def.onShow(SP.win.bodies[SP.win.tabId]) end
 end
 
+-- SP.Close(): hides it (and ends pick mode). True if it was open.
 function SP.Close()
     SP.pick = nil
     if not SP.IsOpen() then return false end
@@ -546,8 +585,11 @@ function SP.Close()
     return true
 end
 
--- Pick mode (Server settings > Models): the window opens on Props and the
--- next model or entity clicked goes to cb(path) instead of spawning.
+-- SP.PickModel(cb, label): pick mode (Server settings > Models): the window
+-- opens on Props and the next model or entity clicked goes to cb(path)
+-- instead of spawning. label is shown in the title ("For <label>").
+-- Close / Esc cancels (cb is not called).
+-- Example: Rhylib.Menus.Spawn.PickModel(function(path) entry:SetText(path) end, "Locker model")
 function SP.PickModel(cb, label)
     SP.Open()
     SP.pick = { cb = cb, label = label }
@@ -580,7 +622,8 @@ end)
 
 local function adminOnly(t) return t.AdminOnly and true or false end
 
--- The NPC's weapon: the player's choice, else one of its own (as sandbox).
+-- SP.NpcWeapon(n): the weapon to give a spawned NPC (n = its list.Get("NPC")
+-- row): the player's gmod_npcweapon choice, else one of its own (as sandbox).
 function SP.NpcWeapon(n)
     local wcv = GetConVar("gmod_npcweapon")
     local w = wcv and wcv:GetString() or ""

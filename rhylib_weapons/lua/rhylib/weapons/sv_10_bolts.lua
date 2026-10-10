@@ -15,6 +15,24 @@
 
     Rockets are bolts too (weapon.Explosive set): slower, longer lived,
     and they do blast damage where they hit instead of a direct hit.
+
+    Realm: server. Public: Bolts.Fire, Bolts.ApplyHits, Bolts.Speed,
+    W.TrainingBlast, Bolts.active (the live bolt list).
+    Console: rhylib_boltrange.
+    Hooks fired:
+      Rhylib.TrainingHit(ply, attacker, damage, inflictor, group)
+          a training bolt or blast hit a player (rhylib_training answers:
+          true = that eliminated them, false = ignored, no hit marker)
+      Rhylib.StunHit(ply, attacker, weapon)
+          a stun bolt hit a player (rhylib_mp decides what it does)
+      Rhylib.Explosion(pos, reach, tier, attacker, inflictor, "rocket")
+          a real (not training) rocket went off (rhylib_radio jammers)
+    Other addons read during a hit: Rhylib.Skills.DamageMult (damage
+    multiplier and crits), Rhylib.Weapons.ShieldBlocks (riot shields),
+    Rhylib.Lying (hits on a lying player's ragdoll count for the player).
+    Fields set on the target during TakeDamageInfo: ply.rhylibHitGroup
+    (the body part, read by rhylib_medical), ply.rhylibFwd (hit came in
+    through the ragdoll).
 ]]
 
 local W = Rhylib.Weapons
@@ -33,6 +51,11 @@ local Config = Rhylib.Config
 Rhylib.Net.Register("wep.shot")
 local SHOT_CELL = 1024
 
+-- Net "wep.shot" (server -> players near the shot), one item per bolt in
+-- the core's batch format:
+--   shooter UInt 13 (entity index), origin Vector, dir Normal,
+--   speed UInt 15 (units/s, so up to 32767), color UInt 4 (BoltColor style),
+--   left Bool (dual pistols: the left gun fired), ahead UInt 6.
 -- ahead: the server bolt's head start (first leg) in 1/100 s, 6 bits.
 local AHEAD_MAX = 63
 local function writeShot(s)
@@ -46,6 +69,8 @@ local function writeShot(s)
 end
 
 -- Hit confirm to the shooter: 0 body, 1 head, 2 down/kill.
+-- Net "wep.hit" (server -> the shooter, batched): kind UInt 2. Drives the
+-- crosshair hit marker and hit sound (cl_20_crosshair.lua).
 Bolts.HIT_BODY, Bolts.HIT_HEAD, Bolts.HIT_KILL = 0, 1, 2
 local hitBatch = Rhylib.Net.CreateBatch("wep.hit", function(h)
     net.WriteUInt(h.kind, 2)
@@ -101,6 +126,10 @@ end
     ammo): no real damage. Players in range and in sight lose sim health
     (hook Rhylib.TrainingHit, rhylib_training), training droids take
     normal blast damage. Falloff like util.BlastDamage.
+
+    W.TrainingBlast(pos, radius, damage, attacker, inflictor): server.
+    Returns true if a hit marker was sent to the attacker.
+    Example: Rhylib.Weapons.TrainingBlast(pos, 250, 100, ply, ent)
 ]]
 local blastTr = {}
 local blastData = { mask = MASK_SOLID_BRUSHONLY, output = blastTr }
@@ -366,10 +395,8 @@ end
 -- After the weapons have fired this tick (the core's batches flush at 1000).
 Rhylib.Hook.Add("Tick", "weapons.shots.flush", flushShots, 990)
 
--- Called from the weapon's PrimaryAttack on the server.
--- opts (optional): speed, color, life, onHit(bolt, tr), onExpire(bolt)
--- override the weapon's own bolt settings (used by the grapple hook).
--- A gun's bolt speed (rockets and special bolts aren't scaled).
+-- Bolts.Speed(weapon): a gun's bolt speed in units/s: SWEP.BoltSpeed (7000
+-- if unset) x config boltSpeedMult. Rockets (SWEP.Explosive) aren't scaled.
 function Bolts.Speed(weapon)
     local s = weapon.BoltSpeed or 7000
     if weapon.Explosive then return s end
@@ -411,9 +438,23 @@ local function firstLegTrace(bolt, from, to, owner)
     return tr, tr.Hit and rewoundGroup(bolt, tr) or nil
 end
 
--- hits (optional): the caller has lag compensation on already (pellets);
--- first-leg hits are queued in this list, and the caller runs
--- Bolts.ApplyHits(hits) after turning compensation off.
+-- Bolts.Fire(owner, weapon, origin, dir, damage, opts, hits): server.
+-- Fires one bolt. Called from the weapon's PrimaryAttack (rhylib_base
+-- FireShot), and by NPCs (rhylib_droids passes a plain table as weapon:
+-- it only needs BoltSpeed, BoltColor, Damage and the like).
+--   owner    player or NPC that fired (gets the kill credit)
+--   weapon   the SWEP (or a table with the same fields)
+--   origin   start point (usually owner:GetShootPos()), dir a unit vector
+--   damage   per hit (nil = weapon.Damage)
+--   opts     (optional) speed, color, life, stun, training,
+--            onHit(bolt, tr), onExpire(bolt): override the weapon's own
+--            bolt settings (used by the grapple hook and stun mode)
+--   hits     (optional) the caller has lag compensation on already
+--            (pellets); first-leg hits are queued in this list, and the
+--            caller runs Bolts.ApplyHits(hits) after turning it off.
+-- Returns nothing. Sends the wep.shot event to nearby players.
+-- Example: Rhylib.Weapons.Bolts.Fire(npc, { BoltSpeed = 6000, BoltColor = 2, Damage = 12 },
+--              npc:EyePos(), (target:EyePos() - npc:EyePos()):GetNormalized())
 function Bolts.Fire(owner, weapon, origin, dir, damage, opts, hits)
     local speed = opts and opts.speed or Bolts.Speed(weapon)
     local isPly = owner:IsPlayer()
@@ -481,7 +522,8 @@ function Bolts.Fire(owner, weapon, origin, dir, damage, opts, hits)
     Bolts.active[#Bolts.active + 1] = bolt
 end
 
--- Applies first-leg hits queued by Bolts.Fire(..., hits), then empties the list.
+-- Bolts.ApplyHits(hits): applies first-leg hits queued by
+-- Bolts.Fire(..., hits), then empties the list. Server.
 function Bolts.ApplyHits(hits)
     for i = 1, #hits do
         local h = hits[i]
@@ -530,6 +572,8 @@ end)
 --   rhylib_boltrange 6000     bolts stop after 6000 units (~115 m)
 --   rhylib_boltrange 0        off: bolts fly their full life
 -- Saved (Data "weapons"/"boltRange"), so it stays after a restart.
+-- Permission rhylib.weapons.boltrange (default admin). Clients learn the
+-- value through Global2Int "rhylib_boltRange" (W.BoltRange()).
 --------------------------------------------------------------------------
 
 local function applyBoltRange(n)

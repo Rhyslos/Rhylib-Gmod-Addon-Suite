@@ -9,6 +9,12 @@
       Revive with a revive kit or a first aid kit (the medic picks).
 
     The downed list is rebuilt four times a second, not every frame.
+
+    With rhylib_menus the interaction wheel (hook Rhylib.WheelOptions)
+    offers the same actions plus "Injuries"; the wheel takes E on downed
+    players, so the small E menu here is the fallback without it.
+    Public: Med.ShowNote(text), Med.clientDown (list of downed players).
+    Nets: med.note (in), med.act (out: kind 4 bits, target index 8 bits).
 ]]
 
 local Med = Rhylib.Medical
@@ -39,7 +45,8 @@ local function faCharge()
 end
 
 local note, noteTime = nil, 0
--- The same short message, from the client (e.g. a kit with nobody aimed at).
+-- Med.ShowNote(text): the same short message under the crosshair, from the
+-- client (e.g. a kit with nobody aimed at). Shows for 2.5 s.
 function Med.ShowNote(text) note, noteTime = text, RealTime() end
 Rhylib.Net.Receive("med.note", function()
     note, noteTime = net.ReadString(), RealTime()
@@ -49,8 +56,10 @@ end)
 -- Drawing helpers (house style when rhylib_hud is installed)
 --------------------------------------------------------------------------
 
+-- Pixels at 1080p scaled to the screen height.
 local function S(n) return math.floor(n * ScrH() / 1080 + 0.5) end
 
+-- A HUD plate: rhylib_hud's frame when installed, else a plain box.
 local function plate(x, y, w, h, title, rule)
     local HUD = Rhylib.HUD
     if HUD and HUD.Frame then
@@ -210,6 +219,7 @@ local function drawMarkers(ply)
                     surface.DrawRect(x - r, y - th, r * 2, th * 2)
                     surface.DrawRect(x - th, y - r, th * 2, r * 2)
                     local status = Med.StabilisedBy(t) and "stabilised" or clock(left)
+                    -- (0.019 m per unit: Source units to metres, roughly)
                     text(math.floor(dist * 0.019) .. " m · " .. status, 12, x, y + 14 * s, C.text)
                     if triage then
                         local by = t:GetNW2Entity("rhylib_healBy")
@@ -261,6 +271,7 @@ end)
 -- E menu on a downed player
 --------------------------------------------------------------------------
 
+-- Ask the server to start an action on a downed player (med.act).
 local function send(kind, target)
     Rhylib.Net.Start("med.act")
     net.WriteUInt(kind, Med.ACT_BITS)
@@ -330,6 +341,8 @@ local function openMenu(ply, t)
 end
 
 -- Interaction wheel (rhylib_menus): the same actions, plus the injury menu.
+-- Hook Rhylib.WheelOptions(target, me, add): add(label, run(target),
+-- { order, sub, disabled }) puts an option on the wheel.
 Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.wheel", function(t, me, add)
     if Med.IsDown(me) then return end
     local cfgRange = Med.Cfg("viewRange") or 120
@@ -365,6 +378,8 @@ Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.wheel", function(t, me, add)
     end
 end)
 
+-- E (+use) on a downed player opens the small menu (the wheel takes E
+-- first when rhylib_menus is installed: its hook runs at -20).
 Rhylib.Hook.Add("PlayerBindPress", "medical.menu", function(ply, bind, pressed)
     if not pressed or not string.find(bind, "+use", 1, true) then return end
     if Med.IsDown(ply) or Med.Action(ply) ~= 0 or Med.Dragging(ply) then return end

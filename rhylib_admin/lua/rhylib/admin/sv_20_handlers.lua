@@ -12,6 +12,13 @@
       freeze, mute (text), gag (voice): session only
     Spawned things are remembered per player (ent.rhylibSpawner) for cleanup.
     Handlers return the text to echo and log, or nil, "error for the caller".
+
+    Server only. Handlers for other addons' systems (roster, MP jail,
+    medical, DarkRP jobs and money) check the addon is there and return
+    an error like "rhylib_roster isn't installed" if not.
+    Hooks it answers: Rhylib.CanStun / Rhylib.CanKnockDown (god mode = no),
+    Rhylib.CanChat (mute), PlayerCanHearPlayersVoice (gag), the
+    PlayerSpawn* hooks (spawn rights), CanTool, EntityTakeDamage (buddha).
 ]]
 
 local Admin = Rhylib.Admin
@@ -28,6 +35,10 @@ local function you(caller, t) return caller == t and "themselves" or name(t) end
 -- Powers
 --------------------------------------------------------------------------
 
+-- Admin.SetCloak(ply, on): invisible or visible again. Also turns no
+-- target on with it (off again only if !notarget wasn't on by itself).
+-- Kept through respawns (PlayerSpawn below). Server only.
+-- Example: Rhylib.Admin.SetCloak(ply, true)
 function Admin.SetCloak(ply, on)
     ply.rhylibCloak = on or nil
     ply:SetNW2Bool("rhylib_cloak", on)
@@ -56,6 +67,11 @@ Rhylib.Hook.Add("PlayerSwitchWeapon", "admin.cloak", function(ply, old, new)
     end)
 end)
 
+-- Admin.SetNoTarget(ply, on): FL_NOTARGET on or off (NPCs and droids
+-- ignore the player). Turning it off leaves it on for a downed player when
+-- rhylib_medical's noTarget setting says downed players keep it.
+-- ply.rhylibAdminNoTarget = it's on because of us (cloak or !notarget);
+-- ply.rhylibAdminNoTargetOwn = !notarget itself is on.
 function Admin.SetNoTarget(ply, on)
     ply.rhylibAdminNoTarget = on or nil
     if on then
@@ -66,6 +82,8 @@ function Admin.SetNoTarget(ply, on)
 end
 
 -- Spawn menu rights for staff with "spawn" (others: sandbox / DarkRP rules).
+-- Returns true (allowed) or nothing (let the other hooks decide); never
+-- blocks. Priority -50 runs before DarkRP's own checks.
 local function canSpawn(ply)
     if Admin.Has(ply, "spawn") then return true end
 end
@@ -91,7 +109,7 @@ Rhylib.Hook.Add("PlayerSpawnedRagdoll", "admin.track", function(ply, _, ent) rem
 Rhylib.Hook.Add("PlayerSpawnedEffect", "admin.track", function(ply, _, ent) remember(ply, ent) end)
 Rhylib.Hook.Add("PlayerSpawnedSWEP", "admin.track", remember)
 
--- Voice and frozen players.
+-- Gagged players: nobody hears their voice.
 Rhylib.Hook.Add("PlayerCanHearPlayersVoice", "admin.gag", function(listener, talker)
     if Admin.gagged[talker] then return false, false end
 end, -50)
@@ -134,7 +152,9 @@ end)
 -- Teleport helpers
 --------------------------------------------------------------------------
 
--- A free standing spot near pos (tries a ring around it).
+-- A free standing spot near pos: the spot itself, then 8 directions at 48
+-- and then 90 units, each tested with a player-sized hull (times scale).
+-- `who` = entities the test ignores. Falls back to pos + 8 up.
 local function freeSpot(pos, who, scale)
     local sc = scale or 1
     local mins, maxs = Vector(-16, -16, 0) * sc, Vector(16, 16, 72) * sc
@@ -152,6 +172,7 @@ local function freeSpot(pos, who, scale)
     return pos + Vector(0, 0, 8)
 end
 
+-- Teleports a player and remembers where they were (for !return).
 local function moveTo(ply, pos)
     Admin.returnPos[ply] = ply:GetPos()
     if ply:InVehicle() then ply:ExitVehicle() end
@@ -263,7 +284,8 @@ H.teleport = function(caller, t)
     return name(caller) .. " teleported " .. you(caller, t)
 end
 
--- Toggles: on yourself only needs .self-style rights through the command perm.
+-- Toggles: each run flips it on or off. A rank with only "<perm>.self"
+-- (e.g. "noclip.self") can use them on itself.
 H.noclip = function(caller, t)
     local on = t:GetMoveType() ~= MOVETYPE_NOCLIP
     t:SetMoveType(on and MOVETYPE_NOCLIP or MOVETYPE_WALK)
@@ -442,6 +464,7 @@ H.cancelmap = function(caller)
 end
 
 -- Rhylib fixtures (armoury, jail, terminals...): freezeprops leaves them be.
+-- Rhylib.PLACEMENT_CLASSES is a set other addons can add class names to.
 local function isPlacement(e)
     if e.placeIndex then return true end
     local c = e:GetClass()
@@ -486,6 +509,8 @@ local function cleanable(e)
     return false
 end
 
+-- No target: everything cleanable() says. With a target: only what that
+-- player spawned (ent.rhylibSpawner), not weapons and not permanent things.
 H.cleanup = function(caller, t)
     local only = IsValid(t) and t or nil
     local n = 0
@@ -544,6 +569,9 @@ H.setjob = function(caller, t, a)
 end
 
 -- Watching someone: back where you were after. Hidden while watching.
+-- Admin.StopSpectate(ply, move): ends it; move = put them back where they
+-- started (not used on respawn). The watcher's state is ply.rhylibSpec
+-- { pos, ang, target, noTarget (had FL_NOTARGET before) }.
 local function stopSpec(ply, move)
     local s = ply.rhylibSpec
     if not s then return end
@@ -778,7 +806,8 @@ H.buddha = function(caller, t)
 end
 
 -- Buddha: after armour (100); rhylib_medical skips buddha players (150).
--- +1: the engine rounds fractional damage up.
+-- Runs at 140: after armour has cut the damage, before medical would down
+-- the player. +1: the engine rounds fractional damage up.
 Rhylib.Hook.Add("EntityTakeDamage", "admin.buddha", function(ent, dmg)
     if ent.rhylibBuddha and ent:IsPlayer() and dmg:GetDamage() + 1 >= ent:Health() then
         dmg:SetDamage(math.max(0, ent:Health() - 1))
@@ -880,6 +909,7 @@ Rhylib.Hook.Add("PlayerSpawn", "admin.events", function(ply)
 end)
 
 -- Sounds and decals on every client (admin.client: 0 play, 1 stop, 2 decals).
+-- net: UInt 2 kind, String sound path ("" for 1 and 2).
 local function toClients(kind, text)
     Rhylib.Net.Start("admin.client")
     net.WriteUInt(kind, 2)
@@ -909,6 +939,8 @@ H.cleardecals = function(caller)
 end
 
 -- Jail cell rings (rhylib_mp) off or on for everyone (kept across maps).
+-- Global2Bool rhylib_hideCells, saved in Data "admin" "hideCells" (1 / 0)
+-- and set again at InitPostEntity.
 Rhylib.Hook.Add("InitPostEntity", "admin.hidecells", function()
     SetGlobal2Bool("rhylib_hideCells", Rhylib.Data.Get("admin", "hideCells") == 1)
 end)

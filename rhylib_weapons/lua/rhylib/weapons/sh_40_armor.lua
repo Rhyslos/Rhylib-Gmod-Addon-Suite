@@ -15,6 +15,9 @@
     Uses the engine's own armour value (Armor / SetArmor / GetMaxArmor),
     so DarkRP jobs, chargers and admin tools keep working. The server
     takes over the damage maths; see sv_40_armor.lua.
+
+    Realm: shared (the maths), server (sv_40_armor.lua). Config module
+    "armor" below. The HUD (rhylib_hud) draws the four bars.
 ]]
 
 Rhylib.Armor = Rhylib.Armor or {}
@@ -26,14 +29,16 @@ Config.Register("armor", "drain", 0.5, "Armour lost per point of incoming damage
 Config.Register("armor", "spawnArmor", 100, "Armour players spawn with (a DarkRP job's armor = N overrides it)")
 Config.Register("armor", "bypass", bit.bor(DMG_FALL, DMG_DROWN, DMG_POISON, DMG_RADIATION), "Damage types armour ignores (same as the engine's list)")
 
--- Tier 0-4 for an armour value.
+-- A.Tier(armor, maxArmor): tier 0-4 for an armour value (maxArmor nil or
+-- 0 = 100). Example: Rhylib.Armor.Tier(ply:Armor(), ply:GetMaxArmor())
 function A.Tier(armor, maxArmor)
     if armor <= 0 then return 0 end
     if not maxArmor or maxArmor <= 0 then maxArmor = 100 end
     return math.Clamp(math.ceil(armor / maxArmor * 4), 1, 4)
 end
 
--- Share of damage blocked (0-1) for an armour value.
+-- A.Mitigation(armor, maxArmor): share of damage blocked (0-1) for an
+-- armour value, from config armor "mitigation" for its tier.
 function A.Mitigation(armor, maxArmor)
     local tier = A.Tier(armor, maxArmor)
     if tier == 0 then return 0 end

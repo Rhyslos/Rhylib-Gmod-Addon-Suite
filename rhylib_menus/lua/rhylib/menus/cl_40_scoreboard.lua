@@ -7,6 +7,12 @@
 
     Values (ping, kills, ...) are read while drawing; the rows are only
     rebuilt when someone joins, leaves or changes job.
+
+    Client only. Adds: the "RhylibScoreboard" panel (Menus.scoreboard),
+    Menus.AddStaffOptions, and the "Staff" interaction-wheel option.
+    Hooks: ScoreboardShow / ScoreboardHide (other scoreboards' hooks on
+    those events are removed at InitPostEntity, so ours is the only one),
+    PlayerBindPress (right-click frees the mouse), OnScreenSizeChanged.
 ]]
 
 local Menus = Rhylib.Menus
@@ -59,6 +65,7 @@ function PANEL:Init()
     self.nextCheck = 0
 end
 
+-- One string of every player's UserID and team: when it changes, Rebuild.
 function PANEL:Signature()
     local parts = {}
     for _, p in ipairs(player.GetAll()) do
@@ -266,8 +273,11 @@ Rhylib.Hook.Add("OnScreenSizeChanged", "menus.scoreboard", function()
     if IsValid(Menus.scoreboard) then Menus.scoreboard:Remove() end
 end)
 
--- Staff actions on a player (scoreboard row, interaction wheel). With
--- rhylib_admin also Heal and Revive.
+-- Menus.AddStaffOptions(m, p): adds staff actions on player p to menu m
+-- (scoreboard row, interaction wheel). With rhylib_admin also Heal and
+-- Revive, run through Admin.Run; else through Menus.RunPlayerAction.
+-- The server still checks every command.
+-- Example: local m = Rhylib.Menus.Kit.Menu() Rhylib.Menus.AddStaffOptions(m, ply) m:Open()
 function Menus.AddStaffOptions(m, p)
     local A = Rhylib.Admin
     local rhylib = A and A.Run and A.TargetWord

@@ -9,10 +9,30 @@
     Permission rhylib.toolgun (admin). Get one with rhylib_toolgun in the
     console, !toolgun in chat, or the spawn menu (Weapons > Rhylib).
 
-    Rhylib.Tool.ENTRIES: { id, name, cat, class, count (several at once),
-    named (asks for a name: training beacons), save (console command) }.
-    Entries whose class isn't installed are left out. Other addons can add
-    rows with hook Rhylib.ToolEntries(list).
+    Permission rhylib.toolgun gives everything; an entry with `perm` can
+    also be used by staff who only have that permission (rhylib_eod's
+    gamemaster entries).
+
+    Entry fields (the ALL list below; Tool.Entries() returns the installed
+    ones, with `index` added):
+      id, name, cat       unique id (client convar rhylib_tool_entry), label,
+                          category in the spawn window's Rhylib tab
+      class               entity placed by LMB (RMB removes things of it)
+      count = true        "Droids at once" 1/3/5 places that many in a ring
+      named = true        gets the "Beacon name" text (SetBeaconName)
+      marker, side        droid marker kind 1-3 and side (1 = clones)
+      order, side         a brush: D.PaintMode on NPCs near the aim point
+      preset              a rhylib_droids preset squad (D.SpawnPreset)
+      follow = true       the clone follow tool
+      perma = true        the Permanent tool (Rhylib.Perma)
+      place = fn          own placing: fn(ply, tr, count, yaw) -> list of entities
+      perm = "name"       limited access (see above)
+      save                old console save command; kept but unused
+    Entries whose class isn't installed are left out (orders, presets and
+    follow need rhylib_droids). Other addons add rows with hook
+    Rhylib.ToolEntries(list) (append tables; those aren't filtered).
+    Shared file: Tool.Entries, ById, ByClass, ClassModel, EntryModel,
+    PermaTarget, FullAccess, CanEntry, EntryPerms, CAT_ORDER, RANGE.
 ]]
 
 Rhylib.Tool = Rhylib.Tool or {}
@@ -116,7 +136,8 @@ local ALL = {
 -- not alphabetical); others follow alphabetically.
 Tool.CAT_ORDER = { "Staff tools", "Clone NPCs", "Clone orders", "Droid NPCs", "Droid orders", "EOD", "Spawns", "Armoury", "Medical", "Base", "Training", "Testing" }
 
--- The installed entries (built once, after entities are registered).
+-- Tool.Entries(): the installed entries (built once on first call, after
+-- entities are registered; fires hook Rhylib.ToolEntries(list) then).
 function Tool.Entries()
     if Tool.list then return Tool.list end
     local list = {}
@@ -145,6 +166,8 @@ end
 local function ok(m) return modelExists(m) and m or nil end
 local function cfg(module, key, fallback) return ok(Rhylib.Config.Get(module, key)) or fallback end
 
+-- Tool.ClassModel(class): the model placing that class gives, or nil.
+-- Tool.EntryModel(entry): the same for an entry (presets: their main unit).
 function Tool.ClassModel(class)
     local t = class and scripted_ents.Get(class)
     if not t then return nil end
@@ -218,6 +241,7 @@ function Tool.PermaTarget(ply)
     return best
 end
 
+-- Tool.ById(id) / Tool.ByClass(class): the entry, or nil.
 function Tool.ById(id)
     for _, e in ipairs(Tool.Entries()) do
         if e.id == id then return e end
@@ -243,6 +267,8 @@ local function has(ply, perm)
     return IsValid(ply) and ply:IsAdmin()
 end
 
+-- Tool.FullAccess(ply): has rhylib.toolgun. Tool.CanEntry(ply, entry): may
+-- use that entry. Tool.EntryPerms(): every entry `perm` in use.
 function Tool.FullAccess(ply) return has(ply, "rhylib.toolgun") end
 
 function Tool.CanEntry(ply, e)

@@ -19,10 +19,16 @@
 
     NW2Float rhylib_knockEnd: when it ends (-1 = no set end, 0 = not knocked).
     NW2Bool rhylib_knockSoft.
+    Hook fired: Rhylib.PlayerUnknocked(ply) when it ends (timer, L.Unknock,
+    downed, death, spawn). Listens to Rhylib.PlayerDowned (rhylib_medical).
+    While knocked: no suicide, no DarkRP job change.
+    Example (server): Rhylib.Lying.Knock(ply, 4, Vector(0, 0, 200), true)
+    -- a 4 s soft knockdown with a small throw.
 ]]
 
 local L = Rhylib.Lying
 
+-- L.Knocked(ply): true while knocked down (shared).
 function L.Knocked(ply)
     return ply:GetNW2Float("rhylib_knockEnd", 0) ~= 0
 end
@@ -72,6 +78,8 @@ local function endSoft(ply)
     end
 end
 
+-- L.Unknock(ply) (server): get up now (the ragdoll goes unless they were
+-- downed or stunned meanwhile). Fires Rhylib.PlayerUnknocked.
 function L.Unknock(ply)
     if not IsValid(ply) then return end
     timer.Remove("Rhylib.Knock." .. ply:EntIndex())
@@ -87,6 +95,11 @@ function L.Unknock(ply)
     hook.Run("Rhylib.PlayerUnknocked", ply)
 end
 
+-- L.Knock(ply, secs, push, soft) (server): knock down. Refused (returns
+-- false) when dead, downed, already knocked or already lying (stunned).
+-- secs 0/nil = until L.Unknock. push: a velocity (soft: added to the
+-- player, with at least 170 up; else added to every ragdoll part).
+-- soft: no server ragdoll (see the top).
 -- Returns true if they went down.
 function L.Knock(ply, secs, push, soft)
     if not IsValid(ply) or not ply:Alive() or ply.rhylibDown or L.Knocked(ply) or L.Ragdoll(ply) then return false end

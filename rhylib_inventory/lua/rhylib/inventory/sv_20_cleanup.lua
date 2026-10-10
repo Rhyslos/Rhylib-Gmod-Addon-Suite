@@ -1,4 +1,8 @@
 --[[
+    Hotbar cleanup (server only). Anything in your hands that isn't an
+    inventory item (the sandbox physgun, tool gun, HL2 weapons...) shows
+    in an overflow hotbar slot; these commands strip those weapons.
+
     rhylib_cleanhotbar
         Strips every weapon you're holding that isn't in your inventory
         (the physgun, tool gun, HL2 weapons from the sandbox loadout, ...).
@@ -6,7 +10,8 @@
         Toggles doing that automatically every time you spawn, until you
         leave the server.
 
-    Only affects your own weapons.
+    Only affects your own weapons. Anyone may use it (no permission). The
+    Stowed and hand weapons are never stripped.
 ]]
 
 local Inv = Rhylib.Inventory
@@ -17,6 +22,8 @@ local function inInventory(ply, class)
     return def and def.weapon and Inv.Has(ply, class)
 end
 
+-- Inv.CleanHotbar(ply): strips every weapon ply holds that isn't an
+-- inventory item they carry. Returns how many were removed.
 function Inv.CleanHotbar(ply)
     local removed = 0
     for _, wep in ipairs(ply:GetWeapons()) do

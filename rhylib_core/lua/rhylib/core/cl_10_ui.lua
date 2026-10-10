@@ -5,6 +5,10 @@
         draw.SimpleText("Ammo", Rhylib.UI.Font(18), x, y, Rhylib.UI.Colors.text)
 
     Fonts are created once per size and weight, then reused.
+
+    UI.Colors: the shared palette (bg, panel, border, text, textDim,
+    accent, good, warn, bad). The fuller menu kit (panels, buttons) is
+    rhylib_menus' Rhylib.Menus.Kit.
 ]]
 
 Rhylib.UI = Rhylib.UI or {}
@@ -26,6 +30,10 @@ UI.Colors = {
 -- no string building, so it is safe to call every frame.
 UI.fonts = UI.fonts or {}
 
+-- UI.Font(size, weight): a font name for draw/surface calls. size is in
+-- pixels at 1080p and scales with the screen height; weight default 500.
+-- Roboto. Safe to call every frame.
+-- Example: draw.SimpleText("Hi", Rhylib.UI.Font(24, 700), x, y, Rhylib.UI.Colors.accent)
 function UI.Font(size, weight)
     weight = weight or 500
     local byWeight = UI.fonts[weight]

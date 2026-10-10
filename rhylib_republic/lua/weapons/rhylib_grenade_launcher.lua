@@ -13,11 +13,16 @@
 
     Carrier and prop values are first guesses copied from the DP-23: tune
     with rhylib_vm_editor / rhylib_wm_editor and paste the lines below.
+
+    Class rhylib_grenade_launcher. Shared: one file for server and client (AddCSLuaFile).
+    Base rhylib_base (rhylib_weapons), where every SWEP field is explained;
+    only the fields that differ are set here.
 ]]
 
 AddCSLuaFile()
 
 local Config = Rhylib.Config
+-- Settings (module "weapons"; registered here, so only with rhylib_republic).
 Config.Register("weapons", "launcherRange", 60, "Grenade launcher: longest shot on level ground (metres, aimed about 45° up)")
 Config.Register("weapons", "launcherSpread", 0.6, "Grenade launcher: random aim error (degrees)")
 Config.Register("weapons", "launcherDamage", 140, "Grenade launcher: blast damage at the centre (thermal detonator 140)")
@@ -56,6 +61,9 @@ SWEP.Primary = { ClipSize = 1, DefaultClip = 1, Automatic = true, Ammo = "none" 
 SWEP.Secondary = { ClipSize = -1, DefaultClip = -1, Automatic = true, Ammo = "none" }
 
 SWEP.FireRate = 60
+-- Recoil: view kick per shot (rhylib_weapons cl_50_recoil): up = degrees up,
+-- side = random sideways, bias = lean -1 (left) .. 1 (right), recover = share
+-- of the climb that settles back, aimMult = multiplier while aiming.
 SWEP.Recoil = { up = 3.2, side = 0.6, bias = 0, recover = 0.85, aimMult = 0.8 }
 SWEP.Damage = 0
 SWEP.FireSound = "weapons/explosives_cannons_superlazers/wpn_mortar_cannon_r1_shoot_01.ogg"
@@ -65,6 +73,7 @@ SWEP.Mags = {}                 -- (its rounds are thermal detonator items)
 SWEP.FireModes = { "semi" }
 SWEP.AutoReload = true         -- the next thermal goes in by itself after a shot
 SWEP.UsesCell = false
+-- Spare magazines / cells put in your pouch when you pick it up (rhylib_base).
 SWEP.StartMags = 0
 SWEP.StartCells = 0
 
@@ -76,6 +85,10 @@ SWEP.InvH = 1
 SWEP.InvLarge = true
 SWEP.InvWeight = 4.5
 
+-- Spread: cone angles in degrees (rhylib_weapons sh_10_spread): hip / aim =
+-- resting cone, kickMain / kickSide = how far the crosshair arcs move per shot,
+-- bloomPerShot (up to bloomMax) = growth of the whole cone, aimKickMult /
+-- aimOffsetMult = share of that while aiming.
 SWEP.Spread = {
     hip = 1.2, aim = 0.6, kickMain = 0.8, kickSide = 0.3,
     bloomPerShot = 0.4, bloomMax = 1.5, aimKickMult = 0.5, aimOffsetMult = 0.6,
@@ -95,6 +108,8 @@ local function gravity()
     return g > 1 and g or 600
 end
 
+-- SWEP:LaunchSpeed(): muzzle speed (units/s) for the configured longest
+-- shot. Shared.
 -- Muzzle speed for the configured longest shot (from LAUNCH_HEIGHT onto
 -- level ground: R² = u(u + 2h), u = v²/g).
 function SWEP:LaunchSpeed()
@@ -103,6 +118,7 @@ function SWEP:LaunchSpeed()
     return math.sqrt(gravity() * (math.sqrt(h * h + R * R) - h))
 end
 
+-- SWEP:RangeAt(pitch) -> metres. Shared (the HUD uses it).
 -- Metres a shot at this view pitch (Source: negative = up) lands away on
 -- level ground.
 function SWEP:RangeAt(pitch)
@@ -113,6 +129,9 @@ function SWEP:RangeAt(pitch)
     return vx * t / UNITS_PER_M
 end
 
+-- SWEP:RoundsCarried() -> how many thermals (any of SWEP.Rounds) the owner
+-- carries. Server: from the inventory; client: only for your own weapon,
+-- cached 0.25 s.
 -- Thermals carried (server: inventory; client: your own copy of it).
 function SWEP:RoundsCarried()
     local o = self:GetOwner()
@@ -137,6 +156,8 @@ function SWEP:RoundsCarried()
     return n
 end
 
+-- SWEP:FireShot(): replaces rhylib_base's shot (no bolt). Takes the round,
+-- plays the sound and kick, and on the server calls SWEP:Launch.
 -- One shot: a thermal detonator on impact, lobbed along the aim.
 function SWEP:FireShot()
     local owner = self:GetOwner()
@@ -156,6 +177,9 @@ function SWEP:FireShot()
 end
 
 if SERVER then
+    -- SWEP:Launch(ply): spawns a rhylib_grenade of kind "impact" with the
+    -- launcher's damage / radius (× EOD Demolitions), aimed with a random
+    -- error of launcherSpread, at LaunchSpeed() with no drag. Server only.
     function SWEP:Launch(o)
         local ang = o:EyeAngles()
         local err = Config.Get("weapons", "launcherSpread") or 0.6
@@ -195,6 +219,9 @@ if SERVER then
         end
     end
 
+    -- StartReload / FinishReload replace rhylib_base's magazine reload.
+    -- FinishReload takes one thermal item (first match in SWEP.Rounds) and
+    -- notes whether it was a training one (self.loadedTraining).
     -- R (or the automatic reload after a shot): load one thermal.
     function SWEP:StartReload(kind)
         if self:IsReloading() or kind ~= 1 then return end
@@ -247,6 +274,7 @@ if SERVER then
     end
 end
 
+-- Saved with the inventory item (rhylib_inventory): { clip, mode, safe, tr }.
 -- Inventory data: the round in the breech (and whether it's training).
 function SWEP:GetInventoryData()
     return { clip = self:Clip1(), mode = 1, safe = self:GetSafety() or nil, tr = self.loadedTraining or nil }
@@ -260,6 +288,8 @@ function SWEP:SetInventoryData(data)
 end
 
 if CLIENT then
+    -- rhylib_hud asks guns for these two: HUDModeText() replaces the fire
+    -- mode text, HUDSpare() -> count, label for the spare ammo.
     -- By the ammo counter: the range for your aim, not a fire mode.
     function SWEP:HUDModeText()
         local o = self:GetOwner()

@@ -10,6 +10,7 @@
       missing), so while it isn't installed they're taken out of the spawn
       menus (not spawnable) instead of erroring when picked.
     Only their hooks and weapon list entries; none of their files.
+    Realm: shared.
 ]]
 
 local function quiet()

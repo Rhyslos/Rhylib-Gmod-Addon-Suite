@@ -3,7 +3,21 @@
     every walking player's path since the last check), the presser who
     must hold still, detonation, chain reactions, the defusal steps (dig,
     safety pin(s) on the moving needle, lift), and marking from the
-    mine scanner.
+    mine scanner. Training mine setup too.
+
+    Fires Rhylib.Explosion(pos, mineChain, 1, nil, mine, "mine") when a
+    mine goes off, and listens to it so blasts nearby set mines off
+    (chains). Explosions from droids are ignored.
+
+    Nets (prefix "rhylib."):
+      eod.mineuse   client -> server: mine (E pressed on it); rate 6/s
+      eod.mineopen  server -> player: mine, zone centre (7 bits), zone
+                    width, needle period, needle phase (floats)
+      eod.mineact   client -> server: mine, op (3 bits): 0 dig start,
+                    1 dig done, 2 pin, 3 lift start, 4 lift done, 5 close
+      eod.minemark  client -> server: mine (scanner RMB); rate 8/s
+      eod.trainmine client -> server: training mine, large (bool), shown
+                    (bool), level (2 bits), pins (2 bits); rate 4/s
 ]]
 
 local E = Rhylib.EOD
@@ -11,7 +25,7 @@ local Net = Rhylib.Net
 
 for _, n in ipairs({ "eod.mineopen" }) do Net.Register(n) end
 
-E.mines = E.mines or {}
+E.mines = E.mines or {}   -- [mine entity] = true, every armed mine (AP, LAP, training)
 
 local function walkOk(p) return IsValid(p) and p:Alive() and p:GetMoveType() ~= MOVETYPE_NOCLIP end
 local function holdsTool(p)
@@ -19,6 +33,11 @@ local function holdsTool(p)
     return IsValid(w) and w:GetClass() == "rhylib_toolgun"
 end
 
+-- E.SetupMine(mine): arm a mine (ENT:Initialize calls it). Rolls its fuse:
+-- mine.eodm = { center (18-82), width (AP 16, LAP 10), period (AP
+-- 1.4-1.9 s, LAP 0.95-1.25 s), ph, armAt (2 s from now) }. Training
+-- mine levels scale the width and period (easy ×1.6 / ×1.4, hard
+-- ×0.65 / ×0.75).
 function E.SetupMine(mine)
     if mine.IsTrainingMine and E.ArmedBeep then E.ArmedBeep(mine) end
     local lap = mine:IsLarge()
@@ -37,6 +56,8 @@ function E.SetupMine(mine)
 end
 
 -- Training mines: back in the ground, ready to try again.
+-- E.MineReset(mine): frees the presser, clears dug / safe / pins / mark,
+-- re-applies the type (model and box), re-buries it and rolls a new fuse.
 function E.MineReset(mine)
     local pr = mine:GetPresser()
     if IsValid(pr) and pr:GetNW2Entity("rhylib_onMine") == mine then pr:SetNW2Entity("rhylib_onMine", NULL) end
@@ -53,6 +74,8 @@ end
 
 -- Half buried: the top third shows (again after a training mine switches
 -- AP/LAP, since the model and its size change).
+-- E.BuryMine(mine): needs mine.eodGround = { ground pos, ground normal }
+-- (set by E.PlaceMines). Sinks it so 38% of its height shows.
 function E.BuryMine(mine)
     local g = mine.eodGround
     if not g then return end
@@ -62,6 +85,11 @@ end
 
 -- Toolgun: n mines around the aimed spot (spread 0 = exactly there),
 -- lapShare = chance each is a LAP. Half buried. Returns the entities.
+-- E.PlaceMines(trace, n, spread, lapShare, class): n is 1-40; only
+-- ground flatter than about 45° is used, mines stay 70 units apart (8
+-- tries each, so fewer may be placed), class overrides the AP / LAP
+-- pick (training mines). Server.
+-- Example: Rhylib.EOD.PlaceMines(ply:GetEyeTrace(), 10, 400, 0.25)
 function E.PlaceMines(tr, n, spread, lapShare, cls)
     local out, spots = {}, {}
     n = math.Clamp(n or 1, 1, 40)
@@ -104,6 +132,13 @@ end
 -- Detonation
 --------------------------------------------------------------------------
 
+-- E.MineBoom(mine, cause): set a mine off (cause "mine" or "minepin",
+-- E.CAUSES keys). Blast apRadius / apDamage (LAP: lapRadius /
+-- lapDamage) from just above its top. The presser gets the manual line,
+-- window viewers what happened. Does nothing to a pinned (safe) mine.
+-- Training mines only spark, tell the presser and viewers, and reset
+-- after 3 s.
+-- Example: Rhylib.EOD.MineBoom(mine, "mine")
 function E.MineBoom(mine, cause)
     if not IsValid(mine) or mine.eodOver or mine:GetSafe() then return end
     mine.eodOver = true
@@ -165,6 +200,8 @@ Rhylib.Hook.Add("Rhylib.Explosion", "eod.mines", function(pos, reach, tier, atta
 end)
 
 -- Shot (bolts, bullets, blasts that reach it): it goes off.
+-- E.MineShot(mine, dmginfo): ENT:OnTakeDamage calls it. 8 damage or more,
+-- not blast damage, not from a droid or a toolgun holder.
 function E.MineShot(mine, dmg)
     if mine.eodOver or mine:GetSafe() or mine.IsTrainingMine or dmg:GetDamage() < 8 then return end
     if dmg:IsDamageType(DMG_BLAST) then return end   -- (blasts: the Rhylib.Explosion hook above, with its own reach)
@@ -178,6 +215,9 @@ end
 -- Pressing: every walking player's path since the last check
 --------------------------------------------------------------------------
 
+-- Distance (flat, x/y only) from point p to the segment a-b. The tick
+-- checks each player's whole path since the last check, so running fast
+-- over a mine between two 0.1 s checks still presses it.
 local function segDist2D(p, a, b)
     local dx, dy = b.x - a.x, b.y - a.y
     local l2 = dx * dx + dy * dy
@@ -186,6 +226,8 @@ local function segDist2D(p, a, b)
     return math.sqrt((p.x - cx) ^ 2 + (p.y - cy) ^ 2)
 end
 
+-- Player p stepped on it: stop them, mark them (NW2 rhylib_onMine /
+-- rhylib_mineAt, which the shared "click" in sh_00_config reads), click.
 local function press(mine, p)
     mine:SetPresser(p)
     mine.pressPos = p:GetPos()
@@ -197,6 +239,12 @@ local function press(mine, p)
     E.Msg(p, "Click. You're standing on a mine: don't move. Someone with an EOD kit can dig it out and pin it.", true)
 end
 
+-- Every 0.1 s ("Rhylib.EOD.Mines"; does nothing with no mines). For each
+-- mine: during the click (E.MINE_GRACE) the presser's rest spot is
+-- taken; after it, moving more than mineShift (flat), being in the air
+-- for more than 0.3 s, dying or noclip sets it off. A mine nobody is on
+-- (armed, not dug) checks walkers' paths (within 40 units of height,
+-- ap/lapTrigger flat) and clone NPCs (go off at once).
 local function tick()
     if next(E.mines) == nil then return end
     local now = CurTime()
@@ -275,7 +323,7 @@ end)
 -- Defusing: E on a mine (the client finds it and asks), then the steps
 --------------------------------------------------------------------------
 
-local REACH = 110
+local REACH = 110   -- units (+30 slack) to work on a mine
 
 local function nearMine(p, m)
     return IsValid(m) and m.IsRhylibMine and walkOk(p) and p:GetPos():DistToSqr(m:GetPos()) <= (REACH + 30) ^ 2
@@ -303,6 +351,10 @@ Net.Receive("eod.mineuse", function(p)
 end, { rate = 6, burst = 6 })
 
 -- 0 dig start, 1 dig done, 2 pin, 3 lift start, 4 lift done, 5 close
+-- Holds (dig, lift) are checked like the bomb inspection: the done op
+-- must come at least 90% of the time after its start op. The pin is
+-- checked against the needle a ping (max 0.25 s) ago, with 3 units of
+-- slack either side of the zone. The presser can't work on their own mine.
 Net.Receive("eod.mineact", function(p)
     local m = net.ReadEntity()
     local op = net.ReadUInt(3)
@@ -366,6 +418,8 @@ end, { rate = 10, burst = 10 })
 -- Mine scanner: RMB marks a mine it shows (everyone then sees it)
 --------------------------------------------------------------------------
 
+-- The server rechecks what the client saw: scanner out and on, the mine
+-- within range + 60 and the cone + 6°, in brush sight. Toggles Marked.
 Net.Receive("eod.minemark", function(p)
     local m = net.ReadEntity()
     if not (IsValid(m) and m.IsRhylibMine) or m.eodOver or not walkOk(p) then return end

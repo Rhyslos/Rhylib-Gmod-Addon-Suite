@@ -9,12 +9,26 @@
       R.mates  last known positions of squad mates out of view (radio.pos)
       R.speaking  players talking right now (start / end voice events)
 
+      R.tx     [entindex] = { kind, id }: what each talker sends on (radio.txev)
+
     Keys (settings page, Radio): talk on the radio (B), switch the radio
-    channel (K), radio page (T), and unbound mute / deafen / power.
+    channel (K), radio page (T), and unbound mute / deafen / power. Keys
+    are read in Think with input.IsKeyDown, not binds; voice is switched
+    with permissions.EnableVoiceChat (the game asks once per server).
+
+    Client convars (all saved): rhylib_radio_key / _switchkey / _menukey /
+    _mutekey / _deafkey / _powerkey (keys), rhylib_radio_col1 / _col2
+    (channel colours, R.PALETTE ids), rhylib_radio_role (role index),
+    rhylib_radio_slot (1 squad, 2 channel 1, 3 channel 2), rhylib_radio_off
+    / _muted / _deaf (states, sent to the server on join and change),
+    rhylib_radio_compass (squad compass on the HUD, default off).
+    Console command rhylib_radio opens the Radio page.
 ]]
 
 local R = Rhylib.Radio
 
+-- Fixed colours: local voice, squad, the default channel colours, hail
+-- gold, muted/deafened red, radio off, not joined.
 R.COL = {
     local_ = Color(233, 237, 239),
     squad = Color(92, 214, 125),
@@ -25,6 +39,7 @@ R.COL = {
     off = Color(43, 48, 54),
     grey = Color(60, 67, 74),
 }
+-- Channel colour choices: { id (convar value), label, colour }.
 R.PALETTE = {
     { "blue", "Blue", Color(79, 175, 255) },
     { "violet", "Violet", Color(180, 140, 255) },
@@ -49,6 +64,7 @@ local offVar = cv("rhylib_radio_off", "0", "Radio off")
 local mutedVar = cv("rhylib_radio_muted", "0", "Radio muted")
 local deafVar2 = cv("rhylib_radio_deaf", "0", "Radio deafened")
 local radarVar = cv("rhylib_radio_compass", "0", "Squad compass on the HUD (takes half the chat's room in the visor)")
+-- R.RadarOn(): is the squad compass on the HUD switched on?
 function R.RadarOn() return radarVar:GetBool() end
 
 R.dir = R.dir or { squads = {}, channels = {}, sqOf = {}, roleOf = {} }
@@ -86,17 +102,21 @@ local function paletteCol(name, fallback)
     return fallback
 end
 
--- Colour of a radio slot: 1 squad, 2 channel 1, 3 channel 2.
+-- R.SlotColor(slot): colour of a radio slot: 1 squad, 2 channel 1,
+-- 3 channel 2 (the player's palette picks for the channels).
 function R.SlotColor(slot)
     if slot == 1 then return R.COL.squad end
     if slot == 2 then return paletteCol(col1Var:GetString(), R.COL.ch1) end
     return paletteCol(col2Var:GetString(), R.COL.ch2)
 end
 
+-- R.Note(text): a "[Radio] text" chat line (client version).
 function R.Note(text)
     chat.AddText(R.COL.squad, "[Radio] ", Color(225, 225, 225), text)
 end
 
+-- R.Mine(): your own unpacked radio state. R.Selected(): the slot the
+-- radio key talks on (1-3).
 function R.Mine() return R.State(LocalPlayer()) end
 function R.Selected() return math.Clamp(slotVar:GetInt(), 1, 3) end
 
@@ -106,6 +126,7 @@ function R.SlotOn(slot)
     return (R.me.slots[slot - 1] or 0) ~= 0
 end
 
+-- R.SlotName(slot): the squad's or channel's name for a slot.
 function R.SlotName(slot)
     if slot == 1 then
         local sq = R.dir.squads[R.SquadOf(LocalPlayer())]
@@ -115,9 +136,13 @@ function R.SlotName(slot)
     return c and c.name or ("Channel " .. (slot - 1))
 end
 
+-- R.InCall(): in a hail call someone has answered (2+ members).
 function R.InCall() return R.call ~= nil and #R.call.members >= 2 end
 
--- Which of my slots (or the call) a talker's radio reaches me on: 1-3, 4 = call, nil.
+-- R.HeardOn(talker): which of my slots (or the call) a talker's radio
+-- reaches me on: 1-3, 4 = call, nil = not on my radio. The last
+-- radio.txev for that talker wins over their NW2 state (which arrives
+-- late for players out of view). Doesn't check my own off/deaf/jammed.
 function R.HeardOn(talker)
     local kind, id
     local ev = R.tx[talker:EntIndex()]
@@ -139,7 +164,10 @@ function R.HeardOn(talker)
     end
 end
 
--- The colour the voice list and meters use for a talker (nil = local).
+-- R.SpeakerColor(ply): the colour the voice list and meters use for a
+-- talker (nil = local voice). For yourself: what you send on. Used by
+-- rhylib_chat's voice list stripe.
+-- Example: local col = Rhylib.Radio.SpeakerColor(ply) or color_white
 function R.SpeakerColor(ply)
     if ply == LocalPlayer() then
         local t = R.Mine()
@@ -159,6 +187,8 @@ end
 -- Page refresh (debounced)
 --------------------------------------------------------------------------
 
+-- R.Changed(): something on the Radio page changed; rebuild it 0.2 s
+-- later if it is open (several changes in a row rebuild once).
 function R.Changed()
     if timer.Exists("Rhylib.Radio.Page") then return end
     timer.Create("Rhylib.Radio.Page", 0.2, 1, function()
@@ -244,6 +274,8 @@ end)
 -- Requests out
 --------------------------------------------------------------------------
 
+-- R.SendState(): sends radio.state (off, muted, deafened from the
+-- convars) to the server.
 function R.SendState()
     Rhylib.Net.Start("radio.state")
     net.WriteBool(offVar:GetBool())
@@ -252,6 +284,8 @@ function R.SendState()
     net.SendToServer()
 end
 
+-- R.Toggle(what): flips "off", "muted" or "deaf" (anything else = deaf),
+-- tells the server and prints a chat note.
 function R.Toggle(what)
     local var = what == "off" and offVar or what == "muted" and mutedVar or deafVar2
     RunConsoleCommand(var:GetName(), var:GetBool() and "0" or "1")
@@ -265,6 +299,7 @@ function R.Toggle(what)
     end)
 end
 
+-- R.SetRole(i): saves and sends your squad role (R.ROLES index).
 function R.SetRole(i)
     RunConsoleCommand("rhylib_radio_role", tostring(i))
     Rhylib.Net.Start("radio.role")
@@ -272,6 +307,9 @@ function R.SetRole(i)
     net.SendToServer()
 end
 
+-- R.SquadOp(op, arg): sends radio.squad. arg: the name for CREATE /
+-- RENAME, the squad id for JOIN, the player for KICK / LEADER / RO.
+-- Example: R.SquadOp(R.SQ.JOIN, 3)
 R.SQ = { CREATE = 0, JOIN = 1, LEAVE = 2, LOCK = 3, RENAME = 4, KICK = 5, LEADER = 6, RO = 7 }
 function R.SquadOp(op, arg)
     Rhylib.Net.Start("radio.squad")
@@ -282,6 +320,9 @@ function R.SquadOp(op, arg)
     net.SendToServer()
 end
 
+-- Channel requests (radio.chan); slot is 1 or 2 (channel 1 / 2).
+-- R.ChanCreate(slot, name, mode, pass), R.ChanJoin(slot, id, pass),
+-- R.ChanLeave(slot).
 function R.ChanCreate(slot, name, mode, pass)
     Rhylib.Net.Start("radio.chan")
     net.WriteUInt(0, 2)
@@ -308,6 +349,9 @@ function R.ChanLeave(slot)
     net.SendToServer()
 end
 
+-- Hail requests (radio.hail): R.HailSquad(squadId) rings its leader and
+-- RO, R.HailPlayer(ply) rings one player. R.Answer(callId, yes) answers
+-- or declines a ring; R.HangUp() leaves / ends your call.
 function R.HailSquad(id)
     Rhylib.Net.Start("radio.hail")
     net.WriteUInt(1, 2)
@@ -334,7 +378,8 @@ function R.HangUp()
     net.SendToServer()
 end
 
--- On join: state, role, directory.
+-- On join (2 s after InitPostEntity): send state and role, ask for the
+-- directory.
 Rhylib.Hook.Add("InitPostEntity", "radio.join", function()
     timer.Simple(2, function()
         R.SendState()
@@ -361,6 +406,8 @@ end, -100)
 -- Keys
 --------------------------------------------------------------------------
 
+-- Keys do nothing while the game menu or console is up, while typing in
+-- chat or in a text box.
 local function blocked()
     if gui.IsGameUIVisible() or gui.IsConsoleVisible() then return true end
     local ply = LocalPlayer()
@@ -376,6 +423,7 @@ local function keyDown(var)
     return code and code > 0 and input.IsKeyDown(code) or false
 end
 
+-- R.txOn: true while we're keying the radio (told the server, voice on).
 R.txOn = false
 local function startTx()
     local t = R.Mine()
@@ -410,6 +458,7 @@ local function stopTx()
     timer.Simple(0.3, off)
 end
 
+-- R.CycleSlot(): switch the radio key to the next slot you're in.
 function R.CycleSlot()
     local cur = R.Selected()
     for i = 1, 3 do
@@ -424,6 +473,8 @@ function R.CycleSlot()
     R.Note("Join a squad or a channel first")
 end
 
+-- R.OpenPage(): opens the pause menu on the Radio page (or closes it if
+-- it's already showing). Needs rhylib_menus.
 function R.OpenPage()
     local M = Rhylib.Menus
     if not (M and M.OpenPause) then return end
@@ -460,6 +511,8 @@ local function pressed(id, var)
     return p, d
 end
 
+-- Talk key held = keying (one try per press: a refused start isn't
+-- retried until the key is let go). The other keys act on press.
 Rhylib.Hook.Add("Think", "radio.keys", function()
     local ply = LocalPlayer()
     if not IsValid(ply) then return end

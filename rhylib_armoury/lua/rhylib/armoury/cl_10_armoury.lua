@@ -2,6 +2,11 @@
     Armoury, client side: the "claim this locker?" question, and the
     owner's Lock / Unclaim buttons in the locker window (the inventory
     window raises Rhylib.StorageControl when they're pressed).
+
+    Nets: rhylib.armoury.prompt (server -> client, Entity: the free locker)
+    opens the claim question; Claim sends rhylib.armoury.claim (Entity).
+    rhylib.armoury.control (client -> server, 1 bit: 0 = lock / unlock,
+    1 = unclaim) for the owner's buttons.
 ]]
 
 net.Receive(Rhylib.Net.Name("armoury.prompt"), function()

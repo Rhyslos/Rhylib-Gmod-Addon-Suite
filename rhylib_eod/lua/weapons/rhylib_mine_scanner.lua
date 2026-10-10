@@ -4,6 +4,11 @@
     quickens as you close in. RMB marks the mine nearest your crosshair in
     the beam so everyone sees it (again to unmark). Ammo cabinet, 2x1.
     First person is a placeholder (the HL2 tool gun).
+
+    Shared SWEP; the beam, outlines, beeps and HUD are in cl_50_mines.lua
+    (E.ScannerMark, E.ScannerHUD), the server check of a mark in
+    sv_30_mines.lua (net eod.minemark). The On NetworkVar is predicted,
+    so other players' clients see the beam too. Holstering switches it off.
 ]]
 
 AddCSLuaFile()
@@ -28,7 +33,7 @@ SWEP.InvW = 2
 SWEP.InvH = 1
 SWEP.InvWeight = 1.2
 SWEP.InvCategory = "gear"
-SWEP.InvHolster = false
+SWEP.InvHolster = false     -- (no holster slot, though its hold type is "pistol")
 
 function SWEP:SetupDataTables()
     self:NetworkVar("Bool", 0, "On")

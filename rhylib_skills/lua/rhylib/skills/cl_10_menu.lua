@@ -15,7 +15,12 @@
     the mouse (or the last one clicked).
 
     Icons are small vector glyphs drawn here (ICONS / GLYPHS), so there
-    are no materials to ship.
+    are no materials to ship. K.DrawGlyph(name, x, y, size, col, bg) draws
+    one for other code.
+    Client only; needs rhylib_menus (page "skills", Character group). Also
+    receives skills.note (bad bool, text) and prints it to chat.
+    The layout (PerformLayout below) is the tricky part: it lines each
+    skill up under the skills it needs so links are straight lines.
 ]]
 
 local K = Rhylib.Skills
@@ -47,7 +52,7 @@ local function canUndo(me, set, n)
     return K.UndoAllowed(K.learnedAt, n.id), nil
 end
 
-local EXCLUDED_ALPHA = 0.3
+local EXCLUDED_ALPHA = 0.3   -- (how faint a ruled-out skill is drawn)
 
 --------------------------------------------------------------------------
 -- Glyphs: shapes in a 0-1 box. R = rect, P = convex polygon, C = disc,
@@ -120,7 +125,8 @@ local GLYPHS = {
         { "R", .3, .6, .56, .1 }, { "P", { .3, .82, .1, .65, .3, .48 } } },
 }
 
--- Icon per skill (a node's own `icon` wins).
+-- Icon per skill (a node's own `icon` wins; unknown = "star"). A new node
+-- either sets `icon = "<glyph>"` in K.NODES or gets an entry here.
 local ICONS = {
     quick_hands = "mag", run_gun = "run", point_blank = "target", full_auto = "rounds", ext_mags = "mag",
     droid_popper = "grenade", light_kit = "feather", rapid_fire = "bolt", momentum = "star",
@@ -255,6 +261,8 @@ end
 -- Layout: columns per spec / branch, rows per tier
 --------------------------------------------------------------------------
 
+-- Each specialisation gets an equal share of the width (0-1), each end
+-- branch an equal share of its spec; shared skills use the whole width.
 local function columns(cat)
     local specs = cat.specs or {}
     local cols = { shared = { 0, 1 }, spec = {}, branch = {} }
@@ -282,6 +290,8 @@ local function reqsOf(n)
     return out
 end
 
+-- "learned", "open" (can learn now), "excluded" (ruled out by a choice,
+-- + reason) or "locked" (+ reason).
 local function stateOf(me, set, n)
     if set[n.id] then return "learned" end
     local ok, why = K.CanLearn(me, set, n.id)
@@ -728,7 +738,9 @@ local function build(page)
                     if a.want ~= b.want then return a.want < b.want end
                     return a.i < b.i
                 end)
-                -- Merge overlapping runs into blocks centred on their wants.
+                -- Merge overlapping runs into blocks centred on their wants
+                -- (a block's start is the mean of its items' wants, each
+                -- shifted back by its place in the block, cellW apart).
                 local blocks = {}
                 for _, it in ipairs(items) do
                     local blk = { list = { it }, start = it.want }

@@ -1,6 +1,12 @@
 --[[
-    An inventory item lying in the world (dropped by a player).
+    An inventory item lying in the world (dropped by a player; shared).
     Press E to pick it up. Anything that doesn't fit stays on the ground.
+
+    Made by Inv.SpawnWorldItem (sv_10_inventory): ents.Create, then
+    ENT:SetItem(id, count, data) before Spawn. Removes itself after config
+    inventory worldItemLife (600 s), or issuedDropLife (300 s) for issued
+    gear, whichever is shorter. Network vars: ItemName, ItemCount (for the
+    name shown up close). Model: the item's def.model, else a cardboard box.
 ]]
 
 AddCSLuaFile()
@@ -18,7 +24,7 @@ function ENT:SetupDataTables()
 end
 
 if SERVER then
-    -- Call before Spawn().
+    -- ENT:SetItem(id, count, data): what it holds. Call before Spawn().
     function ENT:SetItem(id, count, data)
         self.itemId = id
         self.itemCount = count or 1

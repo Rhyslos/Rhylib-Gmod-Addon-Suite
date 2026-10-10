@@ -1,7 +1,10 @@
 --[[
     Training respawn beacon (rhylib_training): eliminated players pick one
     of these to come back at. Its name shows in the list. Place with the
-    toolgun; rhylib_training_save keeps them on the map.
+    toolgun; make it permanent (toolgun Permanent tool) to keep it on the
+    map. Shared entity, frozen, players walk through it. NetworkVar
+    BeaconName (set by the toolgun's beacon name). Model: config training
+    beaconModel.
 ]]
 
 AddCSLuaFile()
@@ -32,7 +35,7 @@ function ENT:Initialize()
     if self:GetBeaconName() == "" then self:SetBeaconName("Beacon") end
 end
 
--- Where a player comes back: on top of it.
+-- ENT:SpawnPos(): where a player comes back: on top of it.
 function ENT:SpawnPos()
     return self:GetPos() + Vector(0, 0, self:OBBMaxs().z + 2)
 end

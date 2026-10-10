@@ -4,6 +4,8 @@
     A weapon can slow its holder through SWEP:GetMoveMult(), for example
     the Z-6 while its barrels spin. Runs in SetupMove, so it's predicted
     and costs one weapon check per player per tick.
+    Any weapon can use it: define SWEP:GetMoveMult() returning 0-1
+    (rhylib_base returns SpinMoveMult while the barrels spin).
 ]]
 
 Rhylib.Hook.Add("SetupMove", "weapons.move", function(ply, mv)

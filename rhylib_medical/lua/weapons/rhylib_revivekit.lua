@@ -1,3 +1,6 @@
+-- Revive kit (shared SWEP, base rhylib_med_base). Medics: LMB on a downed
+-- player revives (reviveKitTime s, to reviveKitHealth of max health). One
+-- kit per revive.
 AddCSLuaFile()
 
 SWEP.Base = "rhylib_med_base"

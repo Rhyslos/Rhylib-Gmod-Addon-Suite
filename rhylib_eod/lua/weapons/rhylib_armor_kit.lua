@@ -5,6 +5,11 @@
     300; the item's fill). LMB: the clone you look at, RMB: yourself.
     Gives armour back up to their spawn armour (Rhylib.Armor.SpawnArmor),
     taking the points from the kit. Empty = gone.
+
+    Shared SWEP. Also adds the interaction wheel option "Repair armour"
+    (rhylib_menus Rhylib.WheelOptions) and its net wheel.armor (client ->
+    server: the target player; rate 2/s). Downed players (rhylibDown)
+    can't be repaired. Stocked in the ammo cabinet (sh_00_config).
 ]]
 
 AddCSLuaFile()
@@ -26,13 +31,13 @@ SWEP.Secondary = { ClipSize = -1, DefaultClip = -1, Automatic = false, Ammo = "n
 SWEP.InvW = 2
 SWEP.InvH = 2
 SWEP.InvWeight = 2.5
-SWEP.InvCharge = true
+SWEP.InvCharge = true       -- (the item has a fill 0-1: the kit's charge)
 SWEP.InvCategory = "gear"
 
 SWEP.RequiresSkill = "eod_armor"
 SWEP.CarrySkill = "eod_armor"
-SWEP.Range = 110
-SWEP.Cooldown = 1.5
+SWEP.Range = 110            -- (units to the clone you repair)
+SWEP.Cooldown = 1.5         -- (seconds between repairs)
 
 Rhylib.Config.Register("eod", "armorKitPool", 300, "Armour repair kit: armour points in a full kit")
 Rhylib.Config.Register("eod", "armorKitStep", 50, "Armour repair kit: most armour one use gives (0 = all the way up)")
@@ -43,6 +48,7 @@ end
 
 function SWEP:Reload() end
 
+-- SWEP:SkillOK(): the owner has the Armour repair skill (true without rhylib_skills).
 function SWEP:SkillOK()
     local K = Rhylib.Skills
     if not (K and K.Has) then return true end
@@ -92,6 +98,10 @@ if SERVER then
         return 100
     end
 
+    -- SWEP:Repair(target): give target armour from the kit (server). Up to
+    -- armorKitStep per use (0 = all the way), never past their spawn
+    -- armour; takes it from the most-used kit item and removes it when
+    -- under 1 point is left.
     function SWEP:Repair(t)
         local o = self:GetOwner()
         if not IsValid(o) then return end

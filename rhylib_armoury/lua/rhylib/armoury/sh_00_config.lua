@@ -31,14 +31,30 @@
     Gear from the armoury and ammo cabinet is "issued": dropping it hands
     it back instead of leaving it on the ground.
 
-    Admins place them from the spawn menu (Rhylib tab), then run
-    rhylib_armoury_save to keep them on this map. They come back at every
-    map start, frozen in place.
+    Gear cabinet      backpacks, jetpacks (config gearStock) and, with
+                        rhylib_gear, the body parts your model can show and
+                        your rank allows. (rhylib_gear_cabinet)
+      Training armoury  training copies of the guns, and training ammo
+      and ammo          (rhylib_training_armoury, rhylib_training_ammo).
+
+    Admins place them from the spawn menu (Rhylib tab), then make them
+    permanent with the toolgun's Permanent tool (or run
+    rhylib_armoury_save). They come back at every map start, frozen in
+    place.
+
+    Shared file: the tables and settings both realms need. Adds
+    Rhylib.Armoury (A): MODELS, CLASSES, CRATES, AMMO_STOCK,
+    TRAINING_AMMO_STOCK, A.Roles(ply), and the config module "armoury".
+    The storages themselves are rhylib_inventory's (Inv.CreateStorage); this
+    addon only says what goes in them (sv_10_armoury.lua).
 ]]
 
 Rhylib.Armoury = Rhylib.Armoury or {}
 local A = Rhylib.Armoury
 
+-- Model per armoury kind (ENT.ModelKey). Changeable in Server settings >
+-- Models (hook Rhylib.ModelCatalogue below); needs a map change for things
+-- already placed.
 A.MODELS = {
     armoury = "models/reizer_props/srsp/sci_fi/armory_01/armory_01.mdl",
     ammo = "models/reizer_props/srsp/sci_fi/armory_02_3/armory_02_3.mdl",
@@ -61,7 +77,8 @@ Rhylib.Hook.Add("Rhylib.ModelCatalogue", "armoury.models", function(add)
     end
 end)
 
--- Every armoury entity class, for saving and loading placements.
+-- Every armoury entity class, for saving and loading placements
+-- (A.SavePlacements and the toolgun's Permanent tool).
 A.CLASSES = {
     rhylib_armoury = true,
     rhylib_ammo_cabinet = true,
@@ -77,11 +94,18 @@ A.CLASSES = {
     rhylib_training_ammo = true,
     rhylib_training_deposit = true,
 }
+-- Classes rhylib_crate_refill works on.
 A.CRATES = { "rhylib_crate_small", "rhylib_crate_medium", "rhylib_crate_large", "rhylib_med_crate" }
 
+-- What the ammo cabinets hand out, in shelf order (item ids; ids that don't
+-- exist, e.g. an addon not installed, are skipped). Other addons may add to
+-- A.AMMO_STOCK before a cabinet is first opened (rhylib_eod adds its kits).
+-- Example: table.insert(Rhylib.Armoury.AMMO_STOCK, "my_item")
 A.TRAINING_AMMO_STOCK = { "mag_small_t", "mag_medium_t", "mag_large_t", "cell", "rocket_t", "rhylib_thermal_training", "rhylib_droidpopper_training" }
 A.AMMO_STOCK = { "mag_small", "mag_medium", "mag_large", "cell", "rocket", "grapple", "rhylib_thermal", "rhylib_droidpopper", "rhylib_ammo_pack", "rhylib_he_charge" }
 
+-- Settings (module "armoury"). Lists are read when a storage is first
+-- opened after a map start, so changes show after a map change.
 local Config = Rhylib.Config
 Config.Register("armoury", "weapons", {}, "Weapon classes in the armoury, in order. Empty = every Rhylib weapon")
 Config.Register("armoury", "trainingWeapons", {}, "Weapon classes in the training armoury, in order. Empty = every training weapon")
@@ -110,7 +134,12 @@ Config.Register("armoury", "roles", {
         "rhylib_med_supplies", "rhylib_blood_kit", "rhylib_test_strip" } },
 }, "Specialist armoury stock per role: { weapons = {...}, gear = {...} }")
 
--- Role names a player has, sorted (so the same set always gives the same key).
+-- A.Roles(ply) -> sorted list of role names: always "trooper", "mp" (rhylib_mp
+-- MP.IsMP), "medic" (rhylib_medical Med.IsMedic), the DarkRP job's `role`
+-- (string or list), and whatever hook Rhylib.PlayerRoles(ply) returns (a
+-- list; rhylib_roster adds qualification ids). Sorted, so the same set
+-- always gives the same key. Shared (needs RPExtraTeams for jobs).
+-- Example: for _, r in ipairs(Rhylib.Armoury.Roles(ply)) do print(r) end
 function A.Roles(ply)
     local out, seen = {}, {}
     local function add(r)

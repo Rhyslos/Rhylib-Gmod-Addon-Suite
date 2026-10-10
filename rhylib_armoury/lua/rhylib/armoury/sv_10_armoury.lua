@@ -8,6 +8,19 @@
                                  crate on this map where they are now
       rhylib_crate_refill [all]  refill the crate you're looking at (or all)
       rhylib_locker_unclaim      free the locker you're looking at
+
+    Saved data (rhylib_core Rhylib.Data):
+      "armoury"   / <map>       placements: { class, pos, ang, owner,
+                                ownerName, locked } per permanent entity
+      "locker"    / SteamID64   a player's locker contents
+      "train_dep" / SteamID64   { rows, left }: training deposit contents
+                                and seconds of online time left
+    Hooks fired: Rhylib.GearStock(list), Rhylib.GearStockFor(ply, list),
+    Rhylib.GearReturnable(set) (gear cabinet; rhylib_gear answers),
+    Rhylib.ItemDisabled(id) (true = leave the item out of crates and the
+    specialist racks; rhylib_medical), Rhylib.CanSearchLocker(ply, ent)
+    (true = may open a locked locker; rhylib_mp), Rhylib.PlayerRoles(ply)
+    (in A.Roles).
 ]]
 
 local A = Rhylib.Armoury
@@ -26,6 +39,8 @@ local function Inv() return Rhylib.Inventory end
 -- list). training: the training copies instead (rhylib_training).
 A.FIRST_WEAPONS = { "rhylib_dc15a", "rhylib_dc15s" }
 
+-- (Items with the armoury roles config are left out: they live in the
+-- specialist racks. Only IsRhylib, Spawnable weapons without NoArmoury.)
 local function weaponStock(training)
     local list = Config.Get("armoury", training and "trainingWeapons" or "weapons")
     if istable(list) and #list > 0 then return list end
@@ -103,6 +118,9 @@ local function gearVariant(storage, ply)
     return sub
 end
 
+-- A.FillCrate(ent, storage): empties a crate's storage and fills it again:
+-- ENT.CrateMag = 999 full magazines of that type (as many as fit), else
+-- the config list named by ENT.CrateStock ({ item, count } rows). Server.
 function A.FillCrate(ent, storage)
     storage.items = {}
     if ent.CrateMag then
@@ -276,12 +294,16 @@ local function lockerTitle(ent)
     return name ~= "" and ("Locker: " .. name) or "Personal locker"
 end
 
+-- A.LoadLocker(ent, storage): loads the owner's saved contents (Data
+-- "locker"/SteamID64) into the locker's storage. Server.
 function A.LoadLocker(ent, storage)
     local sid = ent:GetOwnerSid()
     Inv().StorageLoad(storage, sid ~= "" and Rhylib.Data.Get("locker", sid) or nil)
     storage.title = lockerTitle(ent)
 end
 
+-- A.SaveLocker(ent): saves a claimed locker's contents under its owner.
+-- Runs on every change and when the locker is removed. Server.
 function A.SaveLocker(ent)
     if not Inv() then return end   -- (rhylib_inventory missing)
     local storage = Inv().GetStorage(ent)
@@ -290,7 +312,10 @@ function A.SaveLocker(ent)
     Rhylib.Data.Set("locker", sid, Inv().StorageSerialize(storage))
 end
 
--- The storage for an armoury entity, made the first time someone uses it.
+-- A.Setup(ent) -> storage: the rhylib_inventory storage for an armoury
+-- entity, made the first time someone uses it (by ENT.ArmouryKind). nil
+-- without rhylib_inventory. "variant" storages pick a sub-storage per
+-- player when opened (gear cabinet, specialist racks, training deposit).
 function A.Setup(ent)
     local I = Inv()
     if not I or not I.CreateStorage then return nil end
@@ -339,6 +364,9 @@ end
 -- Using
 --------------------------------------------------------------------------
 
+-- A.Use(ent, ply): E on an armoury entity (ENT:Use calls it). Opens the
+-- storage; a free locker asks to be claimed instead, a locked one refuses
+-- anyone but the owner (and those Rhylib.CanSearchLocker allows). Server.
 function A.Use(ent, ply)
     if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return end
     local storage = A.Setup(ent)
@@ -374,6 +402,8 @@ local function ownsLocker(sid)
     end
 end
 
+-- A.Claim(ply, ent): makes a free locker ply's (one per player, within
+-- reach), locked, loads their saved items and opens it. Server.
 function A.Claim(ply, ent)
     if not Inv() then return end   -- (rhylib_inventory missing)
     if not IsValid(ent) or ent:GetClass() ~= "rhylib_locker" or ent:GetOwnerSid() ~= "" then return end
@@ -394,6 +424,8 @@ function A.Claim(ply, ent)
     Inv().OpenStorage(ply, ent)
 end
 
+-- A.ToggleLock(ent): locks / unlocks; locking closes it for everyone else
+-- who has it open. Server.
 function A.ToggleLock(ent)
     if not Inv() then return end   -- (rhylib_inventory missing)
     ent:SetLocked(not ent:GetLocked())
@@ -456,6 +488,10 @@ local function rowFor(ent)
     return row
 end
 
+-- A.SavePlacements() -> count: saves every permanent armoury entity on
+-- this map (Data "armoury"/<map>). Without rhylib_core's Perma (older
+-- cores) it saves all of them. Registered with Rhylib.Perma, so the
+-- toolgun's Permanent tool calls it. Server.
 function A.SavePlacements()
     local rows = {}
     for class in pairs(A.CLASSES) do
@@ -482,6 +518,9 @@ function A.UpdatePlacement(ent)
     Rhylib.Data.Set("armoury", game.GetMap(), A.placements)
 end
 
+-- A.SpawnPlacements(): spawns the saved armoury entities (with locker
+-- owners) and marks them permanent. Runs 1 s after InitPostEntity and
+-- after a map cleanup. Server.
 function A.SpawnPlacements()
     local rows = Rhylib.Data.Get("armoury", game.GetMap())
     if not istable(rows) then return end

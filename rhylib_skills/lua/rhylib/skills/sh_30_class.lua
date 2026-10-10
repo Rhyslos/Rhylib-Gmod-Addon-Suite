@@ -54,20 +54,24 @@ for i, c in ipairs(K.CLASSES) do
     K.classById[c.id] = c
 end
 
+-- K.ClassMode(): is class mode on? K.ClassEpoch(): its round number.
 function K.ClassMode() return GetGlobal2Bool("rhylib_classMode", false) end
 function K.ClassEpoch() return GetGlobal2Int("rhylib_classEpoch", 0) end
 
--- The class a player is playing, or nil.
+-- K.ClassOf(ply): the class a player is playing (a K.CLASSES entry), or nil.
 function K.ClassOf(ply)
     local id = IsValid(ply) and ply:GetNW2String("rhylib_class", "") or ""
     return id ~= "" and K.classById[id] or nil
 end
 
+-- K.ClassPicksLeft(ply): class picks left this round (0..K.CLASS_PICKS).
 function K.ClassPicksLeft(ply)
     return math.max(0, K.CLASS_PICKS - ply:GetNW2Int("rhylib_classPicks", 0))
 end
 
--- The skill set of a class (orderId: the Officer's command order skill id).
+-- K.ClassSet(cls, orderId): the skill set of a class (orderId: the
+-- Officer's base command order skill id, e.g. "cmd_focus"). Returns
+-- { [id] = true }.
 function K.ClassSet(cls, orderId)
     local set = {}
     for _, n in ipairs(K.NODES) do
@@ -85,7 +89,8 @@ function K.ClassSet(cls, orderId)
     return set
 end
 
--- May this player play this class (job rules)? Returns ok, reason.
+-- K.ClassAllowed(ply, cls): may this player play this class (job rules,
+-- and LT+ for the Commander)? Returns ok, reason.
 function K.ClassAllowed(ply, cls)
     local cat = K.catById[cls.cat]
     if cat and cat.medicOnly then

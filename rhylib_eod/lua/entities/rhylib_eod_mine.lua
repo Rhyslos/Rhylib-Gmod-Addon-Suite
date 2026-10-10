@@ -2,7 +2,7 @@
     Mine (rhylib_eod): AP by default, rhylib_eod_mine_lap is the large one.
     Placed by the GM with the toolgun (EOD: single mines, scattered mines,
     minefields). Half buried and hard to see: you spot one within a few
-    metres (Trained eye further), or with the mine scanner.
+    metres (config mineVisible), or with the mine scanner.
 
     Stepping on one clicks: whoever stands on it must not move; stepping
     off or moving sets it off. Someone with an EOD kit digs it out (hold),
@@ -10,6 +10,11 @@
     it away. Clone NPCs set mines off at once; droids know where theirs are.
     Explosions nearby, and shooting it, set it off too.
     Rules: sv_30_mines.lua.
+
+    Shared. NetworkVars below; the server keeps the fuse in self.eodm
+    (E.SetupMine) and window viewers in self.viewers. To make your own
+    variant, set ENT.Base = "rhylib_eod_mine" and MineType ("ap" / "lap")
+    or IsTrainingMine.
 ]]
 
 AddCSLuaFile()
@@ -23,23 +28,25 @@ ENT.AdminOnly = true
 ENT.RenderGroup = RENDERGROUP_TRANSLUCENT
 ENT.Model = "models/props/starwars/weapons/ap_mine.mdl"
 ENT.FallbackModel = "models/props_combine/combine_mine01.mdl"
-ENT.MineType = "ap"
+ENT.MineType = "ap"         -- "ap" (1 pin) or "lap" (large: 2 pins, bigger blast and trigger)
 ENT.IsRhylibMine = true
 ENT.ModelFromConfig = true   -- (eod mineModel / mineModelLarge)
 
 function ENT:SetupDataTables()
-    self:NetworkVar("Bool", 0, "Safe")
-    self:NetworkVar("Bool", 1, "Dug")
-    self:NetworkVar("Bool", 2, "Marked")
+    self:NetworkVar("Bool", 0, "Safe")     -- (pinned: can't go off)
+    self:NetworkVar("Bool", 1, "Dug")      -- (dug out: the fuse shows)
+    self:NetworkVar("Bool", 2, "Marked")   -- (marked by a scanner: everyone sees it)
     self:NetworkVar("Bool", 3, "Large")      -- (training mines: set up as LAP)
     self:NetworkVar("Bool", 4, "Shown")      -- (training mines: always visible)
-    self:NetworkVar("Int", 0, "Pins")
+    self:NetworkVar("Int", 0, "Pins")        -- (safety pins pushed in so far)
     self:NetworkVar("Int", 1, "PinsNeed")    -- (training mines: 0 = by type)
     self:NetworkVar("Int", 2, "Level")       -- (training mines: 1 easy, 2 normal, 3 hard; 0 = normal)
-    self:NetworkVar("Entity", 0, "Presser")
+    self:NetworkVar("Entity", 0, "Presser")  -- (the player standing on it)
 end
 
+-- ENT:IsLarge(): a LAP (by type, or a training mine set up as one).
 function ENT:IsLarge() return self.MineType == "lap" or self:GetLarge() end
+-- ENT:PinsNeeded(): pins to make it safe (training setup, else AP 1 / LAP 2).
 function ENT:PinsNeeded()
     local n = self:GetPinsNeed()
     if n > 0 then return n end
@@ -100,7 +107,8 @@ end
 
 if CLIENT then
     -- How much of it you see: dug out, pinned, pressed, marked or found by a
-    -- scanner = all of it; otherwise only up close (Trained eye further).
+    -- scanner = all of it; otherwise only up close (mineVisible, fading in).
+    -- ENT:VisibleAmount() -> 0..1 (client).
     function ENT:VisibleAmount()
         if self:GetDug() or self:GetSafe() or IsValid(self:GetPresser()) or self:GetMarked() or self:GetShown() then return 1 end
         local E = Rhylib.EOD

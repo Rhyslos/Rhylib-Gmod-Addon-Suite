@@ -1,12 +1,24 @@
 --[[
-    Saved item picture settings (2026-10-08, owner: tune each picture in
-    game and keep it). Staff with rhylib.inventory.icons adjust an item's
+    Saved item picture settings (server only; 2026-10-08, owner: tune each
+    picture in game and keep it). Staff with rhylib.inventory.icons adjust an item's
     picture in the picture editor (cl_15_icons); the server keeps every
     item's settings in Data "inventory" "icontune" and sends the whole
     table to each player once they've loaded in (they ask), and changes to everyone.
 
     Per item id: { p, y, r (camera pitch / turn / roll, or nil = the
     automatic view), z (zoom), ox, oy (move, fractions of the picture) }.
+    Saved data: Data "inventory" "icontune" = { [item id] = that table }.
+
+    Network:
+      inv.icontunesreq (client asks, once per connection) nothing
+      inv.icontunes    (server) full bool, count 12, then per item: id
+                       string, has-settings bool, has-camera bool,
+                       [p y r floats], z ox oy floats
+      inv.icontune     (editor saves) id string, reset bool, then the same
+                       fields as one inv.icontunes item (no has-settings bool)
+      inv.iconsredraw  (server) nothing: make your pictures again
+    Permission: rhylib.inventory.icons (default admin) to save pictures and
+    run rhylib_icons_redraw_all. Also precaches every item model at start.
 ]]
 
 local Inv = Rhylib.Inventory
@@ -33,7 +45,8 @@ local function writeOne(id, t)
     net.WriteFloat(t.oy or 0)
 end
 
--- All of them to one player (or a list of players).
+-- Inv.SendIconTunes(target): all saved picture settings to one player
+-- (or a list of players).
 function Inv.SendIconTunes(target)
     Rhylib.Net.Start("inv.icontunes")
     net.WriteBool(true)   -- (full table: replaces what the client has)

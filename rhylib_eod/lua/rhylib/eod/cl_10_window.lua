@@ -6,6 +6,20 @@
     Left: timer, first inspection (hold), the casing, the modules and the
     gas valve. Right: tools (probe, wirecutters, jumper wire), the last
     reading, the board (hover a wire to trace it), and a log.
+
+    Every action is a net eod.act (bomb, op 4 bits, arguments; see
+    sv_10_bomb). The client never decides anything: it shows the last
+    view and runs live values (timer, heat, tilt bubble, needles) on from
+    the view's numbers until the next eod.state.
+    The left column is rebuilt only when layoutKey changes (which steps
+    and modules are showing), so open sliders and switches keep their
+    state between updates. A new module adds its section to buildLeft
+    and its flags to layoutKey.
+
+    Also here: the fail / done overlay (eod.boom, eod.done), gas cloud
+    smoke (eod.gas), the far rumble of a large bomb (eod.far), and the
+    "E: work on it" hint when aiming at a bomb or device.
+    Needs rhylib_menus (Rhylib.Menus.Kit) for the window.
 ]]
 
 local E = Rhylib.EOD
@@ -22,8 +36,10 @@ local BW, BH = 760, 420
 
 E.win = E.win or nil   -- { frame, bomb, v, recv, reads, log, tool, pick, xray, ... }
 
+-- The open window, or nil.
 local function W() local w = E.win return (w and IsValid(w.frame)) and w or nil end
 
+-- Send net eod.act for the open window's bomb; write() adds the arguments.
 local function act(op, write)
     local w = W()
     if not w or not IsValid(w.bomb) then return end
@@ -55,6 +71,10 @@ local function partBy(v, id)
     for i, p in ipairs(v.parts) do if p.id == id then return p, i end end
 end
 
+-- Where a wire leaves part p towards part q: the side facing q (left /
+-- right if they are more than 60 units apart across, else top / bottom),
+-- moved by off so several wires on one side don't overlap. Returns
+-- x, y and the direction out (dx, dy) for the curve.
 local function port(p, q, off)
     local pcx, pcy = p.x + p.w / 2, p.y + p.h / 2
     local qcx, qcy = q.x + q.w / 2, q.y + q.h / 2
@@ -79,6 +99,9 @@ local function bezier(x1, y1, cx1, cy1, cx2, cy2, x2, y2, n)
     return pts
 end
 
+-- Wire curves (cubic bezier, 29 points, in board units) for the view,
+-- plus where the sealed plate sits (the middle of the sealed wire) and
+-- the three fake board mount wires. Rebuilt on every eod.state.
 local function buildGeo(v)
     local geo = { wires = {} }
     local used = {}
@@ -108,6 +131,7 @@ local function buildGeo(v)
     return geo
 end
 
+-- A part's + (left) and − (right) terminal, bottom right corner.
 local function termPos(p, plus)
     return p.x + p.w - (plus and 36 or 14), p.y + p.h - 14
 end
@@ -116,6 +140,8 @@ end
 -- Drawing helpers
 --------------------------------------------------------------------------
 
+-- A thick line along pts (board units) as one quad per segment, scaled
+-- by sc and offset by ox / oy. skipFrom..skipTo leaves a gap (a cut wire).
 local quad = { {}, {}, {}, {} }
 local function thick(pts, width, col, sc, ox, oy, skipFrom, skipTo)
     surface.SetDrawColor(col)
@@ -167,6 +193,8 @@ end
 -- Live values (between state messages)
 --------------------------------------------------------------------------
 
+-- These run the view's numbers on from v.now (the server's CurTime when
+-- it was sent) with the same config, so the bars move smoothly.
 local function heatNow(w)
     local v = w.v
     local h = (v.heat or 0)
@@ -202,6 +230,10 @@ end
 -- The board panel
 --------------------------------------------------------------------------
 
+-- The board: drawn in board units (760 x 420) scaled to fit. Clicks go
+-- by tool: probe (op 4) / cutters (op 5) on the nearest wire within 8
+-- units, the jumper picks two terminals (op 6), and while the fake board
+-- cover is on only its mount wires can be cut (op 12).
 local function boardPanel(parent, k)
     local s = k.S
     local C = k.C
@@ -534,6 +566,7 @@ local function custom(sp, k, tall, paint)
     return p
 end
 
+-- A string of everything that changes what the left column shows.
 local function layoutKey(v)
     local m = v.mods or {}
     local parts = {
@@ -547,6 +580,11 @@ local function layoutKey(v)
     return table.concat(parts, ",")
 end
 
+-- The left column, top to bottom: timer, first inspection, kit warning,
+-- casing, then one section per module that needs the player (heat, tilt,
+-- sealed, chip, liquid, fake), the gas valve, the stabiliser, and
+-- "Made safe" (with Recover the charge for Render safe). Keeps the
+-- scroll position across rebuilds.
 local function buildLeft(win, k)
     local sp = win.left
     local scroll = sp:GetVBar():GetScroll()
@@ -738,6 +776,8 @@ end
 -- The window
 --------------------------------------------------------------------------
 
+-- E.CloseWindow(tell): close the defusal window; tell = also send
+-- eod.close so the server drops us from the viewers.
 local function closeWindow(tell)
     local w = E.win
     E.win = nil
@@ -750,6 +790,8 @@ local function closeWindow(tell)
 end
 E.CloseWindow = closeWindow
 
+-- E.Nudge(dx, dy): nudge the tilt bubble (-1..1 each). Moves the local
+-- copy at once (same 0.14 step and ±3 cap as the server) and sends op 7.
 function E.Nudge(dx, dy)
     local w = W()
     if not w or not w.v.tilt or w.overlay then return end
@@ -758,6 +800,8 @@ function E.Nudge(dx, dy)
     act(7, function() net.WriteInt(dx, 3) net.WriteInt(dy, 3) end)
 end
 
+-- The panel over the window: kind "fail" (a = title, b = what happened,
+-- c = manual line) or "done". Training bombs get "Same again".
 local function overlay(win, k, kind, a, b, c)
     if IsValid(win.ov) then win.ov:Remove() end
     win.overlay = kind
@@ -817,6 +861,7 @@ local function overlay(win, k, kind, a, b, c)
     end
 end
 
+-- Opened by the first eod.state for a bomb (the server decides who may open it).
 local function openWindow(bomb)
     local k = K()
     if not k then
@@ -949,6 +994,8 @@ end
 -- Net
 --------------------------------------------------------------------------
 
+-- eod.state: bomb, length (16 bits), compressed JSON view. Opens the
+-- window on the first one.
 Net.Receive("eod.state", function()
     local bomb = net.ReadEntity()
     local len = net.ReadUInt(16)
@@ -971,6 +1018,7 @@ Net.Receive("eod.state", function()
     end
 end)
 
+-- eod.read: wire index (5 bits), probe reading. Shown on the wire and in the log.
 Net.Receive("eod.read", function()
     local i = net.ReadUInt(5)
     local txt = net.ReadString()
@@ -983,6 +1031,7 @@ Net.Receive("eod.read", function()
     surface.PlaySound("buttons/blip1.wav")
 end)
 
+-- eod.msg: text, bad (bool). Into the log (chat when no window is open).
 Net.Receive("eod.msg", function()
     local t = net.ReadString()
     local bad = net.ReadBool()
@@ -990,6 +1039,7 @@ Net.Receive("eod.msg", function()
     if bad then surface.PlaySound("buttons/button10.wav") end
 end)
 
+-- eod.xray: bomb, mount order (3 × 2 bits), seconds to show it.
 Net.Receive("eod.xray", function()
     local bomb = net.ReadEntity()
     local order = { net.ReadUInt(2), net.ReadUInt(2), net.ReadUInt(2) }
@@ -1010,6 +1060,8 @@ Net.Receive("eod.done", function()
     surface.PlaySound("buttons/button3.wav")
 end)
 
+-- eod.boom: bomb index (13 bits; the entity may be gone), cause key, position.
+-- The window shows the fail overlay; anyone else nearby gets a chat line.
 Net.Receive("eod.boom", function()
     local idx = net.ReadUInt(13)
     local cause = net.ReadString()
@@ -1111,6 +1163,9 @@ Rhylib.Hook.Add("HUDPaint", "eod.hint", function()
     draw.SimpleTextOutlined(txt, font, ScrW() / 2, ScrH() * 0.58, Color(255, 209, 102), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, Color(0, 0, 0, 220))
 end)
 
+-- Menu closer (rhylib_menus Menus.CloseAll: Esc / pause and other menus
+-- opening close this window). Registered now and again at InitPostEntity, since rhylib_menus
+-- loads after this addon.
 if Rhylib.Menus and Rhylib.Menus.RegisterCloser then
     Rhylib.Menus.RegisterCloser("eod", function() if W() then closeWindow(true) return true end end)
 end

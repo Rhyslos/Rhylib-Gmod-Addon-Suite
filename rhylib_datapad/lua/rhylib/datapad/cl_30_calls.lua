@@ -1,12 +1,16 @@
 --[[
     Quick response calls (client): the datapad's Quick response tab sends
-    them; this file keeps the open calls, draws the HUD and the markers.
+    them; this file keeps the open calls (D.calls, from dp.callu / dp.callp),
+    draws the HUD and the markers.
 
       Incoming   a card at the top right for 20 s (key rhylib_call_key,
                  default J, answers the newest one; or Respond on the pad)
       Markers    where the caller is, for calls you can see (MP and medic
                  calls at once; reinforcements and resupply after you answer)
       Your call  a card while it's open: who is on the way
+    At most 4 cards. Card colour per call id (KIND_COL: mp, medic, reinf,
+    supply, eod), the menu accent for other ids. Client convar
+    rhylib_call_key (Settings > Datapad).
 ]]
 
 local D = Rhylib.Datapad
@@ -31,10 +35,15 @@ local function colOf(c) return KIND_COL[def(c).id] or C.accent end
 -- Helpers (also used by the datapad tab)
 --------------------------------------------------------------------------
 
+-- D.CanCall(kind): false while our own cooldown for that kind runs
+-- (callCooldown; the server checks it too).
 function D.CanCall(kind)
     return RealTime() >= (sent[kind] or -1000) + D.Cfg("callCooldown")
 end
 
+-- D.SendCall(kind, items): send a call (kind = index in config "calls",
+-- items = bit mask over supplyItems, 0 if none).
+-- Example: Rhylib.Datapad.SendCall(2, 0)   -- "Call a medic" with the default list
 function D.SendCall(kind, items)
     if not D.CanCall(kind) then return end
     sent[kind] = RealTime()
@@ -45,6 +54,7 @@ function D.SendCall(kind, items)
     surface.PlaySound("buttons/button24.wav")
 end
 
+-- D.RespondCall(id) / D.CancelCall(id): answer someone's call / end your own.
 function D.RespondCall(id)
     Rhylib.Net.Start("dp.callr")
     net.WriteUInt(id, 16)
@@ -57,6 +67,7 @@ function D.CancelCall(id)
     net.SendToServer()
 end
 
+-- D.CallTitle(c): the call's short name ("Medic").
 function D.CallTitle(c) return def(c).short or def(c).name or "Call" end
 
 -- "Medic inbound: A, B"
@@ -70,6 +81,8 @@ local function posOf(c)
     return c.pos
 end
 
+-- D.CallDistance(c): "123 m" to the caller ("" if the position isn't known).
+-- 0.019 m per unit (about 52.5 units a metre).
 function D.CallDistance(c)
     local p = posOf(c)
     if not p then return "" end
@@ -85,7 +98,7 @@ local function itemsText(c)
     end
     return table.concat(out, ", ")
 end
-D.CallItems = itemsText
+D.CallItems = itemsText   -- D.CallItems(c): "Light ammo, Rockets" or nil
 
 --------------------------------------------------------------------------
 -- Network
@@ -124,7 +137,8 @@ Rhylib.Net.Receive("dp.callp", function()
 end)
 
 --------------------------------------------------------------------------
--- Answer key
+-- Answer key (polled in Think: works for any key name, ignored while typing
+-- or with the game menu / console open)
 --------------------------------------------------------------------------
 
 local function newestPending()

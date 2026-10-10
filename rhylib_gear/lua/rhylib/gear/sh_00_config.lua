@@ -31,12 +31,22 @@
       cosmetic for now.
 
     rhylib_gear_scan (sv_10_scan.lua) lists every job model's bodygroups.
+
+    Also: the helmet on / off toggle (inventory button; hair shows only
+    with the helmet off, and a head hit then downs you) and the sun visor
+    (a red tactical view, sh_30_optics / cl_30_optics).
+
+    Shared file: Rhylib.Gear (G) with the item list (G.ITEMS, G.SHOWS,
+    G.ORDER), the config module "gear", and the lookups both realms use:
+    G.ModelInfo, G.ItemShown, G.ModelHas, G.Worn, G.Active, G.KitFor,
+    G.Unlocked. Answers rhylib_inventory's hook Rhylib.CanWear.
 ]]
 
 Rhylib.Gear = Rhylib.Gear or {}
 local G = Rhylib.Gear
 local Config = Rhylib.Config
 
+-- Permission for rhylib_gear_scan (default: admin).
 Rhylib.Perms.Register("rhylib.gear.admin", "admin", "Run the bodygroup scan")
 
 -- Items, registered once the inventory has loaded. Each shows as
@@ -44,6 +54,11 @@ Rhylib.Perms.Register("rhylib.gear.admin", "admin", "Run the bodygroup scan")
 -- use) = option names, lower case without ".smd". Several items can share
 -- a slot (kama / ARC kama); G.ORDER decides who gets a shared group.
 -- Effects belong to the slot (an ARC kama works like a kama).
+-- Fields: slot (worn slot, rhylib_inventory Items.WORN), name, desc, groups,
+-- on, down (optics only), optics (1 binoculars, 2 rangefinder), w / h
+-- (cells), weight (kg), model (inventory picture), grid / gridName /
+-- gridCid / extraGrids (containers it adds), carry, weightMults
+-- ({ item id = weight multiplier } while worn).
 G.ITEMS = {
     rhylib_kama = { slot = "kama", name = "Kama", desc = "Worn: less blast damage to your legs, and they break less often",
         groups = { "kama" }, on = { "co_kama" },
@@ -129,10 +144,13 @@ end
 -- Parts mounted on the helmet: hidden and unusable with the helmet off.
 G.ON_HELMET = { binos = true, rangefinder = true, light = true, visor = true }
 
+-- G.HelmetOn(ply): false while the helmet is off (NW2Bool rhylib_helmetOff). Shared.
 function G.HelmetOn(ply) return not ply:GetNW2Bool("rhylib_helmetOff", false) end
 
 -- (owner 2026-10-05: no kit by default; players keep what they take from
 -- the gear cabinet, since the inventory is saved.)
+-- Settings (module "gear"). Change in Server settings or a host file, e.g.
+-- Rhylib.Config.Set("gear", "kit", { ["327th"] = { "rhylib_kama", "rhylib_pauldron" } })
 Config.Register("gear", "kit", {},
     "Battalion kit given at spawn as job gear: battalion (part of its name, * = everyone) -> item ids, e.g. { [\"*\"] = { \"rhylib_macrobinoculars\" } }. Empty by default")
 Config.Register("gear", "unlocks", {
@@ -160,6 +178,7 @@ Config.Register("gear", "nvRange", 0, "Night vision: fade the picture into dark 
 Config.Register("gear", "nvFadeFrom", 600, "Night vision: where that fade starts (units)")
 Config.Register("gear", "nvLightRange", 4000, "Night vision (amplified): how far its light reaches (units)")
 
+-- G.Cfg(key): shortcut for Rhylib.Config.Get("gear", key).
 function G.Cfg(k) return Config.Get("gear", k) end
 
 local function norm(s)
@@ -168,8 +187,9 @@ local function norm(s)
 end
 G.Norm = norm
 
--- A model's bodygroups by name: { [group] = { id, opts = { [option] = index } } },
--- cached per model.
+-- G.ModelInfo(ent) -> { groups = { [group] = { id, opts = { [option] = index } } } }:
+-- a model's bodygroups by lower-case name (option names without .smd),
+-- cached per model (cache cleared past 64 models). Shared.
 G.modelCache = G.modelCache or {}
 function G.ModelInfo(ent)
     local mdl = ent:GetModel() or ""
@@ -189,7 +209,8 @@ function G.ModelInfo(ent)
     return info
 end
 
--- Option index in group g for the first of names, or nil.
+-- G.Option(g, names): option index in group g (from ModelInfo) for the
+-- first of names that exists, or nil.
 function G.Option(g, names)
     if not (g and names) then return nil end
     for _, n in ipairs(names) do
@@ -197,7 +218,9 @@ function G.Option(g, names)
     end
 end
 
--- Does this player's model show this item?
+-- G.ItemShown(ply, id): does this player's model have a bodygroup option
+-- for this item? (true for items rhylib_gear doesn't know). Shared.
+-- Example: if Rhylib.Gear.ItemShown(ply, "rhylib_kama") then ... end
 function G.ItemShown(ply, id)
     local s = G.SHOWS[id]
     if not s then return true end
@@ -217,7 +240,9 @@ function G.ModelHas(ply, slot)
     return false
 end
 
--- The item worn in a gear slot, or nil (server: the inventory; client: your own copy).
+-- G.Worn(ply, slot) -> the item instance worn in a gear slot ({ id, uid,
+-- data, ... }), or nil. Server: any player's inventory; client: only your
+-- own (others always nil).
 function G.Worn(ply, slot)
     local Items, Inv = Rhylib.Items, Rhylib.Inventory
     local cid = Items and Items.WORN_BY_SLOT and Items.WORN_BY_SLOT[slot]
@@ -238,6 +263,8 @@ end
 -- then does a part do anything. Parts the current model can't show stay
 -- worn but inert (owner: joining as a cadet after a map change used to
 -- take everything off).
+-- G.Active(ply, slot) -> true / false. Use this before any gear effect.
+-- Example: if Rhylib.Gear.Active(ply, "pauldron") then ... end
 function G.Active(ply, slot)
     local inst = G.Worn(ply, slot)
     if inst == nil then return false end
@@ -254,6 +281,8 @@ function G.VisorBlocked(ply)
     return not G.Option(g, { "sunvisor" })
 end
 
+-- Answers rhylib_inventory's Rhylib.CanWear(ply, def): return false,
+-- reason to refuse.
 -- You have to see it to wear it, and helmet lights rule out optics (the back slot is free: a backpack works
 -- whatever the model shows).
 Rhylib.Hook.Add("Rhylib.CanWear", "gear.model", function(ply, def)
@@ -271,7 +300,9 @@ Rhylib.Hook.Add("Rhylib.CanWear", "gear.model", function(ply, def)
     end
 end)
 
--- Does a battalion name match a kit key ("*" = everyone, else part of the name)?
+-- G.InBattalion(ply, key): does a battalion name match a kit key ("*" =
+-- everyone, else part of the name; checks roster battalion NW2 rhylib_bn
+-- and the DarkRP job's battalion, category and name, case-insensitive)?
 function G.InBattalion(ply, key)
     if key == "*" then return true end
     key = string.lower(key)
@@ -288,7 +319,7 @@ function G.InBattalion(ply, key)
     return false
 end
 
--- The kit item ids for this player (set).
+-- G.KitFor(ply) -> { [item id] = true }: the config kit for this player.
 function G.KitFor(ply)
     local out = {}
     for key, list in pairs(G.Cfg("kit") or {}) do
@@ -299,7 +330,10 @@ function G.KitFor(ply)
     return out
 end
 
--- May this player take this part from the cabinet? Returns false, reason.
+-- G.Unlocked(ply, id) -> true, or false, reason: may this player take this
+-- part from the cabinet (config unlocks: rank via rhylib_roster
+-- R.RankIndex, qual via R.HasQual)? Their own kit is always allowed.
+-- Without rhylib_roster every part is allowed.
 function G.Unlocked(ply, id)
     local rule = (G.Cfg("unlocks") or {})[id]
     if not istable(rule) or G.KitFor(ply)[id] then return true end
@@ -327,7 +361,9 @@ local function extraGrids(it)
     return out
 end
 
--- Items go in once the inventory module exists (it loads after this one).
+-- Items go in once the inventory module exists (it loads after this one):
+-- Items.Register(id, def) for each G.ITEMS entry, category "gear", shelf
+-- group "helmet" / "body" (back items keep their default).
 local function registerItems()
     local Items = Rhylib.Items
     if not (Items and Items.Register) then return false end

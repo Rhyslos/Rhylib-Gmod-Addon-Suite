@@ -23,8 +23,18 @@
     wideband), droid poppers (10% to fry a bomb).
 
     Files: sv_10_bomb (state, rules, nets), sv_20_world (timer: motion
-    sensors, interference, timers, detonation, gas, EMP, GM), cl_10_window
-    (defusal window), cl_20_gm, cl_30_device, cl_40_manual (datapad tab).
+    sensors, interference, timers, detonation, gas, EMP, GM), sv_30_mines,
+    sv_35_repmines, cl_10_window (defusal window), cl_20_gm, cl_30_device,
+    cl_40_manual (datapad tab), cl_50_mines, cl_55_repmines, cl_60_training.
+
+    This file (shared, loads first): config module "eod", the shared
+    tables both sides read (E.MODS, E.TIERS, E.CHIP_CODES, E.COLOURS,
+    E.CAUSES), the permission rhylib.eod.gm, the eod_kit and
+    eod_interference items, ammo cabinet stock, the toolgun entries, and
+    the maths the server and the client must agree on (tilt bubble,
+    liquid needle, mine needle, scanner direction, cell life). It also
+    holds the "click" that freezes a player who steps on a mine
+    (StartCommand / SetupMove), since that has to run on both sides.
 ]]
 
 Rhylib.EOD = Rhylib.EOD or {}
@@ -32,6 +42,9 @@ local E = Rhylib.EOD
 local Config = Rhylib.Config
 
 local function reg(k, v, d) Config.Register("eod", k, v, d) end
+-- E.Cfg(key): the current value of an "eod" config key (shared).
+-- Read on demand, so changes from Server settings apply at once.
+-- Example: local r = Rhylib.EOD.Cfg("smallRadius")
 function E.Cfg(k) return Config.Get("eod", k) end
 
 reg("smallRadius", 600, "Small bomb blast radius (units)")
@@ -88,16 +101,24 @@ reg("repLimit", 3, "Republic mines: how many one player may have out")
 reg("repLimitField", 6, "Republic mines: how many with the Minefield skill")
 reg("repFieldRadius", 1.3, "Republic mines: blast radius multiplier with Minefield")
 
-E.KIT = "eod_kit"
-E.SCANNER = "rhylib_mine_scanner"
-E.DEVICE = "eod_interference"
-E.ARMORKIT = "rhylib_armor_kit"
-E.LAUNCHER = "rhylib_grenade_launcher"
-E.RMINE = "rhylib_rep_mine"
-E.UNITS_PER_M = 52.5
+-- Item / weapon class names used across the addon.
+E.KIT = "eod_kit"                       -- item: needed to open and work on a bomb or mine
+E.SCANNER = "rhylib_mine_scanner"       -- weapon
+E.DEVICE = "eod_interference"           -- item: placed as rhylib_interference_dev
+E.ARMORKIT = "rhylib_armor_kit"         -- weapon (item via its Inv fields)
+E.LAUNCHER = "rhylib_grenade_launcher"  -- weapon in rhylib_republic (named here for reference)
+E.RMINE = "rhylib_rep_mine"             -- weapon: the Republic mine stack
+E.UNITS_PER_M = 52.5                    -- Source units per metre (as everywhere in Rhylib)
 E.F0, E.F1 = 2400, 2480   -- frequency band (MHz) on the scanner
 
 -- Modules: id, name, rank (difficulty), remote = only on remote bombs.
+-- The order here is the order they show in the GM / training builders
+-- and the manual. To add a module: add a row here, give it state in
+-- E.Build (sv_10_bomb), rules (an OPS entry and/or a check in cutWire),
+-- a section in cl_10_window's buildLeft, a CAUSES entry for each way it
+-- can fire, and steps in cl_40_manual's MODULE_STEPS. See the guide
+-- docs/addons/rhylib_eod.md "Adding a module".
+-- (index is filled in below; E.MOD_BY[id] finds a row by id)
 E.MODS = {
     { id = "fuse", name = "Thermal fuse", rank = 1 },
     { id = "stab", name = "Charge stabiliser", rank = 1 },
@@ -111,6 +132,13 @@ E.MODS = {
 E.MOD_BY = {}
 for i, m in ipairs(E.MODS) do m.index = i E.MOD_BY[m.id] = m end
 
+-- Bomb types. budget = module points (sum of ranks) a random roll may
+-- spend, max = most modules, name = shown in windows and over the bomb,
+-- big = large-bomb blast (kill radius, quarter-map damage), big model,
+-- 3× gas cloud and a 240 s default timer (else 180; simplified 150).
+-- custom and training features come from a builder (or a "large" /
+-- "small" roll when first placed), so their budget and max are never
+-- read: a builder may pick every module.
 E.TIERS = {
     simple = { budget = 0, max = 0, name = "Simplified bomb", big = false },
     small = { budget = 3, max = 2, name = "Small bomb", big = false },
@@ -120,13 +148,18 @@ E.TIERS = {
 }
 
 -- Logic chip: blink pattern (S short, L long) -> switch setting.
+-- A bomb stores the row number (st.chip.code); the player sends the four
+-- switches as a "0101" string (net eod.act op 9) and it must match [2].
 E.CHIP_CODES = {
     { "SSS", "1010" }, { "SSL", "0110" }, { "SLS", "1100" }, { "SLL", "0011" },
     { "LSS", "1001" }, { "LSL", "0101" }, { "LLS", "1110" }, { "LLL", "0111" },
 }
+-- E.ChipText(pattern): "SLS" -> "· — · " (dots and dashes for windows).
 function E.ChipText(p) return (string.gsub(string.gsub(p, "S", "· "), "L", "— ")) end
 
--- Wire colours (index on the wire, random per bomb).
+-- Wire colours (index on the wire, random per bomb). { name, Color }.
+-- E.Build shuffles all 16 and hands them out, so a board never repeats a
+-- colour unless it has more than 16 wires.
 E.COLOURS = {
     { "Red", Color(229, 72, 77) }, { "Blue", Color(62, 142, 247) }, { "Yellow", Color(245, 217, 10) },
     { "Green", Color(70, 167, 88) }, { "White", Color(236, 239, 241) }, { "Black", Color(53, 59, 65) },
@@ -137,6 +170,10 @@ E.COLOURS = {
 }
 
 -- Detonation causes: title, what happened, what the manual says.
+-- The key is the cause string passed to E.Detonate / E.MineBoom and sent
+-- in net eod.boom; the client shows [1] and [2] on the fail overlay and
+-- [3] as "Manual: ...". cl_40_manual lists them in "Why bombs go off"
+-- (add a new key to its list there too). An unknown key shows as "gm".
 E.CAUSES = {
     motion = { "Motion sensor", "Someone moved too fast inside the bomb's motion sensor range.", "Walk inside 6 m (crouch-walk for a sensitive sensor), or blind the sensor with a wideband interference device." },
     antijam = { "Anti-jam safeguard", "An interference device blocked the bomb's remote signal, and its anti-jam safeguard fires when the signal is lost.", "Inspect before jamming. With anti-jam, cut the MON line first, or redirect a relay." },
@@ -169,12 +206,19 @@ E.CAUSES = {
     minepin = { "Mine fuse", "The safety pin went in at the wrong moment.", "Push the pin while the needle is inside the marked zone." },
 }
 
--- Skills (rhylib_skills, Field technician path on the Airborne page).
+-- E.Skill(ply, id): true if ply has the rhylib_skills node id (Field
+-- technician path on the Specialist page; category id "airborne").
+-- False without rhylib_skills. Shared. No skill makes defusing easier;
+-- skills only unlock extras (manual, Render safe recovery, Republic
+-- mines, Minefield, Signal blackout).
+-- Example: if Rhylib.EOD.Skill(ply, "eod_manual") then ... end
 function E.Skill(ply, id)
     local K = Rhylib.Skills
     return K and K.Has and IsValid(ply) and K.Has(ply, id) or false
 end
 
+-- Permission for the GM window and the EOD toolgun entries (default rank
+-- admin; rhylib_admin's gamemaster rank also has it by default).
 if Rhylib.Perms and Rhylib.Perms.Register then
     Rhylib.Perms.Register("rhylib.eod.gm", "admin", "Set up, re-roll, start, signal and detonate EOD bombs")
 end
@@ -211,7 +255,12 @@ do
     end
 end
 
--- The device's lifetime on one full cell, seconds.
+-- E.CellLife(radiusM, tuned, longCells): seconds one full cell lasts in
+-- an interference device at that radius (metres). Wideband:
+-- deviceDrain / r², at most 900 s; tuned ×4; longCells ×1.5 (a leftover
+-- from the old Signal discipline skill: the server always passes false
+-- now). Shared (the device window shows it).
+-- Example: E.CellLife(5, false) -> 153.6   (3840 / 25)
 function E.CellLife(radiusM, tuned, longCells)
     local k = (tuned and 4 or 1) * (longCells and 1.5 or 1)
     return math.min(900 * k, (E.Cfg("deviceDrain") or 3840) * k / math.max(1, radiusM) ^ 2)
@@ -221,6 +270,10 @@ end
 
 -- Tilt switch: three sines per axis (from the moment the lid came off)
 -- plus the player's nudges; past radius 1 it fires.
+-- Both sides compute the same position from the same numbers (amplitudes
+-- a, speeds w, phases p, start time t0, nudge offsets nx/ny sent in the
+-- view), so the bubble moves smoothly on the client without the server
+-- streaming it. Each sine is shifted by -sin(p) so it starts at 0.
 local function sineAt(s, dt)
     local v = 0
     for i = 1, 3 do v = v + s.a[i] * (math.sin(s.w[i] * dt + s.p[i]) - math.sin(s.p[i])) end
@@ -228,6 +281,9 @@ local function sineAt(s, dt)
 end
 
 -- The tilt switch only drifts while someone has the window open.
+-- E.TiltResume(st): un-pause the bubble by moving its start time t0 on
+-- by how long it was paused. Returns true if it was paused (the caller
+-- then resends the view so clients get the new t0).
 function E.TiltResume(st)
     local t = st.tilt
     if t and t.t0 and t.pausedAt then
@@ -237,6 +293,9 @@ function E.TiltResume(st)
     end
 end
 
+-- E.TiltPos(tilt, now) -> x, y: the bubble's position (radius 1 = the
+-- edge; the server detonates at x² + y² >= 1). Before the lid comes off
+-- (no t0) it is just the nudges.
 function E.TiltPos(t, now)
     if not t.t0 then return t.nx, t.ny end
     local dt = (t.pausedAt or now) - t.t0   -- (paused while nobody has the window open)
@@ -246,11 +305,22 @@ end
 -- Liquid charge: the pressure needle (0-100); the green band is
 -- band .. band + 14 (the server allows a little either side).
 -- Mine fuse: the needle the safety pin must be pushed against (0-100).
+-- Both are plain sines of CurTime(), so client and server agree without
+-- any networking; the server checks a moment in the past (the player's
+-- ping, at most 0.25 s) to allow for latency.
+-- E.MineNeedle(period, phase, now) -> 4..96
 function E.MineNeedle(period, ph, now) return 50 + 46 * math.sin(now * 2 * math.pi / period + ph) end
 
+-- E.LiquidNeedle(liquidState, now) -> 3..97 (liquidState = st.liquid or the view's copy)
 function E.LiquidNeedle(l, now) return 50 + 47 * math.sin(now * 2 * math.pi / l.period + l.ph) end
 
 -- Toolgun entries (rhylib_toolgun, category "EOD").
+-- Entry fields: id, name, cat, class (the entity the toolgun spawns),
+-- count = true (the toolgun's count box is used), place = function(ply,
+-- tr, n) that spawns the entities itself and returns them (used for
+-- mines, which E.PlaceMines buries), perm = the permission that lets a
+-- non-staff gamemaster use just these entries. Entries whose class isn't
+-- registered are left out.
 Rhylib.Hook.Add("Rhylib.ToolEntries", "eod.tool", function(list)
     for _, e in ipairs({
         { id = "eod_simple", name = "Bomb: simplified (timer, lid switch, wires)", cat = "EOD", class = "rhylib_eod_bomb_simple" },
@@ -276,11 +346,16 @@ Rhylib.Hook.Add("Rhylib.ToolEntries", "eod.tool", function(list)
 end)
 
 -- The exposed top of a (half-buried) mine: blasts and sight lines start here.
+-- E.MineTop(mine) -> world Vector. Shared.
 function E.MineTop(m) return m:LocalToWorld(Vector(0, 0, m:OBBMaxs().z)) end
 
 -- Something that goes away for good in play (a mine that went off or was
 -- lifted, a bomb that went off) stays in the permanent map setup: it comes
 -- back next map instead of being dropped from the save.
+-- E.KeepForNextMap(ent): server. Clears the entity's permanent flag
+-- before it is removed, so rhylib_core's Perma "removed: re-save" doesn't
+-- drop its row. Call it right before removing a permanent mine or bomb
+-- that was used up in play.
 function E.KeepForNextMap(e)
     local P = Rhylib.Perma
     if P and P.Is and P.Is(e) then
@@ -291,6 +366,10 @@ end
 
 -- The click: for a moment after stepping on a mine you can't move (so you
 -- get the chance to freeze); after that, moving sets it off.
+-- Shared and predicted: the server sets NW2Entity rhylib_onMine and
+-- NW2Float rhylib_mineAt on the player (sv_30_mines press()); both sides
+-- then clear movement input and horizontal speed for E.MINE_GRACE
+-- seconds, so the player's own client doesn't keep walking and rubber-band.
 E.MINE_GRACE = 0.6
 local function clicked(ply)
     return IsValid(ply:GetNW2Entity("rhylib_onMine")) and CurTime() - ply:GetNW2Float("rhylib_mineAt", 0) < E.MINE_GRACE
@@ -310,6 +389,8 @@ end)
 
 -- Mine scanner beam: where you look, but always down at the ground
 -- (at least 30° below level).
+-- E.ScanDir(ply) -> unit Vector. Shared: the client draws the beam and
+-- finds mines with it; the server rechecks marks (net eod.minemark) with it.
 function E.ScanDir(ply)
     local a = ply:EyeAngles()
     a.p = math.max(a.p, 30)

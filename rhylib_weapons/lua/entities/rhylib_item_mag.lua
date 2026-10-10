@@ -1,3 +1,5 @@
+-- Old pick-up class (a medium magazine), not in the spawn menu. See the note at the end.
+
 AddCSLuaFile()
 
 ENT.Type = "anim"

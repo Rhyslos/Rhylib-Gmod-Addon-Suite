@@ -9,12 +9,22 @@
 
     R.calls[id] = { id, caller, label, members = { [ply] = true }, ringing = { [ply] = until }, started }
 
-    Messages
-      radio.hail    client: squad id (kind 1) or player (kind 2)
-      radio.answer  client: call id, yes / no
-      radio.hangup  client
-      radio.ring    server -> player rung: call id, caller, label, on / off
-      radio.call    server -> people in a call: id (0 = none), started, members
+    Messages (client rates per player: rate/s, burst)
+      radio.hail    client: kind (2) then squad id (9, kind 1) or player
+                    entity (kind 2). 1, 3
+      radio.answer  client: call id (9), yes / no (bool). 4, 4
+      radio.hangup  client: no data. 2, 3
+      radio.ring    server -> player rung: call id (9), on (bool); when on
+                    also caller entity and label (string)
+      radio.call    server -> people in a call (and the caller while it
+                    rings): id (9; 0 = no call, nothing follows), started
+                    (float, CurTime), label, caller entity, ringing count
+                    (8), member count (8), member entities
+
+    The label is what the people rung see: the caller's squad name, or
+    their own name when they have no squad. Calls are tx kind 3
+    (R.TX_CALL); while a call has 2+ members the radio key sends on it.
+    Memory only, like squads.
 ]]
 
 local R = Rhylib.Radio
@@ -59,6 +69,8 @@ local function noCall(ply)
     net.Send(ply)
 end
 
+-- R.CallLive(id): true when call id exists and has 2 or more members
+-- (someone answered). Server.
 function R.CallLive(id)
     local c = R.calls[id]
     return c ~= nil and table.Count(c.members) >= 2
@@ -87,7 +99,10 @@ local function checkEnd(c)
     end
 end
 
--- Leaves (or, for the caller, ends) whatever call the player is in or ringing.
+-- R.HangUp(ply): leaves (or, for the caller, ends) whatever call the
+-- player is in, and declines anything still ringing for them. Also runs
+-- when they turn the radio off or disconnect. Server.
+-- Example: Rhylib.Radio.HangUp(ply)
 function R.HangUp(ply)
     local p = R.P(ply)
     local c = p.call and R.calls[p.call]
@@ -188,7 +203,8 @@ Rhylib.Net.Receive("radio.hangup", function(ply)
     R.HangUp(ply)
 end, { rate = 2, burst = 3 })
 
--- Rings running out.
+-- Rings running out (hailTime), once a second. A call whose caller left
+-- ends; a call nobody answered ends with "No answer".
 timer.Create("Rhylib.Radio.Hails", 1, 0, function()
     if next(R.calls) == nil then return end
     local now = CurTime()

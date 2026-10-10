@@ -22,6 +22,8 @@ function ENT:SetupDataTables()
     self:NetworkVar("Bool", 0, "Wide")   -- (Minefield: wider blast)
 end
 
+-- Model: config mineModel (HL2 hopper mine if missing). Drawn scaled to
+-- mineSize like the droids' AP mines; tinted blue.
 function ENT:WantedModel()
     local E = Rhylib.EOD
     local mdl = E and E.Cfg("mineModel")

@@ -4,6 +4,10 @@
     overlapping a little in the middle (lightGap), the overlap dimmed in
     each beam's own texture (buildBeams). The server switches them on the
     helmet gear key (default L) or the flashlight key (sv_20_gear.lua). Only your own beams cast shadows.
+    Client only. Real beams (two ProjectedTextures each) for you and the
+    nearest lightMaxPlayers others; everyone lit in range gets the lamp
+    glow sprites. Render targets rhylib_helmetlight_1 / _2 hold the beam
+    textures (if making them fails, the plain texture is used).
 ]]
 
 local G = Rhylib.Gear

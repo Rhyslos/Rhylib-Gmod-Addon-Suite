@@ -1,35 +1,46 @@
 --[[
     What the skills do (shared, so firing and movement stay predicted).
     Other addons ask these when rhylib_skills is installed; without it
-    nothing is gated (every fire mode, scope and item works).
+    nothing is gated (every fire mode, scope and item works). Callers
+    always guard: `local K = Rhylib.Skills  if K and K.X then ... end`.
 
-        K.ModeAllowed(ply, wep, mode)    skill-gated fire modes (SWEP.SkillModes)
-        K.ScopeAllowed(ply, wep)         SWEP.ScopeSkill
-        K.RunAndGun(ply, wep)            fire while sprinting
-        K.SpreadMult(ply, wep)           cone multiplier (sprinting, Z-6, pistols)
-        K.RecoilMult(ply, wep)           view kick multiplier
-        K.FireRateMult(ply, wep, mode)
-        K.ReloadMult(ply, wep, cell)     reload time multiplier (server; Speed loader: pistols)
-        K.DrawMult(ply, wep)             draw time multiplier (Quick draw)
-        K.MagBonus(ply, magId)           extra rounds per magazine
-        K.CellMult(ply)                  power cell shots multiplier
-        K.SpinMoveMult(ply, wep, base)   walk speed while the barrels spin
-        K.WeightPenaltyMult(ply)         rhylib_stamina weight penalty
-        K.AdjustWeight(ply, state, weight, cap)  rhylib_inventory carry
-        K.FreeSprint(ply)                Momentum, Second wind: sprinting costs nothing
-        K.RegenMult(ply)                 stamina refill multiplier (Second wind)
-        K.MagAllowed(ply, wep, magId)    SWEP.MagSkills (Heavy feed: Z-6 large mags)
-        K.PelletConeMult(ply, wep)       shotgun pellet cone (Shotgun drills)
-        K.ShotDamageMult(ply, wep)       per shot, after its spread (First shot)
-        K.JetCfg(ply, key, value)        rhylib_jetpack settings per player (Airborne)
-        K.Airborne(ply)                  has any Airborne skill
-        K.Hovering(ply)                  hovering on the jetpack (Hover)
+        K.ModeAllowed(ply, wep, mode)    skill-gated fire modes (SWEP.SkillModes)    weapons: rhylib_base
+        K.ScopeAllowed(ply, wep)         SWEP.ScopeSkill                             weapons: rhylib_base
+        K.RunAndGun(ply, wep)            fire while sprinting                        weapons: rhylib_base
+        K.SpreadMult(ply, wep)           cone multiplier                             weapons: sh_10_spread
+        K.RecoilMult(ply, wep)           view kick multiplier                        weapons: cl_50_recoil, cl_70_stats
+        K.FireRateMult(ply, wep, mode)   fire rate multiplier                        weapons: rhylib_base
+        K.ReloadMult(ply, wep, cell)     reload time multiplier                      weapons: rhylib_base; republic: grenade launcher
+        K.DrawMult(ply, wep)             draw time multiplier (Quick draw)           weapons: rhylib_base
+        K.MagBonus(ply, magId)           extra rounds per magazine                   weapons: rhylib_base
+        K.CellMult(ply)                  power cell shots multiplier                 weapons: rhylib_base, cl_70_stats
+        K.CellDrainMult(ply, wep)        cell drain per shot (Overcharge)            weapons: rhylib_base, cl_70_stats
+        K.ModeDamageMult(ply, wep)       fire mode damage (Overcharge)               weapons: cl_70_stats
+        K.ShotDamageMult(ply, wep)       per shot (First shot, Overcharge)           weapons: rhylib_base
+        K.SpinMoveMult(ply, wep, base)   walk speed while the barrels spin           weapons: rhylib_base
+        K.MagAllowed(ply, wep, magId)    SWEP.MagSkills (Heavy feed: Z-6 large mags) weapons: rhylib_base, cl_70_stats
+        K.PelletConeMult(ply, wep)       shotgun pellet cone (Shotgun drills)        weapons: rhylib_base
+        K.FlyFire(ply, wep)              DP-23 fires while flying                    weapons: rhylib_base
+        K.WeightPenaltyMult(ply)         weight stamina penalty                      stamina: sh_00_config
+        K.FreeSprint(ply)                sprinting costs nothing                     stamina: sh_10_move
+        K.RegenMult(ply)                 stamina refill multiplier                   stamina: sh_10_move
+        K.AdjustWeight(ply, state, weight, cap)  carry weight and limit              inventory: sv_10_inventory, cl_20_panel
+        K.JetCfg(ply, key, value)        jetpack settings per player (Airborne)      jetpack: sh_10_move
+        K.GrenadeMults(ply)              thrown grenades (Grenadier)                 republic: rhylib_grenade_base
+        K.DemoMults(ply)                 thermal / HE charge blasts (EOD)            republic: grenade base, HE charge, launcher
+        K.Airborne(ply)                  has any Airborne skill                      (this addon)
+        K.Hovering(ply)                  hovering on the jetpack (Hover)             (this addon)
+    Server-only effects (sv_10_skills.lua): K.DamageMult (weapons:
+    sv_10_bolts), K.ExtraGrids (inventory). Command orders: sh_20_command.
     Numbers are config "skills" values so they can be tuned without code.
 ]]
 
 local K = Rhylib.Skills
 local Config = Rhylib.Config
 
+-- Every effect number. Multipliers: 1 = no change, below 1 = less (spread,
+-- kick, time, damage taken), above 1 = more. Distances are Hammer units
+-- (about 52 to a metre).
 local function reg(key, val, desc) Config.Register("skills", key, val, desc) end
 reg("quickHandsMult", 0.9, "Quick hands: magazine reload time multiplier")
 reg("runGunSpread", 1.6, "Run and gun: spread multiplier while sprinting and firing")
@@ -158,18 +169,22 @@ reg("eodAntiArmour", 1.25, "EOD Anti-armour: explosive damage multiplier against
 
 local function cfg(k) return Config.Get("skills", k) end
 
+-- Weapon classes the effects check (K.GunClass compares against these).
 K.Z6 = "rhylib_z6"
 K.DC15X = "rhylib_dc15x"
 K.DP24 = "rhylib_dp24"
 K.DC15S = "rhylib_dc15s"
 K.DC15A = "rhylib_dc15a"
 
--- The gun a weapon counts as for skills (training copies count as the real one).
+-- K.GunClass(wep): the gun a weapon counts as for skills (training copies
+-- count as the real one, via SWEP.TrainingOf).
 function K.GunClass(wep)
     return wep.TrainingOf or wep:GetClass()
 end
 
--- Same for an item id.
+-- K.ItemGun(itemId): the same for an inventory item id (weapon class).
+-- K.PISTOLS: classes that count as pistols (Pistol proficiency, Steady
+-- grip, Speed loader).
 function K.ItemGun(id)
     local w = weapons.GetStored(id)
     return w and w.TrainingOf or id
@@ -183,6 +198,10 @@ function K.IsCarbine(wep) return IsValid(wep) and wep.InvGroup == "carbine" and 
 
 local function isPly(p) return IsValid(p) and p:IsPlayer() end
 
+-- K.ModeAllowed(ply, wep, mode): may ply use this fire mode? A mode named
+-- in SWEP.SkillModes = { mode = skillId } needs that skill; other modes
+-- are always allowed. Non-players can't use gated modes.
+-- Example (SWEP): SWEP.SkillModes = { auto = "full_auto" }
 function K.ModeAllowed(ply, wep, mode)
     local need = wep.SkillModes and wep.SkillModes[mode]
     if not need then return true end
@@ -192,11 +211,14 @@ function K.ModeAllowed(ply, wep, mode)
     return K.Has(ply, need)
 end
 
+-- K.ScopeAllowed(ply, wep): may ply look through this gun's scope?
+-- SWEP.ScopeSkill = skill id (DC-15X: "long_gun"); no field = always.
 function K.ScopeAllowed(ply, wep)
     if not wep.ScopeSkill then return true end
     return isPly(ply) and K.Has(ply, wep.ScopeSkill)
 end
 
+-- K.RunAndGun(ply, wep): true if ply may fire while sprinting (Run and gun).
 function K.RunAndGun(ply, wep)
     return isPly(ply) and K.Has(ply, "run_gun")
 end
@@ -205,6 +227,10 @@ local function sprinting(ply, wep)
     return wep.OwnerSprinting and wep:OwnerSprinting(ply) or false
 end
 
+-- K.SpreadMult(ply, wep): multiplier on every cone of this gun right now
+-- (sprint-firing, Steady barrels, Pistol proficiency, Steady stance,
+-- Planted, Steady aim, Carbine discipline, Rifle drill, Combat veteran,
+-- Hover, First shot). Called in predicted code, so only shared state.
 function K.SpreadMult(ply, wep)
     if not isPly(ply) then return 1 end
     local set = K.Set(ply)
@@ -228,6 +254,9 @@ function K.SpreadMult(ply, wep)
     return m
 end
 
+-- K.RecoilMult(ply, wep): view kick multiplier (Steady grip, Focus fire,
+-- Carbine discipline, Hover, Combat veteran, Steady the line, Overcharge,
+-- Sustained fire, Steady barrels, Planted).
 function K.RecoilMult(ply, wep)
     if not isPly(ply) then return 1 end
     local m = 1
@@ -295,11 +324,14 @@ function K.MagAllowed(ply, wep, magId)
     return isPly(ply) and K.Has(ply, need)
 end
 
+-- K.PelletConeMult(ply, wep): pellet cone multiplier (Shotgun drills, DP-24).
 function K.PelletConeMult(ply, wep)
     if K.GunClass(wep) == K.DP24 and isPly(ply) and K.Has(ply, "shotgun_drills") then return cfg("shotgunCone") end
     return 1
 end
 
+-- K.FireRateMult(ply, wep, mode): fire rate multiplier (Bolt drills,
+-- Rapid fire: rapidFireRPM / the gun's FireRate, Dual DC-17 "dual" mode).
 function K.FireRateMult(ply, wep, mode)
     if not isPly(ply) then return 1 end
     local m = 1
@@ -311,6 +343,10 @@ function K.FireRateMult(ply, wep, mode)
     return m
 end
 
+-- K.ReloadMult(ply, wep, cell): reload time multiplier. cell = true for a
+-- power cell swap (Quick hands only speeds magazines). Speed loader,
+-- Combat veteran, Field logistics (server flag) and Momentum (one reload:
+-- calling it uses the bonus up, so call it once per reload).
 function K.ReloadMult(ply, wep, cell)
     if not isPly(ply) then return 1 end
     local m = 1
@@ -325,8 +361,8 @@ function K.ReloadMult(ply, wep, cell)
     return m
 end
 
--- Quick draw: draw time multiplier for Rhylib guns.
--- Quick draw, and Carbine discipline for the DC-15S (the faster one wins).
+-- K.DrawMult(ply, wep): draw time multiplier for Rhylib guns: Quick draw,
+-- and Carbine discipline for the DC-15S (the faster one wins).
 function K.DrawMult(ply, wep)
     if not isPly(ply) then return 1 end
     local m = 1
@@ -335,6 +371,8 @@ function K.DrawMult(ply, wep)
     return m
 end
 
+-- K.MagBonus(ply, magId): extra rounds when ply loads this magazine type
+-- (Extended mags: medium, Light mags: small). Returns a number (0 = none).
 function K.MagBonus(ply, magId)
     if not isPly(ply) then return 0 end
     local W = Rhylib.Weapons
@@ -344,11 +382,14 @@ function K.MagBonus(ply, magId)
     return 0
 end
 
+-- K.CellMult(ply): power cell shots multiplier (Efficient cells).
 function K.CellMult(ply)
     if isPly(ply) and K.Has(ply, "eff_cells") then return cfg("effCellsMult") end
     return 1
 end
 
+-- K.SpinMoveMult(ply, wep, base): walk speed multiplier while a minigun's
+-- barrels spin; base is the gun's own SpinMoveMult (Gun runner raises it).
 function K.SpinMoveMult(ply, wep, base)
     if K.GunClass(wep) == K.Z6 and isPly(ply) and K.Has(ply, "gun_runner") then
         return math.max(base, cfg("gunRunnerSpin"))
@@ -356,6 +397,7 @@ function K.SpinMoveMult(ply, wep, base)
     return base
 end
 
+-- K.WeightPenaltyMult(ply): multiplier on rhylib_stamina's weight penalty (Load bearer).
 function K.WeightPenaltyMult(ply)
     if isPly(ply) and K.Has(ply, "load_bearer") then return cfg("loadBearerPenalty") end
     return 1
@@ -373,8 +415,11 @@ local function isGun(class)
     return v
 end
 
--- Carry: Load bearer raises the limit; Gun runner halves the Z-6's weight.
--- state is the inventory state ({ cont = { [cid] = { items } } }).
+-- K.AdjustWeight(ply, state, weight, cap): carry weight and limit after
+-- skills. Load bearer raises the limit; Gun runner (Z-6), Long gun
+-- (DC-15X), Shotgun drills (short guns) and Explosives pack lower item
+-- weights (the lightest that applies). state is the inventory state
+-- ({ cont = { [cid] = { items } } }). Returns weight, cap.
 function K.AdjustWeight(ply, state, weight, cap)
     if not isPly(ply) then return weight, cap end
     local set = K.Set(ply)
@@ -406,8 +451,8 @@ function K.AdjustWeight(ply, state, weight, cap)
     return math.max(0, weight), cap
 end
 
--- Explosives (EOD Explosives pack): grenades and charges (armoury shelf
--- "grenade"), rockets, Republic mines.
+-- K.ExplosiveItem(def): is this item an explosive for the EOD Explosives
+-- pack? Grenades and charges (armoury shelf "grenade"), rockets, Republic mines.
 function K.ExplosiveItem(def)
     if not def then return false end
     if def.group == "grenade" or def.id == "rhylib_rep_mine" then return true end
@@ -416,7 +461,8 @@ function K.ExplosiveItem(def)
 end
 
 -- Explosives pack: one more per stack of explosives that stack.
--- (Items.StackFor allows up to def.stackMax.)
+-- (Items.StackFor allows up to def.stackMax.) Answers rhylib_inventory's
+-- Rhylib.ItemStack(def, ply) hook with the stack size for this player.
 Rhylib.Hook.Add("Rhylib.ItemStack", "skills.eodpack", function(def, ply)
     if not (def and def.stack and def.stack > 1 and K.ExplosiveItem(def)) then return end
     local extra = math.max(0, math.floor(cfg("eodPackStack") or 1))
@@ -424,36 +470,42 @@ Rhylib.Hook.Add("Rhylib.ItemStack", "skills.eodpack", function(def, ply)
     if isPly(ply) and K.Has(ply, "eod_pack") then return def.stack + extra end
 end)
 
--- Demolitions (EOD): damage and radius multipliers for thermal detonators
--- and HE charges, or nil without the skill.
+-- K.DemoMults(ply): Demolitions (EOD): damage and radius multipliers for
+-- thermal detonators and HE charges, or nil without the skill.
+-- Example: local dm, rm = K.DemoMults(owner)  if dm then dmg = dmg * dm end
 function K.DemoMults(ply)
     if not (isPly(ply) and K.Has(ply, "eod_demo")) then return nil end
     return cfg("eodDemoDamage"), cfg("eodDemoRadius")
 end
 
--- DP-23 proficiency (Airborne): the DP-23 fires while flying a jetpack.
+-- K.FlyFire(ply, wep): DP-23 proficiency (Airborne): true if this gun may
+-- fire while flying a jetpack (rhylib_base TooHeavyToFire asks).
 function K.FlyFire(ply, wep)
     return isPly(ply) and K.GunClass(wep) == "rhylib_dp23" and K.Has(ply, "dp23_prof")
 end
 
--- Grenadier (Airborne): range, damage and radius multipliers for thrown
--- grenades, or nil without the skill.
+-- K.GrenadeMults(ply): Grenadier (Airborne): range, damage and radius
+-- multipliers for thrown grenades, or nil without the skill.
 function K.GrenadeMults(ply)
     if not (isPly(ply) and K.Has(ply, "grenadier")) then return nil end
     return cfg("grenadeRange"), cfg("grenadeDamage"), cfg("grenadeRadius")
 end
 
--- Hovering on the jetpack: in the air, thrusting, Sprint held (rhylib_jetpack).
+-- K.Hovering(ply): hovering on the jetpack: in the air, thrusting, Sprint
+-- held (rhylib_jetpack). False without rhylib_jetpack.
 function K.Hovering(ply)
     local J = Rhylib.Jetpack
     return J ~= nil and ply:GetDTBool(J.DT_THRUST) and ply:KeyDown(IN_SPEED) and not ply:OnGround()
 end
 
+-- K.FreeSprint(ply): sprinting costs no stamina right now (Momentum after
+-- a kill: NW2Float rhylib_momentum; or the Second wind order).
 function K.FreeSprint(ply)
     if not isPly(ply) then return false end
     return ply:GetNW2Float("rhylib_momentum", 0) > CurTime() or K.OrderIs(ply, "wind")
 end
 
+-- K.RegenMult(ply): stamina refill multiplier (Second wind order, Steady the line).
 function K.RegenMult(ply)
     local m = 1
     if K.OrderIs(ply, "wind") then m = cfg("windRegen") end
@@ -494,11 +546,16 @@ local function airborne(ply)
     return set.hard_landings == true
 end
 
+-- K.Airborne(ply): has any Airborne skill (not counting the Field
+-- technician, which only shares the page).
 function K.Airborne(ply)
     return isPly(ply) and airborne(ply)
 end
 
--- rhylib_jetpack asks for these per player and tick.
+-- K.JetCfg(ply, key, value): rhylib_jetpack asks for these per player and
+-- tick. key is a jetpack setting (fuelTime, rechargeTime, hoverFuel,
+-- climbSpeed, airAccel, maxAirSpeed), value the jetpack's own; returns the
+-- value for this player. Only players with an Airborne skill change.
 function K.JetCfg(ply, key, v)
     local set = K.Set(ply)
     if not airborne(ply) then return v end
@@ -520,7 +577,7 @@ end
 -- short burst (sidestepTime), then the sideways speed drops to
 -- sidestepCarry so the step stays short. Predicted; cooldown in DTFloat
 -- 25, end of the burst in DTFloat 24.
-local DT_DODGE, DT_STEP = 25, 24
+local DT_DODGE, DT_STEP = 25, 24   -- (player DTFloat slots; other addons must not use them)
 Rhylib.Hook.Add("SetupMove", "skills.dodge", function(ply, mv)
     local now = CurTime()
     -- End of the burst: slow down.

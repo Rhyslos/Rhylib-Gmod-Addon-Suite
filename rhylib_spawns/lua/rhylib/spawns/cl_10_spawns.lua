@@ -1,6 +1,9 @@
 --[[
-    Spawn points (client): the respawn list while dead (click one; the
-    highlighted one is where you'll come back) and the staff edit menu.
+    Spawn points (client): the respawn list while dead (number keys 1-9
+    pick; the highlighted one is where you'll come back; the panel takes no
+    mouse, so clicking still respawns) and the staff edit menu. Both need
+    rhylib_menus (Menus.Kit); without it no list shows and players respawn
+    at the default point.
 ]]
 
 local S = Rhylib.Spawns

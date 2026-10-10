@@ -3,7 +3,13 @@
       LMB  swing: a hit makes the target collapse (rhylib_mp stun)
       RMB  search the player you look at: see their inventory; if they're
            cuffed you can take items. Also lets you open locked lockers.
+
+    Shared SWEP. Anyone can swing it, but only an MP's hit stuns
+    (server checks MP.IsMP). The swing is lag compensated. RMB just asks
+    the server (MP.OpenSearch); the server checks MP, range and sight.
+    Range and delay come from config mp batonRange, batonDelay, searchRange.
 ]]
+
 
 AddCSLuaFile()
 

@@ -1,5 +1,12 @@
 --[[
-    Chat channels and command parsing (shared).
+    Chat channels and command parsing (shared: loaded on server and client).
+
+    Adds: Rhylib.Chat (the addon's table), Chat.CHANNELS (the channel list),
+    Chat.byId / Chat.byCmd lookups, the "chat" config keys, and the helpers
+    both sides use: Chat.SquadOf, Chat.BattalionOf, Chat.InCommand,
+    Chat.CanUse, Chat.FindPlayer and Chat.Parse. The server (sv_10_chat)
+    routes messages with them; the client (cl_10_chat) uses them for the
+    channel picker, the "/" suggestions and to read what you typed.
 
     Channels: public, local, advert, admin, private messages, RP (public
     roleplay actions) and Event (event announcements to everyone, sent by
@@ -11,7 +18,7 @@
     Typing:
       plain text            goes to your current channel (click the
                             channel name to change it, or type /local etc.)
-      /public text  // text /ooc text      public
+      /public text  /p text  // text  /ooc text   public
       /local text   /l text               people near you
       /advert text  /ad text              everyone, highlighted, with a cooldown
       /admin text   /a text               admins (anyone can send, for reports)
@@ -35,6 +42,18 @@ Rhylib.Chat = Rhylib.Chat or {}
 local Chat = Rhylib.Chat
 
 -- index = network id (4 bits), keep the order stable.
+-- Fields of a channel:
+--   id       name used in code, routes (sv_10_chat) and hooks
+--   name     shown in the chat ("[Local] ...") and the picker
+--   color    tag and picker colour
+--   cmds     slash commands that pick it (without the "/")
+--   desc     one line shown in the picker and suggestions
+--   private  needs a target player (/pm name text)
+--   action   drawn as "* Name text" (roleplay action)
+--   staff    CAMI permission needed to send (checked on the server)
+--   needs    "squad" | "battalion" | "command": hidden and refused for
+--            players outside it (Chat.CanUse)
+--   jammable carried by radio: dead inside a rhylib_radio comms jammer
 Chat.CHANNELS = {
     { id = "public", name = "Public", color = Color(228, 227, 220), cmds = { "public", "p", "ooc" }, desc = "Everyone on the server" },
     { id = "local", name = "Local", color = Color(151, 196, 89), cmds = { "local", "l" }, desc = "People near you" },
@@ -48,13 +67,14 @@ Chat.CHANNELS = {
     { id = "command", name = "Command", color = Color(235, 185, 120), cmds = { "command", "cmd" }, desc = "Officers and commanders", needs = "command", jammable = true },
     { id = "comms", name = "Comms", color = Color(130, 205, 235), cmds = { "comms", "co" }, desc = "Everyone, as radio comms", jammable = true },
 }  -- 15 channels max with 4 bits; add new ones at the end
+-- Chat.byId["local"] -> channel, Chat.byCmd["l"] -> channel.
 Chat.byId, Chat.byCmd = {}, {}
 for i, c in ipairs(Chat.CHANNELS) do
     c.index = i
     Chat.byId[c.id] = c
     for _, cmd in ipairs(c.cmds) do Chat.byCmd[cmd] = c end
 end
-Chat.CHANNEL_BITS = 4
+Chat.CHANNEL_BITS = 4  -- bits for a channel index in chat.msg / chat.send (0 = system note)
 
 local Config = Rhylib.Config
 Config.Register("chat", "defaultChannel", "public", "Channel plain text goes to until a player picks another (public, comms, local, ...)")
@@ -65,13 +85,17 @@ Config.Register("chat", "commandRank", "LT", "Lowest roster rank in the Command 
 
 -- Who a channel reaches (shared: the server routes with it, the client
 -- only lists channels you can use).
+
+-- Chat.SquadOf(ply): the player's rhylib_radio squad id, 0 when not in a
+-- squad (or rhylib_radio isn't installed).
 function Chat.SquadOf(ply)
     local Radio = Rhylib.Radio
     return Radio and Radio.SquadOf and Radio.SquadOf(ply) or 0
 end
 
--- Your battalion: rhylib_roster's, else your job's battalion (not the
--- Recruits category).
+-- Chat.BattalionOf(ply): your battalion name, "" for none.
+-- rhylib_roster's (NW2 rhylib_bn), else your DarkRP job's `battalion` field
+-- (not the Recruits category).
 function Chat.BattalionOf(ply)
     local bn = ply:GetNW2String("rhylib_bn", "")
     if bn ~= "" then return bn end
@@ -79,6 +103,9 @@ function Chat.BattalionOf(ply)
     return job and isstring(job.battalion) and job.battalion or ""
 end
 
+-- Chat.InCommand(ply): true if the player may use the Command channel:
+-- a job with commander = true, or roster rank >= config chat commandRank
+-- (needs rhylib_roster for the rank part).
 function Chat.InCommand(ply)
     local job = RPExtraTeams and RPExtraTeams[ply:Team()]
     if job and job.commander then return true end
@@ -88,7 +115,11 @@ function Chat.InCommand(ply)
     return ply:GetNW2Int("rhylib_rank", 0) >= need
 end
 
--- ok, reason
+-- Chat.CanUse(ply, ch): can this player send on / see channel ch?
+-- Returns true, or false and a reason to show them. Checks the radio
+-- jammer (jammable channels) and the `needs` field. The staff permission
+-- of the Event channel is checked separately on the server.
+-- Example: local ok, why = Rhylib.Chat.CanUse(ply, Rhylib.Chat.byId.squad)
 function Chat.CanUse(ply, ch)
     -- (rhylib_radio comms jammer: the radio-carried channels go dead)
     if ch.jammable and IsValid(ply) and ply:GetNW2Bool("rhylib_jammed", false) then
@@ -104,7 +135,8 @@ function Chat.CanUse(ply, ch)
     return true
 end
 
--- Finds a player by (part of) their name. Exact matches win.
+-- Chat.FindPlayer(name): finds a player by (part of) their name, case
+-- insensitive. Exact matches win, else the first partial match. nil if none.
 function Chat.FindPlayer(name)
     name = string.lower(name or "")
     if name == "" then return nil end
@@ -124,6 +156,8 @@ end
       "pass"                              not ours: send it as normal chat
       "usage", text                       a Rhylib command used wrongly
     current: the channel plain text goes to.
+    Example: Rhylib.Chat.Parse("/l hello", Rhylib.Chat.byId.public)
+             --> "send", <Local channel>, "hello"
 ]]
 function Chat.Parse(text, current)
     if string.sub(text, 1, 2) == "//" then

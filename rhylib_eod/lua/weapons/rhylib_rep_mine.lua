@@ -33,11 +33,14 @@ SWEP.PropColor = Color(170, 205, 255)
 SWEP.PropScale = 0.5
 SWEP.PropVMScale = 0.5
 
-SWEP.Reach = 110
+SWEP.Reach = 110            -- (units to the ground you plant on)
 
 function SWEP:PrimaryAttack() self:PlaceMine() end
 function SWEP:SecondaryAttack() self:PlaceMine() end
 
+-- SWEP:PlaceMine(): LMB and RMB. Checks the skill and the ground (a
+-- walkable brush within Reach), asks E.RepCanPlace, then on the server
+-- plants with E.RepPlace and uses one from the stack (UseOne, grenade base).
 function SWEP:PlaceMine()
     local o = self:GetOwner()
     if not IsValid(o) or not o:IsPlayer() then return end

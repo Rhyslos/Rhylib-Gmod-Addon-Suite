@@ -2,7 +2,8 @@
     "Stowed": what you hold when no weapon is out. Picking an empty hotbar
     slot (or the slot you're already holding) switches to it, so your guns
     stay stowed in the inventory. Nothing to draw, nothing to fire.
-    Every player gets it on spawn (sv_10_inventory.lua).
+    Every player gets it on spawn (sv_10_inventory.lua, Inv.Stow). Shared.
+    Not an inventory item and never stripped by rhylib_cleanhotbar.
 ]]
 
 AddCSLuaFile()

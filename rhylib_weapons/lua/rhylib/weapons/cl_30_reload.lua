@@ -8,6 +8,9 @@
             Let go in the middle to cancel.
 
     The client only asks; the server checks the pouch and runs the reload.
+    Realm: client. Sends nets wep.mode and wep.reload (read in
+    sv_20_pouch.lua). Config weapons reloadHoldTime sets how long R must
+    be held. The toolgun (SWEP.ToolGun) and an open inventory keep R.
 ]]
 
 local W = Rhylib.Weapons

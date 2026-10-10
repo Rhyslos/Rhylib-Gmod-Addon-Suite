@@ -1,5 +1,5 @@
 --[[
-    Profiler.
+    Profiler (shared; each realm records its own numbers).
 
     Off by default and free when off. Turn it on with:
         rhylib_profile 1
@@ -9,7 +9,16 @@
     rhylib_profile_reset clears the numbers.
 
     It records time spent in every hook handler registered through
-    Rhylib.Hook, and bytes sent by Rhylib net messages.
+    Rhylib.Hook, and bytes sent by net messages (server: every message,
+    other addons' too, see sh_30_net.lua). The live page (sv_17_profiler.lua)
+    turns it on by itself while someone watches.
+
+    rhylib_profile is not replicated: the server's and each client's are
+    separate convars. Also here: rhylib_status (server: loaded modules and
+    versions; console or superadmin).
+
+    Profiler.hooks["<event>/<handler id>"] = { t = seconds, n = calls }
+    Profiler.net["<message name>"] = { bytes, n }
 ]]
 
 Rhylib.Profiler = Rhylib.Profiler or {}
@@ -20,6 +29,11 @@ Profiler.hooks = Profiler.hooks or {}  -- [key] = { t = seconds, n = calls }
 Profiler.net = Profiler.net or {}      -- [name] = { bytes, n }
 Profiler.since = SysTime()
 
+-- Profiler.AddTime(key, dt) / AddNet(name, bytes): add one measurement.
+-- The hook bus and net wrappers call these; your own code can too, e.g.
+-- to time a heavy loop:
+--   local t = SysTime() ... Rhylib.Profiler.AddTime("myaddon/scan", SysTime() - t)
+-- (AddTime doesn't check Profiler.enabled; check it yourself first.)
 function Profiler.AddTime(key, dt)
     local e = Profiler.hooks[key]
     if not e then
@@ -41,6 +55,8 @@ function Profiler.AddNet(name, bytes)
     e.n = e.n + 1
 end
 
+-- Profiler.Reset(): clear the numbers. SetEnabled(on): turn recording on
+-- or off (also clears, and swaps the hook bus to its timed dispatchers).
 function Profiler.Reset()
     Profiler.hooks = {}
     Profiler.net = {}
@@ -62,6 +78,8 @@ local function sortedByValue(tbl, field)
     return rows
 end
 
+-- Profiler.Report(print): writes the top 25 handlers and messages per
+-- second of play through the given print function.
 function Profiler.Report(print)
     local elapsed = math.max(SysTime() - Profiler.since, 0.001)
     print(string.format("Rhylib profile over %.1f s (%s)", elapsed, SERVER and "server" or "client"))

@@ -1,10 +1,16 @@
 --[[
-    Client copy of your own inventory. Filled once from "inv.full", then
-    kept up to date by the batched "inv.upd" changes. The UI reads it.
+    Client copy of your own inventory (client only). Filled once from
+    "inv.full", then kept up to date by the batched "inv.upd" changes. The
+    UI reads it. Also has every Inv.Request* function: the client never
+    changes items itself, it asks the server (see sv_10_inventory and
+    sv_30_storage for what each message holds).
 
     Same shape as the server: Inv.cont[cid] = { w, h, items }, Inv.byUid.
     An open outside container (locker, armoury, crate) is Inv.cont[EXT]
     with its own uids, plus Inv.ext = { title, depot, canLock, locked, bulk, bulkOnly }.
+    Because Rhylib.Inventory has a `cont` table, it can be passed to the
+    shared rules as a state: Items.CanPlace(Rhylib.Inventory, ...),
+    Items.Weight(Rhylib.Inventory).
 ]]
 
 Rhylib.Inventory = Rhylib.Inventory or {}
@@ -117,14 +123,15 @@ end, function(ch)
     end
 end)
 
--- Short messages from the server, shown in the inventory window.
--- A short note in the window (from the client itself).
+-- Inv.ShowNote(text): a short note in the window (from the client
+-- itself); a notification when the window is shut.
 function Inv.ShowNote(text)
     if not text then return end
     Inv.note, Inv.noteTime = text, RealTime()
     if not IsValid(Inv.panel) then notification.AddLegacy(text, NOTIFY_GENERIC, 3) end
 end
 
+-- Short messages from the server, shown in the inventory window.
 net.Receive(Rhylib.Net.Name("inv.note"), function()
     Inv.note = net.ReadString()
     Inv.noteTime = RealTime()
@@ -136,7 +143,8 @@ net.Receive(Rhylib.Net.Name("inv.busy"), function()
     Inv.busyStart = CurTime()
 end)
 
--- Take a storage item into your container cid at x, y.
+-- Inv.RequestTake(inst, cid, x, y, rot, single): take a storage item into
+-- your container cid at x, y.
 function Inv.RequestTake(inst, cid, x, y, rot, single)
     Rhylib.Net.Start("inv.take")
     net.WriteUInt(inst.uid, Items.UID_BITS)
@@ -148,7 +156,8 @@ function Inv.RequestTake(inst, cid, x, y, rot, single)
     net.SendToServer()
 end
 
--- Right-click quick take: the server puts it wherever it fits.
+-- Inv.RequestQuickTake(inst, single): right-click quick take: the server
+-- puts it wherever it fits.
 function Inv.RequestQuickTake(inst, single)
     Rhylib.Net.Start("inv.quick")
     net.WriteUInt(inst.uid, Items.UID_BITS)
@@ -156,7 +165,7 @@ function Inv.RequestQuickTake(inst, single)
     net.SendToServer()
 end
 
--- Bulk storages: 0 = store all, 1 = take all, 2 = empty.
+-- Inv.RequestBulk(action): bulk storages: 0 = store all, 1 = take all, 2 = empty.
 function Inv.RequestBulk(action)
     Rhylib.Net.Start("inv.bulk")
     net.WriteUInt(action, 2)
@@ -168,6 +177,8 @@ net.Receive(Rhylib.Net.Name("inv.took"), function()
     surface.PlaySound("items/ammo_pickup.wav")
 end)
 
+-- Inv.RequestExtMove(inst, x, y, rot, single): move an item inside the
+-- open grid storage.
 function Inv.RequestExtMove(inst, x, y, rot, single)
     Rhylib.Net.Start("inv.extmove")
     net.WriteUInt(inst.uid, Items.UID_BITS)
@@ -178,6 +189,7 @@ function Inv.RequestExtMove(inst, x, y, rot, single)
     net.SendToServer()
 end
 
+-- Inv.CloseExt(): close the open storage (closing the window does this).
 function Inv.CloseExt()
     if not Inv.ext then return end
     Inv.cont[EXT] = nil
@@ -186,7 +198,8 @@ function Inv.CloseExt()
     net.SendToServer()
 end
 
--- Put an item in hotbar slot n, or empty the slot (inst nil).
+-- Inv.RequestHotbar(inst, n): put an item in hotbar slot n, or empty the
+-- slot (inst nil).
 function Inv.RequestHotbar(inst, n)
     Rhylib.Net.Start("inv.hotbar")
     net.WriteUInt(inst and inst.uid or 0, Items.UID_BITS)
@@ -194,13 +207,16 @@ function Inv.RequestHotbar(inst, n)
     net.SendToServer()
 end
 
--- The item in hotbar slot n, if any.
+-- Inv.HotbarItem(n): the item in hotbar slot n, if any (the HUD hotbar
+-- reads this).
 function Inv.HotbarItem(n)
     for _, inst in pairs(Inv.byUid) do
         if inst.hb == n then return inst end
     end
 end
 
+-- Inv.RequestSplit(inst) / Inv.RequestCombine(): split a stack / combine
+-- partly used magazines and cells.
 function Inv.RequestSplit(inst)
     Rhylib.Net.Start("inv.split")
     net.WriteUInt(inst.uid, Items.UID_BITS)
@@ -214,11 +230,13 @@ end
 
 -- Requests ------------------------------------------------------------------
 
+-- Inv.RequestFull(): ask for the whole inventory again (inv.req).
 function Inv.RequestFull()
     Rhylib.Net.Start("inv.req")
     net.SendToServer()
 end
 
+-- Inv.RequestMove(inst, cid, x, y, rot, single): move one of your items.
 -- Moves locally right away so dragging feels instant; the server confirms
 -- or sends the item back where it was. single: just one off a stack
 -- (not moved locally; the server's answer shows it). Moving into the
@@ -259,6 +277,7 @@ function Inv.RequestMove(inst, cid, x, y, rot, single)
     net.SendToServer()
 end
 
+-- Inv.RequestDrop(inst, single): drop it (or one of a stack) on the ground.
 function Inv.RequestDrop(inst, single)
     Rhylib.Net.Start("inv.drop")
     net.WriteUInt(inst.uid, Items.UID_BITS)
@@ -266,6 +285,8 @@ function Inv.RequestDrop(inst, single)
     net.SendToServer()
 end
 
+-- Inv.RequestGive(inst, single, target): hand it to another player
+-- (sv_40_give checks range and sight).
 function Inv.RequestGive(inst, single, target)
     Rhylib.Net.Start("inv.give")
     net.WriteUInt(inst.uid, Items.UID_BITS)
@@ -274,15 +295,17 @@ function Inv.RequestGive(inst, single, target)
     net.SendToServer()
 end
 
--- Hold a hotbar item (def.hand) in your hand.
+-- Inv.RequestHold(uid): hold a hotbar item (def.hand) in your hand
+-- (rhylib_hand weapon; the HUD hotbar calls it).
 function Inv.RequestHold(uid)
     Rhylib.Net.Start("inv.hold")
     net.WriteUInt(uid, Items.UID_BITS)
     net.SendToServer()
 end
 
--- The player you're looking at, close enough to give to (or nil). Picked
--- from the interaction wheel: that player for 60 s while in range.
+-- Inv.GiveTarget(): the player you're looking at, close enough to give to
+-- (or nil). Picked from the interaction wheel: that player for 60 s while
+-- in range.
 function Inv.GiveTarget()
     local ply = LocalPlayer()
     local r = Rhylib.Config.Get("inventory", "giveRange") or 130
@@ -296,13 +319,14 @@ function Inv.GiveTarget()
     if IsValid(e) and e:IsPlayer() and e:Alive() then return e end
 end
 
--- Hide / unhide a contraband item from searches (rhylib_mp).
+-- Inv.RequestHide(inst): hide / unhide a contraband item from searches (rhylib_mp).
 function Inv.RequestHide(inst)
     Rhylib.Net.Start("inv.hide")
     net.WriteUInt(inst.uid, Items.UID_BITS)
     net.SendToServer()
 end
 
+-- Inv.RequestUse(inst): switch to that weapon item's weapon.
 function Inv.RequestUse(inst)
     Rhylib.Net.Start("inv.use")
     net.WriteUInt(inst.uid, Items.UID_BITS)

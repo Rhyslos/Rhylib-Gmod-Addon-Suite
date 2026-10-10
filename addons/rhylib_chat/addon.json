@@ -1,6 +1,0 @@
-{
-	"title": "Rhylib Chat",
-	"type": "servercontent",
-	"tags": ["roleplay"],
-	"ignore": ["*.md", "*.psd", "*.bat"]
-}

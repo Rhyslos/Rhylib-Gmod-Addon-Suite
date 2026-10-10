@@ -1,10 +1,23 @@
 --[[
-    Datapad window. Left click with the datapad out opens it.
-    Tabs: Quick response (first, for combat); Notes; Board (opens on it when it
-    has posts), Orders, Logs, LOA, Stats, My file - read from the last
-    download of your battalion computer (Sync, top right), each shown only
-    once the download has something for it; MPs: Records, Officer
-    logs, Arrest.
+    Datapad window (client). Left click with the datapad out opens it
+    (asks dp.open; the server's dp.state opens the window).
+    Tabs: Quick response (first, for combat); Notes; Mission (officers
+    always: live editor); Board (opens on it when it has posts), Orders,
+    Logs, LOA, Stats, My file - read from the last download of your
+    battalion computer (Sync, top right), each shown only once the
+    download has something for it; EOD manual (rhylib_eod); MPs: Records,
+    Officer logs, Arrest. Needs rhylib_menus (its Kit draws everything).
+
+    Sync: Sync sends dp.dl and shows a random 3-15 s progress bar; the
+    copy (D.sync) is shown once the bar is done and dp.dldata, dp.dlx and
+    dp.dlm have arrived (dp.dlx/dlm: 5 s more at most). The light blinks
+    green ("New data") when dp.ver says the computer is newer than D.sync.
+    After your own change (mission, order status) a quiet download runs
+    with no bar, so your own pad doesn't flash "New data".
+
+    Also shared helpers for the computer window (cl_20): D.BnColor,
+    D.ReadMission, D.ReadOrders, D.OrderTo/OrderSub/OrderColor/
+    OrderStatusMenu, D.IsMPBattalion.
 ]]
 
 local D = Rhylib.Datapad
@@ -15,8 +28,8 @@ local OPAQUE = Color(14, 16, 15, 255)   -- solid background: readable over anyth
 
 D.state = D.state or nil
 local panel, content, nav
-local tab = "board"
-local view = {}          -- what the current tab shows (set by replies)
+local tab = "board"      -- open tab id (TABS below)
+local view = {}          -- what the current tab shows (set by replies); reset on tab change
 local wantOpen = false
 
 local function send(name, fn)
@@ -25,8 +38,10 @@ local function send(name, fn)
     net.SendToServer()
 end
 
--- A battalion's colour (its DarkRP job category), brightened enough to
--- read as an accent. nil if unknown.
+-- D.BnColor(bn): a battalion's colour (its DarkRP job category, else the
+-- colour of a job in it), brightened so the strongest channel is at least
+-- 150 to read as an accent. nil if unknown. Cached per name.
+-- Example: Rhylib.Menus.Kit.Tint(panel, function() return D.BnColor("212th") end)
 local bnColors = {}
 function D.BnColor(bn)
     if not bn or bn == "" then return nil end
@@ -51,7 +66,8 @@ function D.BnColor(bn)
     return c or nil
 end
 
--- A mission (written by D.WriteMission), or nil.
+-- D.ReadMission(): read a mission written by D.WriteMission:
+-- { title, date, obj, sub, info, by, t, active, started, npeople, people }, or nil.
 function D.ReadMission()
     if not net.ReadBool() then return nil end
     local m = { title = net.ReadString(), date = net.ReadString(), obj = net.ReadString(), sub = net.ReadString(),
@@ -63,8 +79,12 @@ function D.ReadMission()
 end
 
 -- Orders (shared by the computer and the datapad; written by D.WriteOrders).
+-- Same list as the server's D.ORDER_STATUS; ORDER_TAG = short list tags.
 D.ORDER_STATUS = { "Issued", "In progress", "Completed", "Success", "Failed", "Cancelled" }
 D.ORDER_TAG = { "New", "Active", "Done", "Success", "Failed", "Cancelled" }
+
+-- D.ReadOrders(): read a list written by D.WriteOrders: { { id, title, text,
+-- by, t, st, sb, stt, all, nto, to = {names}, mine, canSet } }.
 
 function D.ReadOrders()
     local out = {}
@@ -81,6 +101,8 @@ function D.ReadOrders()
     return out
 end
 
+-- D.OrderTo(o): "whole battalion" or the names ("+N" for names not sent).
+-- D.OrderSub(o): the line under an order in a list. D.OrderColor(st): status colour.
 function D.OrderTo(o)
     if o.all then return "whole battalion" end
     local s = table.concat(o.to, ", ")
@@ -100,7 +122,8 @@ function D.OrderColor(st)
     return C.warn
 end
 
--- A menu of the statuses this player may pick; onPick(status).
+-- D.OrderStatusMenu(o, full, onPick): a menu of the statuses this player
+-- may pick (full = manager: any; else In progress / Completed); onPick(status).
 function D.OrderStatusMenu(o, full, onPick)
     local m = Rhylib.Menus.Kit.Menu()
     for st, name in ipairs(D.ORDER_STATUS) do
@@ -111,7 +134,8 @@ function D.OrderStatusMenu(o, full, onPick)
     m:Open()
 end
 
--- Is this the military police battalion (its jobs have mp = true)?
+-- D.IsMPBattalion(bn): is this the military police battalion (a job in that
+-- category has mp = true)? Its stats show arrests made instead of times arrested.
 function D.IsMPBattalion(bn)
     for _, j in pairs(RPExtraTeams or {}) do
         if j.category == bn and j.mp then return true end
@@ -439,7 +463,7 @@ end
 -- Battalion: what was last downloaded from the battalion computer
 --------------------------------------------------------------------------
 
-D.sync = D.sync or nil      -- { bn, v, at, logs, posts } (kept until you leave)
+D.sync = D.sync or nil      -- { bn, v, at, logs, posts, x = { dp.dlx parts, info, mission } } (kept until you leave)
 D.latest = D.latest or {}   -- [battalion] = newest version the server told us about
 local dl                    -- a download in progress: { start, dur, data }
 
@@ -999,7 +1023,8 @@ local function commsTab()
     end
 end
 
--- Rebuild if this tab is open (sv calls / cl_30_calls use it).
+-- D.PadRebuild(id): rebuild the window if tab id is open (and nothing is
+-- being typed). cl_30_calls calls it when a call changes.
 function D.PadRebuild(id)
     if IsValid(panel) and tab == id and not view.edit and not view.supply then buildTab() end
 end
@@ -1018,6 +1043,7 @@ local function anyStat(t)
     return false
 end
 
+-- The datapad's tabs, in order. bn: needs a battalion; mp: MPs only;
 -- has: shown only once the download holds something for it.
 local TABS = {
     { id = "comms", name = "Quick response", build = commsTab },
@@ -1037,7 +1063,8 @@ local TABS = {
         local x = curX()
         return x and (#x.file.quals > 0 or x.file.ncom > 0 or #x.file.strikes > 0)
     end },
-    -- EOD bomb manual (rhylib_eod, Field technician skill "Bomb manual")
+    -- EOD bomb manual (rhylib_eod, Field technician skill "Bomb manual"):
+    -- rhylib_eod sets D.EodManualBuild(content, kit) and D.HasEodManual().
     { id = "eod", name = "EOD manual", build = function()
         if D.EodManualBuild then D.EodManualBuild(content, K()) end
     end, has = function() return D.EodManualBuild ~= nil and D.HasEodManual ~= nil and D.HasEodManual() end },
@@ -1216,7 +1243,8 @@ local function openWindow()
     buildTab()
 end
 
--- Left click with the datapad out.
+-- Left click with the datapad out (no cursor showing): ask the server for
+-- dp.state, which opens the window. Swallows the attack (0.5 s between asks).
 local nextOpen = 0
 Rhylib.Hook.Add("PlayerBindPress", "datapad.open", function(ply, bind, pressed)
     if not pressed or not string.find(bind, "+attack", 1, true) or string.find(bind, "+attack2", 1, true) then return end

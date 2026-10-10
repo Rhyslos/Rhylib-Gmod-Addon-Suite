@@ -1,5 +1,7 @@
 --[[
     Squad pings, client side (sh_40_pings.lua has the overview).
+    Client convars: rhylib_radio_pingkey (default "o"; any key or mouse
+    button) and rhylib_radio_pingchat (chat line too, default 1).
 
     Hold the ping key (client convar rhylib_radio_pingkey, default O) for
     the wheel; release on a type to send it (release in the middle =
@@ -221,6 +223,9 @@ end)
 -- On the squad compass (called from cl_20_hud's drawCore)
 --------------------------------------------------------------------------
 
+-- R.DrawPingsOnRadar(cx, cy, r, mp, fx, fy, k): ping icons on a compass
+-- (mp = your position, fx/fy = your forward, k = pixels per unit; same
+-- maths as the mates in drawCore). Clamped to the rim.
 function R.DrawPingsOnRadar(cx, cy, r, mp, fx, fy, k)
     if next(R.pings) == nil then return end
     local now = RealTime()

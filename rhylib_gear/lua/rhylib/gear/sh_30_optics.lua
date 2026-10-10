@@ -7,6 +7,8 @@
     normal view and HUD so you can fight.
     NW2Int rhylib_optics = the kind in use (0 = none). Both use the same
     viewer (cl_30_optics.lua); the rangefinder zooms half as far.
+    Shared: the state readers below and the StartCommand block (it runs on
+    both realms so prediction agrees). Server side is sv_30_optics.lua.
 ]]
 
 local G = Rhylib.Gear
@@ -15,6 +17,7 @@ G.OPTICS_SLOT = { [1] = "binos", [2] = "rangefinder" }
 -- Zoom per kind: { min, max, start }. The rangefinder is a weaker module: half the binoculars'.
 G.ZOOM_RANGE = { [1] = { 2, 12, 4 }, [2] = { 1, 6, 2 } }
 
+-- G.OpticsAllowed(ply, kind): the part for that kind is worn and active.
 function G.OpticsAllowed(ply, kind)
     local slot = G.OPTICS_SLOT[kind]
     return slot ~= nil and G.Active(ply, slot)
@@ -27,6 +30,7 @@ function G.VisorDown(ply)
     return ply:GetNW2Bool("rhylib_visorDown", false)
 end
 
+-- G.OpticsUp(ply): optics of any kind up (looking or weapon mode).
 function G.OpticsUp(ply)
     return ply:GetNW2Int("rhylib_optics", 0) ~= 0
 end
@@ -40,6 +44,7 @@ end
 local band, bnot, bor = bit.band, bit.bnot, bit.bor
 local BLOCK = bor(IN_ATTACK, IN_ATTACK2, IN_SPEED)
 
+-- While looking: no primary / secondary attack and no sprint.
 Rhylib.Hook.Add("StartCommand", "gear.optics", function(ply, cmd)
     if G.Looking(ply) then
         cmd:SetButtons(band(cmd:GetButtons(), bnot(BLOCK)))

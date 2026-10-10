@@ -31,7 +31,8 @@ local function saveRecord(ply, r)
     if r then Data.Set("skills", rkey(ply), r) else Data.Delete("skills", rkey(ply)) end
 end
 
--- Back to the player's own tree (re-read from Data).
+-- K.LeaveClass(ply, quiet): back to the player's own tree (re-read from
+-- Data). quiet: no chat note. Does nothing if they aren't in a class.
 function K.LeaveClass(ply, quiet)
     if not K.ClassOf(ply) then return end
     ply:SetNW2String("rhylib_class", "")
@@ -81,8 +82,10 @@ Rhylib.Net.Receive("skills.classleave", function(ply)
     K.LeaveClass(ply)
 end, { rate = 2, burst = 3 })
 
--- Switching class mode on (a fresh epoch: everyone gets their picks back)
--- or off (everyone back on their own tree).
+-- K.SetClassMode(on): switching class mode on (a fresh epoch: everyone
+-- gets their picks back) or off (everyone back on their own tree). Saved
+-- in Data "skills" "classmode". No permission check (callers check).
+-- Example (host file / console script): Rhylib.Skills.SetClassMode(true)
 function K.SetClassMode(on)
     on = on and true or false
     if on == K.ClassMode() then return end
@@ -132,8 +135,8 @@ end
 loadMode()
 Rhylib.Hook.Add("InitPostEntity", "skills.classmode", loadMode)
 
--- The skills whose inventory grids a player should have (the inventory
--- loads before skills.class applies a class on joining).
+-- K.GridSet(ply): the skills whose inventory grids a player should have
+-- (the inventory loads before skills.class applies a class on joining).
 function K.GridSet(ply)
     if K.ClassOf(ply) then return K.Stored(ply) end
     local r = record(ply)
@@ -142,6 +145,7 @@ function K.GridSet(ply)
     return K.Stored(ply)
 end
 
+-- (priority 10: after skills.load, which loads the player's own tree)
 Rhylib.Hook.Add("PlayerInitialSpawn", "skills.class", function(ply)
     if ply:IsBot() then return end
     local raw = Data.Get("skills", rkey(ply))

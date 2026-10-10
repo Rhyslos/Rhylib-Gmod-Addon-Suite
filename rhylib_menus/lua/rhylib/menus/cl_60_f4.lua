@@ -10,6 +10,14 @@
     Everything runs DarkRP's own console commands ("darkrp <command>"),
     so DarkRP checks money, limits and jobs on the server as usual.
     Without DarkRP, F4 does what it did before.
+
+    Client only. Pages: "jobs" (group play, order 1), "shop" (play, 2),
+    "character" (shown as Profile; group character, order 20); each only
+    while DarkRP is loaded. Adds Menus.ToggleF4 and console command
+    rhylib_f4. Replaces DarkRP.openF4Menu / toggleF4Menu / closeF4Menu /
+    getF4MenuPanel so DarkRP's own calls open ours.
+    The client-side checks (job full, customCheck, can afford) only grey
+    out buttons; DarkRP decides on the server.
 ]]
 
 local Menus = Rhylib.Menus
@@ -504,6 +512,8 @@ page("jobs", "Jobs", 1, buildJobs, "play")
 page("shop", "Shop", 2, buildShop, "play")
 page("character", "Profile", 20, buildCharacter, "character")
 
+-- Menus.ToggleF4(): F4. Opens the pause menu on Jobs; if it's already open
+-- on Jobs it closes it, on another page it switches to Jobs.
 function Menus.ToggleF4()
     if not isDarkRP() then return end
     if IsValid(Menus.pause) then

@@ -12,8 +12,17 @@
         plain list: Data "perma"/<map> = { { c, m, p, a, s, mat, col, cg,
         fz, bg } }, spawned again at InitPostEntity +1 s and after a map
         cleanup (P.SaveGeneric / P.LoadGeneric).
-    P.Set(ply, ent, on) is what the tool calls; P.Forget(ent) removes one
-    and saves without it.
+    P.Set(ent, on) is what the tool calls; P.Forget(ent) removes one
+    and saves without it. A generic row also keeps rm (render mode) and,
+    for ragdolls, b (each physics part's place).
+
+    Shared: P.Is. Everything else is server only. Generic rows load at
+    InitPostEntity +1 s and PostCleanupMap; P.TagMap (InitPostEntity
+    +0.5 s, PostCleanupMap) marks what exists then as e.rhylibMapish, which
+    rhylib_admin's !cleanup leaves alone.
+    A permanent thing that gets removed (undo, remover, broken) is saved
+    again without it (EntityRemoved), except during a map cleanup or
+    shutdown.
 ]]
 
 Rhylib.Perma = Rhylib.Perma or {}
@@ -21,6 +30,7 @@ local P = Rhylib.Perma
 
 P.NW = "rhylib_perma"
 
+-- P.Is(ent): true if the entity is permanent (NW2Bool rhylib_perma). Shared.
 function P.Is(e)
     return IsValid(e) and e:GetNW2Bool(P.NW, false)
 end
@@ -29,11 +39,27 @@ if CLIENT then return end
 
 P.savers = P.savers or {}   -- [class] = function() return count end
 
--- An addon's own saver for its classes (it saves only P.Is entities).
+-- P.Register(classes, saveFn): an addon's own saver for its classes. saveFn()
+-- saves only the P.Is entities of those classes (into the addon's own
+-- Data) and may return a count; the addon's loader spawns them and calls
+-- P.Mark(e, true). P.Why always allows registered classes, and the
+-- generic list skips them.
+-- Example:
+--   local function save()
+--       local rows = {}
+--       for _, e in ipairs(ents.FindByClass("myaddon_crate")) do
+--           if Rhylib.Perma.Is(e) then rows[#rows + 1] = { pos = { e:GetPos():Unpack() } } end
+--       end
+--       Rhylib.Data.Set("myaddon", game.GetMap(), rows)
+--       return #rows
+--   end
+--   Rhylib.Perma.Register({ "myaddon_crate" }, save)
 function P.Register(classes, fn)
     for _, c in ipairs(classes) do P.savers[c] = fn end
 end
 
+-- P.Mark(ent, on): set or clear the permanent flag (NW2Bool + e.rhylibPerma)
+-- without saving. Loaders call it on what they spawn.
 function P.Mark(e, on)
     if not IsValid(e) then return end
     on = on and true or false
@@ -48,6 +74,7 @@ local SKIP = { gmod_hands = true, predicted_viewmodel = true, viewmodel = true, 
     rhylib_world_item = true, gmod_gamerules = true, physgun_beam = true,
     rhylib_grenade = true, rhylib_he_planted = true, rhylib_b2_rocket = true }   -- (live explosives)
 
+-- P.Why(ent): nil if ent may be made permanent, else a reason for the player.
 function P.Why(e)
     if not IsValid(e) or e:IsWorld() then return "Aim at something" end
     if e:IsPlayer() then return "Players can't be made permanent" end
@@ -80,6 +107,8 @@ local function freezeAll(e)
 end
 P.FreezeAll = freezeAll
 
+-- P.SaveGeneric(): save every permanent entity without its own saver into
+-- Data "perma"/<map>. Returns the row count.
 function P.SaveGeneric()
     local rows = {}
     for _, e in ipairs(ents.GetAll()) do
@@ -112,6 +141,8 @@ function P.SaveGeneric()
     return #rows
 end
 
+-- P.LoadGeneric(): remove the generic permanent things that exist, then
+-- spawn the saved rows (each under pcall: one bad row can't stop the rest).
 function P.LoadGeneric()
     local rows = Rhylib.Data.Get("perma", game.GetMap())
     if not istable(rows) then return end
@@ -195,8 +226,8 @@ Rhylib.Hook.Add("EntityRemoved", "core.perma", function(e)
     timer.Simple(0, function() P.Save(class) end)
 end)
 
--- Save what a class belongs to (its addon's saver, or the plain list), a
--- moment later so several changes save once.
+-- P.Save(class): save what a class belongs to (its addon's saver, or the
+-- plain list), 0.3 s later so several changes save once.
 local pending = {}
 function P.Save(class)
     pending[P.savers[class] or P.SaveGeneric] = true
@@ -209,8 +240,9 @@ function P.Save(class)
     end)
 end
 
--- The tool: make permanent (or save its new spot), or stop keeping it.
--- Returns a message for the player.
+-- P.Set(ent, on): the tool: make permanent (or save its new spot; frozen
+-- in place), or stop keeping it. Returns ok, message for the player.
+-- Example: local ok, msg = Rhylib.Perma.Set(ent, true) ply:ChatPrint(msg)
 function P.Set(ent, on)
     local why = P.Why(ent)
     if why then return false, why end
@@ -223,7 +255,8 @@ function P.Set(ent, on)
     return true, was and (name .. " is no longer permanent (gone after the next map change)") or (name .. " wasn't permanent")
 end
 
--- Removing a permanent thing for good: gone, and saved without it.
+-- P.Forget(ent): removing a permanent thing for good: gone, and saved
+-- without it.
 function P.Forget(ent)
     if not IsValid(ent) then return end
     ent:Remove()   -- (EntityRemoved saves without it)

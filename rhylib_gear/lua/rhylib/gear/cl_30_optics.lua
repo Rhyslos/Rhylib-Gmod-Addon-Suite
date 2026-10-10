@@ -21,6 +21,18 @@
     shows. Back to looking: zoomed all the way out (no sudden zoom).
 
     Zoom: macrobinoculars x2 to x12, the rangefinder half that (G.ZOOM_RANGE).
+
+    Sun visor (worn and the helmet on): the same key lowers it (off ->
+    binoculars -> visor -> off). Down: red night vision always on, a grid
+    and scan line under the HUD (masked to rhylib_hud's visor opening),
+    and the mode key toggles a fixed zoom (config visorZoom).
+
+    Client only. Client convars: rhylib_optics_key (default l),
+    rhylib_optics_mode_key (default mouse3); both in Settings > Gear.
+    Sends rhylib.gear.optics, rhylib.gear.visor, rhylib.gear.lights.
+    Sets for other client code: G.NightVision() (is it on?), G.opticsFov
+    (view FOV while looking), G.visorFov (visor zoom factor; the crosshair
+    uses it).
 ]]
 
 local G = Rhylib.Gear
@@ -510,7 +522,6 @@ local function keyName(var)
     return string.upper(k)
 end
 
--- fire: weapon mode (drawn under the normal HUD, 1x).
 -- The night vision picture: faint green wash, scanlines crawling down, a
 -- thin rolling band, flicker lines and grain, inside x0..x1 / y0..y1.
 local function nvLayer(w, h, x0, y0, x1, y1)
@@ -579,6 +590,7 @@ local function visorLayer(w, h)
     end
 end
 
+-- fire: weapon mode (drawn under the normal HUD, 1x).
 local function drawViewer(fire)
     local kind = kindUp()
     local me = LocalPlayer()

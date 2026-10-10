@@ -1,3 +1,4 @@
+-- Third person settings (shared, so clients read the same mode).
 -- Server setting (Server settings page, or Config.Set in a host file):
 --   "choice" players switch with P (default), "third" everyone is always in
 --   third person, "first" first person only.

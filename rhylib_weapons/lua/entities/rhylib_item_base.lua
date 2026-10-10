@@ -4,6 +4,9 @@
     W.MagTypes, or "cell"), or override ENT:GiveTo(ply), which returns
     true if the player took it. With rhylib_inventory they go into the
     inventory, without it into the ammo pouch.
+
+    Realm: shared (physics and Use run on the server only). Not
+    spawnable itself; the rhylib_item_* entities in this folder are.
 ]]
 
 AddCSLuaFile()
@@ -28,6 +31,9 @@ function ENT:Initialize()
 end
 
 if SERVER then
+    -- ENT:GiveTo(ply): hands the item to ply. Returns true if they took it
+    -- (the entity is then removed), false if there was no room.
+    -- Override it for items that aren't ammo kinds.
     function ENT:GiveTo(ply)
         if not self.Kind then return false end
         return Rhylib.Weapons.Pouch.Add(ply, self.Kind, 1)

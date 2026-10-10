@@ -1,7 +1,8 @@
 --[[
-    Battalion computer: orders, leave, applications, session sign-ups.
-    Ranks come from rhylib_roster (Rhylib.Roster): "managers" are rank
-    manageRank+ (SGT), "officers" boardRank+ (LT), admins always.
+    Battalion computer (server): orders, leave, applications, session
+    sign-ups. Ranks come from rhylib_roster (Rhylib.Roster): "managers" are
+    rank manageRank+ (SGT), "officers" boardRank+ (LT), admins always.
+    Without rhylib_roster nobody below admin is a manager or officer.
 
     Orders        Data "dp_ord"/bn = { next, list { id, ti, b, to, by, bs, t,
                   st, sb, stt } }. to = { ["s"..sid] = name } or nil (whole
@@ -26,18 +27,33 @@
                   15 min before to 60 min after the start; counts as the
                   "at" stat).
 
-      dp.uopen  entity -> dp.unit (orders, leave, my application, pending list)
-      dp.uorder   entity, title, text, n, n x sid (0 = whole battalion)
-      dp.ustatus  entity, order id, status    (dp.ostatus: same from the datapad)
-      dp.uodel    entity, order id
-      dp.uloa / dp.uloadel / dp.uapply / dp.udecide   entity, ...
-      dp.ursvp / dp.ucheck   entity, post id (, choice)
+      dp.uopen  entity -> dp.unit: entity, member, manager, officer, can
+                apply, my application's battalion + status (2), orders
+                (D.WriteOrders), leave (count 6; id 16, name, from 32, to 32,
+                reason, mine), applications for managers (count 6, at most
+                30, pending first; id 16, name, text, time 32, status 2, by)
+      dp.uorder   entity, title, text, n (7), n x sid (0 = whole battalion)
+      dp.ustatus  entity, order id (16), status (3)
+      dp.ostatus  (datapad, no entity) order id (16), status (3)
+      dp.uodel    entity, order id (16)
+      dp.uloa     entity, from (32), to (32), reason
+      dp.uloadel  entity, leave id (16)
+      dp.uapply   entity, text
+      dp.udecide  entity, application id (16), accept (bool)
+      dp.ursvp    entity, post id (16), choice (2: 1 attending, 2 maybe, 3 can't)
+      dp.ucheck   entity, post id (16)
       dp.uwithdraw entity: withdraw your pending application
       dp.uappget  entity, application id -> dp.uappinfo (managers): the
                   applicant's own all-time stats, quals, commendations,
                   active strikes and arrest record (with reasons)
-      dp.uanswer  (anywhere) join? for an accepted application
-      dp.uprompt  server -> player: 0 pending note, 1 accepted popup, 2 declined
+      dp.uanswer  (anywhere, bool) join? for an accepted application
+      dp.uprompt  server -> player: kind (2: 0 pending note, 1 accepted
+                  popup, 2 declined), battalion, decided by
+
+    Hooks: answers Rhylib.RosterNote(bn, sid) ("on LOA until ...", shown on
+    the roster page and personnel list); listens to Rhylib.RosterJoined
+    (an application ends when the trooper joins any battalion) and
+    PlayerInitialSpawn (applicants are told their status 12 s after joining).
 ]]
 
 local D = Rhylib.Datapad
@@ -62,6 +78,12 @@ end
 local function isManager(ply, bn, admin) return admin or atLeast(ply, bn, "manageRank", 4) end
 local function isOfficer(ply, bn, admin) return admin or atLeast(ply, bn, "boardRank", 6) end
 local function isMember(ply, bn) return bn ~= "" and D.Battalion(ply) == bn end
+-- Exported rank helpers (server):
+--   D.UnitRank(ply, bn)                -> rank index in bn (0 = not a member / no roster)
+--   D.IsUnitManager(ply, bn, admin)    -> rank manageRank+ (SGT) in bn, or admin
+--   D.IsUnitOfficer(ply, bn, admin)    -> rank boardRank+ (LT) in bn, or admin
+--   D.IsUnitMember(ply, bn)            -> their job category is bn
+-- The fallbacks 4 / 6 are SGT / LT on the default rank list.
 D.UnitRank, D.IsUnitManager, D.IsUnitOfficer, D.IsUnitMember = rankOf, isManager, isOfficer, isMember
 
 local function list(ns, bn)
@@ -84,7 +106,8 @@ end
 -- Leave of absence
 --------------------------------------------------------------------------
 
--- Leave that hasn't ended yet (drops old ones).
+-- Leave that hasn't ended yet (drops old ones, a day after their end).
+-- D.ActiveLeave(bn) -> { next, list } (sv_50 sends it in the download).
 local function activeLeave(bn)
     local t = list("dp_loa", bn)
     local now = os.time()
@@ -114,6 +137,7 @@ end)
 -- Applications
 --------------------------------------------------------------------------
 
+-- The player's own application (Data "dp_myapp"/sid = { bn, id, st, by }), or nil.
 local function myApp(id)
     local t = Data.Get("dp_myapp", id)
     if not istable(t) then return nil end
@@ -271,6 +295,8 @@ D.TermRecv("dp.uopen", {
 -- Orders
 --------------------------------------------------------------------------
 
+-- Order statuses (index sent in 3 bits). 1-2 count as open, 3+ as closed.
+-- cl_10_pad.lua has the same list for the clients.
 D.ORDER_STATUS = { "Issued", "In progress", "Completed", "Success", "Failed", "Cancelled" }
 local ORDER_KEEP, ORDER_SEND, ORDER_NAMES = 40, 25, 8   -- (keeps the message small)
 
@@ -292,8 +318,12 @@ end
 
 local function assigned(o, id) return o.to == nil or o.to["s" .. id] ~= nil end
 
--- id, title, text, by, time, status, status by, status time, whole battalion,
--- n x name, mine (named in it), can set status. Newest first, open ones first.
+-- D.WriteOrders(ply, bn, manager): write bn's orders as ply sees them into
+-- the current net message (read with D.ReadOrders on the client): count 6,
+-- then per order id 16, title, text, by, time 32, status 3, status by,
+-- status time 32, whole battalion, names in all (7), up to 8 names (4),
+-- mine (named in it), can set status. Open ones first, newest first in each.
+-- bn "" writes an empty list.
 function D.WriteOrders(ply, bn, manager)
     local me = sid(ply)
     local open, closed = {}, {}
@@ -335,7 +365,9 @@ local function tellOrder(bn, o, msg)
     end
 end
 
--- Set an order's status. Managers: any; the people named in it: In progress or Completed.
+-- D.SetOrderStatus(ply, bn, id, st, admin): set an order's status.
+-- Managers: any; the people named in it: In progress or Completed.
+-- Returns true if it changed (saves, D.Touch, tells whoever issued it).
 function D.SetOrderStatus(ply, bn, id, st, admin)
     if st < 1 or st > #D.ORDER_STATUS then return false end
     local t = orders(bn)

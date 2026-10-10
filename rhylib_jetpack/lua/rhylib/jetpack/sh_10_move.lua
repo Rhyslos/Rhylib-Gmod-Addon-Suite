@@ -12,6 +12,13 @@
     Fuel drains while thrusting and refills once you've been on the
     ground for rechargeDelay. Running dry locks the jetpack until the
     tank is back to unlockAt.
+
+    Shared. Hook: SetupMove "jetpack.move" (priority 0; medical's downed
+    hook at -100 runs first). Writes DTBool 29 (thrusting) and 30 (locked)
+    and the fuel line. In the air without thrusting the fuel holds. On a
+    grapple rope (DTEntity 31 set, rhylib_weapons) thrust is off and fuel
+    holds. No thrust under water (WaterLevel 2+) or off MOVETYPE_WALK.
+    Shift (sprint key) = hover, jump = climb.
 ]]
 
 local J = Rhylib.Jetpack
@@ -88,6 +95,7 @@ Rhylib.Hook.Add("SetupMove", "jetpack.move", function(ply, mv)
         local change = (target - vz) * (1 - math.exp(-dt / tau))
         local cap = (vz < 0 and cfg("brakeAccel") or cfg("maxAccel")) * dt
         change = math.Clamp(change, -cap, cap)
+        -- (the engine adds gravity after this hook: add this tick's share back)
         local g = gravityVar:GetFloat() * (ply:GetGravity() ~= 0 and ply:GetGravity() or 1)
         vel.z = vz + change + g * dt  -- also cancels the engine's gravity for this tick
 

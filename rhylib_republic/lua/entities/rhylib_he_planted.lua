@@ -12,10 +12,16 @@
     strength 3 (comms jammers, rhylib_radio) within heJammerReach.
     Beeps once a second, faster over the last 5 s; a small readout above it
     shows the seconds left (or SYNC).
+
+    Shared (AddCSLuaFile). Server: timers, beeps, blast. Client: the light
+    and the 3D2D readout (within 400 units). Not spawnable: made by
+    rhylib_he_charge, which sets fuse, planter, stuckTo, damageMult and
+    radiusMult before Spawn.
 ]]
 
 AddCSLuaFile()
 
+-- Settings (module "weapons"; registered here, so only with rhylib_republic).
 local Config = Rhylib.Config
 Config.Register("weapons", "heRadius", 350, "High explosive charge: blast radius (units)")
 Config.Register("weapons", "heDamage", 400, "High explosive charge: damage at the centre")
@@ -35,9 +41,13 @@ function ENT:SetupDataTables()
 end
 
 if SERVER then
+    -- Rhylib.HE.waiting[steamID64] = { [charge] = true }: synced charges
+    -- waiting for their planter's next timed charge. Server only.
     Rhylib.HE = Rhylib.HE or { waiting = {} }
     local HE = Rhylib.HE
 
+    -- Drops an empty list and updates the planter's NW2Int rhylib_heSynced
+    -- (the HUD line on the HE charge weapon).
     local function recount(sid)
         local n = 0
         for e in pairs(HE.waiting[sid] or {}) do

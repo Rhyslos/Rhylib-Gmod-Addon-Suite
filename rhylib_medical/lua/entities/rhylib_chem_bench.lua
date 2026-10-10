@@ -6,6 +6,8 @@
     E opens the crafting menu, which has the analyser at the top. Logic:
     sv_40_medbay.lua and sv_50_illness.lua. Saved per map with
     rhylib_medical_save.
+    Shared entity (admins spawn it). Model: config medical benchModel
+    (a table if that model is missing).
 ]]
 
 AddCSLuaFile()

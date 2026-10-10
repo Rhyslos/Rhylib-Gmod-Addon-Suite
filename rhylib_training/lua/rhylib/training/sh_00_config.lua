@@ -7,7 +7,7 @@
     (simHealth): training hits take it off (head and limb multipliers
     count, armour doesn't). At 0 you're eliminated: you drop, can't act,
     and pick a training respawn beacon from a list (or the nearest one is
-    picked after simChooseTime). Sim health refills after simRegen seconds
+    picked after chooseTime). Sim health refills after simRegen seconds
     without a training hit, and on respawning at a beacon. No credits,
     stats or kill feed; no injuries.
 
@@ -16,6 +16,10 @@
     "Killhouse A". rhylib_training_save keeps them on the map.
 
     Real damage still works as normal during a simulation.
+
+    Shared file: Rhylib.Training (T) with Cfg, Out, Health. Server logic in
+    sv_10_sim.lua, HUD bar and beacon list in cl_10_sim.lua. Training hits
+    come from rhylib_weapons (training bolts, W.TrainingBlast).
 ]]
 
 Rhylib.Training = Rhylib.Training or {}
@@ -29,12 +33,16 @@ Config.Register("training", "chooseTime", 20, "Seconds to pick a respawn beacon 
 Config.Register("training", "immune", 2, "Seconds of no training hits after respawning at a beacon")
 Config.Register("training", "beaconModel", "models/props_combine/combine_mine01.mdl", "Respawn beacon model")
 
+-- T.Cfg(key): Config.Get("training", key).
 function T.Cfg(k) return Config.Get("training", k) end
 
+-- T.Out(ply): eliminated right now (NW2Bool rhylib_simOut). Both realms.
 function T.Out(ply)
     return ply:GetNW2Bool("rhylib_simOut", false)
 end
 
+-- T.Health(ply): sim health (NW2Int rhylib_sim; full when not set).
+-- Example (client HUD): local hp = Rhylib.Training.Health(LocalPlayer())
 function T.Health(ply)
     return ply:GetNW2Int("rhylib_sim", T.Cfg("simHealth"))
 end

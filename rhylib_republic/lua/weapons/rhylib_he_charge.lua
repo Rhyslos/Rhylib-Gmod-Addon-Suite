@@ -12,12 +12,20 @@
     it can't share the weapon's class name: ents.Create would make the weapon).
     The setting is the weapon's NetworkVar FuseSet (0 = sync) and is kept
     on the player for the next charge (ply.rhylibHeFuse).
+
+    Shared (AddCSLuaFile). Base rhylib_grenade_base (inventory item,
+    draw / throw animation, SWEP:UseOne), but it never throws: LMB / RMB
+    call SWEP:PlaceCharge. Stocked in the ammo cabinet (rhylib_armoury).
+    Net message rhylib.he.set (client -> server, UInt 8 seconds, 0 = sync):
+    the timer for the charge in your hand. Rate limit 6 a second.
 ]]
 
 AddCSLuaFile()
 
 DEFINE_BASECLASS("rhylib_grenade_base")
 
+-- Settings (module "weapons"; registered here, so only with rhylib_republic).
+-- The blast settings are in entities/rhylib_he_planted.lua.
 local Config = Rhylib.Config
 Config.Register("weapons", "heFuse", 30, "High explosive charge: default timer (seconds)")
 Config.Register("weapons", "heMinFuse", 5, "High explosive charge: shortest timer you can set (seconds)")
@@ -51,6 +59,8 @@ function SWEP:SetupDataTables()
     self:NetworkVar("Int", 0, "FuseSet")   -- seconds, 0 = sync (no timer)
 end
 
+-- Seconds -> 0 (sync) or heMinFuse..heMaxFuse (never over 255: the net
+-- message has 8 bits).
 local function clampFuse(v)
     v = math.floor(tonumber(v) or 0)
     if v <= 0 then return 0 end
@@ -73,6 +83,9 @@ end
 function SWEP:PrimaryAttack() self:PlaceCharge() end
 function SWEP:SecondaryAttack() self:PlaceCharge() end
 
+-- SWEP:PlaceCharge(): sticks a rhylib_he_planted on the surface within
+-- heReach you look at (parented to a non-world entity), with the timer in
+-- FuseSet and the EOD Demolitions multipliers. Not on players / NPCs.
 function SWEP:PlaceCharge()
     local o = self:GetOwner()
     if not IsValid(o) or not o:IsPlayer() then return end

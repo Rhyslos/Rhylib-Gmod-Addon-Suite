@@ -1,4 +1,7 @@
--- Spawn menu entry for a jetpack. Picking it up wears it if the Back slot is free.
+-- Spawn menu entry for a jetpack (shared entity, spawn menu "Rhylib: Items &
+-- ammo"). A rhylib_inventory world item holding one "jetpack" item;
+-- picking it up wears it if the Back slot is free. Without rhylib_inventory
+-- it isn't spawnable and removes itself.
 
 AddCSLuaFile()
 

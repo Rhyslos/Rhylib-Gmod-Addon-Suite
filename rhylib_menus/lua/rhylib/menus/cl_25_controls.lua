@@ -11,6 +11,11 @@
     player's own keys; "[convar]" shows a Rhylib key setting's key. need()
     returns false to hide the row. Settings > Layout (cl_26_layout.lua)
     draws all of these on a keyboard.
+
+    Client only. Adds: Menus.AddControl, Menus.controls, Menus.controlOrder,
+    Menus.ControlsTop / Menus.ControlsBottom (called by cl_20_settings'
+    Controls tab), Menus.keyConflicts, Menus.OpenControls. Console command
+    rhylib_controls. Hook: PlayerBindPress "menus.controls" (F1).
 ]]
 
 local Menus = Rhylib.Menus
@@ -20,6 +25,10 @@ local C = K.C
 Menus.controls = Menus.controls or {}
 Menus.controlOrder = Menus.controlOrder or {}
 
+-- Menus.AddControl(section, keys, text, need): adds a fixed (not
+-- rebindable) control to the Controls page and the Layout page. The same
+-- keys + text twice is ignored. need(): optional, false hides the row.
+-- Example: Rhylib.Menus.AddControl("Jetpack", "{+jump}", "Thrust up", function() return Rhylib.Jetpack ~= nil end)
 function Menus.AddControl(section, keys, text, need)
     local list = Menus.controls[section]
     if not list then
@@ -100,6 +109,7 @@ local function conflicts()
     return lines
 end
 
+-- Menus.ControlsTop(sp): the "KEY CLASHES" box at the top of the Controls tab.
 function Menus.ControlsTop(sp)
     local lines = conflicts()
     local box = vgui.Create("DPanel", sp)
@@ -122,6 +132,7 @@ function Menus.ControlsTop(sp)
     end
 end
 
+-- Menus.ControlsBottom(sp): every fixed control whose need() passes, by section.
 function Menus.ControlsBottom(sp)
     for _, section in ipairs(Menus.controlOrder) do
         local rows = {}
@@ -146,7 +157,8 @@ function Menus.ControlsBottom(sp)
     end
 end
 
--- Open the pause menu on Settings > Controls.
+-- Menus.OpenControls(): open the pause menu on Settings > Controls (F1,
+-- rhylib_controls).
 function Menus.OpenControls()
     Menus.settingsTab = "Controls"
     Menus.lastPage = Menus.SettingsPageId("Controls")
@@ -169,6 +181,7 @@ end)
 -- Fixed controls of the suite (shown only when that addon is installed)
 --------------------------------------------------------------------------
 
+-- has("Stamina") -> a need() that is true when Rhylib.Stamina exists.
 local function has(name) return function() return Rhylib[name] ~= nil end end
 local A = Menus.AddControl
 

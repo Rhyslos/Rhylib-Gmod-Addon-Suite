@@ -1,4 +1,7 @@
--- Spawn menu entry for a backpack. Picking it up wears it if the Back slot is free.
+-- Spawn menu entry for a backpack (shared). A rhylib_world_item holding one
+-- "backpack" item. Picking it up wears it if the Back slot is free.
+-- To make a spawn menu entry for another item, copy this file and change
+-- the class name, PrintName and the SetItem call.
 
 AddCSLuaFile()
 

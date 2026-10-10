@@ -17,6 +17,15 @@
       If something is between your gun and the aim point (you can see
       past cover but your gun can't), a small marker shows where the bolt
       will actually hit.
+
+    Adds Rhylib.ThirdPerson (TP): Mode, Wanted, Active, Toggle,
+    SwapShoulder, and the live camera state (camAng, camPos, aimPoint,
+    aimFrac, side, camHeight). Other addons read TP.Wanted() / TP.Active()
+    (e.g. the body camera) and turn TP.camAng (rhylib_weapons view recoil).
+    Hooks: InputMouseApply "thirdperson.mouse" (10, after the reload
+    menu), CreateMove "thirdperson.aim", CalcView "thirdperson.camera" (0;
+    the body camera at -50 runs first and returns nothing while this is
+    wanted), PreDrawViewModel, HUDPaint, Think (keys). Nothing networked.
 ]]
 
 Rhylib.ThirdPerson = Rhylib.ThirdPerson or {}
@@ -48,7 +57,8 @@ TP.aimFrac = 0               -- 0 hip, 1 aiming (smoothed)
 TP.side = sideVar:GetFloat() -- smoothed shoulder side
 TP.camHeight = nil           -- smoothed camera height above the feet
 
--- The server's mode: "choice", "third" or "first" (config thirdperson mode).
+-- TP.Mode(): the server's mode: "choice", "third" or "first" (config
+-- thirdperson mode; the old convar rhylib_thirdperson_allowed 0 = "first").
 function TP.Mode()
     if allowedVar and not allowedVar:GetBool() then return "first" end
     local m = Rhylib.Config.Get("thirdperson", "mode")
@@ -56,13 +66,17 @@ function TP.Mode()
     return "choice"
 end
 
--- Third person wanted right now (mode, else the player's own switch).
+-- TP.Wanted(): third person wanted right now (mode, else the player's own
+-- switch rhylib_thirdperson).
 function TP.Wanted()
     local m = TP.Mode()
     if m == "first" then return false end
     return m == "third" or enabledVar:GetBool()
 end
 
+-- TP.Active(): third person really in use now: wanted, alive, not in a
+-- vehicle or spectating, not looking through binoculars (rhylib_gear).
+-- Example: if Rhylib.ThirdPerson and Rhylib.ThirdPerson.Active() then ... end
 function TP.Active()
     local ply = LocalPlayer()
     return TP.Wanted() and IsValid(ply) and ply:Alive()
@@ -291,6 +305,8 @@ end)
 -- Keys
 --------------------------------------------------------------------------
 
+-- TP.Toggle(): flip rhylib_thirdperson (refused with a chat line in a fixed
+-- server mode). Console: rhylib_thirdperson_toggle.
 function TP.Toggle()
     local m = TP.Mode()
     if m == "first" then
@@ -303,6 +319,7 @@ function TP.Toggle()
     RunConsoleCommand("rhylib_thirdperson", enabledVar:GetBool() and "0" or "1")
 end
 
+-- TP.SwapShoulder(): right <-> left shoulder. Console: rhylib_thirdperson_swap.
 function TP.SwapShoulder()
     RunConsoleCommand("rhylib_thirdperson_side", sideVar:GetFloat() >= 0 and "-1" or "1")
 end

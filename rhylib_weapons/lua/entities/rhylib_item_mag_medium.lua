@@ -1,3 +1,5 @@
+-- Pick-up: one full medium magazine (shared). See rhylib_item_base.
+
 AddCSLuaFile()
 
 ENT.Type = "anim"

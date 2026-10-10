@@ -1,5 +1,8 @@
 -- Droid popper: EMP grenade. Kills Rhylib droids in range after a short
--- fuse; harmless to everything else.
+-- fuse and stuns players there (rhylib_mp); no other damage. Radius:
+-- weapons empRadius (rhylib_grenade). E + R switches to impact.
+-- Class rhylib_droidpopper, shared. Base rhylib_grenade_base. Needs the
+-- Droid popper skill to carry and throw (rhylib_skills).
 AddCSLuaFile()
 SWEP.Base = "rhylib_grenade_base"
 SWEP.PrintName = "Droid popper"

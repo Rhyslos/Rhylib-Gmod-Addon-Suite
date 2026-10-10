@@ -5,6 +5,11 @@
       - the jetpack model on the back of anyone wearing one
       - thrust flames and a jet sound while thrusting
       - a small fuel bar under your crosshair
+
+    One shared ClientsideModel draws every wearer's jetpack (moved and
+    drawn per player in PostPlayerDraw). J.BackOffset / CrouchDrop /
+    BackAngle / Nozzles can be changed from another client file to fit a
+    different model. Sounds checked by a 0.1 s timer.
 ]]
 
 local J = Rhylib.Jetpack

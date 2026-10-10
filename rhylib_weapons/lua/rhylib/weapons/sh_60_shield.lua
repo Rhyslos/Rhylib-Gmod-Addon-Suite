@@ -18,6 +18,11 @@
                                charge blasts are blocked by it)
     Bolts call ShieldBlocks once per hit on a player; it only scans the
     other players when the target's own shield didn't stop it.
+    W.ShieldAimed(ply)         a shield held in front (right mouse)
+
+    Realm: shared (the blast hook is server only). The shield weapons
+    themselves are in rhylib_republic (rhylib_riotshield,
+    rhylib_riotshield_rep). Offline test: tools/tests/shield_test.lua.
 ]]
 
 local W = Rhylib.Weapons

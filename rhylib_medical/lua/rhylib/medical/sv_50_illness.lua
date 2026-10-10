@@ -2,16 +2,25 @@
     Illness (server): infections, symptoms, blood samples, the analyser,
     test strips and dosing. See sh_50_illness.lua for the rules.
 
-    Med.ill[ply] = { kind, load } (saved as Data "med_ill"/sid, so leaving
-    doesn't cure it). A 30 s timer grows the load and plays the symptoms.
+    Med.ill[ply] = { kind, load, told } (saved as Data "med_ill"/SteamID64
+    = { k = kind, l = load }, so leaving doesn't cure it; never saved for
+    bots). A 30 s timer grows the load and plays the symptoms.
 
-    Network (client asks, server checks):
-      ill.draw   (target)            start drawing blood (timed)
-      ill.scan   (analyser, uid)     analyse a carried sample (timed)
-      ill.strip  (uid)               test a sample on a strip
-      ill.dose   (target, med 2 bits, units 6 bits)   give medicine (timed)
-      ill.open   server -> client: the analyser window for that entity
-      ill.stop   server -> client: a timed step was cancelled
+    Network (client asks, server checks; uid = item uid, Items.UID_BITS):
+      ill.draw    (target)            start drawing blood (timed)
+      ill.scan    (bench, uid)        analyse a carried sample (timed)
+      ill.strip   (uid)               put a sample on a test strip
+      ill.look    (uid)               show a used strip's result again
+      ill.discard (uid)               throw away a sample or used strip
+      ill.dose    (target, med 2 bits, units 6 bits)   give medicine (timed)
+      ill.open    server -> client: the analyser window for that entity
+      ill.cass    server -> client: the used strip window (uid, name,
+                  elapsed s 16 bits, develop time 10, kind 2, load 7)
+      ill.beep    server -> client: strip started (false) / ready (true) + name
+      ill.stop    server -> client: a timed step was cancelled (uid or 0)
+
+    Public: Med.Infect, Med.Cure, Med.Illness, Med.ApplyDose,
+    Med.FindCassette, Med.SpoilSamples, Med.AnalyserUse.
 ]]
 
 local Med = Rhylib.Medical
@@ -66,7 +75,10 @@ local function save(ply)
     end
 end
 
--- kind 1-3, load 1-100 (default 40). Infecting again replaces it.
+-- Med.Infect(ply, kind, load): makes ply ill. kind 1-3 (Med.ILL_VIRAL,
+-- _BACTERIAL, _POISON), load 1-100 (default 40). Infecting again replaces
+-- it. Returns false if refused (bad kind, simplified system). Server only.
+-- Example: Rhylib.Medical.Infect(ply, Rhylib.Medical.ILL_POISON, 35)
 function Med.Infect(ply, kind, load)
     if not (IsValid(ply) and Med.ILL[kind]) or Med.Simple() then return false end
     Med.ill[ply] = { kind = kind, load = math.Clamp(tonumber(load) or 40, 1, 100) }
@@ -75,6 +87,7 @@ function Med.Infect(ply, kind, load)
     return true
 end
 
+-- Med.Cure(ply): ends ply's illness (and its saved row). Server only.
 function Med.Cure(ply)
     if not IsValid(ply) then return end
     local had = Med.ill[ply] ~= nil
@@ -83,6 +96,7 @@ function Med.Cure(ply)
     if had then save(ply) end
 end
 
+-- Med.Illness(ply): { kind, load, told } or nil. Read only. Server only.
 function Med.Illness(ply)
     return Med.ill[ply]
 end
@@ -118,6 +132,7 @@ timer.Create("Rhylib.Medical.Illness", 30, 0, function()
             Med.ill[ply] = nil
         elseif ply:Alive() then
             local k = Med.ILL[s.kind]
+            -- loadRate is per minute; this runs every half minute.
             s.load = math.min(100, s.load + (tonumber(rates[s.kind]) or 0.5) * 0.5)
             local stage = stageOf(s.load)
             -- Poison at full load: down (then it eases so it can be treated).
@@ -171,7 +186,9 @@ local function stop(ply, msg, uid)
 end
 
 -- A timed step: check() every 0.1 s (false = cancelled), done() at the
--- end, cancelled() whenever it doesn't finish.
+-- end, cancelled() whenever it doesn't finish. Moving more than 40 units
+-- from where it started cancels too. One timer per player and key, so
+-- asking again restarts it.
 local function timed(ply, key, secs, check, done, cancelled, uid)
     local name = "Rhylib.Medical.Ill." .. key .. "." .. ply:EntIndex()
     local ends, from = CurTime() + secs, ply:GetPos()
@@ -282,6 +299,9 @@ end, { rate = 3, burst = 3 })
 -- 2. Analyser
 --------------------------------------------------------------------------
 
+-- Med.AnalyserUse(ent, ply): opens the analyser window for ent on ply's
+-- screen (net ill.open). (The bench itself opens it client side through
+-- the wheel or its menu; nothing in this addon calls this now.)
 function Med.AnalyserUse(ent, ply)
     if not (IsValid(ply) and ply:IsPlayer() and able(ply)) then return end
     Rhylib.Net.Start("ill.open")
@@ -324,6 +344,8 @@ Rhylib.Net.Receive("ill.scan", function(ply)
             o.data.reading = "no infection"
         else
             -- Shown as the dose it needs (load / 5 units), give or take a band.
+            -- band = scanBand / 5 rounded (at least 1 unit); the shown number
+            -- is off by up to 0.7 × band before rounding.
             local band = math.max(1, math.Round((chemist(ply) and cfg("scanBandChemist") or cfg("scanBand")) / 5))
             local shown = math.max(1, math.Round(load / 5 + math.Rand(-band, band) * 0.7))
             o.data.reading = "infected, dose ~" .. shown .. " units (± " .. band .. ")"
@@ -341,6 +363,8 @@ end, { rate = 4, burst = 4 })
 --    developed strip with its sample.
 --------------------------------------------------------------------------
 
+-- Med.FindCassette(ply, key): the used strip in ply's inventory made from
+-- the sample with this data.key, or nil. Needs rhylib_inventory.
 function Med.FindCassette(ply, key)
     if not key then return nil end
     for _, o in pairs(Inv().Get(ply).byUid) do
@@ -418,7 +442,8 @@ Rhylib.Net.Receive("ill.discard", function(ply)
     if inst then Inv().Remove(ply, uid) end
 end, { rate = 6, burst = 6 })
 
--- Old samples and strips spoil (checked with the symptoms, every 30 s).
+-- Med.SpoilSamples(): removes samples and used strips older than
+-- sampleLife (data.at, os.time) from every player. Runs every 30 s.
 function Med.SpoilSamples()
     local life = cfg("sampleLife")
     local now = os.time()
@@ -444,7 +469,12 @@ local function overdose(t, secs, hp)
     if hp > 0 then t:SetHealth(math.max(1, t:Health() - hp)) end
 end
 
--- What a dose does: the right medicine within tolerance cures.
+-- Med.ApplyDose(t, medId, units, by): what a dose does to patient t.
+-- Right dose = load / 5 units, tolerance max(1, doseTolerance × it).
+-- Returns "no effect" (wrong medicine or not ill: 15 s blur, -5 HP),
+-- "too little" (load drops by units × 5), "cured", or "too much" (cured,
+-- 30 s blur, 10-60 HP; over twice the dose also downs them, no frag).
+-- `by` (the medic) is not used. Server only.
 function Med.ApplyDose(t, medId, units, by)
     local s = Med.ill[t]
     local k = s and Med.ILL[s.kind]

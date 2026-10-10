@@ -13,7 +13,11 @@
 
     Head / limb multipliers are global: weapons headMult / limbMult.
     Grenades, the toolgun, the riot shield (it is a DC-15S) and training
-    copies have no keys of their own.
+    copies have no keys of their own (and any gun with SWEP.NoGunStats).
+
+    Realm: shared (both realms write the same values). Note: the keys
+    are registered at InitPostEntity, so a host config file sets them
+    with Rhylib.Config.Set("guns", "dc15a_damage", 40) like any other key.
 ]]
 
 local W = Rhylib.Weapons
@@ -108,6 +112,8 @@ local function writeStat(class, s, v)
     end
 end
 
+-- GS.Apply(class): writes every saved "guns" setting of that gun into
+-- its class table and live weapons.
 function GS.Apply(class)
     local d = GS.defaults[class]
     if not d then return end

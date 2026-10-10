@@ -10,6 +10,10 @@
     of the surface, the rope a black line. Both are drawn directly, no
     model. The hook's use box is a bit bigger than it looks, so it's easy
     to press E on.
+
+    Realm: shared. The server creates it (sv_30_grapple.lua onHookHit)
+    and fills it with ENT:SetRope; both realms read it with
+    ENT:GetRopeData (climbing is predicted, sh_30_grapple.lua).
 ]]
 
 AddCSLuaFile()
@@ -85,6 +89,10 @@ function ENT:SetGripped(ent)
 end
 
 -- Server only: fill in the rope. pts/nrm from sv_30_grapple.lua.
+-- pts: up to 16 points, hook first. nrm[i]: wall normal of segment i
+-- (nil = hangs free). top: index where climbing starts. ledge: where a
+-- climber stands after going over the top, or nil.
+-- Count is set last: its notify makes clients build the rope.
 function ENT:SetRope(pts, nrm, top, ledge)
     local mask = 0
     for i = 1, #pts do self["SetP" .. i](self, pts[i]) end
@@ -104,6 +112,8 @@ function ENT:SetRope(pts, nrm, top, ledge)
 end
 
 -- Cached rope data for the climbing maths (built once, the rope never changes).
+-- Returns nil until the points have arrived, else the table described in
+-- sh_30_grapple.lua ("Rope maths"). Shared.
 function ENT:GetRopeData()
     if self.ropeData then return self.ropeData end
     local n = self:GetCount()

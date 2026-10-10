@@ -2,6 +2,18 @@
     Wearable gear (server): bodygroups follow what's worn, the battalion
     kit at spawn, the parts' effects, helmet lights, and the gear
     cabinet's per-player stock and unlocks.
+
+    Server only. Nets: rhylib.gear.helmet (client -> server, empty; the
+    inventory's HELMET ON/OFF button, rate 3/s), rhylib.gear.lights (client
+    -> server, empty; helmet gear key with lights worn, rate 4/s).
+    Saved data: Data "gear" / "kitoff_<SteamID64>" = { [item id] = true }:
+    kit parts the player dropped, not given again at spawn.
+    Hooks answered: Rhylib.LoadoutDropped, Rhylib.InventoryChanged,
+    Rhylib.BlastPartMult and Rhylib.FractureChance (rhylib_medical, kama),
+    Rhylib.ArmorDrainMult (rhylib_weapons armour, pauldron),
+    Rhylib.GearStockFor / Rhylib.GearReturnable (rhylib_armoury gear
+    cabinet), Rhylib.CanTakeStock (rhylib_inventory, unlocks),
+    PlayerSwitchFlashlight (the engine flashlight is always refused).
 ]]
 
 local G = Rhylib.Gear
@@ -15,7 +27,9 @@ local function setGroup(ply, g, idx)
     if idx and ply:GetBodygroup(g.id) ~= idx then ply:SetBodygroup(g.id, idx) end
 end
 
--- Bodygroups from what's worn (and optics in use: flipped down).
+-- G.Apply(ply): sets every managed bodygroup from what's worn (and optics
+-- in use: flipped down), the helmet group, hair / facial hair, hair colour
+-- and skin (rhylib_roster looks). Safe to call any time. Server.
 function G.Apply(ply)
     if not (IsValid(ply) and Items() and Items().WORN_BY_SLOT) then return end
     local info = G.ModelInfo(ply)
@@ -110,7 +124,8 @@ Rhylib.Hook.Add("Rhylib.LoadoutDropped", "gear.kitoff", function(ply, id)
     saveKitOff(ply)
 end)
 
--- Battalion kit: given as job gear; old kit from another battalion goes.
+-- G.GiveKit(ply): battalion kit given as job gear (issued + loadout); old
+-- kit from another battalion goes. Runs 0.5 s after each spawn. Server.
 function G.GiveKit(ply)
     local I = Inv()
     if not (I and I.AddItem and I.Get) then return end
@@ -266,6 +281,8 @@ end)
 -- may use them.
 --------------------------------------------------------------------------
 
+-- G.SetLights(ply, on): helmet lights on / off (NW2Bool rhylib_lights,
+-- with a click). Doesn't check if they're allowed: G.LightsAllowed does.
 function G.SetLights(ply, on)
     on = on and true or false
     if ply:GetNW2Bool("rhylib_lights", false) == on then return end

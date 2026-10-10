@@ -1,5 +1,5 @@
 --[[
-    Other players:
+    Other players (client):
       - Look at someone within range to see their name (in their team
         colour), job with DarkRP, and health and armour bars.
       - Icons above heads while someone is talking on voice (bars that
@@ -8,6 +8,13 @@
     Target info uses the eye trace GMod already makes each frame. Icons
     loop over the players once per frame and skip anyone far away,
     dead or not being networked to you.
+
+    Ranges are config settings (module "hud"): targetRange (name card)
+    and iconRange (head icons). Armour comes from the NW2Int
+    "rhylib_armor" that sv_10_armor.lua keeps up to date; the bar is
+    drawn against 100. Cloaked staff (NW2Bool "rhylib_cloak",
+    rhylib_admin) get no card and no icons. Typing also counts
+    rhylib_chat's NW2Bool "rhylib_typing".
 ]]
 
 local HUD = Rhylib.HUD
@@ -38,6 +45,8 @@ end
 -- Name, health and armour when you look at someone
 --------------------------------------------------------------------------
 
+-- The card stays up 0.25 s after the trace leaves the player and fades
+-- in/out over ~1/6 s, so a quick glance doesn't flicker.
 local target, seenAt, fade = nil, 0, 0
 local nameCol, outlineCol = Color(255, 255, 255), Color(0, 0, 0)
 

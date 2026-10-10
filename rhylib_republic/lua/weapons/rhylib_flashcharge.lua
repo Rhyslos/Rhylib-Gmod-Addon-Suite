@@ -1,6 +1,8 @@
 -- Flash charge (military police, rhylib_skills Flash charge): a short
 -- fuse, then a blinding flash. Players in sight are stunned (rhylib_mp),
 -- droids aim much worse for a few seconds. No damage.
+-- Class rhylib_flashcharge, shared. Base rhylib_grenade_base. Radius:
+-- rhylib_grenade ENT.FlashRadius (450). In the specialist armoury for MPs.
 AddCSLuaFile()
 SWEP.Base = "rhylib_grenade_base"
 SWEP.PrintName = "Flash charge"

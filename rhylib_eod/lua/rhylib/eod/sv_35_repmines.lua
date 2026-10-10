@@ -3,17 +3,23 @@
     Planting (rhylib_rep_mine weapon), the limit per player, droids setting
     them off (a 0.1 s check, droids only), the blast (droids only), and
     picking your own back up (E, the client finds it and asks).
+
+    Fires Rhylib.Explosion(pos, mineChain, 1, planter, mine, "repmine")
+    when one goes off (so enemy mines nearby can chain).
+    Net eod.reppick: client -> server, the mine entity; rate 6/s.
 ]]
 
 local E = Rhylib.EOD
 local Net = Rhylib.Net
 
-E.repMines = E.repMines or {}
+E.repMines = E.repMines or {}   -- [planted mine entity] = true
 
+-- How many one player may have out: repLimit, or repLimitField with Minefield.
 local function limit(ply)
     return E.Skill(ply, "eod_minefield") and (E.Cfg("repLimitField") or 6) or (E.Cfg("repLimit") or 3)
 end
 
+-- E.RepCount(ply) -> how many Republic mines ply has out. Server.
 function E.RepCount(ply)
     local n = 0
     for m in pairs(E.repMines) do
@@ -22,6 +28,8 @@ function E.RepCount(ply)
     return n
 end
 
+-- E.RepCanPlace(ply, pos) -> ok, reason: under the limit and no other
+-- Republic mine within 40 units. The weapon asks before its animation.
 function E.RepCanPlace(ply, pos)
     local max = limit(ply)
     if E.RepCount(ply) >= max then
@@ -34,6 +42,9 @@ function E.RepCanPlace(ply, pos)
 end
 
 -- Plant one where tr hit (the weapon checked the ground). Returns the mine.
+-- E.RepPlace(ply, trace, issued) -> mine or nil. issued = the item came
+-- from the armoury (it goes back as issued when picked up). Wide (the
+-- Minefield blast) is fixed when planted.
 function E.RepPlace(ply, tr, issued)
     local ok, why = E.RepCanPlace(ply, tr.HitPos)
     if not ok then E.Msg(ply, why, true) return nil end
@@ -53,6 +64,10 @@ function E.RepPlace(ply, tr, issued)
     return m
 end
 
+-- E.RepBoom(mine): set a Republic mine off. Hurts only living,
+-- non-training rhylib_droids droids in brush sight within repRadius
+-- (×repFieldRadius when Wide): repDamage at the centre, down to 40% at
+-- the edge, credited to the planter.
 function E.RepBoom(m)
     if not IsValid(m) or m.repOver then return end
     m.repOver = true
@@ -91,7 +106,9 @@ function E.RepBoom(m)
     timer.Simple(0.1, function() if IsValid(m) then m:Remove() end end)
 end
 
--- Droids walking onto one.
+-- Droids walking onto one (every 0.1 s, "Rhylib.EOD.RepMines"; skipped
+-- with no mines or no active droids): within repTrigger flat and 60
+-- units of height, 2 s after planting.
 local function tick()
     if next(E.repMines) == nil then return end
     local D = Rhylib.Droids

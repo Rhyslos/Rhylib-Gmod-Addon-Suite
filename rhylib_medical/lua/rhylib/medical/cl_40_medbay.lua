@@ -1,7 +1,8 @@
 --[[
     Med bay, client: the chemistry bench menu (chem.open -> recipes,
-    chem.make), the mixing progress bar, the bacta tank screen, and the
-    floating labels over tanks and benches.
+    chem.make), the mixing progress bar (NW2 rhylib_craftS/E/N), the bacta
+    tank screen and blue tint, and the floating labels over tanks, benches
+    and sofas (Med.DrawEntLabel, used by the entities' Draw).
 ]]
 
 local Med = Rhylib.Medical
@@ -24,6 +25,8 @@ end
 -- Labels over med bay entities (close up only)
 --------------------------------------------------------------------------
 
+-- Med.DrawEntLabel(ent, title, sub): a two-line label floating over ent,
+-- facing the camera, only within LABEL_RANGE. Call from ENT:Draw.
 local LABEL_RANGE = 250
 function Med.DrawEntLabel(ent, title, sub)
     local eye = EyePos()
@@ -40,6 +43,8 @@ end
 -- Chemistry bench menu
 --------------------------------------------------------------------------
 
+-- chem.open: bench entity + bool (may craft). The menu lists
+-- chemRecipes; picking one sends chem.make with its index (5 bits).
 local openM
 Rhylib.Net.Receive("chem.open", function()
     local bench = net.ReadEntity()

@@ -9,6 +9,14 @@
     Player options (Settings > Weapons): style (classic chevron, dot,
     cross, arcs only, dot only), colour, centre size, outline, hit markers,
     thickness, opacity. Classic is the default.
+
+    Realm: client. Called from rhylib_base SWEP:DoDrawCrosshair (and by
+    rhylib_thirdperson for its own crosshair). Receives net "wep.hit"
+    (UInt 2: 0 body, 1 head, 2 down/kill) for the hit marker and sound.
+    Client convars: rhylib_hitsound, rhylib_crosshair_smooth / _thickness /
+    _opacity / _style / _colour / _centre / _outline / _hitmarker.
+    Reads Rhylib.UI.Tint (a command order's colour, rhylib_skills) and
+    Rhylib.Gear.visorFov (sun visor zoom, rhylib_gear).
 ]]
 
 local W = Rhylib.Weapons
@@ -223,6 +231,8 @@ end
 
 local offsets = { 0, 0, 0 }
 
+-- X.Draw(wep, x, y): draws the crosshair for a Rhylib weapon centred on
+-- x, y (pixels). Example (own HUD code): Rhylib.Weapons.Crosshair.Draw(wep, ScrW() / 2, ScrH() / 2)
 function X.Draw(wep, x, y)
     -- Grapple mode: the hook's landing marker instead (cl_40_grapple.lua).
     if wep.InGrappleMode and wep:InGrappleMode() and X.DrawGrapple then

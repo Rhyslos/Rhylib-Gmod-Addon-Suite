@@ -6,6 +6,13 @@
     Others (revive kit): left click uses it on the player you aim at.
     The server does the work (rhylib_medical sv_20_actions.lua); a timer
     plays until it's done. Kits are inventory items (InvW / InvStack).
+
+    Shared. Fields a kit sets: PrintName, Spawnable, Category, Hint (HUD
+    line), SimpleHint (HUD line in the simplified system), CanSelf (RMB
+    treats yourself), OpensMenu (uses the injury menu), ChargeText
+    (client function: extra HUD text), Inv* (inventory size/stack/weight).
+    To make a new kit, set SWEP.Base = "rhylib_med_base" and teach
+    Med.UseKit (sv_20_actions.lua) what its class does.
 ]]
 
 AddCSLuaFile()
@@ -22,11 +29,11 @@ SWEP.ViewModel = "models/weapons/c_medkit.mdl"
 SWEP.WorldModel = "models/weapons/w_medkit.mdl"
 SWEP.UseHands = true
 SWEP.HoldType = "slam"
-SWEP.IsRhylibMedical = true
+SWEP.IsRhylibMedical = true   -- (marks the medical kits)
 SWEP.CanSelf = false
-SWEP.Hint = ""
+SWEP.Hint = ""            -- HUD line under the crosshair while held
 
-SWEP.InvCategory = "medical"
+SWEP.InvCategory = "medical"   -- inventory colour/group
 
 SWEP.Primary = { ClipSize = -1, DefaultClip = -1, Automatic = false, Ammo = "none" }
 SWEP.Secondary = { ClipSize = -1, DefaultClip = -1, Automatic = false, Ammo = "none" }
@@ -35,6 +42,8 @@ function SWEP:Initialize()
     self:SetHoldType(self.HoldType)
 end
 
+-- SWEP:UseKit(onSelf): hands the click to the server (Med.UseKit with this
+-- class). Does nothing on the client.
 function SWEP:UseKit(onSelf)
     local owner = self:GetOwner()
     if not SERVER or not IsValid(owner) or not Rhylib.Medical then return end

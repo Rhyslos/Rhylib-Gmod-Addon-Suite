@@ -1,5 +1,5 @@
 --[[
-    Giving items to other players, and holding items in your hand.
+    Giving items to other players, and holding items in your hand (server only).
 
       inv.give  (request) item uid, single, target player: hands it over
                 straight into their inventory (what doesn't fit stays
@@ -8,6 +8,8 @@
                 e.g. magazines) with the rhylib_hand weapon.
 
     The held item's uid is NW2Int "rhylib_handUid" on the player.
+    Fires hook Rhylib.ItemGiven(giver, target, id, count) after a give.
+    Range: config inventory giveRange (130 units).
 ]]
 
 local Inv = Rhylib.Inventory
@@ -15,7 +17,8 @@ local Items = Rhylib.Items
 local Config = Rhylib.Config
 local I = Inv.Internal
 
--- Close, alive, in sight, and free to receive.
+-- Inv.CanGive(ply, target): close (giveRange), both alive, in sight,
+-- neither locked nor downed. Returns true/false.
 function Inv.CanGive(ply, target)
     if not (IsValid(target) and target:IsPlayer() and target ~= ply and target:Alive() and ply:Alive()) then return false end
     local r = Config.Get("inventory", "giveRange") or 130
@@ -30,7 +33,11 @@ local function label(def, n)
     return (def and def.name or "item") .. (n > 1 and (" x" .. n) or "")
 end
 
--- Returns how many were given.
+-- Inv.GiveTo(ply, target, uid, single): hands ply's item uid straight
+-- into target's inventory (single: just one off a stack). What doesn't
+-- fit stays with ply; job gear and items target may not carry are
+-- refused. Both get a note. Returns how many were given.
+-- Example: Rhylib.Inventory.GiveTo(medic, patient, kit.uid, true)
 function Inv.GiveTo(ply, target, uid, single)
     if not Inv.CanGive(ply, target) then return 0 end
     local st = Inv.Get(ply)
@@ -72,6 +79,7 @@ function Inv.GiveTo(ply, target, uid, single)
     return given
 end
 
+-- inv.give: uid 16, single 1, target entity.
 Rhylib.Net.Receive("inv.give", function(ply)
     local uid = net.ReadUInt(Items.UID_BITS)
     local single = net.ReadBool()
@@ -79,7 +87,8 @@ Rhylib.Net.Receive("inv.give", function(ply)
     Inv.GiveTo(ply, target, uid, single)
 end, { rate = 6, burst = 6 })
 
--- Hold a hotbar item in your hand.
+-- Hold a hotbar item in your hand. inv.hold: uid 16. Only items with
+-- def.hand that sit on the hotbar.
 Rhylib.Net.Receive("inv.hold", function(ply)
     local uid = net.ReadUInt(Items.UID_BITS)
     if not ply:Alive() or Inv.Locked(ply) or ply.rhylibDown then return end

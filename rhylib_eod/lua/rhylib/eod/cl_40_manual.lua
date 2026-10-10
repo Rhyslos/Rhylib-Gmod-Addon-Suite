@@ -11,6 +11,7 @@
 
 local E = Rhylib.EOD
 
+-- Who gets the datapad tab: the Bomb manual skill (eod_manual).
 local function hasManual()
     return E.Skill(LocalPlayer(), "eod_manual")
 end
@@ -35,7 +36,8 @@ local BLUE, PURPLE, CYAN, GREY = Color(62, 142, 247), Color(164, 110, 224), Colo
 
 local function metres(units) return math.floor((units or 0) / E.UNITS_PER_M + 0.5) end
 
--- Module steps (short lines, in order).
+-- Module steps (short lines, in order). A new module needs an entry
+-- here, keyed by its E.MODS id (a module without one shows an empty card).
 local MODULE_STEPS = {
     fuse = { "Watch the heat bar: past 100° it fires.", "Every cut and jumper heats the board; so does the torch.", "Pause between steps: it cools down by itself." },
     stab = { "Read the dose printed on the charge.", "Cut the detonator line as normal.", "Set the slider to exactly that dose, then Inject." },
@@ -48,6 +50,7 @@ local MODULE_STEPS = {
 }
 local RANK_NAME = { "Basic", "Advanced", "Expert" }
 
+-- build(content, kit): fills the datapad tab's panel. D.EodManualBuild.
 local function build(content, k)
     if not (k and IsValid(content)) then return end
     local s = k.S

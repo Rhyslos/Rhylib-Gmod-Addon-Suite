@@ -7,7 +7,15 @@
     tunnels. Blast: config b2RocketDamage / b2RocketRadius, purple EMP-style
     effect (rhylib_republic's rhylib_emp, colour 1). Training droids' rockets
     (r.training) only take sim health (orange-yellow).
+
+    Shared entity, made by ENT:FireRocket / ENT:FireDirectRocket in
+    rhylib_b1.lua. Fields set before Spawn: r.vel (start velocity),
+    r.owner (the droid, credited for the blast), r.training, and for the
+    rocket droid r.direct + r.diveAt (aim point). Training is also a DT
+    Bool so clients pick the glow colour. Gone after 8 s or in the sky.
+    The blast effect needs rhylib_republic (rhylib_emp).
 ]]
+
 
 AddCSLuaFile()
 

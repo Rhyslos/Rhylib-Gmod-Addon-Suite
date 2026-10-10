@@ -1,5 +1,6 @@
 --[[
-    Battalion computer: personnel files (needs rhylib_roster).
+    Battalion computer (server): personnel files, the Personnel tab
+    (needs rhylib_roster; without it the member list is empty).
 
     A file per character, kept across battalions:
       Data "dp_pf"/sid = { next, c = commendations, s = strikes, n = notes }
@@ -15,11 +16,20 @@
     (strikes, quals, notes, removing); commendations on anyone but
     themselves; admins anything. 50 entries kept per list, 30 newest sent.
 
-      dp.plist   entity -> dp.pmembers
-      dp.pget    entity, sid -> dp.pfile
+      dp.plist   entity -> dp.pmembers: entity, count 8 x (sid, name,
+                 rank 8, online, last seen 32, commendations 8, active
+                 strikes 4, roster note e.g. LOA)
+      dp.pget    entity, sid -> dp.pfile: entity, sid, name, rank name,
+                 online, seen 32, can commend, can discipline, quals (count
+                 5; id, name, held), all-time stats here (11 x 32),
+                 commendations (count 8; id 16, time 32, by, battalion,
+                 text), can see strikes + strikes (count 8; id 16, time 32,
+                 expires 32, by, text), can see notes + notes (text, by, time 32)
       dp.pcom / dp.pstrike / dp.pnote   entity, sid, text
-      dp.pdel    entity, sid, kind (0 commendation, 1 strike), entry id
+      dp.pdel    entity, sid, kind (1 bit: 0 commendation, 1 strike), entry id (16)
       dp.pqual   entity, sid, qual id, on
+    Every action is also written to the roster log (Rhylib.Roster.Log) and
+    the member is told in chat if online.
 ]]
 
 local D = Rhylib.Datapad
@@ -33,6 +43,8 @@ local function R() return Rhylib.Roster end
 local function sid(ply) return ply:SteamID64() or "" end
 local function validSid(id) return isstring(id) and #id <= 20 and string.match(id, "^%d+$") ~= nil end
 
+-- D.File(sid): a character's file { next, c, s, n } (live table; save with
+-- D.Store("dp_pf", sid, f)). Also read by sv_50 (My file) and sv_60 (applications).
 function D.File(id)
     local f = D.Load("dp_pf", id, nil)
     if not f.next then f.next, f.c, f.s = 1, {}, {} end
@@ -55,7 +67,10 @@ end
 
 local function canTerm(ent) return not D.IsMedTerm(ent) and ent:GetBattalion() ~= "" and R() ~= nil end
 
--- Rights of ply over the member id (character c) at battalion bn.
+-- Rights of ply over the member id (character c) at battalion bn:
+-- commend (managers, not on themselves), discipline (strikes, quals,
+-- notes, removing: managers on lower ranks), strikes (who may read them),
+-- notes (who may read them). Admins (a.admin) may do everything.
 local function rights(ply, bn, a, id, c)
     local self = sid(ply) == id
     local manager = D.IsUnitManager(ply, bn, a.admin)

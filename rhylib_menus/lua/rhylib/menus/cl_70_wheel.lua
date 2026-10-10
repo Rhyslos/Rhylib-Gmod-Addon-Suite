@@ -21,8 +21,23 @@
 
     W.OpenList(title, list, code) opens a wheel with no target: list =
     { { label, run, sub, disabled, col } } (col: a Color for a wider strip
-    on the left edge), held while button code is down (the toolgun's
-    R menu uses it); let go on an option to run it.
+    on the left edge), held while button code is down (rhylib_skills'
+    squad wheel and rhylib_radio's ping wheel use it); let go on an
+    option to run it.
+
+    add(label, run, opts) for the hooks: run(target) is called when picked
+    (nil = can't be picked); opts.sub = a dim second line; opts.disabled =
+    a reason text (drawn dim, in red, can't be picked); opts.order = place
+    around the ring, clockwise from the top (lower first; default 50).
+    Orders in use: medical 10-20, MP 30-33, ammo pack 35, give 40, radio
+    hail 45, staff 90. The pick is worked out in Think, so it works with
+    the HUD hidden.
+
+    Client only. Adds Menus.Wheel (W.FindTarget, W.Open, W.OpenList,
+    W.Close, W.PickOption, W.open), Menus.WheelProgress,
+    Menus.WheelProgressStop. Hooks: PlayerBindPress "menus.wheel" at -20
+    (before most others), InputMouseApply at -40 (the view stops while
+    open), Think, HUDPaint.
 
     Menus.WheelProgress(text, secs) shows a short progress bar under the
     crosshair (for timed actions the server finishes, like cuffing).
@@ -41,7 +56,9 @@ local CURSOR_MAX = 150
 local RING = 165
 local HOLD = 0.25          -- s of holding E on a standing player before it opens
 
--- The player you're aiming at (downed bodies by medical's wider cone).
+-- W.FindTarget(me): the player you're aiming at within RANGE (a downed body
+-- by medical's wider cone, a lying ragdoll -> its owner), or an entity with
+-- ENT.RhylibWheel, or nil.
 function W.FindTarget(me)
     local Med = Rhylib.Medical
     if Med and Med.FindDowned and Med.clientDown then
@@ -58,6 +75,8 @@ function W.FindTarget(me)
     if IsValid(e) and e.RhylibWheel then return e end
 end
 
+-- False while the wheel must not open (you're lying, cuffed, busy with a
+-- medical action or drag, on a rope, in the bacta tank, or holding R).
 local function canOpen(me)
     if not IsValid(me) or not me:Alive() or me:InVehicle() then return false end
     local L = Rhylib.Lying
@@ -101,11 +120,18 @@ local function useHeld()
     return code and code > 0 and input.IsButtonDown(code)
 end
 
+-- W.Close(): closes the wheel without running anything.
 function W.Close()
     W.open, W.target, W.list, W.pick, W.pending, W.title = false, nil, nil, nil, nil, nil
 end
 
 -- A wheel from a fixed list, no target (held with button code).
+-- Returns false if a wheel is already open or the list is empty.
+-- Example (from a PlayerBindPress hook that got `code`):
+--   Rhylib.Menus.Wheel.OpenList("Ping", {
+--       { label = "Enemy", run = function() ping(1) end, col = Color(225, 90, 90) },
+--       { label = "Regroup", run = function() ping(2) end, disabled = soloReason },
+--   }, code)
 function W.OpenList(title, list, code)
     if W.open or #list == 0 then return false end
     for i, o in ipairs(list) do o.angle = -90 + (i - 1) * 360 / #list end
@@ -116,6 +142,8 @@ function W.OpenList(title, list, code)
     return true
 end
 
+-- W.Open(target): opens the wheel on a player (or a RhylibWheel entity),
+-- asking the hooks for options. False if nobody added any.
 function W.Open(target)
     local me = LocalPlayer()
     local list = gather(target, me)
@@ -204,6 +232,8 @@ Rhylib.Hook.Add("InputMouseApply", "menus.wheel", function(cmd, x, y)
     return true
 end, -40)
 
+-- W.PickOption(s): the option the virtual cursor points at (nearest by
+-- angle), or nil inside the dead zone. s = screen scale (ScrH() / 1080).
 function W.PickOption(s)
     if not W.list then return nil end
     local len = math.sqrt(W.cx * W.cx + W.cy * W.cy)
@@ -273,6 +303,10 @@ end)
 -- A short progress bar under the crosshair (timed actions)
 --------------------------------------------------------------------------
 
+-- Menus.WheelProgress(text, secs): a bar under the crosshair that fills over
+-- secs (it only shows; the server does the real timing).
+-- Menus.WheelProgressStop(): hides it (e.g. the action was cancelled).
+-- Example: Rhylib.Menus.WheelProgress("Cuffing", 3)
 function Menus.WheelProgress(text, secs)
     W.prog = { text = text, from = RealTime(), to = RealTime() + secs }
 end

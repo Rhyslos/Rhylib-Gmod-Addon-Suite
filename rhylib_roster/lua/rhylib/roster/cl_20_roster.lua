@@ -4,13 +4,17 @@
     (manageRank) promote, demote and remove members below them, add CTs to
     the battalion and pass cadets through basic training. Admins pick any
     battalion.
+    Client only; the page needs rhylib_menus. Asks with roster.get, draws
+    roster.data (see R.SendRoster in sv_10_roster.lua), sends roster.act.
+    Every action is checked again on the server; the buttons here only
+    hide what you aren't allowed to do.
 ]]
 
 local R = Rhylib.Roster
 local data            -- last roster.data
 local adminBn = ""    -- battalion an admin is looking at ("" = their own)
 
-local ACT_TRAIN, ACT_ADD, ACT_RANK, ACT_REMOVE = 0, 1, 2, 3
+local ACT_TRAIN, ACT_ADD, ACT_RANK, ACT_REMOVE = 0, 1, 2, 3   -- (same as R.ACT_* on the server)
 
 local function K() return Rhylib.Menus and Rhylib.Menus.Kit end
 
@@ -28,6 +32,7 @@ local function request()
     net.SendToServer()
 end
 
+-- Every battalion name used by a DarkRP job (the admin picker).
 local function battalions()
     local out, seen = {}, {}
     for _, j in pairs(RPExtraTeams or {}) do

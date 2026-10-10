@@ -29,6 +29,9 @@
     Sun visor (rhylib_gear) down + Tactical visor: every visorSpotEvery s up to
     markMax enemies in sight within visorSpotCone of the view are spotted
     for visorSpotTime s (quiet, added to the player's marks).
+    skills.markreq (client -> server): optics bool, zoomed fov x10 (UInt
+    10), visor-pick bool + target index (UInt 13). Rate limited to 4/s
+    plus markCooldown.
 ]]
 
 local K = Rhylib.Skills
@@ -43,7 +46,8 @@ local function squadOf(p)
     return R and R.SquadOf and R.SquadOf(p) or 0
 end
 
--- A player's radio squad, them included (alive or not).
+-- K.SquadMembers(ply): a player's rhylib_radio squad, them included
+-- (alive or not). Just { ply } without rhylib_radio or a squad. Server only.
 function K.SquadMembers(ply)
     local out = { ply }
     local R = Rhylib.Radio
@@ -163,8 +167,12 @@ Rhylib.Net.Receive("skills.markreq", function(ply)
     K.PlaceMarks(ply, list, lock and K.Cfg("markLockTime") or K.Cfg("markTime"), true, false, lock)
 end, { rate = 4, burst = 4 })
 
--- Mark these targets for ply and tell them and their squad. replace: drop
--- ply's older locks first; lock: these are locks (a Q).
+-- K.PlaceMarks(ply, list, secs, replace, quiet, lock): mark these targets
+-- for ply and tell them and their squad (skills.mark). replace: drop ply's
+-- older locks / Q marks first; quiet: no blip sound (visor spots); lock:
+-- these are locks (a Tactical visor Q). At most 7 targets per call (the
+-- count is 3 bits). Server only.
+-- Example: Rhylib.Skills.PlaceMarks(ply, { npc }, 10, false)   -- a 10 s mark
 function K.PlaceMarks(ply, list, secs, replace, quiet, lock)
     local mine = K.marks[ply] or {}
     K.marks[ply] = mine
@@ -252,7 +260,8 @@ timer.Create("Rhylib.Skills.SquadAura", 0.5, 0, function()
     for _, p in ipairs(player.GetAll()) do p.rhylibLogi = logi[p] or nil end
 end)
 
--- Called shot (Marksman): a headshot adds the target to your marks.
+-- K.CalledShot(ply, ent): Called shot (Marksman): a headshot adds the
+-- target to your marks (called from K.DamageMult).
 -- Refreshed at most once a second, once per tick (pellets); placed a tick
 -- later, so a killing shot marks nothing.
 function K.CalledShot(ply, e)
@@ -277,8 +286,9 @@ local function marksman(set)
     return false
 end
 
--- Locked target: x markLockDamage for squad mates of whoever locked it
--- (not the marker, not Marksmen: they have Priority target).
+-- K.LockMult(ply, ent, set): locked target: x markLockDamage for squad
+-- mates of whoever locked it (not the marker, not Marksmen: they have
+-- Priority target). Returns the multiplier (1 = none).
 function K.LockMult(ply, ent, set)
     local marks = IsValid(ent) and not ent:IsPlayer() and ent.rhylibMarks   -- (never against players)
     if not marks then return 1 end
@@ -296,7 +306,8 @@ function K.LockMult(ply, ent, set)
     return 1
 end
 
--- Priority target (Marksman): heavy droids and anything with a live mark.
+-- K.PriorityTarget(ent): Priority target (Marksman): heavy droids (big,
+-- commander, b1_heavy) and anything with a live mark.
 function K.PriorityTarget(ent)
     local marks = ent.rhylibMarks
     if marks then

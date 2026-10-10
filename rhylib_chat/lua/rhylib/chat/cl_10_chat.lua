@@ -10,7 +10,9 @@
     another. Typing a channel command (/local, /public, ...) followed by a
     space switches channel straight away. Typing "/" shows matching
     commands (and player names after /pm); Tab or Enter fills one in,
-    Up/Down picks. Messages from players show their Steam avatar.
+    Up/Down picks (with no list open, Up/Down walks through what you sent).
+    Messages from players show the sender's model portrait, or their Steam
+    avatar if they have left.
 
     Where it sits:
       helmet visor (first person)  bottom-left, in the grey cheek area; its
@@ -24,6 +26,14 @@
     The messages, avatars and pop-up lists are drawn on top afterwards in
     screen space (PostRenderVGUI), because avatar images can only be drawn
     by hand there. Nothing allocates per frame.
+
+    Client only. Adds to Rhylib.Chat: Chat.Add, Chat.Open, Chat.Close,
+    Chat.Rect, Chat.VisorEdgeX, Chat.ShowEvent, Chat.lines, Chat.current,
+    Chat.history, Chat.panel (the open window, a "RhylibChat" panel).
+    Replaces chat.AddText (the old one is kept in Chat.oldAddText).
+    Client convar: rhylib_chat_pinned (0/1, /togglechat).
+    Net: receives chat.msg; sends chat.send and chat.typing (see sv_10_chat).
+    Other addons read Chat.Rect (rhylib_radio sizes its visor parts around it).
 ]]
 
 local Chat = Rhylib.Chat
@@ -38,7 +48,7 @@ local function maxLength()
     return Rhylib.Config.Get("chat", "maxLength") or 300
 end
 
-local MAX_LINES = 150
+local MAX_LINES = 150              -- history kept; the oldest line goes first
 local SHOW_TIME = 12               -- seconds a message stays when the chat is closed
 
 -- Same look as the HUD's corner plates.
@@ -56,6 +66,8 @@ local COL_ROW = Color(20, 22, 21, 250)
 local COL_ROW_PICK = Color(38, 50, 64, 255)
 local COL_ROW_LINE = Color(40, 44, 40, 255)
 
+-- The channel plain text goes to: Chat.current, else config chat
+-- defaultChannel, else Public.
 local function currentChannel()
     if not Chat.current then Chat.current = Chat.byId[Rhylib.Config.Get("chat", "defaultChannel")] or Chat.CHANNELS[1] end
     return Chat.current
@@ -65,7 +77,10 @@ end
 -- Messages
 --------------------------------------------------------------------------
 
--- sid: the sender's SteamID64, for the avatar (nil for system lines).
+-- Chat.Add(segs, sid): adds a line to the chat box (not the console).
+-- segs: list of { Color, text } pieces drawn in order.
+-- sid: the sender's SteamID64, for the portrait/avatar (nil for system lines).
+-- Example: Rhylib.Chat.Add({ { Color(255, 200, 80), "[Squad] " }, { color_white, "Moving out" } })
 function Chat.Add(segs, sid)
     local lines = Chat.lines
     -- The sender's model now, for their portrait (falls back to the Steam avatar).
@@ -76,6 +91,8 @@ function Chat.Add(segs, sid)
 end
 
 -- Everything chat.AddText receives (colours, strings, players) lands here too.
+-- A player argument becomes their name in team colour and sets the line's
+-- portrait. The original chat.AddText still runs, for the console.
 Chat.oldAddText = Chat.oldAddText or chat.AddText
 function chat.AddText(...)
     local segs, col, sid = {}, COL_TEXT, nil
@@ -100,6 +117,8 @@ Rhylib.Hook.Add("ChatText", "chat.engine", function(_, _, text, kind)
     return true
 end)
 
+-- chat.msg from the server: channel index (0 = system note), sender,
+-- target, text. Builds the coloured line and plays a sound.
 net.Receive(Rhylib.Net.Name("chat.msg"), function()
     local ch = Chat.CHANNELS[net.ReadUInt(Chat.CHANNEL_BITS)]
     local sender = net.ReadEntity()
@@ -187,7 +206,8 @@ local function visorCurve()
     return pts
 end
 
--- x of the chat's curved edge at screen height y (the chat is left of it).
+-- Chat.VisorEdgeX(y): x of the chat's curved edge at screen height y (the
+-- chat is left of it). Only meaningful for the visor layout.
 function Chat.VisorEdgeX(y)
     local pts = visorCurve()
     if y <= pts[1][2] then return pts[1][1] end
@@ -212,7 +232,11 @@ local function visorEdgeY(x)
     return pts[1][2]
 end
 
--- x, y, w, h of the chat area, and whether it's the visor version.
+-- Chat.Rect(): x, y, w, h of the chat area in screen pixels, and whether
+-- it's the visor version (true while rhylib_hud's helmet visor is drawn).
+-- Visor: the left cheek; its width leaves room for rhylib_radio's compass
+-- (Radio.CompassChatWidth). Otherwise: bottom-left, 22% of the screen wide.
+-- Example: local x, y, w, h, visor = Rhylib.Chat.Rect()
 function Chat.Rect()
     local W, H = ScrW(), ScrH()
     local s = H / 1080
@@ -505,6 +529,7 @@ local function drawFrame(ox, oy, sx, sy, w, h, visor, m, chanW, hover, hint)
     end
 end
 
+-- Width of the channel button on the left of the input line.
 local function chanWidth(visor, m)
     return math.floor((visor and 70 or 80) * m.s)
 end
@@ -544,6 +569,9 @@ end)
 -- Suggestions and the channel list
 --------------------------------------------------------------------------
 
+-- What to list above the input line for the text typed so far:
+-- player names after "/pm " or "/w ", else channel commands matching "/x"
+-- (only channels you can use) and /togglechat. Rows: { label, desc, fill, col }.
 local function suggestions(textValue)
     local out = {}
     local pmName = string.match(textValue, '^/[pP][mM]%s+"?([^"%s]*)$') or string.match(textValue, "^/[wW]%s+(%S*)$")
@@ -594,6 +622,7 @@ end
 -- The open window
 --------------------------------------------------------------------------
 
+-- chat.typing to the server (NW2Bool rhylib_typing for the HUD's icon).
 local function sendTyping(on)
     Rhylib.Net.Start("chat.typing")
     net.WriteBool(on)
@@ -656,6 +685,9 @@ local function submit(str)
     return false
 end
 
+-- The open chat window ("RhylibChat"): a frame with a DTextEntry. The
+-- frame is painted here; messages and pop-up lists are drawn in
+-- PostRenderVGUI "chat.window" below.
 local PANEL = {}
 
 function PANEL:Init()
@@ -875,7 +907,8 @@ local function drawRow(px, py, r, picked, m)
     draw.SimpleText(r.item.desc, UI.Font(12), x + r.w - 8 * m.s, y + r.h * 0.5, COL_DIM, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
 end
 
--- Messages, avatars and lists, on top of the frame, in screen space.
+-- Messages, avatars and lists, on top of the frame, in screen space
+-- (after all VGUI, so avatars can be painted by hand).
 Rhylib.Hook.Add("PostRenderVGUI", "chat.window", function()
     local p = Chat.panel
     if not IsValid(p) then return end
@@ -899,6 +932,8 @@ end)
 
 vgui.Register("RhylibChat", PANEL, "EditablePanel")
 
+-- Chat.Open(): opens the chat window with the keyboard on it (what the chat
+-- key does). Fires the StartChat hook and tells the server you're typing.
 function Chat.Open()
     if IsValid(Chat.panel) then return end
     Chat.scroll = 0
@@ -910,6 +945,7 @@ function Chat.Open()
     sendTyping(true)
 end
 
+-- Chat.Close(): closes it again (Enter, Esc). Fires FinishChat.
 function Chat.Close()
     if not IsValid(Chat.panel) then return end
     Chat.panel:Remove()
@@ -920,7 +956,8 @@ function Chat.Close()
     sendTyping(false)
 end
 
--- Escape closes the chat; don't let it open the game menu too.
+-- Escape closes the chat; don't let it open the game menu too
+-- (for 0.3 s after Esc, any game menu that opened is hidden again).
 Rhylib.Hook.Add("Think", "chat.escape", function()
     if Chat.hideMenuUntil and RealTime() < Chat.hideMenuUntil and gui.IsGameUIVisible() then
         gui.HideGameUI()
@@ -944,6 +981,9 @@ local EVENT_TIME = 9
 local event
 local COL_EVENT = Color(255, 205, 80)
 
+-- Chat.ShowEvent(by, text): shows the gold Event banner at the top centre
+-- for EVENT_TIME seconds (replaces any banner showing). Client only.
+-- Example: Rhylib.Chat.ShowEvent("Admin", "Training starts in 5 minutes")
 function Chat.ShowEvent(by, text)
     event = { by = by, text = text, at = CurTime() }
 end

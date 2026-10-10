@@ -1,7 +1,9 @@
 --[[
-    Ammo counter.
+    Ammo counter (client).
       Third person: on a plate in the bottom-right corner.
-      Helmet visor: a box on the lower-right cheek.
+      Helmet visor: a box on the lower-right cheek. With rhylib_inventory
+      the visor layouts f4/f5 (cl_42_layouts.lua) draw the ammo instead,
+      using HUD.AmmoInfo from this file.
     Both are always the same size, whatever they hold.
 
     Rhylib weapons: shots in the magazine, spare magazines and (for cell
@@ -19,6 +21,8 @@
 local HUD = Rhylib.HUD
 
 -- Fire mode text (long names shortened so they fit beside the gun name).
+-- A weapon can supply its own with SWEP:HUDModeText() (the grenade
+-- launcher shows its range there).
 local SHORT = { overcharge = "OVERCH", lockon = "LOCK-ON" }
 local function modeLabel(wep)
     if wep.HUDModeText then return wep:HUDModeText() end   -- (e.g. the grenade launcher's range)
@@ -102,9 +106,15 @@ local sizes = {}  -- reused every frame
       name, mode, safe  weapon name, fire mode label, safety on
       clip, maxClip     shots in the magazine and its size
       magShort          loaded magazine type ("Med"), or nil
+      magRounds         rounds in that magazine type (1 = single rounds,
+                        e.g. rockets or the launcher's thermals)
       spare             spare magazines of the loaded type (or reserve)
       others            "+2 small" for other types this gun takes, or nil
       cell, cells       power cell charge 0-1 and spares (cell weapons), or nil
+    A weapon with SWEP:HUDSpare() (returns count, label) replaces spare and
+    magShort with its own (the grenade launcher counts thermals).
+    Usage: local ai = Rhylib.HUD.AmmoInfo(ply, ply:GetActiveWeapon())
+    The returned table is reused on the next call: copy what you keep.
 ]]
 local info = {}
 function HUD.AmmoInfo(ply, wep)
@@ -154,8 +164,9 @@ function HUD.AmmoInfo(ply, wep)
     return info
 end
 
--- The visor ammo box: always its full size (room for the cell rows), like
--- the third-person plate. The hotbar console lines up with it.
+-- HUD.VisorAmmoRect(): x, y, w, h of the visor ammo box: always its
+-- full size (room for the cell rows), like the third-person plate. The
+-- fallback hotbar console (cl_40_hotbar.lua) lines up with it.
 function HUD.VisorAmmoRect()
     local s = HUD.Scale()
     local pad = math.floor(12 * s)

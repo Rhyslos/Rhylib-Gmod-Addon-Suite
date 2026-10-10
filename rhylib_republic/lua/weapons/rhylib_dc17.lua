@@ -5,6 +5,11 @@
     the trooper hands (CarrierVM). The model's addon must be installed.
     Tune with rhylib_vm_editor, then paste its lines below.
     All numbers are first guesses for tuning.
+
+    Class rhylib_dc17. Shared: one file for server and client (AddCSLuaFile).
+    Base rhylib_base (rhylib_weapons), where every SWEP field is explained;
+    only the fields that differ are set here.
+    Training copy: rhylib_dc17_training.
 ]]
 
 AddCSLuaFile()
@@ -51,6 +56,9 @@ SWEP.Primary = {
 }
 
 SWEP.FireRate = 400
+-- Recoil: view kick per shot (rhylib_weapons cl_50_recoil): up = degrees up,
+-- side = random sideways, bias = lean -1 (left) .. 1 (right), recover = share
+-- of the climb that settles back, aimMult = multiplier while aiming.
 SWEP.Recoil = { up = 1.2, side = 0.35, bias = 0.2, recover = 0.8, aimMult = 0.7 }  -- view kick per shot
 SWEP.Damage = 28
 SWEP.BoltSpeed = 7000
@@ -82,6 +90,7 @@ SWEP.DualBoneAng = Angle(0, 0, 0)
 SWEP.DualMags = 2
 
 SWEP.UsesCell = false
+-- Spare magazines / cells put in your pouch when you pick it up (rhylib_base).
 SWEP.StartMags = 4
 SWEP.StartCells = 0
 
@@ -91,6 +100,11 @@ SWEP.InvH = 1
 SWEP.InvLarge = false
 SWEP.InvWeight = 1.2         -- kg
 
+-- Spread: cone angles in degrees (rhylib_weapons sh_10_spread): hip / aim =
+-- resting cone, kickMain / kickSide = how far the crosshair arcs move per shot,
+-- bloomPerShot (up to bloomMax) = growth of the whole cone, aimKickMult /
+-- aimOffsetMult = share of that while aiming. Each value is also a setting
+-- in Server settings > guns (rhylib_weapons sh_70_gunstats).
 SWEP.Spread = {
     hip = 1.2,
     aim = 0.6,

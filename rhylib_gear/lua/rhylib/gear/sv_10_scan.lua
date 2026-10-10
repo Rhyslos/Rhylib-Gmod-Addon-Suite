@@ -2,7 +2,10 @@
     rhylib_gear_scan (admin, or the server console): every DarkRP job
     model's bodygroups (name, options and their names), then which models
     have each bodygroup name. Printed to your console and saved to
-    data/rhylib_gear_scan.txt on the server.
+    data/rhylib_gear_scan.txt on the server. Also lists skin counts and
+    hair materials. Server only; perm rhylib.gear.admin.
+    G.Scan() -> the lines (and writes the file). Spawns one prop_dynamic
+    per model for a moment, so run it on a quiet server.
 ]]
 
 local G = Rhylib.Gear

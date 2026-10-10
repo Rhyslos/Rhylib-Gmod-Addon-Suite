@@ -2,11 +2,25 @@
     Admin server core: rank storage, bans, warnings, the log, finding
     targets and running commands (chat, the staff menu, the console).
 
-    Data module "admin" (keys "s"..SteamID64, never bare numbers):
+    Server only.
+
+    Data module "admin" (<sid> below is "s"..SteamID64, so rank key = "rs7656...";
+    keys are never bare numbers):
         r<sid>   staff rank id          b<sid>  ban { reason, by, byName, at, untilT (0 = forever), name }
         w<sid>   warnings { { reason, byName, at } }
         bans     index { ["s"..sid] = name }     log  { { t, text } } newest first (LOG_CAP)
+        hideCells  1 / 0 (sv_20_handlers, !hidecells)
     Mute / gag / freeze / return spots are for the session only.
+
+    Net messages (all through Rhylib.Net, names get the "rhylib." prefix):
+        admin.msg        server -> one player / staff: Bool bad, String text (chat line)
+        admin.announce   server -> all: String by, String text (event banner)
+        admin.countdown  server -> all: String map ("" = cancelled), UInt 6 seconds
+        admin.ask        server -> caller: String id, UInt 4 from, UInt 4 n, n x String
+        admin.client     server -> all: UInt 2 kind (0 sound, 1 stop sounds, 2 decals), String
+        admin.list       server -> asker: UInt 2 which, UInt 8 rows, per row UInt 3 n + n x String
+        admin.run        client -> server: String id, UInt 4 n, n x String (rate 4/s, burst 8)
+        admin.listget    client -> server: UInt 2 which, String arg (rate 2/s, burst 4)
 
     Admin.Exec(caller, id, words): words are the parts after the command
     (target first if the command has one). Replies go to the caller
@@ -30,7 +44,9 @@ local function nameOf(p) return IsValid(p) and p:Nick() or "Console" end
 -- Messages
 --------------------------------------------------------------------------
 
--- Short note to one player (or the server console).
+-- Admin.Tell(ply, text, bad): a short "[Admin]" chat line to one player
+-- (red tag when bad is true). An invalid ply (the console) gets it printed.
+-- Example: Rhylib.Admin.Tell(ply, "You can't do that here", true)
 function Admin.Tell(ply, text, bad)
     if not IsValid(ply) then print("[Admin] " .. text) return end
     Rhylib.Net.Start("admin.msg")
@@ -39,7 +55,8 @@ function Admin.Tell(ply, text, bad)
     net.Send(ply)
 end
 
--- An action everyone (config echo) or only staff hear about.
+-- Admin.Echo(text): an action notice to everyone (config echo = true) or
+-- only to staff (level > 0) when echo is off. Also printed in the console.
 local function echo(text)
     print("[Admin] " .. text)
     local list = {}
@@ -54,6 +71,9 @@ local function echo(text)
 end
 Admin.Echo = echo
 
+-- Admin.Log(text): adds a line to the staff log (Data admin "log", newest
+-- first, at most LOG_CAP lines) and to the server log (ServerLog).
+-- Example: Rhylib.Admin.Log(ply:Nick() .. " opened the vault")
 function Admin.Log(text)
     local log = Data.Get(KEY, "log")
     if not istable(log) then log = {} end
@@ -74,6 +94,8 @@ local function isOwnerId(sid)
     return false
 end
 
+-- The rank id saved for a SteamID64, or nil (none, or a rank that no
+-- longer exists in the config). Admin.StoredRank(sid64).
 local function storedRank(sid)
     local r = Data.Get(KEY, sidKey("r", sid))
     return isstring(r) and Admin.RankById(r) and r or nil
@@ -81,6 +103,9 @@ end
 Admin.StoredRank = storedRank
 
 -- Our storage (and owners / the listen host) is the only source of ranks.
+-- Admin.ApplyRank(ply): sets the player's usergroup from that and tells
+-- CAMI. rhylibSettingRank marks our own change, so the
+-- CAMI.PlayerUsergroupChanged hook below doesn't undo it.
 local function applyRank(ply)
     if not IsValid(ply) or ply:IsBot() then return end
     local sid = ply:SteamID64() or ""
@@ -111,6 +136,7 @@ Rhylib.Hook.Add("CAMI.PlayerUsergroupChanged", "admin.rank", function(ply, old, 
     timer.Simple(0, function() applyRank(ply) end)
 end)
 
+-- Admin.OnlineBySid(sid64): the online (human) player with that SteamID64, or nil.
 local function onlineBySid(sid)
     for _, p in ipairs(player.GetHumans()) do
         if p:SteamID64() == sid then return p end
@@ -118,6 +144,11 @@ local function onlineBySid(sid)
 end
 Admin.OnlineBySid = onlineBySid
 
+-- Admin.SetRank(sid64, rankId, byName): saves a staff rank ("user" deletes
+-- the saved row) and applies it if they're online. Doesn't check who is
+-- asking: !rank does that. Returns false if the rank doesn't exist.
+-- byName is not used (kept for callers).
+-- Example: Rhylib.Admin.SetRank("76561198000000000", "moderator", "Console")
 function Admin.SetRank(sid, rankId, byName)
     if not Admin.RankById(rankId) then return false end
     if rankId == "user" then Data.Delete(KEY, sidKey("r", sid)) else Data.Set(KEY, sidKey("r", sid), rankId) end
@@ -135,6 +166,8 @@ local function banIndex()
     return istable(t) and t or {}
 end
 
+-- Admin.GetBan(sid64): the ban table { reason, by, byName, at, untilT, name }
+-- or nil. A ban that has run out is removed here and gives nil.
 function Admin.GetBan(sid)
     local b = Data.Get(KEY, sidKey("b", sid))
     if not istable(b) then return nil end
@@ -145,6 +178,11 @@ function Admin.GetBan(sid)
     return b
 end
 
+-- Admin.Ban(sid64, minutes, reason, caller, name): saves a ban (minutes 0 =
+-- forever), adds it to the "bans" index and kicks the player (and any
+-- family-shared account of theirs) if online. No permission checks here.
+-- Returns the ban table.
+-- Example: Rhylib.Admin.Ban(sid, 60, "Mass RDM", nil, "Bob")   -- console, 1 hour
 function Admin.Ban(sid, minutes, reason, caller, name)
     local b = {
         reason = reason ~= "" and reason or "No reason given",
@@ -169,6 +207,7 @@ function Admin.Ban(sid, minutes, reason, caller, name)
     return b
 end
 
+-- Admin.Unban(sid64, byName): removes a ban. Returns true if there was one.
 function Admin.Unban(sid, byName)
     local had = Data.Get(KEY, sidKey("b", sid)) ~= nil
     Data.Delete(KEY, sidKey("b", sid))
@@ -185,7 +224,7 @@ local function timeLeft(b)
     return Admin.FormatMinutes(math.max(1, math.ceil((b.untilT - os.time()) / 60))) .. " left"
 end
 
--- Banned players can't join.
+-- Banned players can't join (checked before they load in).
 Rhylib.Hook.Add("CheckPassword", "admin.ban", function(sid64)
     local b = Admin.GetBan(sid64)
     if b then return false, "You are banned (" .. timeLeft(b) .. "): " .. (b.reason or "") end
@@ -205,6 +244,8 @@ end
 Rhylib.Hook.Add("PlayerAuthed", "admin.ban", function(ply) timer.Simple(0, function() checkJoined(ply) end) end)
 Rhylib.Hook.Add("PlayerInitialSpawn", "admin.ban", function(ply) timer.Simple(1, function() checkJoined(ply) end) end)
 
+-- Admin.Warn(sid64, reason, byName): adds a warning (the oldest are
+-- dropped past 50). Returns how many they have now.
 function Admin.Warn(sid, reason, byName)
     local w = Data.Get(KEY, sidKey("w", sid))
     if not istable(w) then w = {} end
@@ -214,10 +255,12 @@ function Admin.Warn(sid, reason, byName)
     return #w
 end
 
+-- Admin.ClearWarnings(sid64): deletes all their warnings.
 function Admin.ClearWarnings(sid)
     Data.Delete(KEY, sidKey("w", sid))
 end
 
+-- Admin.Warnings(sid64): their warnings { { reason, byName, at } }, oldest first.
 function Admin.Warnings(sid)
     local w = Data.Get(KEY, sidKey("w", sid))
     return istable(w) and w or {}
@@ -229,6 +272,10 @@ end
 
 -- An online player from a name part, SteamID, SteamID64, ^ (you) or @
 -- (who you look at). Returns player or nil, error.
+-- Order: exact SteamID / SteamID64, then exact name, then a name that
+-- contains q (more than one match is an error). Case doesn't matter.
+-- Aiming at a lying body (rhylib_core) finds its player.
+-- Example: local p, err = Rhylib.Admin.FindPlayer(admin, "bob")
 function Admin.FindPlayer(caller, q)
     q = string.Trim(q or "")
     if q == "" then return nil, "Who? Give a name" end
@@ -262,7 +309,8 @@ function Admin.FindPlayer(caller, q)
 end
 
 -- A SteamID64 from an online player's name, a SteamID or a SteamID64.
--- Returns sid64, player (if online) or nil, error.
+-- Returns sid64, player (if online) or nil, error. Bots are refused.
+-- A 15-20 digit number is taken as a SteamID64 without checking it.
 function Admin.FindId(caller, q)
     q = string.Trim(q or "")
     if string.match(q, "^%d+$") and #q >= 15 and #q <= 20 then return q, onlineBySid(q) end
@@ -280,8 +328,20 @@ end
 -- Running commands
 --------------------------------------------------------------------------
 
+-- Admin.handlers[id] = function(caller, target, args, ctx): what a command
+-- does (filled in by sv_20_handlers.lua and sv_30_calls.lua).
+--   caller  the player, or nil for the server console
+--   target  the target player (nil for no-target commands, "opt" left out,
+--           or an offline "id" target)
+--   args    { [arg key] = parsed value } from the command's args list
+--   ctx     { sid = target SteamID64 (nil for bots), cmd = the command,
+--           mass = true when run for "*" }
+-- Return the text to echo and log, or nil, "error for the caller", or
+-- nothing (nil) to stay quiet (the handler told the caller itself).
 Admin.handlers = Admin.handlers or {}
 
+-- One argument word -> its value, or nil, error. Number kinds are checked
+-- here; other kinds come back as the word.
 local function parseArg(kind, word)
     if kind == "illload" and (word == nil or word == "") then return 40 end   -- (left out: moderate)
     if kind == "number" or kind == "minutes" or kind == "scale" or kind == "mult" or kind == "illload" then
@@ -329,7 +389,16 @@ local function hasText(cmd)
     return false
 end
 
--- caller: a player or NULL/nil (console). words: list of strings.
+-- Admin.Exec(caller, id, words): runs a command as if typed.
+-- caller: a player or NULL/nil (console). id: command id or alias.
+-- words: list of strings (target first if the command has one).
+-- Steps: permission (full, or "<perm>.self" on yourself only) -> target
+-- (left out: you / nobody / ask; "*" = everyone you outrank) -> rank check
+-- (online level, or the stored rank for offline SteamIDs) -> arguments
+-- (missing ones are asked for with pickers) -> handler, under pcall.
+-- Errors and replies go to the caller; handler text is echoed and logged.
+-- Example: Rhylib.Admin.Exec(nil, "announce", { "Server restart in 5 minutes" })
+-- Example: Rhylib.Admin.Exec(admin, "bring", { "bob" })
 function Admin.Exec(caller, id, words)
     local cmd = Admin.byAlias[string.lower(id or "")]
     if not IsValid(caller) then caller = nil end   -- the server console
@@ -475,6 +544,9 @@ end
 
 -- Chat: !command ... or /command ... (only our commands; others pass on).
 -- Muted players can't talk (but can still use commands they have).
+-- Priority -50: runs before most other chat hooks, so muted text never
+-- reaches them. TALK = DarkRP commands that are talking (blocked when muted);
+-- other DarkRP "/" commands still work for muted players.
 local TALK = { ["/"] = true, ooc = true, a = true, advert = true, pm = true, w = true, y = true, me = true,
     radio = true, g = true, group = true, broadcast = true, comms = true, looc = true }
 Rhylib.Hook.Add("PlayerSay", "admin.chat", function(ply, text)
@@ -521,7 +593,8 @@ Rhylib.Net.Receive("admin.run", function(ply)
     Admin.Exec(ply, id, words)
 end, { rate = 4, burst = 8 })
 
--- Maps on the server (sorted; menu backgrounds left out). Cached a minute.
+-- Admin.MapList(): map names on the server (maps/*.bsp, lower case, sorted;
+-- background* and devtest* left out). Cached for 60 s.
 local mapCache, mapAt = nil, 0
 function Admin.MapList()
     if mapCache and CurTime() - mapAt < 60 then return mapCache end
@@ -536,6 +609,9 @@ function Admin.MapList()
 end
 
 -- Lists for the staff menu: 0 maps, 1 bans, 2 log, 3 warnings of a SteamID64.
+-- Rows: maps { name, "1" if current }, bans { sid, name, reason, byName,
+-- time left }, log { time, text } (150 newest), warnings { at, reason, byName }.
+-- At most 255 rows and 300 characters a field. No permission = no reply.
 Rhylib.Net.Receive("admin.listget", function(ply)
     local which = net.ReadUInt(2)
     local arg = net.ReadString()

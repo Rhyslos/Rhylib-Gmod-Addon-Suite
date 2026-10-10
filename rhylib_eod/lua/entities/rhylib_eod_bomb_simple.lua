@@ -1,3 +1,5 @@
+-- Simplified bomb: timer, lid switch, one battery, no modules (E.Roll("simple")).
+
 AddCSLuaFile()
 
 ENT.Type = "anim"

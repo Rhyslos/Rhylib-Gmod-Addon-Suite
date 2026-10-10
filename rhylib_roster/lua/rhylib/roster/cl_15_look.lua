@@ -9,12 +9,17 @@
     ($color2, values above 1 lighten), so nothing new is downloaded.
     NW2Int rhylib_haircol (0 = the model's own). (A client-only swap was
     tried first: the server's networked materials undid it.)
+    Client only. Adds: R.ApplyHairColour, R.LookPreview, R.LookStepper,
+    R.LookControls, R.WriteLook, R.OpenLook, console rhylib_look and
+    rhylib_hair_debug, the pause menu page Character > Appearance.
 ]]
 
 local R = Rhylib.Roster
 
 local function K() return Rhylib.Menus and Rhylib.Menus.Kit end
 
+-- (used if R.PREVIEW has no model; the preview falls back to your own
+-- model when that one isn't installed)
 local PREVIEW_DEFAULT = "models/ct_trp/pm_ct_trp.mdl"
 
 local function norm(s) return (string.gsub(string.lower(tostring(s or "")), "%.smd$", "")) end
@@ -47,6 +52,8 @@ local function hairIndex(ent)
     end
 end
 
+-- $flags bits that CreateMaterial needs as their own keys (MATERIAL_VAR_
+-- ALPHATEST, TRANSLUCENT, NOCULL), so hair cards stay see-through.
 local FLAG_KEYS = { [256] = "$alphatest", [2097152] = "$translucent", [8192] = "$nocull" }
 
 local function makeTinted(orig, col)
@@ -90,7 +97,9 @@ local function prepare(orig)
     for col = 1, #R.HAIR_COLOURS - 1 do makeTinted(orig, col) end
 end
 
--- On a clientside model (the previews): set it here directly.
+-- R.ApplyHairColour(ent, col): tint the hair of a clientside model (the
+-- previews) directly. col = index into R.HAIR_COLOURS minus one (0 = natural).
+-- Example: Rhylib.Roster.ApplyHairColour(modelPanel.Entity, 5)   -- blond
 function R.ApplyHairColour(ent, col)
     local idx, orig = hairIndex(ent)
     if not idx then return end
@@ -122,8 +131,9 @@ end)
 -- Preview and controls
 --------------------------------------------------------------------------
 
--- A model panel showing the look (helmet off), slowly turning.
--- getLook() returns { hair, fhair, hcol, skin }.
+-- R.LookPreview(parent, getLook): a DModelPanel showing the look (helmet
+-- off), slowly turning. getLook() returns { hair, fhair, hcol, skin } and
+-- is read every frame, so changes show at once. Returns the panel.
 function R.LookPreview(parent, getLook)
     local mdl = vgui.Create("DModelPanel", parent)
     local want = (R.PREVIEW and R.PREVIEW.model) or PREVIEW_DEFAULT
@@ -159,7 +169,9 @@ function R.LookPreview(parent, getLook)
     return mdl
 end
 
--- A row with < name > to step through a list of { value, label }.
+-- R.LookStepper(parent, title, list, get, set): a row with < name > to step
+-- through a list of { value, label }; get() returns the current value,
+-- set(v) stores a new one. Returns the row (not docked).
 function R.LookStepper(parent, title, list, get, set)
     local k = K()
     local row = k.Row(parent, title)
@@ -182,7 +194,8 @@ function R.LookStepper(parent, title, list, get, set)
     return row
 end
 
--- The four look rows, docked to the top of parent.
+-- R.LookControls(parent, look): the four look rows (hair, colour, facial
+-- hair, skin), docked to the top of parent; they edit the look table.
 function R.LookControls(parent, look)
     local k = K()
     local rows = {
@@ -196,6 +209,9 @@ function R.LookControls(parent, look)
     end
 end
 
+-- R.WriteLook(look): writes the look into the current net message (hair,
+-- fhair strings, hair colour UInt 4, skin UInt 4), as roster.create and
+-- roster.look read it.
 function R.WriteLook(look)
     net.WriteString(look.hair)
     net.WriteString(look.fhair)
@@ -203,7 +219,7 @@ function R.WriteLook(look)
     net.WriteUInt(look.skin or 0, 4)
 end
 
--- Change your looks later.
+-- R.OpenLook(): the "Your looks" window (also console rhylib_look and /look).
 local lookWin
 function R.OpenLook()
     local k = K()
@@ -292,4 +308,5 @@ concommand.Add("rhylib_hair_debug", function()
         print(string.format("  [%d] %s%s%s", i - 1, m, hi == i - 1 and "   <- hair" or "", sub ~= "" and ("   swapped for " .. sub) or ""))
     end
 end)
+-- /look on the server (roster.lookopen, empty).
 net.Receive(Rhylib.Net.Name("roster.lookopen"), function() R.OpenLook() end)

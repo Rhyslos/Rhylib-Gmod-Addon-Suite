@@ -7,6 +7,8 @@
     with rhylib_vm_editor / rhylib_wm_editor like any Rhylib gun; paste the
     copied lines below. It fires nothing, has no ammo, no aiming and isn't
     an inventory item or in the armoury. Needs rhylib_weapons.
+    Shared SWEP. Models: DC-17 carrier from the Star Wars Reworked Assets
+    pack, BTX-42 prop from the jajoff TC-13J pack (both Workshop content).
 ]]
 
 AddCSLuaFile()
@@ -85,6 +87,8 @@ end
 -- (rhylib/toolgun/cl_10_tool.lua), so taps and holds are exact.
 function SWEP:Reload() end
 
+-- SWEP:ToolClick(which): client side of a click ("1" LMB, "2" RMB); hands it
+-- to Rhylib.Tool.Click (cl_10_tool.lua), which sends the request.
 function SWEP:ToolClick(which)
     if not CLIENT then return end
     local Tool = Rhylib.Tool

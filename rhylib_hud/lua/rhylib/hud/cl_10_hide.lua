@@ -1,4 +1,7 @@
--- Hide the default HUD parts that Rhylib replaces.
+-- Hide the default HUD parts that Rhylib replaces (client).
+-- HUDShouldDraw returns false for the names in HIDE; HUDDrawTargetID
+-- returning false stops sandbox's look-at name text (cl_50_players.lua
+-- draws our own).
 
 local HIDE = {
     CHudHealth = true,

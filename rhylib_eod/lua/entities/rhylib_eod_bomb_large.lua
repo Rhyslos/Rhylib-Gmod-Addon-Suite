@@ -1,3 +1,5 @@
+-- Large bomb: random large roll, quarter-map blast. Base: rhylib_eod_bomb.
+
 AddCSLuaFile()
 
 ENT.Type = "anim"

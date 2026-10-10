@@ -1,4 +1,11 @@
 -- Squad pings, server side (sh_40_pings.lua has the overview).
+-- net radio.ping, both ways on one name:
+--   client -> server: kind (R.PING_BITS). Rate 4/s, burst 4, plus the
+--     pingCooldown per player.
+--   server -> squad members who aren't jammed (the sender included):
+--     sender entity, kind (R.PING_BITS), position (vector), tracked
+--     entity (the NPC/NextBot aimed at for "track" kinds, the sender for
+--     "self" kinds, else NULL).
 local R = Rhylib.Radio
 
 Rhylib.Net.Receive("radio.ping", function(ply)

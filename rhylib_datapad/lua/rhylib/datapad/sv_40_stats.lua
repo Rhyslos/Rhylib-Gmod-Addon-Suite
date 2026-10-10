@@ -1,5 +1,7 @@
 --[[
-    Battalion stats, shown on the battalion computer.
+    Battalion stats (server), shown on the battalion computer (Stats tab),
+    the datapad (Stats tab, from the download), personnel files and
+    applications.
 
     Counted for the player's battalion (job category) when it happens:
       kd droid/NPC kills   kp player kills (not your own battalion)
@@ -14,21 +16,33 @@
     totals and one row per member. Counts gather in memory and are saved
     once a minute (and at shutdown).
 
-      dp.stats   entity, period -> dp.statsr: totals and members
+      dp.stats   entity, period (3 bits, index in D.PERIODS) -> dp.statsr:
+                 period (3), totals (one UInt 32 per D.STAT_KEYS), members
+                 (count 7, at most 60, most minutes first; name + the 11 stats)
 
     Data "dp_stats"/battalion = { b = { [bucket] = { t = {...}, p = { ["s"..sid] = {n = name, ...} } } } }
     (member keys are prefixed: JSON would turn a bare SteamID64 into a number)
+    Data "dp_pst"/sid = { [stat] = n }: a player's all-time totals in any
+    battalion (D.PlayerStats). Bots are never counted.
+
+    Hooks listened to: OnNPCKilled, PlayerDeath, Rhylib.PlayerRevived,
+    Rhylib.PlayerHealed (rhylib_medical), Rhylib.PlayerJailed (rhylib_mp),
+    playerWalletChanged (DarkRP), ShutDown.
 ]]
 
 local D = Rhylib.Datapad
 
 Rhylib.Net.Register("dp.statsr")
 
+-- Stat ids, in the order every stats message writes them (the clients keep
+-- the same list: add new ones at the end on both sides).
 D.STAT_KEYS = { "kd", "kp", "de", "rv", "he", "ar", "mi", "mo", "at", "jd", "ev" }
 D.PERIODS = { "today", "week", "lastweek", "month", "all" }   -- index sent on the network
 
 local dirty = {}   -- [battalion] = true
 
+-- Bucket names for a time: day "dYYYYMMDD", week "wYYYY-WW" (os.date %W,
+-- weeks start on Monday), month "mYYYYMM", and "all".
 local function bucketKeys(now)
     now = now or os.time()
     return {
@@ -40,6 +54,7 @@ local function bucketKeys(now)
     }
 end
 
+-- D.StatBucketKeys(now): those names { today, week, lastweek, month, all } (sv_50 reads them).
 D.StatBucketKeys = function(now) return bucketKeys(now) end
 
 local function stats(bn)
@@ -62,7 +77,10 @@ end
 local pdirty = {}
 function D.PlayerStats(id) return D.Load("dp_pst", id, nil) end
 
--- Add n to stat for this player (and their battalion).
+-- D.AddStat(ply, stat, n): add n to stat (a D.STAT_KEYS id) for this player:
+-- their own totals and, if they have a battalion, its today / week / month /
+-- all buckets (totals and their member row). Saved by the minute timer.
+-- Example: Rhylib.Datapad.AddStat(ply, "ev", 1)
 function D.AddStat(ply, stat, n)
     if not (IsValid(ply) and ply:IsPlayer()) or ply:IsBot() or n == 0 then return end
     local id = ply:SteamID64() or ""
@@ -94,6 +112,7 @@ function D.AddStat(ply, stat, n)
     dirty[bn] = true
 end
 
+-- Save every changed battalion (dropping old buckets) and player total.
 local function flush()
     for bn in pairs(dirty) do
         local s = stats(bn)

@@ -1,29 +1,49 @@
 --[[
     Roster (server): characters, names, membership, ranks, the roster page.
 
-    Data:
-      "char"/sid          { num, nick, trained, bn, r (rank index), seen }
+    Data (Rhylib.Data module/key):
+      "char"/sid          { num, nick, trained, bn, r (rank index), seen,
+                            hair, fhair, hcol, skin, q = { [qual] = true } }
       "char_nums"/"all"   { ["n" .. num] = sid }   taken numbers
       "roster"/battalion  { ["s" .. sid] = true }  members (also offline)
       "roster_log"/bn     list of { t, txt }, newest first
     (keys are prefixed: JSON would turn bare number-like keys into numbers)
 
     Messages:
-      roster.need     server -> player: create your character
-      roster.create   num, nick -> roster.created (ok, message)
-      roster.get      battalion ("" = mine) -> roster.data
-      roster.act      action, target sid, value
+      roster.need     server -> player: create your character (empty)
+      roster.hello    player -> server: still no character? (empty; the
+                      client asks every 6 s until it has one)
+      roster.create   num, nick (strings), hair, fhair (strings), hair
+                      colour (UInt 4), skin (UInt 4)
+                      -> roster.created (ok bool, message string)
+      roster.look     hair, fhair, hair colour (4), skin (4): new looks
+      roster.lookopen server -> player: open the looks window (/look)
+      roster.get      battalion string ("" = mine; only admins may pick
+                      another) -> roster.data (see R.SendRoster)
+      roster.act      action (UInt 2, R.ACT_*), target sid, value (UInt 8:
+                      the new rank index for ACT_RANK)
       roster.open     server -> player: open the Battalion page (/roster)
+
+    Hooks fired: Rhylib.RosterJoined(sid, battalion) after R.AddMember;
+    Rhylib.RosterNote(battalion, sid) -> a short note shown next to a
+    member on the roster page (rhylib_datapad: leave of absence).
+    Hooks answered: Rhylib.CanPostBoard (rank >= boardRank in that
+    battalion), Rhylib.DataPurged (forget cached characters).
+    Permission: rhylib.roster.admin (default admin).
+    Commands: rhylib_char_reset <SteamID64 | clone number | name>, chat
+    /roster (!roster) and /look (!look).
 ]]
 
 local R = Rhylib.Roster
 local Data = Rhylib.Data
 
+-- Server -> client messages (client -> server ones register in Net.Receive).
 for _, n in ipairs({ "roster.need", "roster.created", "roster.data", "roster.open", "roster.lookopen" }) do Rhylib.Net.Register(n) end
 
 local function validSid(id) return isstring(id) and #id <= 20 and string.match(id, "^%d+$") ~= nil end
 Rhylib.Perms.Register("rhylib.roster.admin", "admin", "Manage any battalion's roster, ranks and characters")
 
+-- roster.act actions (2 bits; cl_20_roster.lua has the same numbers).
 R.ACT_TRAIN, R.ACT_ADD, R.ACT_RANK, R.ACT_REMOVE = 0, 1, 2, 3
 
 local function sid(ply) return ply:SteamID64() or "" end
@@ -34,6 +54,9 @@ local function sid(ply) return ply:SteamID64() or "" end
 
 local chars = {}   -- [sid] = record or false
 
+-- R.Char(sid): the saved character record of a SteamID64 (online or not),
+-- or nil. Cached; the table is the live copy: change it, then R.SaveChar.
+-- Example: local c = Rhylib.Roster.Char(ply:SteamID64())  if c then print(c.num) end
 function R.Char(id)
     local c = chars[id]
     if c == nil then
@@ -48,6 +71,8 @@ end
 function R.ForgetChars() chars = {} end
 Rhylib.Hook.Add("Rhylib.DataPurged", "roster.cache", function() R.ForgetChars() end)
 
+-- R.SaveChar(sid, record): store a character (cache + Data "char").
+-- Doesn't update the player's NW2 vars: call R.Publish(ply) for that.
 function R.SaveChar(id, c)
     chars[id] = c
     Data.Set("char", id, c)
@@ -70,7 +95,7 @@ local function setMember(bn, id, on)
     Data.Set("roster", bn, t)
 end
 
--- Members of a battalion: list of { id = sid, c = character }.
+-- R.Members(battalion): members, online or not: list of { id = sid, c = character }.
 function R.Members(bn)
     local out = {}
     if bn == "" then return out end
@@ -82,6 +107,8 @@ function R.Members(bn)
     return out
 end
 
+-- R.Log(battalion, text): add a line to the battalion's roster log
+-- (Data "roster_log", newest first, 200 lines kept). "" battalion = no log.
 function R.Log(bn, txt)
     if bn == "" then return end
     local t = Data.Get("roster_log", bn)
@@ -95,6 +122,9 @@ end
 -- Names and networked state
 --------------------------------------------------------------------------
 
+-- R.Publish(ply): copy the saved character to the player's NW2 vars
+-- (rhylib_char, _num, _nick, _hair, _fhair, _haircol, _skin, _trained, _bn,
+-- _rank, _quals). Call after changing a record of an online player.
 function R.Publish(ply)
     local c = R.Char(sid(ply))
     ply:SetNW2Bool("rhylib_char", c ~= nil)
@@ -117,7 +147,7 @@ function R.Publish(ply)
     ply:SetNW2String("rhylib_quals", #q > 0 and ("," .. table.concat(q, ",") .. ",") or "")
 end
 
--- PREFIX-NUMBER Nickname as the DarkRP name.
+-- R.ApplyName(ply): set PREFIX-NUMBER Nickname as the DarkRP rpname.
 function R.ApplyName(ply)
     if not IsValid(ply) then return end
     local name = R.FullName(ply)
@@ -340,7 +370,10 @@ local function fullName(c)
     return prefix .. "-" .. c.num .. " " .. c.nick
 end
 
--- Give or take a qualification (by: name for the log). Returns true if it changed.
+-- R.SetQual(sid, qual, on, by): give (on = true) or take a qualification.
+-- by: a name for the log. Returns true if it changed. No permission check
+-- here (the caller checks).
+-- Example: Rhylib.Roster.SetQual(ply:SteamID64(), "pilot", true, admin:Nick())
 function R.SetQual(id, q, on, by)
     local c = R.Char(id)
     if not c then return false end
@@ -353,11 +386,15 @@ function R.SetQual(id, q, on, by)
     return true
 end
 
+-- R.FullCharName(record): "PREFIX-NUMBER Nickname" from a saved record
+-- (works for offline characters, unlike R.FullName).
 R.FullCharName = function(c) return fullName(c) end
 
 -- Put a trained CT into bn as PVT; a member of another battalion is
 -- moved out of it (one whitelist at a time). how: "X added" or "X accepted
 -- the application of" (for the log). Returns true if it happened.
+-- Fires hook Rhylib.RosterJoined(sid, bn). No rank checks here.
+-- Example: Rhylib.Roster.AddMember(sid, "212th", "CPT-1234 Rex added")
 function R.AddMember(id, bn, how)
     local c = R.Char(id)
     if bn == "" or not c or not c.trained or c.bn == bn then return false end
@@ -377,6 +414,9 @@ end
 
 -- For rhylib_admin (no rank checks here; the caller checks). by: a name for
 -- the log. Each returns true if something changed.
+-- R.SetRank(sid, rankIndex, by): only for battalion members (1..#ranks).
+-- R.RemoveMember(sid, by): out of their battalion (rank back to 0).
+-- R.Train(sid, by): pass basic training (cadet -> CT).
 function R.SetRank(id, value, by)
     local c = R.Char(id)
     local bn = c and c.bn or ""
@@ -411,7 +451,9 @@ function R.Train(id, by)
     return true
 end
 
--- The player picks a new number and nickname.
+-- R.ResetChar(sid): delete the character (number freed, out of the
+-- battalion); an online player gets the creator again. Returns true if
+-- there was one.
 function R.ResetChar(id)
     local c = R.Char(id)
     if not c then return false end
@@ -431,6 +473,10 @@ function R.ResetChar(id)
     return true
 end
 
+-- Roster actions from the Battalion page. Managers (rank >= manageRank in
+-- their battalion) act only on members ranked below them and give ranks
+-- below their own; admins (rhylib.roster.admin) anything, in the battalion
+-- they picked on the page (ply.rhylibRosterBn). Replies with roster.data.
 Rhylib.Net.Receive("roster.act", function(ply)
     local act = net.ReadUInt(2)
     local id = net.ReadString()
@@ -491,6 +537,13 @@ end, { rate = 4, burst = 6 })
 -- The roster page
 --------------------------------------------------------------------------
 
+-- R.SendRoster(ply, want): send roster.data for battalion `want` (admins)
+-- or the player's own. Contents: battalion (string), admin (bool), manager
+-- (bool), rank limit (UInt 8: ranks below this may be given; 255 for
+-- admins), members (UInt 8 count, each: sid, name, rank UInt 8, online
+-- bool, last seen UInt 32, note string), cadets (UInt 6 count: sid, name),
+-- CTs that could be added (UInt 6 count: sid, name), log (UInt 6 count,
+-- at most 40: time UInt 32, text).
 function R.SendRoster(ply, want)
     isAdmin(ply, function(admin)
         local me = R.Char(sid(ply))

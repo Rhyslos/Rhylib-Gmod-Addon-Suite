@@ -3,6 +3,9 @@
     with sentence minutes and a reason. Right: who is in jail now, time
     left (or awaiting processing), Release / Process, and their evidence:
     Withhold keeps an item from being returned; contraband never is.
+    Client only. Needs rhylib_menus (Menus.Kit). Opened by net mp.term
+    (sv_30_jail has the layout); buttons send mp.jail, mp.release and
+    mp.destroy. Closes when you walk more than MP.TERM_USE away.
 ]]
 
 local MP = Rhylib.MP
@@ -34,7 +37,14 @@ Rhylib.Net.Receive("mp.term", function()
     MP.ShowTerminal(term, cand, jailed)
 end)
 
+-- MP.ShowTerminal(term, cand, jailed): builds the terminal window.
+-- cand = list of players; jailed = { ply, why, awaiting, processAt,
+-- evidence = { netId, def, count, withheld, contraband } }. Client only.
+-- Note: `Items` below is not a local in this function (it is local to the
+-- net.Receive above), so the Withhold button writes the net id with the
+-- fallback 10 bits. Items.NET_BITS is 10 today, so it matches.
 function MP.ShowTerminal(term, cand, jailed)
+
     local K = Rhylib.Menus and Rhylib.Menus.Kit
     if not K then return end
     local s = K.S

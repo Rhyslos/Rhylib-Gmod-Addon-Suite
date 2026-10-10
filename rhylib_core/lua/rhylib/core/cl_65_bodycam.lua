@@ -13,7 +13,13 @@
     and FOV still apply. Third person (rhylib_thirdperson) is left alone
     while it's on. Walking motion is in cl_66_motion.lua.
 
-    Client convar: rhylib_bodycam (1).
+    Client convar: rhylib_bodycam (1). With rhylib_menus: Settings,
+    Camera & motion tab.
+
+    Hooks: CalcView "core.bodycam" at -50 (before third person's), so a
+    CalcView of another addon that runs first and returns a view skips it;
+    L.BodyCamOn() then turns false the next frame, and the mouse and gun
+    come back. InputMouseApply -50, PreDrawViewModel -100.
 ]]
 
 local L = Rhylib.Lying
@@ -29,6 +35,8 @@ local blendStart = 0
 local lastHeadYaw
 local camDead = false   -- (on a corpse: respawning keeps the spawn's facing)
 
+-- L.ThirdPersonOn(): true while rhylib_thirdperson wants third person
+-- (its server mode or the player's switch; the old convars without it).
 function L.ThirdPersonOn()
     local TP = Rhylib.ThirdPerson
     if TP and TP.Wanted then return TP.Wanted() end
@@ -72,6 +80,7 @@ end
 -- The camera only counts as on if our CalcView ran this frame or the last
 -- (another addon's CalcView can skip ours; then mouse and gun come back).
 L.bodyCamFrame = L.bodyCamFrame or -10
+-- L.BodyCamOn(): true while the view is in the body (others hide things then).
 function L.BodyCamOn()
     return L.bodyCam and L.bodyCamFrame >= FrameNumber() - 1
 end

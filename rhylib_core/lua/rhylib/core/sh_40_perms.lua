@@ -1,5 +1,5 @@
 --[[
-    Permissions through CAMI.
+    Permissions through CAMI (shared; checks are meant for the server).
 
     CAMI is the shared permission standard that ULX, SAM, sAdmin and others
     support. With rhylib_admin installed its staff ranks answer directly
@@ -14,6 +14,14 @@
         end)
 
     Checks are asynchronous because CAMI is. The server console always passes.
+
+    Who answers, first that exists:
+      1. rhylib_admin (Rhylib.Admin.Has): its own staff ranks
+      2. CAMI (ULX, SAM, sAdmin...): CAMI.PlayerHasAccess
+      3. GMod flags: "user" everyone, "admin" IsAdmin, "superadmin" IsSuperAdmin
+    With 1 or 3 the callback runs at once; with CAMI it may run later, so
+    re-check IsValid(ply) inside it. An unregistered name always fails
+    (and warns).
 ]]
 
 Rhylib.Perms = Rhylib.Perms or {}
@@ -26,7 +34,11 @@ local function registerWithCAMI(name, p)
     CAMI.RegisterPrivilege({ Name = name, MinAccess = p.minAccess, Description = p.desc })
 end
 
--- minAccess: "user", "admin" or "superadmin"
+-- Perms.Register(name, minAccess, desc): declare a permission. minAccess:
+-- "user", "admin" or "superadmin" (default "admin"), the default rank an
+-- admin mod gives it. Register on both realms (sh_ file) if client code
+-- checks it too.
+-- Example: Rhylib.Perms.Register("myaddon.spawn", "admin", "Spawn my thing")
 function Perms.Register(name, minAccess, desc)
     local p = { minAccess = minAccess or "admin", desc = desc or "" }
     Perms.list[name] = p
@@ -39,6 +51,13 @@ local function fallback(ply, minAccess)
     return ply:IsSuperAdmin()
 end
 
+-- Perms.Check(ply, name, callback(allowed)): asks; ply nil/NULL (the
+-- server console) is always allowed. Returns nothing: act in the callback.
+-- Example:
+--   Rhylib.Perms.Check(ply, "myaddon.spawn", function(ok)
+--       if not ok or not IsValid(ply) then return end
+--       ...
+--   end)
 function Perms.Check(ply, name, callback)
     if not IsValid(ply) then callback(true) return end
 

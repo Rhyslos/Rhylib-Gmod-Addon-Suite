@@ -9,11 +9,17 @@
 
     Sprinting = holding sprint, pressing a movement key, on the ground.
     Jumps are free for jetpack wearers (the jetpack does the work).
+
+    Shared. Hooks: SetupMove "stamina.move" (priority 0), server
+    PlayerSpawn "stamina.reset" (full stamina). Being unable to sprint
+    caps the speed at walk speed; heavy loads scale the speed down
+    (S.LoadSpeedMult); over the carry cap = walk speed × overloadWalkMult.
+    Too tired to jump = the jump key is dropped.
 ]]
 
 local S = Rhylib.Stamina
 local Config = Rhylib.Config
-local J_DT_HAS = 31  -- rhylib_jetpack's "wearing a jetpack" bool
+local J_DT_HAS = 31  -- rhylib_jetpack's "wearing a jetpack" bool (DTBool; read without needing the addon)
 
 local function cfg(key)
     return Config.Get("stamina", key)

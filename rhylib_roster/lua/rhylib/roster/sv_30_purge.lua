@@ -1,6 +1,10 @@
 --[[
-    Removing an old battalion's saved data (owner 2026-10-05: the 501st and
-    327th were replaced by the 212th and 41st).
+    Removing an old battalion's saved data (server only; owner 2026-10-05:
+    the 501st and 327th were replaced by the 212th and 41st).
+    Who: the server console or a superadmin (checked with IsSuperAdmin, not
+    a Rhylib permission). Reads the rhylib_kv SQLite table directly, so it
+    flushes Data's pending writes first. Fires Rhylib.DataPurged at the end
+    (the roster's and datapad's caches listen).
 
         rhylib_purge_battalion <name>     server console or a superadmin
         rhylib_purge_battalions [confirm] every battalion with saved data
@@ -106,7 +110,8 @@ concommand.Add("rhylib_purge_battalion", function(ply, _, args)
     purge(bn, say)
 end)
 
--- Battalion-keyed modules (datapad and roster).
+-- Battalion-keyed modules (datapad and roster). Keys starting with "__"
+-- (e.g. dp_log "__index") aren't battalions and are skipped.
 local BN_MODULES = { "roster", "roster_log", "dp_log", "dp_board", "dp_ver", "dp_ord", "dp_orders", "dp_loa",
     "dp_apps", "dp_info", "dp_mis", "dp_misarc", "dp_stats", "dp_ban" }
 

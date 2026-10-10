@@ -3,11 +3,22 @@
     there on spawn, staff edits, event teleports, saving per map.
 
     Network:
-      spawn.list   to a dead player: the points they may pick + their pick
-      spawn.pick   client: entity index (0 = default)
-      spawn.edit   to staff: open the edit menu for a point
-      spawn.set    staff: point, op 3 bits (0 rename, 1 battalion, 2 event
-                   on/off, 3 teleport everyone here), text for 0/1
+      spawn.list   to a dead player: Bool open (false = close the list);
+                   then UInt 6 count (max 40), per point: UInt 13 entindex,
+                   String name, Bool event, UInt 16 metres; then UInt 13
+                   current pick
+      spawn.pick   client: UInt 13 entity index (0 = default); rate 5/s
+      spawn.edit   to staff: Entity, open the edit menu for a point
+      spawn.set    staff: Entity, op UInt 3 (0 rename, 1 battalion, 2 event
+                   on/off, 3 teleport everyone here), String text for 0/1
+                   (max 40 characters); rate 4/s
+    Perm rhylib.spawns.admin (admin) for edits, teleports and saving.
+    Saved: Data "spawns"/<map> = { { class, name, bn, pos, yaw } } (event
+    spawns load switched off). Loaded at InitPostEntity +1 s and after a
+    map cleanup. Registered with Rhylib.Perma (only permanent points save).
+    Placement: PlayerSpawn puts the player on S.Target a tick later (the
+    gamemode has placed them by then); jailed players are skipped; admin
+    revives and the jail move players after this and win.
 ]]
 
 local S = Rhylib.Spawns
@@ -30,7 +41,8 @@ end
 
 S.pick = S.pick or {}   -- [ply] = chosen point (nil = default)
 
--- Where this player respawns: their pick if still allowed, else the default.
+-- S.Target(ply): where this player respawns: their pick if still allowed,
+-- else the default (first of S.Options), or nil.
 function S.Target(ply)
     local opts = S.Options(ply)
     local pick = S.pick[ply]
@@ -42,6 +54,7 @@ function S.Target(ply)
     return opts[1] and opts[1].ent or nil
 end
 
+-- S.SendList(ply): send (or refresh) the respawn list to a player.
 function S.SendList(ply)
     local opts = S.Options(ply)
     local pos = ply:GetPos()
@@ -102,7 +115,8 @@ end)
 
 Rhylib.Hook.Add("PlayerDisconnected", "spawns.pick", function(ply) S.pick[ply] = nil end)
 
--- Points changed (event on/off, removed): the dead get a fresh list.
+-- S.RefreshDead(): points changed (event on/off, removed): the dead get a
+-- fresh list.
 function S.RefreshDead()
     for _, p in ipairs(player.GetAll()) do
         if not p:Alive() then
@@ -115,6 +129,7 @@ end
 -- Staff edits and event teleports
 --------------------------------------------------------------------------
 
+-- S.OpenEdit(ply, ent): open the staff edit menu (if they have the perm).
 function S.OpenEdit(ply, ent)
     if not (IsValid(ply) and ply:IsPlayer()) then return end
     isStaff(ply, function()
@@ -124,7 +139,8 @@ function S.OpenEdit(ply, ent)
     end)
 end
 
--- Everyone alive (not jailed) around the point, a ring at a time.
+-- S.TeleportAll(ent): everyone alive (not jailed) around the point, a ring
+-- of 8 at a time (44 units further out each ring). Returns how many.
 function S.TeleportAll(ent)
     local base = ent:SpawnPos()
     local MP = Rhylib.MP
@@ -185,6 +201,8 @@ end, { rate = 4, burst = 4 })
 -- Saving per map (Data "spawns"/map); event spawns come back switched off
 --------------------------------------------------------------------------
 
+-- S.Save(): save the permanent points of this map; returns the count.
+-- S.Load(): remove every point and spawn the saved ones (marked permanent).
 function S.Save()
     local rows = {}
     for _, class in ipairs({ S.POINT, S.EVENT }) do

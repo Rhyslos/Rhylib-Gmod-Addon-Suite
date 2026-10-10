@@ -1,6 +1,8 @@
 --[[
-    An item in your hand (magazines, power cells, rockets: items with
-    def.hand on the hotbar). Which item is NW2Int "rhylib_handUid".
+    An item in your hand (shared SWEP; magazines, power cells, rockets:
+    items with def.hand on the hotbar). Which item is NW2Int
+    "rhylib_handUid". Given and selected by net inv.hold (sv_40_give.lua);
+    put away again when the item is gone or leaves the hotbar.
 
       Left click   give one to the player you're looking at
       Right click  drop one in front of you
@@ -25,7 +27,8 @@ function SWEP:Initialize()
     self:SetHoldType(self.HoldType)
 end
 
--- The held item (client: from the inventory mirror; server: the real one).
+-- SWEP:HeldItem(): the held item (client: from the inventory mirror;
+-- server: the real one), or nil.
 function SWEP:HeldItem()
     local owner = self:GetOwner()
     if not IsValid(owner) then return nil end
@@ -35,7 +38,7 @@ function SWEP:HeldItem()
     return Inv.byUid and Inv.byUid[uid]
 end
 
--- The player in front of you, close enough to hand to.
+-- SWEP:Receiver(): the live player in front of you within giveRange, or nil.
 function SWEP:Receiver()
     local owner = self:GetOwner()
     local r = Rhylib.Config.Get("inventory", "giveRange") or 130

@@ -21,6 +21,14 @@
 
     Things already in the world keep their model until they're made
     again; most need a map change. The page says so.
+
+    Shared. Keys: "weapon.<class>.<Field>", "weapon.<class>.mode.<mode>",
+    "entity.<class>", "item.<id>", "item.<id>.icon", or an addon's own.
+    When: Scan at Initialize, InitPostEntity, 2 s after that, and after a
+    Lua refresh. A change from the page: Rhylib.ConfigChanged("models", key)
+    -> ApplyOne(key) -> hook Rhylib.ModelsChanged(key).
+    M.pending["<module>\0<key>"] = true (server): changed this map, the
+    page shows "map change needed".
 ]]
 
 Rhylib.Models = Rhylib.Models or {}
@@ -34,8 +42,18 @@ local function isModel(v)
     return isstring(v) and string.lower(string.sub(v, -4)) == ".mdl"
 end
 
--- Register (or refresh) one model field. get() returns the table that
--- holds it (nil = not available on this realm right now).
+-- M.Field(key, name, group, get, field, onApply): register (or refresh)
+-- one model field. get() returns the table that holds it (nil = not
+-- available on this realm right now); table[field] must hold a .mdl path
+-- the first time, which becomes the setting's default. name and group are
+-- what the page shows. onApply(value, entry) (optional) runs after every
+-- apply, for copies of the path kept elsewhere. Addons call it through
+-- hook Rhylib.ModelCatalogue (the add argument is M.Field).
+-- Example (shared file):
+--   Rhylib.Hook.Add("Rhylib.ModelCatalogue", "myaddon.models", function(add)
+--       add("myaddon.crate", "My crate", "Entities: My addon",
+--           function() return MyAddon.MODELS end, "crate")
+--   end)
 function M.Field(key, name, group, get, field, onApply)
     local e = M.entries[key]
     local t = get()
@@ -70,6 +88,8 @@ local function refreshLiveWeapons()
     carrierSwaps = {}
 end
 
+-- M.ApplyOne(key): write the setting's value into its field (an invalid
+-- value falls back to the shipped path). M.ApplyAll(): every entry.
 function M.ApplyOne(key)
     local e = M.entries[key]
     if not e then return end
@@ -93,7 +113,7 @@ function M.ApplyAll()
     for _, key in ipairs(M.order) do M.ApplyOne(key) end
 end
 
--- The current model of an entry (for previews).
+-- M.Current(key): the current model path of an entry, or nil (for previews).
 function M.Current(key)
     local e = M.entries[key]
     if not e then return nil end
@@ -188,7 +208,8 @@ local function scanItems()
     end
 end
 
--- Find everything (again: cheap, and new things may have registered).
+-- M.Scan(): find everything (again: cheap, and new things may have
+-- registered), run hook Rhylib.ModelCatalogue(M.Field), then ApplyAll.
 function M.Scan()
     scanWeapons()
     scanEntities()

@@ -3,9 +3,11 @@
     (batched, flushed once a tick) with where it came from, so their HUD
     can show a direction marker, a flash and play a hit sound.
 
-      hud.dmg   amount 8 bits (health lost), armour 8 bits (armour lost),
-                flags 4 bits (SIM, BLAST, NODIR, HEAD), source position (when
-                there's a direction)
+      hud.dmg   (server -> the player hit, Rhylib.Net batch, one item per hit)
+                amount 8 bits (health lost, rounded up, capped at 255),
+                armour 8 bits (armour lost, same), flags 4 bits (SIM 1,
+                BLAST 2, NODIR 4, HEAD 8), then the source position as a
+                vector unless NODIR is set
 
     Real damage: what armour took is read from rhylib_weapons' record of
     the hit (Rhylib.Armor.pending) at PostEntityTakeDamage -1001, just
@@ -15,6 +17,12 @@
 
 local HUD = Rhylib.HUD
 
+-- Flag bits for HUD.SendHit and the hud.dmg message (cl_70_damage.lua
+-- has its own copy of these numbers):
+--   SIM    a training (sim) hit: yellow marker, beep, no flash or shake
+--   BLAST  explosion damage: stronger shake, ear ringing on big ones
+--   NODIR  no source position (falls); set by SendHit when from is nil
+--   HEAD   a real head hit: cracks the visor
 HUD.DMG_SIM, HUD.DMG_BLAST, HUD.DMG_NODIR, HUD.DMG_HEAD = 1, 2, 4, 8
 
 local batch = Rhylib.Net.CreateBatch("hud.dmg", function(h)
@@ -24,7 +32,15 @@ local batch = Rhylib.Net.CreateBatch("hud.dmg", function(h)
     if bit.band(h.flags, HUD.DMG_NODIR) == 0 then net.WriteVector(h.from) end
 end)
 
--- from: where the hit came from (nil = no direction, e.g. a fall).
+-- HUD.SendHit(ply, amount, armour, from, flags): tells a player's HUD
+-- they were hit (direction marker, flash, sound). Server only.
+--   amount  health lost, armour  armour lost (hits under 0.5 of both are skipped)
+--   from    world position the hit came from (nil = no direction, e.g. a fall)
+--   flags   HUD.DMG_* bits, optional
+-- Bots get nothing. Real damage is sent by this file's own hook; call it
+-- yourself only for damage the engine never sees (rhylib_training does
+-- this for sim hits). Returns nothing.
+-- Example: Rhylib.HUD.SendHit(ply, 20, 0, attacker:WorldSpaceCenter(), Rhylib.HUD.DMG_SIM)
 function HUD.SendHit(ply, amount, armour, from, flags)
     if not (IsValid(ply) and ply:IsPlayer()) or ply:IsBot() then return end
     if amount < 0.5 and armour < 0.5 then return end

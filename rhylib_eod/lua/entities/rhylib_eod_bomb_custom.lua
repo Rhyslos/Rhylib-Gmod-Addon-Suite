@@ -1,3 +1,6 @@
+-- Custom bomb: starts as a random large roll; the GM builds it in the GM
+-- window (E with the toolgun). Large blast. Base: rhylib_eod_bomb.
+
 AddCSLuaFile()
 
 ENT.Type = "anim"

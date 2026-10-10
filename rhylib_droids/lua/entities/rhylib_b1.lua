@@ -20,6 +20,32 @@
     commander (not itself) a droid aims better, reacts faster and pauses
     less (D.Boosted). When it loses sight it goes to where it last
     saw the target, then wanders near home.
+
+    Since then (see CLAUDE.md "Droids" for the history): moving and firing
+    happen together (ENT:Engage runs one tick at a time, ENT:StepMove
+    walks to ENT:PlanMove's goal), modes and aggression (sv_20_orders),
+    retreat and last stand, clones (rhylib_clone: same brain, other side),
+    medics (ENT:DoRevive), downed guards, roam pairs, artillery, doors.
+
+    Realms: shared entity. Initialize runs on both; everything in the
+    `if SERVER` block is the brain; the `if CLIENT` block draws the gun.
+
+    The brain is one coroutine, ENT:RunBehaviour: each loop picks one
+    job in this order: revive (medics) > cover > fight (Look finds a
+    target -> Engage) > retreat > answer a call for help > reinforcement
+    steps > fall back > chase the last seen spot > attack mode > roam >
+    back to home > artillery > idle / patrol / shuffle. Functions that
+    wait (Go, Face, Idle, TakeCover, Engage) yield, so only call them from
+    inside the coroutine.
+
+    Per-NPC state lives in plain fields (self.target, self.home,
+    self.mode, self.leader, ...), set here and by sv_20_orders /
+    sv_30_clones. Clients see only NW2 rhylib_dmode (mode label),
+    rhylib_lead and rhylib_pickBy, plus the aim pose parameters.
+
+    Making a new kind: a D.KINDS row + D.CLASSES entry in sh_00_config and
+    a file like entities/rhylib_b1_snow.lua (ENT.Base = "rhylib_b1",
+    ENT.DroidKind = "<kind>"). Nothing in this file needs to change.
 ]]
 
 AddCSLuaFile()
@@ -35,6 +61,7 @@ ENT.DroidKind = "b1"
 
 -- Animations: the first activity the model has, from player-model sets
 -- (ACT_HL2MP_*) to NPC sets. Worked out once per model (anims[model]).
+-- Each list is tried in order; the first activity the model has wins.
 local CHOICES = {
     idle = { ACT_HL2MP_IDLE_AR2, ACT_HL2MP_IDLE_SMG1, ACT_IDLE_ANGRY_SMG1, ACT_IDLE_SMG1, ACT_IDLE_RIFLE, ACT_IDLE_ANGRY, ACT_IDLE },
     walk = { ACT_HL2MP_WALK_AR2, ACT_HL2MP_WALK_SMG1, ACT_WALK_AIM_RIFLE, ACT_WALK_RIFLE, ACT_WALK },
@@ -80,10 +107,16 @@ end
 local EYE = Vector(0, 0, 62)
 local ADVANCE_DIST = 1400     -- further than this: move closer between bursts
 
+-- ENT:Kind() -> this NPC's row of Rhylib.Droids.KINDS (by ENT.DroidKind;
+-- an unknown kind falls back to b1). Shared.
 function ENT:Kind()
     return Rhylib.Droids.KINDS[self.DroidKind] or Rhylib.Droids.KINDS.b1
 end
 
+-- Shared. Sets the model on both realms; server only: cap check (over
+-- the cap = removed next tick, self.overCap), registers it in D.active /
+-- D.clones / D.commanders, health and speed from config, guard mode at
+-- the spawn spot.
 function ENT:Initialize()
     local D = Rhylib.Droids
     local k = self:Kind()
@@ -161,15 +194,20 @@ if SERVER then
 
     local EYE_CROUCH = Vector(0, 0, 40)
     -- Clones crouched in place (no cover to reach): lower and steadier.
+    -- ENT:Crouched() -> crouching (reviving, or crouchUntil running) and
+    -- standing still.
     function ENT:Crouched()
         return (self.crouching or (self.crouchUntil or 0) > CurTime()) and self.loco:GetVelocity():Length2DSqr() < 400
     end
 
+    -- ENT:Eye() -> where it sees from (higher for big kinds, lower crouched).
     function ENT:Eye()
         if self.IsRhylibClone and self:Crouched() then return self:GetPos() + EYE_CROUCH end
         return self:GetPos() + (self:Kind().big and Vector(0, 0, 74) or EYE)
     end
 
+    -- ENT:CanSee(t) -> one trace from its eye to t's eye / chest.
+    -- Clones' seeFilter ignores players and clones.
     function ENT:CanSee(t)
         trData.start = self:Eye()
         trData.endpos = seePoint(t)
@@ -226,6 +264,8 @@ if SERVER then
     local REMEMBER = 1      -- seen this recently: no new reaction delay (owner: re-peeking was punished at once)
     local cand, candD = {}, {}   -- scratch lists (Look never yields)
 
+    -- ENT:Look() -> the target (or nil); also sets self.target, lastSeen,
+    -- lastSeenAt, reactUntil (reaction delay) and sightStart (aim settle).
     -- A visible target in range: keeps the current one while it's in sight
     -- unless another is much closer, else the nearest visible (nearest
     -- first, at most 4 traces, plus one rotating farther one). Every 0.3 s,
@@ -281,7 +321,8 @@ if SERVER then
         for i = 1, n do cand[i] = nil end
         self.nextLook = now + (best and best == cur and 0.5 or 0.3) + math.Rand(0, 0.1)   -- spread droids over ticks
         if best then
-            -- Reaction delay only for a target not seen in the last 2 s.
+            -- Reaction delay only for a target not seen in the last
+            -- REMEMBER seconds (1 s; was 2).
             local seen = self.seenAt
             if not seen then seen = {} self.seenAt = seen end
             -- (sight just started: aim settles in from here, see FireAt)
@@ -309,8 +350,9 @@ if SERVER then
         return best
     end
 
-    -- Shot at by a player it hadn't seen: turn toward them. Hits are
-    -- counted for taking cover, and a bad one may make it pull back.
+    -- NextBot callback. Shot at by a player it hadn't seen: turn toward
+    -- them. Hits are counted for taking cover, and a bad one may make it
+    -- pull back.
     function ENT:OnInjured(dmg)
         self.woken = true   -- ends an idle wait early
         local att = dmg:GetAttacker()
@@ -337,6 +379,9 @@ if SERVER then
         end
     end
 
+    -- NextBot callback. Fires the standard GMod hook OnNPCKilled(npc,
+    -- attacker, inflictor) (kill feed, skills, credits), except for
+    -- training droids. Commanders rattle their side (D.Rattle).
     function ENT:OnKilled(dmg)
         -- Training droids give nothing (kill feed, skills, credits).
         if not self.Training then hook.Run("OnNPCKilled", self, dmg:GetAttacker(), dmg:GetInflictor()) end
@@ -366,7 +411,8 @@ if SERVER then
     -- Hand bone ids per model: { right, left } (false = none).
     local hands = {}
 
-    -- (dual: both arms in turn)
+    -- ENT:Muzzle() -> where a shot starts: in front of the right hand
+    -- (dual kinds: right and left in turn), else the eye.
     function ENT:Muzzle()
         local mdl = self:GetModel() or ""
         local h = hands[mdl]
@@ -406,8 +452,13 @@ if SERVER then
         self:FireAtPos(t:WorldSpaceCenter() + Vector(0, 0, 8), t:GetVelocity():Length2D(), extra)   -- chest
     end
 
-    -- A shot at a point; speed = how fast the target moves (worse aim),
-    -- extra = cone multiplier (blind fire from cover).
+    -- ENT:FireAtPos(aim, speed, extra): one bolt toward a point.
+    -- speed = how fast the target moves (worse aim), extra = cone
+    -- multiplier (blind fire from cover). The cone (degrees) =
+    -- (spread + speed x moveSpread) x suppression x extra x crouch x
+    -- moving x commander boost; the shot is a random point inside it
+    -- (sqrt for an even spread over the disc). Fires a real rhylib_weapons
+    -- bolt (Bolts.Fire) with D.Gun's damage and colour.
     function ENT:FireAtPos(aim, speed, extra)
         local Bolts = Rhylib.Weapons and Rhylib.Weapons.Bolts
         if not Bolts then return end
@@ -433,14 +484,18 @@ if SERVER then
         if self.anims.shoot then self:RestartGesture(self.anims.shoot, true, true) end
     end
 
-    -- Launch velocity to land at `to` after `t` seconds (gravity g).
+    -- Launch velocity to land at `to` after `t` seconds (gravity g):
+    -- straight-line velocity plus g*t/2 upward to cancel the fall.
     local function lob(from, to, t, g)
         local v = (to - from) / t
         v.z = v.z + 0.5 * g * t
         return v
     end
 
-    -- B1: a grenade at where the target was (they just went into cover).
+    -- ENT:ThrowNade(pos): a rhylib_grenade lobbed to land near pos (needs
+    -- rhylib_republic). B1s throw a frag (b1NadeDamage / b1NadeRadius),
+    -- clone troopers (kind poppers) a droid popper (EMP, never stuns
+    -- players). Sets the next grenade time.
     function ENT:ThrowNade(pos)
         local from = self:GetPos() + Vector(0, 0, 60) + self:GetForward() * 12
         local dist = from:Distance(pos)
@@ -479,6 +534,7 @@ if SERVER then
         self.nextNade = CurTime() + D.Cfg(popper and "ctPopperCooldown" or "b1NadeCooldown") * math.Rand(0.8, 1.3)
     end
 
+    -- ENT:NadeAt(t) -> true if it threw (or started a popper charge).
     -- A grenade at a target it can see, by chance (after a burst).
     function ENT:NadeAt(t)
         local k = self:Kind()
@@ -534,7 +590,11 @@ if SERVER then
         self.nextRocket = CurTime() + D.Cfg("b2RocketCooldown") * math.Rand(0.8, 1.3)
     end
 
-    -- B2 mortar: a wrist rocket lobbed high, landing near pos.
+    -- ENT:FireRocket(pos, mover) -> true if fired. B2 mortar: a wrist
+    -- rocket lobbed high, landing near pos (mover = the target, for
+    -- leading). Direct kinds hand off to FireDirectRocket. Artillery: longer
+    -- flight, tighter each shot at the same target, never into a blackout
+    -- or from under a low roof.
     function ENT:FireRocket(pos, mover)
         -- (EOD Signal blackout: artillery can't fire into the bubble)
         if self.artillery and D.Blackout and D.Blackout(pos) then
@@ -649,7 +709,9 @@ if SERVER then
         self.doorAt = now + 1
     end
 
-    -- Walk a path for up to maxTime; stop early when a target shows up (watch).
+    -- ENT:Go(pos, maxTime, watch) -> false if no route (or stuck), else true.
+    -- Walk a path for up to maxTime; stop early when a target shows up
+    -- (watch) or self.redirect is set. Needs a navmesh. Yields.
     function ENT:Go(pos, maxTime, watch)
         local path = self.path   -- one per droid (Go never nests)
         if not path then
@@ -684,7 +746,7 @@ if SERVER then
         return true
     end
 
-    -- Turn to face a point for up to t seconds.
+    -- ENT:Face(pos, t): turn to face a point for t seconds. Yields.
     function ENT:Face(pos, t)
         local stop = CurTime() + t
         while CurTime() < stop do
@@ -706,6 +768,7 @@ if SERVER then
         self.coverKey = nil
     end
 
+    -- ENT:WantsCover() -> should it take cover now (see the header)?
     function ENT:WantsCover()
         if not self:Kind().cover or not self.threatPos or CurTime() < (self.coverReady or 0) then return false end
         if self.guarding then return false end   -- (stands over a downed player)
@@ -760,7 +823,8 @@ if SERVER then
         return far and farArea or nil
     end
 
-    -- Run to cover, blind fire from it for a while, then fight again.
+    -- ENT:TakeCover(threat, far) -> true if it got there. Run to cover,
+    -- blind fire from it for a while, then fight again. Yields.
     function ENT:TakeCover(threat, far)
         local k = self:Kind()
         while not D.TakeBudget() do coroutine.yield() end
@@ -847,6 +911,7 @@ if SERVER then
         return self.home + off:GetNormalized() * r + Vector(0, 0, pos.z - self.home.z)
     end
 
+    -- ENT:SetPace(run): run speed, or walk (x walkMult).
     function ENT:SetPace(run)
         local speed = D.Cfg(self:Kind().speed)
         if not run then speed = speed * D.Cfg("walkMult") end
@@ -894,6 +959,8 @@ if SERVER then
     -- where they ended up.
     --------------------------------------------------------------------------
 
+    -- ENT:Retreating() -> retreat mode or aggression 1 (never while guarding
+    -- a downed player, reviving, or artillery).
     function ENT:Retreating()
         if self.guarding or self.reviveTarget or self.artillery then return false end
         return self.mode == "retreat" or self:Aggro() == 1
@@ -1125,7 +1192,13 @@ if SERVER then
         end
     end
 
-    -- Where to move while fighting t, and whether to run (nil = stay).
+    -- ENT:PlanMove(t) -> goal (or nil = stay), run, faceGoal. Where to move
+    -- while fighting t. Checked in order: artillery (never), a friend in
+    -- the line of fire (step aside), retreat, popper charge, back to a
+    -- downed player / the officer, reinforcement steps, then by aggression:
+    -- 1-2 fall back / back off, 3 close in beyond ADVANCE_DIST, 4-5 go at
+    -- the target (4 walks if it CanMarch, else runs). Guards and patrols
+    -- keep goals inside their area (InArea).
     function ENT:PlanMove(t)
         self:UpdateHome()
         self:UpdateDoctrine()
@@ -1304,6 +1377,12 @@ if SERVER then
     -- Fighting: one tick at a time, moving and firing together
     --------------------------------------------------------------------------
 
+    -- ENT:Engage(): the fight loop, one tick per pass, until the target is
+    -- gone or out of sight 1.5 s (then a grenade/rocket at the last seen
+    -- spot). Each tick: cover check, Look, StepMove, then fire if reaction
+    -- time is over, the next shot is due and it faces the target. Bursts
+    -- of kind.burst shots at rpm, a pause (x cmdPause boosted, x
+    -- lastStandPause), then maybe a grenade. Yields.
     function ENT:Engage()
         local k = self:Kind()
         local t = self.target
@@ -1410,7 +1489,8 @@ if SERVER then
         return best
     end
 
-    -- Waits up to secs, waking early when hit or someone comes in sight.
+    -- ENT:Idle(secs): waits up to secs, waking early when hit (or
+    -- self.woken is set) or someone comes in sight. Yields.
     function ENT:Idle(secs)
         local stop = CurTime() + secs
         self.woken = false
@@ -1536,6 +1616,7 @@ if SERVER then
         self.reviveTarget = nil
     end
 
+    -- NextBot coroutine: the job order is in the header.
     function ENT:RunBehaviour()
         if self.overCap then return end   -- (being removed: over the cap)
         while true do
@@ -1655,7 +1736,11 @@ if SERVER then
     -- Animation
     --------------------------------------------------------------------------
 
+    -- NextBot callback (every tick): picks the activity from speed
+    -- (run above 110, walk above 10, else crouch/idle) and sets the aim
+    -- pose parameters toward the target.
     function ENT:BodyUpdate()
+
         local speed = self.loco:GetVelocity():Length2D()
         local A = self.anims
         if not A then return end   -- removed at once (over the cap)

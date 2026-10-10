@@ -2,13 +2,19 @@
     Inventory window (client only).
 
     Press G (rhylib_inventory_key) or run rhylib_inventory to open or close.
-    Left to right: your player model (drag to turn it), the Back slot,
-    then the main grid with the backpack grid under it while one is worn.
+    Left to right: gear slots, your player model (drag to turn it), helmet
+    button and gear slots, the Back slot (Combine munitions and the belt
+    cell pouch under it), then the main grid with the backpack grid and
+    any other grids (cell rack, ammo belt, holster, pouches) under it.
 
     Drag items to move them, press R while dragging to rotate, drop onto a
-    matching stack to merge, drag outside the window to drop on the ground.
+    matching stack to merge. Let go anywhere that isn't a grid or slot
+    (inside the window too) to drop it on the ground.
     Hold Ctrl while starting a drag to take just one off a stack.
-    Right-click an item for options (split a stack, equip, wear, drop).
+    Right-click an item for options (split a stack, equip, wear, take off,
+    give, hide, drop; staff: adjust picture). Other addons add options
+    with hook Rhylib.ItemMenu(inst, menu) and tooltip lines with
+    Rhylib.ItemTooltip(inst, lines).
 
     With a locker, crate or armoury open, it shows on the right. Drag items
     between the two. Under the Back slot: Combine munitions.
@@ -23,6 +29,11 @@
 
     One panel paints all grids; the only child panel is the model preview.
     Nothing runs while the window is closed except a key check.
+
+    Client convars: rhylib_inventory_key (default g), rhylib_inventory_cellsize
+    (100; cell size in pixels at 1080p, 48-128). Lock / Unclaim buttons on
+    an owned locker run hook Rhylib.StorageControl("lock" / "unclaim")
+    (rhylib_armoury answers it).
 ]]
 
 local Inv = Rhylib.Inventory
@@ -206,7 +217,8 @@ end
 
 local PANEL = {}
 
--- Everything is sized from the cell size (64 was the original design size).
+-- PANEL:SetScaleK(k): every size from the cell size (k = cell / 64 px;
+-- 64 was the original design size, scaled again by screen height).
 function PANEL:SetScaleK(k)
     self.k = k
     local s = ScrH() / 1080 * k
@@ -249,6 +261,8 @@ end
 
 local function dims(c) return c and (c.w .. "x" .. c.h) or "-" end
 
+-- PANEL:LayoutKey(): a string of everything the layout depends on (grid
+-- sizes, shown gear slots, model); Paint lays out again when it changes.
 function PANEL:LayoutKey()
     local m, b, e, r, bl, ho = Inv.cont[MAIN], Inv.cont[BACK], Inv.cont[EXT], Inv.cont[RACK], Inv.cont[BELT], Inv.cont[HOLSTER]
     local gear = {}
@@ -454,8 +468,8 @@ function PANEL:OnMouseWheeled(delta)
     end
 end
 
--- Region and cell under panel coordinates. Grids allow a small margin so
--- items can be dragged against the edge.
+-- PANEL:HitTest(mx, my, margin): region and cell under panel coordinates.
+-- Grids allow a small margin so items can be dragged against the edge.
 function PANEL:HitTest(mx, my, margin)
     margin = margin or 0
     for _, r in ipairs(self.regions) do
@@ -520,6 +534,9 @@ function PANEL:ItemAtCursor()
     return Items.At(c.items, cx, cy), r, cx, cy
 end
 
+-- PANEL:DrawItemBox(inst, x, y, pw, ph, alpha, endless): one item: body,
+-- picture, stripe, name, hotbar badge, count / rounds / charge, HIDDEN.
+-- endless: depot stock (shows the infinity sign).
 function PANEL:DrawItemBox(inst, x, y, pw, ph, alpha, endless)
     local def = Items.Get(inst.id)
     if not def then return end
@@ -937,7 +954,8 @@ function PANEL:PaintWeight(pw)
     surface.DrawRect(x, midY + barH, math.floor(barW * frac), barH)
 end
 
--- Where the dragged item would land: region, x, y (or nil).
+-- Where the dragged item would land: region, x, y (or nil). d.offX/offY:
+-- which cell of the item you grabbed.
 function PANEL:DragTarget(d)
     local mx, my = self:CursorPos()
     local r, cx, cy = self:HitTest(mx, my, self.step * 0.5)
@@ -1290,6 +1308,8 @@ vgui.Register("RhylibInventory", PANEL, "EditablePanel")
 -- Opening and closing
 --------------------------------------------------------------------------
 
+-- Inv.Toggle(): opens or closes the window (not while dead or locked).
+-- The window lets you keep walking (keyboard not captured).
 function Inv.Toggle()
     if IsValid(Inv.panel) then
         Inv.panel:Remove()

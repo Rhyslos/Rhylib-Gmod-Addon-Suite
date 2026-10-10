@@ -14,15 +14,27 @@
             -- showIf = function() return bool end: hidden unless true
             --   (call Menus.RefillSettings() after it changes)
         })
+
+    More setting fields: get() / set(v) instead of the convar (then
+    convar may be left out), wide (px at 1080p for a choice row's right
+    side, default 460), short (key-cap label on Settings > Layout, key
+    rows only). Same id again = replaces the old row (refresh-safe).
+    The order of sections is the order they were first added.
+
+    Settings > Interface / Camera & motion / Audio / Controls are four
+    pages of the "settings" group, one per tab (Menus.SETTING_TABS).
+    Client only.
 ]]
 
 local Menus = Rhylib.Menus
 local K = Menus.Kit
 local C = K.C
 
-Menus.settings = Menus.settings or {}
-Menus.sectionOrder = Menus.sectionOrder or {}
+Menus.settings = Menus.settings or {}          -- [section] = list of settings
+Menus.sectionOrder = Menus.sectionOrder or {}  -- section names, first added first
 
+-- Menus.AddSetting(section, setting): adds a row to the Settings pages.
+-- See the header for the fields; the row only shows if its convar exists.
 function Menus.AddSetting(section, setting)
     local list = Menus.settings[section]
     if not list then
@@ -44,6 +56,8 @@ local function cvGet(name)
     return cv and cv:GetString() or ""
 end
 
+-- Puts the control for setting st into row.right. Values go through the
+-- convar (RunConsoleCommand) unless the setting has its own get/set.
 local function control(row, st)
     local get = st.get or function() return cvGet(st.convar) end
     local set = st.set or function(v) RunConsoleCommand(st.convar, tostring(v)) end
@@ -115,10 +129,12 @@ end
     under their section headings.
 ]]
 Menus.SETTING_TABS = { "Interface", "Camera & motion", "Audio", "Controls" }
+-- Setting ids that go to Audio / Camera & motion without naming a tab.
 local AUDIO = { ["wep.hitsound"] = true, ["hud.dmgvolume"] = true, ["hud.dmgring"] = true, ["hud.whizz"] = true }
 local CAMERA_SECTIONS = { ["Third person"] = true }
 local CAMERA = { ["hud.dmgshake"] = true }
 
+-- Menus.SettingTab(section, st): the tab name a setting shows under.
 function Menus.SettingTab(section, st)
     if st.tab then return st.tab end
     if st.kind == "key" then return "Controls" end
@@ -130,6 +146,10 @@ end
 Menus.settingsTab = Menus.settingsTab or "Interface"
 if Menus.settingsTab == "Keybinds" then Menus.settingsTab = "Controls" end
 
+-- Fills a tab's scroll panel: (Controls: the clash box first), every
+-- section with rows for this tab, (Controls: the fixed controls last).
+-- Also sets Menus.RefillSettings to refill this same panel; call it after
+-- a showIf condition changes.
 local function fill(sp, tab)
     sp:Clear()
     Menus.RefillSettings = function() if IsValid(sp) then fill(sp, tab) end end
@@ -168,6 +188,8 @@ local function fill(sp, tab)
 end
 
 -- One page per tab, in the Settings submenu of the pause menu.
+-- Menus.SettingsPageId(tab): page id for a tab, e.g. "Camera & motion" ->
+-- "settings.cameramotion". Example: Rhylib.Menus.pause:ShowPage(Rhylib.Menus.SettingsPageId("Audio"))
 function Menus.SettingsPageId(tab)
     return "settings." .. string.lower(string.gsub(tab or "Interface", "[^%w]+", ""))
 end
@@ -188,6 +210,8 @@ Menus.pages.settings = nil   -- (the old single page)
 
 --------------------------------------------------------------------------
 -- The settings Rhylib's addons have
+-- (rows for addons that have no settings file of their own; each only
+-- shows when that addon's convar exists)
 --------------------------------------------------------------------------
 
 Menus.AddSetting("HUD", {

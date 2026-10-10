@@ -3,7 +3,12 @@
     from them in jail (rhylib_mp sv_40_property). Placed by admins and
     saved with the jail (rhylib_mp_save); processed prisoners appear in
     front of it.
+
+    Shared entity, frozen in place. Model: config mp propertyModel
+    (HL2 lockers if missing). The storage itself is made on first use
+    (sv_40_property). Clients see a "PROPERTY" label within 300 units.
 ]]
+
 
 AddCSLuaFile()
 

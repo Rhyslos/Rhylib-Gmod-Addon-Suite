@@ -4,6 +4,13 @@
     seconds (rhylib_core Lying.Knock, soft: a client ragdoll, no damage
     meanwhile), away from the blast. With knockDropChance they lose the
     gun in their hands: it lands on the ground as an item (not job gear).
+
+    Realm: server. Config: weapons knockMin, knockTimeMin, knockTimeMax,
+    knockPush, knockDropChance (sh_00_config.lua). Training blasts don't
+    go through damage, so they never knock anyone down.
+    Fires hook Rhylib.CanKnockDown(ply): return false to stop this
+    knockdown (rhylib_skills Press forward / Blast hardened, rhylib_admin
+    god mode).
 ]]
 
 local Config = Rhylib.Config

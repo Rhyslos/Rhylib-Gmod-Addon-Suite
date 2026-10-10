@@ -5,6 +5,12 @@
     Cuffed:  slow walk, no sprint, jump, crouch, attack or use. Escorted
              prisoners are pulled toward the MP when they fall behind
              (server only; their client stops predicting near the leash).
+    Also: no weapon switching while cuffed/stunned, and the lying pose
+    played while stunned (death_* sequence, config "poses").
+
+    Hook priorities (Rhylib.Hook.Add 4th argument, lower runs first):
+    StartCommand -150 and SetupMove -95 run before most other addons'
+    movement code, so a stunned/cuffed player's input is gone first.
 ]]
 
 local MP = Rhylib.MP
@@ -116,7 +122,10 @@ end)
 -- Lying pose while stunned (same on server and client, so hitboxes match)
 --------------------------------------------------------------------------
 
+-- The first sequence in config "poses" that this player model has,
+-- cached per model on the player (-1 = none, then no pose is forced).
 local function stunSequence(ply)
+
     local mdl = ply:GetModel()
     if ply.rhylibStunMdl ~= mdl then
         ply.rhylibStunMdl = mdl

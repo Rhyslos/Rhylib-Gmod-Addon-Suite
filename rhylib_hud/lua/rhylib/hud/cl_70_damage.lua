@@ -1,5 +1,5 @@
 --[[
-    Damage feedback (client), from hud.dmg (sv_30_damage.lua):
+    Damage feedback (client), from the hud.dmg batch (sv_30_damage.lua):
 
       - direction markers: an arc on a ring around the crosshair pointing
         at where the hit came from (it keeps pointing there as you turn),
@@ -14,11 +14,12 @@
     Near misses (bolts passing close) are in rhylib_weapons cl_10_bolts.lua.
     Client convars (Settings > HUD): rhylib_dmg_markers, rhylib_dmg_flash,
     rhylib_dmg_shake, rhylib_dmg_lowhp, rhylib_dmg_volume (0-1, scales
-    every sound here), rhylib_dmg_ring (ear ringing on/off).
+    every sound here), rhylib_dmg_ring (ear ringing on/off),
+    rhylib_dmg_cracks (visor cracks). All default on (volume 1).
 ]]
 
 local HUD = Rhylib.HUD
-local DMG_SIM, DMG_BLAST, DMG_NODIR, DMG_HEAD = 1, 2, 4, 8
+local DMG_SIM, DMG_BLAST, DMG_NODIR, DMG_HEAD = 1, 2, 4, 8   -- same bits as HUD.DMG_* (sv_30_damage.lua)
 
 local cvMarkers = CreateClientConVar("rhylib_dmg_markers", "1", true, false, "Damage direction markers around the crosshair")
 local cvFlash = CreateClientConVar("rhylib_dmg_flash", "1", true, false, "Screen edge flash when hit")
@@ -63,6 +64,9 @@ end
 
 local nextSound = 0
 
+-- One hit: health lost (8 bits), armour lost (8 bits), flags (4 bits),
+-- then the source position unless NODIR. A hit counts as "armour" (blue,
+-- metal clang) when the armour took more than health.
 Rhylib.Net.ReceiveBatch("hud.dmg", function()
     local h = { amount = net.ReadUInt(8), armour = net.ReadUInt(8), flags = net.ReadUInt(4) }
     if bit.band(h.flags, DMG_NODIR) == 0 then h.from = net.ReadVector() end
@@ -177,6 +181,11 @@ local cracks = {}
 local COL_CRACK = Color(225, 235, 240)
 local COL_CRACK_DARK = Color(0, 0, 0)
 
+-- HUD.AddCrack(from): adds one visor crack (up to 6 at once, oldest
+-- dropped), placed toward the side `from` (a world position, or nil for
+-- anywhere) is on. Fades after 9 s. Called for real head hits; drawn only
+-- in first person with rhylib_dmg_cracks on. Client only.
+-- Example: Rhylib.HUD.AddCrack(attacker:EyePos())
 function HUD.AddCrack(from)
     local W, H = ScrW(), ScrH()
     -- Somewhere on the visor, toward the side the shot came from.
@@ -272,6 +281,8 @@ local function arc(cx, cy, r, thick, ang, width, col, alpha)
     end
 end
 
+-- Draw order: cracks, low-health pulse, hit flash, then the markers.
+-- While HUD.Hidden() (dead) the heartbeat stops and cracks are cleared.
 Rhylib.Hook.Add("HUDPaint", "hud.damage", function()
     if HUD.Hidden() then
         heartbeat(false)
@@ -327,7 +338,7 @@ Rhylib.Hook.Add("HUDPaint", "hud.damage", function()
             arc(cx, cy, r, math.floor((4 + 6 * m.size) * s), relAngle(m.from), 34 + 10 * m.size, m.col, alpha)
         end
     end
-end, 950)   -- (after the visor sway pops: markers belong to the crosshair, rhylib_core cl_66_motion.lua)
+end)
 
 -- In the settings menu (rhylib_menus).
 Rhylib.Hook.Add("InitPostEntity", "hud.damage.setting", function()

@@ -7,6 +7,10 @@
     capstone (K.CallReinforcements). While it's out, a ring on the ground shows
     the reach, in the order's colour (grey while on cooldown).
     First person is a placeholder: the HL2 SLAM detonator in the left hand.
+    Hold R: the squad wheel (cl_20_command.lua). Shared SWEP; the server
+    does the work, the client draws the ring and the HUD text.
+    Inventory fields (InvW/InvH/InvWeight/InvCategory, CarrySkill) are read
+    by rhylib_inventory; "command" isn't a skill id, K.CarryOk handles it.
 ]]
 
 AddCSLuaFile()
@@ -50,7 +54,7 @@ function SWEP:Think()
     end
 end
 
--- Length of what the viewmodel is playing (at least a moment).
+-- SWEP:VMDuration(): length of what the viewmodel is playing (at least 0.2 s).
 function SWEP:VMDuration()
     local o = self:GetOwner()
     local vm = IsValid(o) and o.GetViewModel and o:GetViewModel()

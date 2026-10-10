@@ -15,6 +15,8 @@
       - Hook on a ceiling: hang straight down.
     Then the rope drops, sliding down any slope it lands on (walkable or
     not), until the ground is nearly flat or it runs out of length or points.
+
+    Realm: server. Public: G.BuildRope, G.DropHook, G.Fire.
 ]]
 
 local W = Rhylib.Weapons
@@ -65,7 +67,9 @@ local function wallBehind(p, n)
     return trace(p, p - n * 28).Hit
 end
 
--- Returns pts, nrm, top, ledge; or nil and a message for the shooter.
+-- G.BuildRope(hitPos, hitNormal, shootDir): works out a rope for a hook
+-- that gripped at hitPos. Returns pts, nrm, top, ledge (see rhylib_rope
+-- ENT:SetRope); or nil and a message for the shooter.
 function G.BuildRope(hitPos, hitNormal, shootDir)
     local pts, nrm = {}, {}
     local top, ledge = 1, nil
@@ -222,8 +226,10 @@ local function onHookMiss(bolt)
     G.DropHook(bolt.pos)
 end
 
--- Fired from the weapon's grapple fire mode. The hook leaves the
--- inventory now; it's either a rope or an item on the ground after this.
+-- G.Fire(owner, wep): fired from the weapon's grapple fire mode
+-- (rhylib_base SWEP:FireGrapple). The hook leaves the inventory now; it's
+-- either a rope or an item on the ground after this. The hook flies as a
+-- bolt (Bolts.Fire with opts onHit / onExpire, BoltColor 5).
 function G.Fire(owner, wep)
     local Pouch = W.Pouch
     if not Pouch.TakeBest(owner, G.ITEM) then

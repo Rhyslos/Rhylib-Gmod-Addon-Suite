@@ -112,6 +112,8 @@ Rhylib.Hook.Add("OnScreenSizeChanged", "core.portraits", function()
     cache, slots = {}, {}
 end)
 
+-- UI.PortraitMaterial(model): the cached portrait material, or nil (then
+-- it's queued, up to 16 waiting). Model paths are lower-cased.
 function UI.PortraitMaterial(model)
     if not model or model == "" then return nil end
     model = string.lower(model)
@@ -126,6 +128,9 @@ function UI.PortraitMaterial(model)
     end
 end
 
+-- UI.DrawPortrait(who, x, y, size, alpha): who = a player/entity (its
+-- model) or a model path. Draws inside a HUDPaint/Paint (2D). alpha 0-255.
+-- Example: Rhylib.UI.DrawPortrait(ply, 10, 10, 64)
 function UI.DrawPortrait(who, x, y, size, alpha)
     local model = who
     if isentity(who) then model = IsValid(who) and who:GetModel() or nil end

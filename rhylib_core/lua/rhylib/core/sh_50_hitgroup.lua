@@ -5,7 +5,14 @@
     can't tell a leg from a head. This guesses from the hit position
     relative to the player: height share of the hull (head, chest,
     stomach, legs) and which side of the body (arms, left/right leg).
-    A few vector maths, no traces: cheap enough for every hit.
+    A few vector maths, no traces: cheap enough for every hit. Shared.
+
+    Rhylib.HitGroupAt(ent, pos) -> a HITGROUP_ constant. pos is a world
+    position on or near ent (e.g. a trace's HitPos). Share of the hull
+    height: 84% and up = head; 50-84% = an arm if more than 9 units to
+    the side, else chest (66% and up) or stomach; under 50% = left or
+    right leg by side. A missing pos gives HITGROUP_GENERIC.
+    Example: local group = Rhylib.HitGroupAt(tr.Entity, tr.HitPos)
 ]]
 
 local HEAD, CHEST_AT, BODY_AT, ARM_SIDE = 0.84, 0.66, 0.5, 9

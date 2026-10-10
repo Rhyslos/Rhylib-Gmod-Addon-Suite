@@ -7,6 +7,13 @@
     This is the small bomb and the base of the others:
     rhylib_eod_bomb_simple / _large / _custom only change ENT.BombType.
     The rules live in sv_10_bomb.lua / sv_20_world.lua (bomb.eod).
+
+    Shared. Server: Initialize rolls features for its BombType (custom
+    starts as a large roll, training as a small one) and calls
+    E.SetupBomb. Client: the timer readout on top (NW2 vars rhylib_eodEnd,
+    rhylib_eodLeft, rhylib_eodStop, rhylib_eodTimer, rhylib_eodSafe).
+    Your own variant: ENT.Base = "rhylib_eod_bomb" and set ENT.BombType
+    to "simple", "small", "large", "custom" or "training".
 ]]
 
 AddCSLuaFile()
@@ -18,7 +25,7 @@ ENT.Category = "Rhylib: EOD"
 ENT.Spawnable = true
 ENT.AdminOnly = true
 ENT.RenderGroup = RENDERGROUP_BOTH
-ENT.BombType = "small"
+ENT.BombType = "small"   -- simple / small / large / custom / training (E.TIERS key)
 ENT.Model = "models/props/starwars/weapons/seismic_charge.mdl"
 ENT.IsRhylibBomb = true
 ENT.ModelFromConfig = true   -- (eod modelSmall / modelLarge pick it; ENT.Model is only the toolgun preview)

@@ -5,6 +5,31 @@
     detonation (blast, large-bomb kill radius, gas and virus clouds),
     remote signals, droid popper EMPs, the GM window's operations and the
     interference device (placing, settings, cell drain, scanner).
+    Also the training bomb setup (net eod.train).
+
+    Fires hook Rhylib.Explosion(pos, reach, tier, attacker, inflictor,
+    "bomb") when a bomb goes off (mines nearby listen to it). Listens to
+    Rhylib.EMP (rhylib_republic droid popper).
+
+    Nets (prefix "rhylib."):
+      eod.boom     server -> viewers + players within 2500: bomb index
+                   (13 bits), cause (string, an E.CAUSES key), position
+      eod.far      server -> everyone: large bomb position, radius (float)
+      eod.gas      server -> players within cloud radius + 4000: position,
+                   radius, seconds (floats), virus (bool)
+      eod.gmopen   server -> GM: bomb, note (string), len (16 bits),
+                   compressed JSON of gmInfo (the answers)
+      eod.gm       GM -> server: bomb, op (4 bits), op 4 JSON string,
+                   op 7 / 9 seconds (11 bits); rate 8/s
+      eod.dev      server -> player: device entity (open its window)
+      eod.devscan  server -> device viewers: device, count (4 bits), then
+                   per receiver: freq - 2400 (7 bits), strength 1-100
+                   (7 bits), hops (bool)
+      eod.place    client -> server: item uid (Items.UID_BITS); rate 3/s
+      eod.devset   client -> server: device, op (3 bits), argument; rate 12/s
+      eod.train    client -> server: training bomb, op (3 bits), op 0 JSON
+      eod.trainopen server -> player: training bomb, len (16 bits),
+                   compressed JSON of its feature table f
 ]]
 
 local E = Rhylib.EOD
@@ -12,11 +37,12 @@ local Net = Rhylib.Net
 
 for _, n in ipairs({ "eod.dev", "eod.devscan" }) do Net.Register(n) end
 
-E.devices = E.devices or {}
-E.clouds = E.clouds or {}
+E.devices = E.devices or {}   -- [interference device entity] = true
+E.clouds = E.clouds or {}     -- list of gas / virus clouds { pos, kind, r, untilT, hit = { [ply] = true } }
 
 local function walkOk(p) return IsValid(p) and p:Alive() and p:GetMoveType() ~= MOVETYPE_NOCLIP end
 
+-- E.Powered(st) -> bool: a battery or a capacitor at 5%+ still feeds it.
 local function powered(st) return E.AnySupply(st) or E.CapNow(st) >= 5 end
 E.Powered = powered
 
@@ -24,6 +50,11 @@ E.Powered = powered
 -- Setting up a bomb (entities call this in Initialize)
 --------------------------------------------------------------------------
 
+-- The 3D2D readout on the bomb (entity file) reads these NW2 vars:
+-- rhylib_eodEnd (running timer's end time, 0 = not running),
+-- rhylib_eodLeft (seconds shown while not running), rhylib_eodStop
+-- (stopped: no power). Only set when they change (cached on the entity).
+-- E.SyncDisplay(bomb).
 local function syncDisplay(bomb)
     local st = bomb.eod
     local endT, left, stop = 0, 0, false
@@ -40,6 +71,12 @@ local function syncDisplay(bomb)
 end
 E.SyncDisplay = syncDisplay
 
+-- E.SetupBomb(bomb, f): give an entity a bomb state built from features f
+-- (E.Build), register it in E.bombs, set its NW2 vars (rhylib_eodKind,
+-- rhylib_eodTimer, rhylib_eodSafe) and the model for its size. Server.
+-- Doesn't close open windows: use E.Rebuild on a bomb already in play.
+-- Example: local f = Rhylib.EOD.Roll("small") f.mods.chip = true
+--          Rhylib.EOD.SetupBomb(ent, f)
 function E.SetupBomb(bomb, f)
     local st = E.Build(f)
     st.armAt = CurTime() + 4   -- (motion sensors wait a moment: the GM just placed it)
@@ -62,6 +99,7 @@ function E.SetupBomb(bomb, f)
 end
 
 -- Training bombs: a rising two-tone beep each time they (re)arm.
+-- E.ArmedBeep(ent): also used by training mines (sv_30_mines).
 function E.ArmedBeep(ent)
     if not IsValid(ent) then return end
     -- Delayed a moment: a bomb set up in Initialize isn't on clients yet.
@@ -76,6 +114,7 @@ function E.ArmedBeep(ent)
 end
 
 -- GM re-roll / new type: close every window, new state in place.
+-- E.Rebuild(bomb, f). Example: Rhylib.EOD.Rebuild(bomb, Rhylib.EOD.Roll("large"))
 function E.Rebuild(bomb, f)
     local old = bomb.eod
     if old then
@@ -90,6 +129,13 @@ end
 -- Timers
 --------------------------------------------------------------------------
 
+-- E.StartTimer(bomb, secs) -> bool: start (or resume) a timer bomb's
+-- countdown, from secs or what it had left. False if it has no timer,
+-- is safe or over, or has no battery supply (a capacitor alone doesn't
+-- run the clock). Normally the world timer starts it when a player
+-- comes within timerWake.
+-- E.PauseTimer(bomb) -> bool: GM pause; it then waits (gmHeld) until the
+-- GM starts it again, never waking on its own.
 function E.StartTimer(bomb, secs)
     local st = bomb.eod
     if not st.timerSecs or st.over or st.safe or not E.AnySupply(st) then return false end
@@ -107,7 +153,7 @@ function E.PauseTimer(bomb)
     if not st.timerEnd then return false end
     st.timerLeft = math.max(0, st.timerEnd - CurTime())
     st.timerEnd = nil
-    st.timerWaiting = true   -- (waits again: the GM resumes it, or it wakes on its own)
+    st.timerWaiting = true   -- (waits again until the GM resumes it: gmHeld stops the wake-up)
     st.gmHeld = true
     syncDisplay(bomb)
     E.Changed(bomb)
@@ -118,6 +164,7 @@ end
 -- Detonation
 --------------------------------------------------------------------------
 
+-- eod.boom to viewers and everyone within 2500 units (fail overlay or a chat line).
 local function sendBoom(bomb, st, pos, cause)
     local rec = {}
     for p in pairs(st.viewers) do if IsValid(p) then rec[p] = true end end
@@ -133,6 +180,8 @@ local function sendBoom(bomb, st, pos, cause)
     net.Send(list)
 end
 
+-- Who a large bomb can hit: living players, rhylib_droids droids and
+-- clones, and every npc_* entity.
 local function victims()
     local list = {}
     for _, p in ipairs(player.GetAll()) do if p:Alive() then list[#list + 1] = p end end
@@ -156,6 +205,7 @@ local function hurt(e, dmg, bomb, pos)
     e:TakeDamageInfo(d)
 end
 
+-- Small bomb: an ordinary util.BlastDamage (smallRadius / smallDamage).
 local function blastSmall(bomb, pos)
     local ed = EffectData()
     ed:SetOrigin(pos)
@@ -168,6 +218,11 @@ local function blastSmall(bomb, pos)
     util.Decal("Scorch", pos + Vector(0, 0, 8), pos - Vector(0, 0, 60), bomb)
 end
 
+-- Large bomb: inside largeKill everyone dies, walls or not (players are
+-- killed outright, god mode spared; others take 100000). From largeKill
+-- out to largeRadius the damage falls in a straight line from
+-- largeDamage to 0, halved when a brush is between. util.BlastDamage
+-- does only the near props. Everyone on the server gets eod.far.
 local function blastLarge(bomb, pos)
     local kill, r = E.Cfg("largeKill") or 2200, E.Cfg("largeRadius") or 7000
     local peak = E.Cfg("largeDamage") or 450
@@ -203,6 +258,13 @@ local function blastLarge(bomb, pos)
 end
 
 -- Gas and virus clouds: a list checked once a second.
+-- E.Cloud(pos, kind, radius, secs): kind "gas" or "virus". Server.
+-- With rhylib_medical (not simplified): each player whose eyes are inside
+-- gets Med.Infect once per cloud (gas = illness kind 3 poison, virus =
+-- kind 1 viral), load gasLoad, raised by half again if they already have
+-- that illness (max 100). Otherwise: 5 (gas) / 3 (virus) nerve gas
+-- damage per second inside.
+-- Example: Rhylib.EOD.Cloud(pos, "gas", 550, 25)
 function E.Cloud(pos, kind, radius, secs)
     local c = { pos = pos, kind = kind, r = radius, untilT = CurTime() + secs, hit = {} }
     E.clouds[#E.clouds + 1] = c
@@ -255,6 +317,16 @@ local function cloudTick()
 end
 timer.Create("Rhylib.EOD.Clouds", 1, 0, cloudTick)
 
+-- E.Detonate(bomb, cause): set the bomb off. cause = an E.CAUSES key
+-- (shown to players). Server. HE: small or large blast; gas / virus: a
+-- small pop (none for "leak") and a cloud (×3 radius on big bombs).
+-- Interference devices within the blast are wrecked. Fires
+-- Rhylib.Explosion (reach: largeKill / smallRadius / 180 for gas;
+-- tier 3 large, 2 small, 1 gas), then removes the bomb 0.2 s later.
+-- A permanent bomb stays in the map save (E.KeepForNextMap).
+-- Training bombs: only a spark and the fail overlay, then the same
+-- setup again after 3 s.
+-- Example: Rhylib.EOD.Detonate(bomb, "gm")
 function E.Detonate(bomb, cause)
     if not IsValid(bomb) or not bomb.eod or bomb.eod.over then return end
     local st = bomb.eod
@@ -311,6 +383,9 @@ function E.Detonate(bomb, cause)
 end
 
 -- Made safe outright (GM, or a lucky droid popper).
+-- E.Disarm(bomb, why): detonator cut, valve sealed, stabiliser done,
+-- timer stopped, spotter called off; why = a log line for viewers (or nil).
+-- Example: Rhylib.EOD.Disarm(bomb, "The game master made it safe")
 function E.Disarm(bomb, why)
     local st = bomb.eod
     if not st or st.over or st.done then return end
@@ -333,6 +408,10 @@ end
 --------------------------------------------------------------------------
 
 -- Returns true if it went off, else false and why.
+-- E.RemoteSignal(bomb) -> ok, reason: the enemy sends the remote signal.
+-- It fails on a timer bomb, a bomb made safe, a dead receiver (antenna
+-- cut or relay redirected), a jammed bomb, or one with no power.
+-- Example: local went, why = Rhylib.EOD.RemoteSignal(bomb)
 function E.RemoteSignal(bomb)
     local st = bomb.eod
     if not st or st.over then return false, "No bomb" end
@@ -349,6 +428,9 @@ end
 -- Droid popper EMP (hook from rhylib_republic's grenade)
 --------------------------------------------------------------------------
 
+-- Rhylib.EMP(pos, radius, attacker, inflictor): bombs in brush sight get
+-- a zap and a popperChance roll to be disarmed; running interference
+-- devices in the radius switch off.
 Rhylib.Hook.Add("Rhylib.EMP", "eod.emp", function(pos, radius, attacker, inflictor)
     local r2 = (radius or 0) ^ 2
     for bomb in pairs(E.bombs) do
@@ -383,6 +465,10 @@ end)
 
 local TUNE_TOL = 2.5   -- MHz either side of the dial
 
+-- Cell charge (0-1) as a line: the device stores Cell (fill at CellAt)
+-- and Rate (fill lost per second while on), so the client can work out
+-- the fill itself and nothing is networked while it runs.
+-- E.DevFill(dev) -> 0..1 now (same maths as ENT:Fill).
 function E.DevFill(dev)
     local f = dev:GetCell()
     if dev:GetActive() then f = f - (CurTime() - dev:GetCellAt()) * dev:GetRate() end
@@ -395,10 +481,13 @@ local function commit(dev)
     dev:SetCellAt(CurTime())
 end
 
+-- Fill lost per second at the device's current radius and mode.
 local function rate(dev)
     return 1 / math.max(1, E.CellLife(dev:GetRadius(), dev:GetTuned(), dev.eodLong))
 end
 
+-- E.DevSetActive(dev, on) -> bool: switch an interference device on or
+-- off. False (stays off) when switching on with an empty cell.
 function E.DevSetActive(dev, on)
     commit(dev)
     if on and dev:GetCell() <= 0.001 then return false end
@@ -411,6 +500,9 @@ end
 local function devRange(dev) return dev:GetRadius() * E.UNITS_PER_M end
 
 -- Does this device block this bomb's remote signal right now?
+-- Returns blocked, wideband. Wideband blocks every bomb in its circle
+-- (and blinds motion sensors); tuned only a receiver within ±2.5 MHz of
+-- the dial (a hopping receiver jumps at least 10 MHz every hopEvery s).
 local function blocks(dev, bomb, st)
     if not dev:GetActive() then return false end
     if bomb:GetPos():DistToSqr(dev:GetPos()) > devRange(dev) ^ 2 then return false end
@@ -419,6 +511,9 @@ local function blocks(dev, bomb, st)
 end
 
 -- Viewers of a device's window get the scanner (bombs' receivers in range).
+-- Live, powered receivers within SCAN_RANGE units (~60 m), at most 12;
+-- strength = 100 at the device, falling to 1 at the edge. Viewers more
+-- than 250 units away are dropped.
 local SCAN_RANGE = 3200
 local function sendScan(dev)
     local rec = {}
@@ -448,6 +543,8 @@ local function sendScan(dev)
     net.Send(rec)
 end
 
+-- E.OpenDevice(ply, dev): open the device window for ply (within 200
+-- units, alive, not noclipping). ENT:Use calls it.
 function E.OpenDevice(ply, dev)
     if not (IsValid(dev) and walkOk(ply)) or ply:GetPos():DistToSqr(dev:GetPos()) > 200 * 200 then return end
     dev.viewers = dev.viewers or {}
@@ -459,6 +556,9 @@ function E.OpenDevice(ply, dev)
 end
 
 -- Placing one from the inventory (right-click "Place interference device").
+-- Takes the device item and the player's best power cell ("cell" item;
+-- its fill and issued flag go into the device), puts it on the ground
+-- they look at (within 110 units) or in front of their feet. Starts off.
 Net.Receive("eod.place", function(ply)
     local uid = net.ReadUInt(Rhylib.Items and Rhylib.Items.UID_BITS or 16)
     local Inv = Rhylib.Inventory
@@ -491,6 +591,10 @@ Net.Receive("eod.place", function(ply)
 end, { rate = 3, burst = 3 })
 
 -- Settings: 0 on/off, 1 radius, 2 mode, 3 dial, 4 swap cell, 5 pick up, 6 close.
+-- Arguments: 1 radius in metres (4 bits, 1-15, also capped by
+-- deviceMaxRadius), 2 tuned (bool), 3 dial - 2400 (7 bits, 0-80).
+-- commit() folds the drain so far into Cell before anything that
+-- changes the rate. Any player near it may change it (not only the owner).
 Net.Receive("eod.devset", function(ply)
     local dev = net.ReadEntity()
     local op = net.ReadUInt(3)
@@ -540,6 +644,8 @@ end, { rate = 12, burst = 12 })
 -- The world timer
 --------------------------------------------------------------------------
 
+-- The speed a motion sensor allows: walk speed ×1.15 (normal), or the
+-- slower of slow-walk and crouch-walk ×1.15 (sensitive).
 local function motionLimit(p, sensitive)
     local walk = p:GetWalkSpeed()
     if sensitive then
@@ -548,6 +654,9 @@ local function motionLimit(p, sensitive)
     return walk * 1.15
 end
 
+-- The first player moving too fast within sensorRange and in brush
+-- sight of the bomb, or nil. Skips cloaked players, noclip, toolgun
+-- holders, and the first 4 s after the bomb was set up (armAt).
 local function tooFast(bomb, st, now)
     if now < (st.armAt or 0) then return nil end
     local r = E.Cfg("sensorRange") or 315
@@ -582,6 +691,8 @@ local lastScan = 0
 
 -- Signal blackout (rhylib_droids asks, D.Blackout): is pos inside a running
 -- wideband device placed by someone with the skill?
+-- E.InBlackout(pos) -> bool. Server. E.blackouts is rebuilt every tick.
+-- Example (rhylib_droids): if Rhylib.EOD.InBlackout(droid:GetPos()) then ... end
 E.blackouts = E.blackouts or {}
 function E.InBlackout(pos)
     for _, dev in ipairs(E.blackouts) do
@@ -593,6 +704,17 @@ function E.InBlackout(pos)
     return false
 end
 
+-- Every 0.2 s ("Rhylib.EOD.World", under pcall). Per bomb, in order:
+-- 1. coverage from active devices (eodCovered, eodMotionBlock);
+-- 2. at most one way to go off: anti-jam jammed > motion sensor > timer
+--    at zero > gas leak > spotter's signal (only the first that applies);
+-- 3. timer wake-up (a player, not holding the toolgun, within
+--    timerWake, battery power, not GM-held), frequency hop, tilt bubble
+--    (paused while nobody has the window open; fires past radius 1);
+-- 4. torch on the sealed plate (cut progress and heat);
+-- 5. viewers who walked off (reach + 80), died or left get closed;
+--    readout NW2 vars refreshed.
+-- Each step re-checks the bomb, since an earlier one may have set it off.
 local function tick()
     local now = CurTime()
     -- devices: running out of power
@@ -690,6 +812,7 @@ local function tick()
                     st.torchTick = now
                     if dt > 0 then
                         st.sealedP = math.min(1, st.sealedP + dt / math.max(0.5, E.Cfg("torchTime") or 5))
+                        -- (st = nil: it went off, skip the rest)
                         if E.AddHeat(bomb, tp, (E.Cfg("heatTorch") or 26) * dt, true) then st = nil end
                     end
                     if st and st.sealedP >= 1 then
@@ -730,6 +853,9 @@ end)
 -- Using a bomb, and the GM window
 --------------------------------------------------------------------------
 
+-- What the GM window shows: the features, the wires with their kinds,
+-- timer state, spotter, and the module answers (chip code row, dose,
+-- fake board order).
 local function gmInfo(bomb)
     local st = bomb.eod
     local wires = {}
@@ -763,6 +889,8 @@ local function isGMTool(ply)
     return IsValid(w) and w:GetClass() == "rhylib_toolgun"
 end
 
+-- E.UseBomb(ply, bomb): what E on a bomb does (ENT:Use). Toolgun out and
+-- rhylib.eod.gm -> GM window; otherwise the defusal window.
 function E.UseBomb(ply, bomb)
     if not (IsValid(bomb) and bomb.eod and IsValid(ply)) or bomb.eod.over then return end
     if isGMTool(ply) then
@@ -776,6 +904,11 @@ function E.UseBomb(ply, bomb)
 end
 
 -- Custom bombs: the GM's features (JSON from the GM window), checked.
+-- E.CustomFeatures(json, kind) -> f or nil. kind = f.type ("custom" by
+-- default, "training" for training bombs). Unknown values fall back to
+-- defaults; anti-jam, hopping and remote-only modules need det "remote";
+-- timerSecs is clamped to 20-1800. Under 2000 characters.
+-- Example: E.CustomFeatures('{"det":"remote","antiJam":true,"mods":["chip","fake"]}')
 local function customFeatures(js, kind)
     local t = isstring(js) and #js < 2000 and util.JSONToTable(js)
     if not istable(t) then return nil end
@@ -808,6 +941,8 @@ E.CustomFeatures = customFeatures
 -- 5 start timer, 6 pause/resume, 7 set seconds, 8 remote signal now,
 -- 9 spotter in N s (0 = cancel), 10 detonate, 11 disarm, 12 refresh,
 -- 13 open the defusal window.
+-- Every op is checked against rhylib.eod.gm; after it the GM window is
+-- sent again with a note (not after 10 or 13).
 Net.Receive("eod.gm", function(ply)
     local bomb = net.ReadEntity()
     local op = net.ReadUInt(4)
@@ -880,12 +1015,14 @@ end, { rate = 8, burst = 8 })
 
 Net.Register("eod.trainopen")
 
+-- A random roll of that kind, but as a training bomb (f.type "training").
 local function trainingFrom(kind)
     local f = E.Roll(kind)
     f.type = "training"
     return f
 end
 
+-- Anyone alive within 300 units may set up a training bomb (no permission).
 Net.Receive("eod.train", function(ply)
     local bomb = net.ReadEntity()
     local op = net.ReadUInt(3)

@@ -16,11 +16,22 @@
              letting go of the body stops it.
     Dragger: capped at dragSpeed (Field drag: dragSpeedSkill), no sprint;
     letting go of attack drops.
+
+    Hooks (all shared, so the client predicts the same thing):
+      StartCommand "medical.input"   strips keys (downed, helping, dragging)
+      CreateMove "medical.view"      client: keeps the downed view near the body
+      SetupMove "medical.move" -100  give up, lock helpers, drag, start drags
+      Move "medical.drag"            a dragged body doesn't move itself
+      CalcMainActivity / UpdateAnimation "medical.pose"   the lying pose
+    Server only: FinishMove "medical.drag" moves the dragged body.
 ]]
 
 local Med = Rhylib.Medical
 local band, bor, bnot = bit.band, bit.bor, bit.bnot
 
+-- Keys taken away: downed players, helpers in an action, helpers reviving
+-- while dragging (attack stays held for the drag), and move keys that
+-- cancel an action.
 local DOWN_STRIP = bor(IN_ATTACK, IN_ATTACK2, IN_RELOAD, IN_USE, IN_DUCK, IN_SPEED, IN_WALK, IN_ZOOM)
 local MOVE_STRIP = bor(IN_JUMP, IN_DUCK, IN_SPEED)
 local ACT_STRIP = bor(IN_ATTACK, IN_ATTACK2, IN_RELOAD)
@@ -30,8 +41,10 @@ local CANCEL_KEYS = { IN_FORWARD, IN_BACK, IN_MOVELEFT, IN_MOVERIGHT, IN_JUMP, I
 local HULL_MIN, HULL_MAX = Vector(-16, -16, 0), Vector(16, 16, 16)  -- under step height
 Med.VIEW_DOWN = Vector(0, 0, 14)
 
--- Small hull while down, normal hull when up. Called on the server when
--- the state changes, and from SetupMove on the client for the local player.
+-- Med.ApplyHull(ply, down): small hull while down, normal hull when up
+-- (or rhylib_admin's scaled hull). Called on the server when the state
+-- changes, and from SetupMove on the client so prediction uses the same
+-- hull. Returns nothing.
 function Med.ApplyHull(ply, down)
     ply.rhylibHullDown = down
     if down then
@@ -44,7 +57,9 @@ function Med.ApplyHull(ply, down)
     end
 end
 
--- Keep the view near the body's facing so the lying model doesn't spin.
+-- Keep the view near the body's facing so the lying model doesn't spin:
+-- yaw within ±YAW_RANGE of rhylib_downYaw, pitch PITCH_MIN..PITCH_MAX.
+-- Returns the clamped angle and whether it changed.
 local YAW_RANGE, PITCH_MIN, PITCH_MAX = 20, -60, 40
 local function clampView(ply, ang)
     local base = ply:GetNW2Float("rhylib_downYaw", ang.y)
@@ -90,7 +105,8 @@ Rhylib.Hook.Add("SetupMove", "medical.move", function(ply, mv, cmd)
     if CLIENT and (ply.rhylibHullDown or false) ~= down then Med.ApplyHull(ply, down) end
 
     if down then
-        -- Giving up: hold Jump.
+        -- Giving up: hold Jump. ply.rhylibGiveUp = when the hold started
+        -- (the client reads it too, for the give-up bar).
         if mv:KeyDown(IN_JUMP) then
             ply.rhylibGiveUp = ply.rhylibGiveUp or CurTime()
             if SERVER and CurTime() - ply.rhylibGiveUp >= Med.Cfg("giveUpTime") then
@@ -135,6 +151,7 @@ Rhylib.Hook.Add("SetupMove", "medical.move", function(ply, mv, cmd)
         return
     end
 
+    -- Empty hands + attack on a downed player starts a drag (server decides).
     if SERVER and mv:KeyPressed(IN_ATTACK) and Med.HoldingHands(ply) and ply:Alive() then
         local t = Med.FindDowned(ply, Med.downList)
         if t then Med.StartDrag(ply, t) end
@@ -149,6 +166,8 @@ local function dragBody(body, dragger)
     -- follows the ragdoll.
     local L = Rhylib.Lying
     if L and L.Pull and L.Pull(body, dragger:GetPos(), Med.Cfg("dragLeash"), 300) then return end
+    -- No ragdoll: move the player itself. Only once beyond the leash, at
+    -- most 400 units/s, as three hull traces: up a step, across, down.
     local pos = body:GetPos()
     local to = dragger:GetPos() - pos
     to.z = 0

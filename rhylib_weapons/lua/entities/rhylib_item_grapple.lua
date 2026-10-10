@@ -1,3 +1,6 @@
+-- Pick-up: a grapple hook item (shared). Press E to take it. See rhylib_item_base
+-- and sh_30_grapple.lua.
+
 AddCSLuaFile()
 
 ENT.Type = "anim"

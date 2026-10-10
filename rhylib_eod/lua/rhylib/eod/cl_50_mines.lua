@@ -11,6 +11,7 @@ local function K() return Rhylib.Menus and Rhylib.Menus.Kit end
 local OPAQUE = Color(14, 16, 15, 255)
 local RED = Color(255, 70, 60)
 
+-- [mine] = CurTime until which this client's scanner shows it (weak keys).
 E.mineSeen = E.mineSeen or setmetatable({}, { __mode = "k" })
 
 -- Mines near enough to matter (refreshed twice a second).
@@ -36,6 +37,8 @@ end
 -- E on a mine
 --------------------------------------------------------------------------
 
+-- The visible mine you aim at (within 140 units), else the visible one
+-- nearest the aim point within 50 units.
 local function mineAtAim()
     local ply = LocalPlayer()
     local tr = ply:GetEyeTrace()
@@ -50,6 +53,8 @@ local function mineAtAim()
     return best
 end
 
+-- +use near a visible mine asks the server to open it (eod.mineuse). The
+-- bind isn't blocked, so E still works on whatever else you aim at.
 Rhylib.Hook.Add("PlayerBindPress", "eod.mineuse", function(ply, bind, pressed)
     if not pressed or not string.find(bind, "+use", 1, true) then return end
     local m = mineAtAim()
@@ -113,6 +118,9 @@ local function holdBtn(k, parent, label, secs, startOp, doneOp, enabled)
     return b
 end
 
+-- The mine window (from eod.mineopen): dig (hold), the needle gauge and
+-- pin (button or Space), lift (hold); training mines add a setup block
+-- (eod.trainmine). The needle runs locally from period and phase.
 local function openWin(m, center, width, period, ph)
     local k = K()
     if not k then return end
@@ -304,6 +312,10 @@ local function killBeam()
     E.mineBeam = nil
 end
 
+-- Your own scanner: a ProjectedTexture beam along E.ScanDir, and every
+-- 0.1 s the mines in its cone, range and brush sight are "seen" for
+-- 1.2 s (outlined, fully drawn, markable). Beeps quicken as the nearest
+-- one gets closer.
 Rhylib.Hook.Add("Think", "eod.scanner", function()
     local ply = LocalPlayer()
     if not IsValid(ply) then return end
@@ -383,6 +395,8 @@ Rhylib.Hook.Add("Think", "eod.scanners.others", function()
 end)
 
 -- RMB: mark the mine nearest the crosshair that the beam shows.
+-- E.ScannerMark(): the scanner's RMB (client). Sends eod.minemark for
+-- the seen, unpinned mine closest to the crosshair (within 12°).
 function E.ScannerMark()
     local ply = LocalPlayer()
     local eye, aim = ply:EyePos(), ply:GetAimVector()
@@ -403,6 +417,8 @@ function E.ScannerMark()
     net.SendToServer()
 end
 
+-- E.ScannerHUD(weapon): the scanner's HUD lines (on/off, distance to the
+-- nearest mine). Called from SWEP:DrawHUD.
 function E.ScannerHUD(wep)
     local k = K()
     local font = k and k.Font(14, 700) or "DermaDefaultBold"

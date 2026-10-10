@@ -16,12 +16,29 @@
         withheld. No locker on the map: straight into their inventory.
 
     Messages (all checked: MP, near the terminal):
-      mp.term     server -> MP  the terminal's lists
-      mp.jail     MP -> server  terminal, prisoner, minutes, reason
+      mp.term     server -> MP  terminal Entity; candidates (UInt 5 count,
+                                Entity each); jailed (UInt 6 count, then
+                                per prisoner: Entity, reason String,
+                                awaiting Bool, processAt Float, evidence
+                                (UInt 6 count, then net id
+                                Items.NET_BITS, count UInt 8, withheld
+                                Bool, contraband Bool))
+      mp.jail     MP -> server  terminal, prisoner, minutes (UInt 7), reason
       mp.release  MP -> server  terminal, prisoner (serving: end the
                                 sentence; awaiting: process them)
-      mp.destroy  MP -> server  terminal, prisoner, evidence index:
-                                withhold it / give it back (toggle)
+      mp.destroy  MP -> server  terminal, prisoner, evidence index (UInt 6),
+                                item net id, count (UInt 8):
+                                withhold it / give it back (toggle). The id
+                                and count must still match, else the window
+                                is just refreshed.
+
+    Saved data (Rhylib.Data):
+      "mp_jail"/SteamID64   { left, why, by, evidence, awaiting, processLeft }
+      "mp_rec"/SteamID64    arrest record, newest first, up to MP.REC_MAX
+      "mp_idx"/"all"        { ["s" .. SteamID64] = name } of everyone on file
+      "mp_places"/map name  placed cells, terminals and property lockers
+
+    Permission: rhylib.mp.admin (admin) for the rhylib_mp_save command.
 ]]
 
 local MP = Rhylib.MP
@@ -126,6 +143,8 @@ end
 
 MP.REC_MAX = 50
 
+-- MP.IndexPlayer(sid, name): remembers name for SteamID64 sid in the
+-- records index (Data "mp_idx"/"all"). Server only.
 function MP.IndexPlayer(sid, name)
     if not sid or sid == "" or sid == "0" then return end
     local idx = Data.Get("mp_idx", "all")
@@ -135,6 +154,9 @@ function MP.IndexPlayer(sid, name)
     Data.Set("mp_idx", "all", idx)
 end
 
+-- MP.GetRecord(sid) -> list of arrests { t = os.time, by = name, min, why },
+-- newest first ({} if none). Server only. Used by the datapad.
+-- Example: local r = Rhylib.MP.GetRecord(ply:SteamID64())
 function MP.GetRecord(sid)
     local r = Data.Get("mp_rec", sid)
     return istable(r) and r or {}
@@ -150,6 +172,13 @@ local function addRecord(ply, by, minutes, why)
     MP.IndexPlayer(id, ply:Nick())
 end
 
+-- MP.Jail(ply, by, minutes, why) -> true, or false[, reason]. Jails ply
+-- (not checked: cuffed or near a terminal; the terminal and datapad check
+-- that). minutes is clamped to 1..maxSentence, why cut to 80 characters.
+-- Takes their items as evidence, uncuffs, strips weapons, puts them in a
+-- cell, saves, adds an arrest record and fires Rhylib.PlayerJailed.
+-- Fails with "No jail cells on this map" when no cell is placed. Server only.
+-- Example: Rhylib.MP.Jail(target, mp, 10, "Insubordination")
 function MP.Jail(ply, by, minutes, why)
     if not IsValid(ply) or jailed[ply] then return false end
     local cell = freeCell()
@@ -174,7 +203,9 @@ function MP.Jail(ply, by, minutes, why)
     return true
 end
 
--- Sentence over (time up, or an MP ends it early): wait in the cell to be processed.
+-- MP.EndSentence(ply, by): sentence over (time up, or an MP ends it early):
+-- the prisoner waits in the cell to be processed (auto after processAuto s).
+-- by may be nil. Server only.
 function MP.EndSentence(ply, by)
     local rec = jailed[ply]
     if not rec or rec.awaiting then return end
@@ -187,7 +218,8 @@ function MP.EndSentence(ply, by)
         .. " Wait to be processed: an MP at the terminal, or automatically in " .. math.ceil(MP.Cfg("processAuto") / 60) .. " min.")
 end
 
--- Evidence that goes back: not withheld by an MP, not contraband.
+-- MP.Returnable(e) -> bool: evidence entry e goes back to its owner
+-- (not withheld by an MP, not contraband).
 function MP.Returnable(e)
     local Items = Rhylib.Items
     return not e.withheld and not (Items and Items.IsContraband and Items.IsContraband(e.id))
@@ -204,7 +236,11 @@ local function propertyLocker(rec)
     return best
 end
 
--- Processed: out of jail, at the property locker with their things in it.
+-- MP.Process(ply, by): out of jail now. Returnable evidence goes into
+-- their property (nearest locker to their cell; what doesn't fit, or no
+-- locker, goes to their inventory or the floor), they respawn and are moved
+-- in front of the locker. Fires Rhylib.PlayerReleased(ply, by). Server only.
+-- (rhylib_admin's unjail calls this directly.)
 function MP.Process(ply, by)
     local rec = jailed[ply]
     if not rec then return end
@@ -242,7 +278,8 @@ function MP.Process(ply, by)
     hook.Run("Rhylib.PlayerReleased", ply, by)
 end
 
--- One step: serving -> awaiting -> processed.
+-- MP.Release(ply, by): one step: serving -> awaiting -> processed.
+-- What the terminal's Release / Process button does. Server only.
 function MP.Release(ply, by)
     local rec = jailed[ply]
     if not rec then return end
@@ -338,6 +375,10 @@ local function candidates(mp, term)
     return out
 end
 
+-- MP.OpenTerminal(mp, term): sends mp the terminal window (net mp.term),
+-- or a "Military police only" message. Called from the terminal's Use
+-- and after every terminal action, to refresh it. Server only.
+-- Lists are capped at 31 candidates, 63 prisoners and 63 evidence rows.
 function MP.OpenTerminal(mp, term)
     if not MP.IsMP(mp) then
         mp:PrintMessage(HUD_PRINTCENTER, "Military police only")
@@ -424,7 +465,10 @@ local CLASSES = { "rhylib_jail_cell", "rhylib_jail_terminal", "rhylib_property_l
 Rhylib.PLACEMENT_CLASSES = Rhylib.PLACEMENT_CLASSES or {}
 for _, c in ipairs(CLASSES) do Rhylib.PLACEMENT_CLASSES[c] = true end
 
--- Only permanent ones (the toolgun's Permanent tool, 2026-10-09u).
+-- MP.SavePlaces() -> count: saves this map's cells, terminals and property
+-- lockers to Data "mp_places"/map. Only permanent ones (the toolgun's
+-- Permanent tool, 2026-10-09u) when rhylib_core's Perma exists. Also run
+-- by the Permanent tool itself (Perma.Register below). Server only.
 function MP.SavePlaces()
     local list = {}
     for _, class in ipairs(CLASSES) do
@@ -452,7 +496,10 @@ concommand.Add("rhylib_mp_save", function(ply)
     end)
 end)
 
+-- Map start and after a cleanup: remove any placed copies, then spawn the
+-- saved ones frozen and marked permanent.
 local function loadPlaces()
+
     local list = Data.Get("mp_places", game.GetMap())
     if not istable(list) then return end
     for _, class in ipairs(CLASSES) do

@@ -1,3 +1,6 @@
+-- LAP mine (large AP): two safety pins, lapRadius / lapDamage / lapTrigger.
+-- Everything else is rhylib_eod_mine.
+
 AddCSLuaFile()
 
 ENT.Type = "anim"

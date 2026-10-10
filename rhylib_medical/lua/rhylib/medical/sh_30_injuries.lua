@@ -30,6 +30,12 @@
                 bleeding and heals damage and burns, but doesn't set bones.
     Medics also see exact numbers, fractures, burns and effects; troopers
     see roughly how hurt each part is and whether it bleeds.
+
+    This file (shared): the injury config keys, the part list, the effect
+    checks other addons call (Med.NoSprint, Med.BrokenLeg, Med.CanAim,
+    Med.SpreadPenalty used by rhylib_weapons, Med.StaminaCap used by
+    rhylib_stamina), the leg SetupMove limiter and the med.inj wire format.
+    Every effect is off while Med.Muted (simplified system, Field triage).
 ]]
 
 local Med = Rhylib.Medical
@@ -72,14 +78,19 @@ local function cfg(k) return Config.Get("medical", k) end
 local EMPTY = { dmg = 0, bleed = 0, frac = false, splint = false, burn = 0 }
 Med.EMPTY_LIMB = EMPTY
 
--- The injury table of a player: { [limb] = part }. Server: everyone's.
--- Client: your own and the patient you're looking at (Med.injOf);
--- anyone else reads as unhurt.
+-- Med.Injuries(ply): the injury table of a player: { [limb] = part }, or
+-- nil when unhurt. Server: everyone's. Client: your own and the patient
+-- you're looking at (Med.injOf); anyone else reads as unhurt (nil).
+-- Treat it as read-only; on the server change parts then call
+-- Med.MarkInjuries(ply).
 function Med.Injuries(ply)
     if SERVER then return Med.inj and Med.inj[ply] end
     return Med.injOf and Med.injOf[ply]
 end
 
+-- Med.Part(ply, limb): one part ({ dmg, bleed, frac, splint, burn }),
+-- or Med.EMPTY_LIMB when unknown/unhurt. limb is one of Med.LIMBS.
+-- Example: if Rhylib.Medical.Part(ply, "lleg").frac then ... end
 function Med.Part(ply, limb)
     local t = Med.Injuries(ply)
     return t and t[limb] or EMPTY
@@ -87,12 +98,14 @@ end
 
 -- Effects ------------------------------------------------------------
 
+-- Med.Painkilled(ply): true while painkillers work (NW2Float rhylib_painkill).
 function Med.Painkilled(ply)
     return ply:GetNW2Float("rhylib_painkill", 0) > CurTime()
 end
 
--- Field triage (officer order) mutes every affliction until this time;
--- the simplified medical system mutes them all the time.
+-- Med.Muted(ply): true when afflictions have no effect. Field triage
+-- (rhylib_skills officer order, NW2Float rhylib_afflMute = until) mutes
+-- them for a while; the simplified medical system mutes them all the time.
 function Med.Muted(ply)
     return Med.Simple() or ply:GetNW2Float("rhylib_afflMute", 0) > CurTime()
 end
@@ -103,6 +116,8 @@ local function broken(p) return p.frac and not p.splint end
 -- (med.inj), so predicted checks agree on server and client.
 local ceil = math.ceil
 
+-- Med.NoSprint(ply): true if a leg is broken (splinted too) or at least
+-- legNoSprintAt damage (painkillers lift the damage rule).
 function Med.NoSprint(ply)
     if Med.Muted(ply) then return false end
     local at = Med.Painkilled(ply) and 1000 or cfg("legNoSprintAt")
@@ -113,11 +128,14 @@ function Med.NoSprint(ply)
     return false
 end
 
+-- Med.BrokenLeg(ply): true if a leg is broken and not splinted (limp).
 function Med.BrokenLeg(ply)
     if Med.Muted(ply) then return false end
     return broken(Med.Part(ply, "lleg")) or broken(Med.Part(ply, "rleg"))
 end
 
+-- Med.CanAim(ply): false if an arm is broken (not splinted) or at least
+-- armNoAimAt damage. rhylib_weapons asks this before aiming down sights.
 function Med.CanAim(ply)
     if Med.Muted(ply) then return true end
     local at = Med.Painkilled(ply) and 1000 or cfg("armNoAimAt")
@@ -128,7 +146,11 @@ function Med.CanAim(ply)
     return true
 end
 
--- Extra spread in degrees from hurt arms and burns.
+-- Med.SpreadPenalty(ply, baseCone): extra spread in degrees from hurt arms
+-- and burns, as a share of baseCone (the weapon's resting cone). The worse
+-- arm counts: broken 1, splinted 0.5, else dmg/100 (0 on painkillers);
+-- × armSpread, plus the worst burn/100 × burnSpread (not on painkillers).
+-- Example: cone = cone + Rhylib.Medical.SpreadPenalty(ply, restCone)
 function Med.SpreadPenalty(ply, baseCone)
     local t = Med.Injuries(ply)
     if not t or Med.Muted(ply) then return 0 end
@@ -147,7 +169,9 @@ function Med.SpreadPenalty(ply, baseCone)
     return (arm * cfg("armSpread") + burn / 100 * cfg("burnSpread")) * baseCone
 end
 
--- Share of max stamina you can have (torso injuries lower it).
+-- Med.StaminaCap(ply): share of max stamina you can have, 0-1. Torso
+-- damage lowers it by up to torsoStaminaCap; an illness multiplies it
+-- too (Med.IllStaminaMult). rhylib_stamina reads it.
 function Med.StaminaCap(ply)
     if Med.Muted(ply) then return 1 end
     local ill = Med.IllStaminaMult and Med.IllStaminaMult(ply) or 1   -- (illness, sh_50_illness.lua)
@@ -156,7 +180,8 @@ function Med.StaminaCap(ply)
     return (1 - math.Clamp(ceil(p.dmg) / 100, 0, 1) * cfg("torsoStaminaCap")) * ill
 end
 
--- Anything wrong at all (for the HUD).
+-- Med.BleedLevel(ply): the worst bleeding of any part: 0 none, 1 light,
+-- 2 heavy (for the HUD).
 function Med.BleedLevel(ply)
     local t = Med.Injuries(ply)
     if not t then return 0 end
@@ -184,7 +209,8 @@ Rhylib.Hook.Add("SetupMove", "medical.legs", function(ply, mv)
 end, -90)
 
 -- Wire format ("med.inj", server -> owner and viewers): the patient
--- (entity), then per part dmg 7 bits, bleed 2, fracture 1, splint 1, burn 7.
+-- (entity), then per part dmg 7 bits, bleed 2, fracture 1, splint 1, burn 7
+-- (18 bits × 6 parts = 108 bits). Damage and burns are rounded up.
 function Med.WriteInjuries(t)
     for _, l in ipairs(Med.LIMBS) do
         local p = t and t[l] or EMPTY
@@ -204,6 +230,8 @@ function Med.ReadInjuries()
     return t
 end
 
+-- Client: Med.injOf[ply] = last received table (nil when unhurt; weak keys
+-- so gone players drop out), Med.myInj = your own.
 if CLIENT then
     Med.injOf = Med.injOf or setmetatable({}, { __mode = "k" })
     Rhylib.Net.Receive("med.inj", function()

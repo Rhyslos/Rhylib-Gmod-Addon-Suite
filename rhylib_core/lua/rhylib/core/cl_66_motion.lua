@@ -25,6 +25,12 @@
     Steps come from the walk cycle while moving on the ground; footstep
     impulses (4, 5) from the walk cycle (a step every half turn); the louder
     footstep sound from PlayerFootstep. Settings > HUD.
+
+    All client convars (saved per player): rhylib_gunbob, rhylib_gunbob_scale,
+    rhylib_landdip, rhylib_footstepfeel, rhylib_footstepfeel_scale,
+    rhylib_idlesway, rhylib_camerabob, rhylib_camerabob_scale (scales 0-2).
+    State in Rhylib.Lying.motion (M): phase/amt (walk cycle), steps,
+    breath/idle/tired. Idle sway reads Rhylib.Stamina.Frac when present.
 ]]
 
 local L = Rhylib.Lying
@@ -123,6 +129,7 @@ Rhylib.Hook.Add("PlayerFootstep", "core.motion", function(ply, pos, foot, snd, v
     if k > 0 then ply:EmitSound(snd, 0, math.random(92, 100), math.min(volume * 0.6 * k, 1), CHAN_STATIC) end
 end)
 
+-- M.Sway(wep, phaseShift, breathShift) (Rhylib.Lying.motion.Sway):
 -- The gun's sway right now: side and dip (view units) and pitch/yaw/roll
 -- turns (degrees), or nil when there's none. phaseShift / breathShift (radians)
 -- give the same sway at another point of the step and breath cycles (the

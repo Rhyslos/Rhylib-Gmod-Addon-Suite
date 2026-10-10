@@ -10,6 +10,10 @@
     taking rounds from the pool as it goes (large magazines cost 0.72 each:
     they already pack more rounds per cell). Rockets and power cells aren't
     covered. Magazines from an issued pack are issued too.
+
+    Realm: shared SWEP (the resupply runs on the server). Config skills
+    ammoPackPool and ammoPackLargeCost (registered here). Interaction
+    wheel option "Resupply" (rhylib_menus) sends net wheel.supply.
 ]]
 
 AddCSLuaFile()
@@ -101,6 +105,8 @@ if SERVER then
         end
     end
 
+    -- SWEP:Supply(t): resupply player t from this pack (server). Tells
+    -- both players in chat what happened.
     function SWEP:Supply(t)
         local o = self:GetOwner()
         if not IsValid(o) then return end
@@ -201,6 +207,8 @@ if CLIENT then
 end
 
 -- Interaction wheel (rhylib_menus): resupply the player you hold E on.
+-- Net "wheel.supply" (client -> server): target Entity. Server checks the
+-- pack, range (Range + 40), sight and cooldown. Rate 2/s.
 if SERVER then
     Rhylib.Net.Receive("wheel.supply", function(ply)
         local t = net.ReadEntity()

@@ -2,10 +2,16 @@
     Skills on the server: saving, learning, resetting, and the effects
     that only the server works out (damage, Momentum, the cell rack).
 
-    Data "skills" key "s"..SteamID64 = { n = { ids } }.
+    Data "skills" key "s"..SteamID64 = { n = { ids } } (sorted ids; a
+    reset deletes the row). Class mode rows: sv_40_class.lua.
     Nets: skills.learn (node index, 8 bits), skills.unlearn (node index:
     right-click undo, K.CanUnlearn + K.UndoAllowed or the reset hook),
-    skills.reset.
+    skills.reset (empty), skills.note (server -> player: bad bool, text;
+    a chat line).
+    Hooks fired: Rhylib.SkillsChanged(ply) after every change,
+    Rhylib.CanResetSkills(ply) (return true to allow a reset / late undo
+    while freePoints is off), Rhylib.SkillPoints(ply) (in K.Points).
+    Console: rhylib_skills_reset [name] (perm rhylib.skills.admin, admin).
     K.SetSkills(ply, set) applies a set (NW2String, save, inventory grids).
     K.DamageMult(ply, bolt, ent, tr, group) for rhylib_weapons (Focus fire,
     Carbine sidearm, Point blank, Headhunter, Shotgun drills, crits /
@@ -29,7 +35,7 @@ Rhylib.Net.Register("skills.note")
 
 local function key(ply) return "s" .. (ply:SteamID64() or "0") end
 
--- Renamed skills (old saves keep working).
+-- Renamed skills (old saves keep working): old id -> new id.
 local RENAMED = { burst_fire = "rapid_fire", thruster_dodge = "combat_drop" }
 
 local function setString(set)
@@ -40,7 +46,10 @@ local function setString(set)
     return #ids > 0 and ("," .. table.concat(ids, ",") .. ",") or ""
 end
 
--- Saved set, read on demand (the inventory may ask before PlayerInitialSpawn).
+-- K.Stored(ply): the player's skill set as the server holds it, read from
+-- Data on first use (the inventory may ask before PlayerInitialSpawn) and
+-- cleaned of old/renamed/impossible skills. In class mode this is the
+-- class's set (K.SetSkills keeps it in ply.rhylibSkills). Server only.
 function K.Stored(ply)
     if ply.rhylibSkillsLoaded then return ply.rhylibSkills end
     local set = {}
@@ -105,6 +114,9 @@ function K.Stored(ply)
     return set
 end
 
+-- K.Note(ply, text, bad): a "[Skills]" chat line for one player (bad =
+-- red, with an error sound). Server only.
+-- Example: Rhylib.Skills.Note(ply, "Reinforcements inbound", false)
 function K.Note(ply, text, bad)
     Rhylib.Net.Start("skills.note")
     net.WriteBool(bad and true or false)
@@ -112,7 +124,9 @@ function K.Note(ply, text, bad)
     net.Send(ply)
 end
 
--- Grids an inventory gets from skills.
+-- K.ExtraGrids(ply): extra inventory grids the player's skills open:
+-- { [containerId] = { w, h } } (Load bearer: Items.RACK cell rack, Ammo
+-- belt: Items.BELT). rhylib_inventory calls it when it builds a state.
 function K.ExtraGrids(ply)
     local out = {}
     local Items = Rhylib.Items
@@ -188,7 +202,13 @@ local function applyJump(ply)
     end
 end
 
--- noSave: a class preset (class mode); the player's own tree stays in Data.
+-- K.SetSkills(ply, set, noSave): give the player exactly this set
+-- ({ [id] = true }): NW2String, save, inventory grids, items they may no
+-- longer hold dropped, jump power, max health, fire modes fixed, then hook
+-- Rhylib.SkillsChanged(ply). No rule checks here (K.CanLearn is the
+-- caller's job). noSave: a class preset (class mode); the player's own
+-- tree stays in Data. Server only.
+-- Example: Rhylib.Skills.SetSkills(ply, { quick_hands = true, run_gun = true })
 function K.SetSkills(ply, set, noSave)
     ply.rhylibSkills = set
     ply.rhylibSkillsLoaded = true
@@ -236,6 +256,7 @@ Rhylib.Hook.Add("PlayerDisconnected", "skills.clear", function(ply)
     ply.rhylibSkills, ply.rhylibSkillsLoaded = nil, nil
 end)
 
+-- Learn: rules checked again here (K.CanLearn), the client only asks.
 Rhylib.Net.Receive("skills.learn", function(ply)
     local n = K.NODES[net.ReadUInt(8)]
     if not n then return end
@@ -322,6 +343,12 @@ local function streak(ply, key, ent, windowCfg, maxCfg, stepCfg)
     return 1 + K.Cfg(stepCfg) * r.n
 end
 
+-- K.DamageMult(ply, bolt, ent, tr, group): damage multiplier for one bolt
+-- hit (rhylib_weapons sv_10_bolts). bolt = the bolt record (bolt.weapon,
+-- bolt.start), ent = what was hit, tr = the trace, group = hit group.
+-- Returns mult, crit (crit = true shows a crit marker). Also places Called
+-- shot marks and counts Precision rhythm / Sustained fire streaks, so call
+-- it once per hit. Server only.
 function K.DamageMult(ply, bolt, ent, tr, group)
     if not IsValid(ply) or not ply:IsPlayer() then return 1, false end
     local m, crit = 1, false
@@ -380,6 +407,7 @@ local function onKill(attacker)
     attacker:SetNW2Float("rhylib_momentum", untilT)
     attacker.rhylibMomentumReload = untilT + 6   -- the next reload in the next few seconds
 end
+-- K.OnKill(attacker): start Momentum for a killer (also used by the hooks below).
 K.OnKill = onKill
 
 Rhylib.Hook.Add("OnNPCKilled", "skills.momentum", function(_, attacker) onKill(attacker) end)
@@ -401,6 +429,9 @@ local function noPush(dmg)
     dmg:SetDamageType(bit.bor(dmg:GetDamageType(), DMG_NO_PHYSICS_FORCE))
 end
 
+-- Damage taken, priority 95 (before rhylib_weapons' armour at 100, so
+-- armour soaks the reduced amount). Multipliers stack by multiplying.
+-- DMG_DIRECT (bleeding, bleed-out) and downed players are left alone.
 Rhylib.Hook.Add("EntityTakeDamage", "skills.resist", function(ent, dmg)
     if not ent:IsPlayer() or ent.rhylibDown then return end
     if bit.band(dmg:GetDamageType(), DMG_DIRECT) ~= 0 then return end   -- (bleeding, bleed-out)
@@ -479,7 +510,8 @@ Rhylib.Hook.Add("EntityTakeDamage", "skills.suppress", function(ent, dmg)
     end
 end)
 
--- Hold the line: shield up and another MP close by.
+-- K.HoldingLine(ply): Hold the line is active: the CG riot shield up and
+-- another MP within holdLineRange. Server only.
 function K.HoldingLine(ply)
     local W, MP = Rhylib.Weapons, Rhylib.MP
     -- (the CG shield only: the Republic shield gets no Shock Trooper bonuses)
@@ -559,6 +591,7 @@ Rhylib.Hook.Add("OnPlayerHitGround", "skills.slam", function(ply, inWater, _, sp
 end)
 
 -- A gun with a skill-gated "dual" mode (DC-17: Dual DC-17): carry two.
+-- Answers rhylib_inventory's Rhylib.CarryLimit(ply, itemId, def) hook.
 Rhylib.Hook.Add("Rhylib.CarryLimit", "skills.dual", function(ply, id, def)
     -- (training copies inherit SkillModes from the real gun)
     local swep = def and def.weapon and weapons.GetStored(K.ItemGun(def.weapon))

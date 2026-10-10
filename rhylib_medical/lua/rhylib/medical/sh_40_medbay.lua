@@ -1,11 +1,13 @@
 --[[
     Med bay, shared: who is in a bacta tank (NW2Entity rhylib_tank on the
-    player). Inside, no shooting and no walking; Jump or E climbs out
-    (sv_40_medbay.lua).
+    player) or on a med sofa (NW2Entity rhylib_sofa). Inside / lying there,
+    no shooting and no walking (StartCommand "medical.tank"); Jump or E
+    gets out (sv_40_medbay.lua).
 ]]
 
 local Med = Rhylib.Medical
 
+-- Med.InTank(ply): the bacta tank ply is in, or nil.
 function Med.InTank(ply)
     local t = ply:GetNW2Entity("rhylib_tank")
     return IsValid(t) and t or nil
@@ -14,7 +16,7 @@ end
 local band, bnot, bor = bit.band, bit.bnot, bit.bor
 local STRIP = bor(IN_ATTACK, IN_ATTACK2, IN_RELOAD, IN_DUCK, IN_SPEED, IN_WALK)
 
--- Lying on a med sofa (NW2Entity rhylib_sofa).
+-- Med.OnSofa(ply): the med sofa ply lies on, or nil.
 function Med.OnSofa(ply)
     local s = ply:GetNW2Entity("rhylib_sofa")
     return IsValid(s) and s or nil

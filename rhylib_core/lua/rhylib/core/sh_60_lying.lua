@@ -17,9 +17,15 @@
     players (COLLISION_GROUP_WEAPON) and are unstuck when they get up. NW2: player rhylib_rag (the ragdoll), rhylib_ragCorpse; ragdoll
     rhylib_ragOwner.
 
-    Rhylib.Lying.Is(ply): downed or stunned (asks the modules that exist).
-    Rhylib.Lying.BodyPos(ply): the body's centre (ragdoll pelvis).
-    Rhylib.Lying.Owner(ent): the player a lying ragdoll belongs to.
+    Shared: L.Is, L.Ragdoll, L.Owner, L.BodyPos, L.Cycle, ShouldCollide.
+    Server: L.Begin, L.End, L.Pull, L.Unstick, L.HitGroup, L.ShowPlayer.
+    Callers: rhylib_medical (Med.Down / revive / drag), rhylib_mp (MP.Stun),
+    sh_61_knock.lua (training eliminations, explosion knockdowns).
+    Hook priorities: PlayerSpawn -100 (before medical / MP clean-up),
+    EntityTakeDamage -300 (ragdoll hits forwarded) and -350 (direct hits on
+    the hidden player blocked).
+    Player fields: rhylibFwd (damage being forwarded), rhylibHitGroup,
+    rhylibLieHidden, rhylibLieCG; ragdoll: rhylibOwner, rhylibLyingRag.
 ]]
 
 Rhylib.Lying = Rhylib.Lying or {}
@@ -28,6 +34,8 @@ local L = Rhylib.Lying
 local UP = Vector(0, 0, 6)
 local SETTLE = 2.5
 
+-- L.Is(ply): true while downed (rhylib_medical), stunned (rhylib_mp) or
+-- knocked down (sh_61_knock.lua). Asks only the modules that exist.
 function L.Is(ply)
     local Med, MP = Rhylib.Medical, Rhylib.MP
     if Med and Med.IsDown and Med.IsDown(ply) then return true end
@@ -36,20 +44,28 @@ function L.Is(ply)
     return false
 end
 
--- The held pose under the hidden player (hitboxes): straight to the end.
+-- L.Cycle(): animation cycle for the held pose under the hidden player
+-- (hitboxes): straight to the end.
 function L.Cycle() return 0.99 end
 
+-- L.Ragdoll(ply): the player's lying ragdoll (server prop_ragdoll; on the
+-- client also a soft-knock client ragdoll, cl_60_lying.lua), or nil.
 function L.Ragdoll(ply)
     local r = ply:GetNW2Entity("rhylib_rag")
     return IsValid(r) and r or nil
 end
 
+-- L.Owner(ent): the player a lying ragdoll belongs to, or nil (also nil
+-- for a corpse: the owner link is cleared on death).
+-- Example: local ply = Rhylib.Lying.Owner(tr.Entity) or tr.Entity
 function L.Owner(ent)
     if not IsValid(ent) or ent:GetClass() ~= "prop_ragdoll" then return nil end
     local o = ent:GetNW2Entity("rhylib_ragOwner")
     return IsValid(o) and o or nil
 end
 
+-- L.BodyPos(ply): where to aim at or measure to a lying player: the
+-- ragdoll + 6 units up, else the player's feet + 10.
 function L.BodyPos(ply)
     local r = L.Ragdoll(ply)
     if r then return r:GetPos() + UP end
@@ -109,7 +125,9 @@ local function ground(p, filter)
     return tr.Hit and tr.HitPos or p
 end
 
--- Standing back up under something: move to the nearest clear spot.
+-- L.Unstick(ply) (server): standing back up under something: move to the
+-- nearest clear spot of a short list of nudges (up to 40 units); stays put
+-- if none is clear. Also used by spawns and training after teleports.
 local NUDGES = { Vector(0, 0, 0), Vector(0, 0, 12), Vector(24, 0, 4), Vector(-24, 0, 4), Vector(0, 24, 4), Vector(0, -24, 4),
     Vector(40, 0, 8), Vector(-40, 0, 8), Vector(0, 40, 8), Vector(0, -40, 8), Vector(0, 0, 36) }
 function L.Unstick(ply)
@@ -125,6 +143,8 @@ function L.Unstick(ply)
     end
 end
 
+-- L.Begin(ply) (server): the player becomes a ragdoll (see the top).
+-- Does nothing if they already have one or are dead.
 function L.Begin(ply)
     if L.Ragdoll(ply) or not ply:Alive() then return end
     local rag = ents.Create("prop_ragdoll")
@@ -177,6 +197,8 @@ function L.Begin(ply)
     rag.rhylibSetPos = ply:GetPos()
 end
 
+-- L.End(ply, noMove) (server): the player gets up where the body lies and
+-- the ragdoll goes; dead = the ragdoll stays as the corpse.
 -- noMove: don't put the player on the body (respawning elsewhere).
 function L.End(ply, noMove)
     if not IsValid(ply) then return end
@@ -207,7 +229,10 @@ function L.End(ply, noMove)
     end
 end
 
--- Dragging (rhylib_medical): pull the chest towards `to`, at most `speed`.
+-- L.Pull(ply, to, leash, speed) (server): dragging (rhylib_medical): pull
+-- the chest towards `to` once it's more than leash units away, at most
+-- speed units/s (sideways only). Unfreezes the ragdoll for 1.5 s. Returns
+-- false if the player has no ragdoll. Call it repeatedly while dragging.
 local CHEST = "ValveBiped.Bip01_Spine2"
 function L.Pull(ply, to, leash, speed)
     local rag = L.active[ply]
@@ -273,6 +298,7 @@ Rhylib.Hook.Add("PlayerDisconnected", "core.lying", function(ply)
 end)
 
 -- Hits on the ragdoll hurt its player. Hit group from the nearest bone.
+-- L.HitGroup(rag, pos): the HITGROUP_ of the ragdoll part nearest pos.
 local GROUPS = {
     { "head", HITGROUP_HEAD }, { "neck", HITGROUP_HEAD },
     { "l_upperarm", HITGROUP_LEFTARM }, { "l_forearm", HITGROUP_LEFTARM }, { "l_hand", HITGROUP_LEFTARM },

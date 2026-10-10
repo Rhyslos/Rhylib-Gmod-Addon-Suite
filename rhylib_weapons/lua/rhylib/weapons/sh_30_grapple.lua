@@ -32,14 +32,18 @@
         DTEntity 31  the rope you're on (NULL = not climbing)
         DTFloat 27   how far down the climbing part of the rope you are
         DTBool 27    being pulled over the top ledge
+
+    Realm: shared. Config module "grapple" below. Files: this one (maths,
+    climbing), sv_30_grapple.lua (firing, laying the rope),
+    cl_40_grapple.lua (landing marker, belt line), entities/rhylib_rope.lua.
 ]]
 
 local W = Rhylib.Weapons
 W.Grapple = W.Grapple or {}
 local G = W.Grapple
 
-G.ITEM = "grapple"
-G.AMMO = "rhylib_grapple"
+G.ITEM = "grapple"          -- inventory item id (and pouch kind)
+G.AMMO = "rhylib_grapple"   -- ammo type mirroring how many hooks you carry (client checks)
 G.MAX_POINTS = 16  -- must match the network vars in rhylib_rope.lua
 G.DT_ROPE = 31
 G.DT_S = 27
@@ -87,6 +91,7 @@ end
 -- the client can't, so its landing marker is hopeful about props.
 --------------------------------------------------------------------------
 
+-- G.CanGrip(tr): true if a trace result is somewhere the hook can grip.
 function G.CanGrip(tr)
     if not tr.Hit or tr.HitSky then return false end
     if tr.HitWorld then return true end
@@ -117,8 +122,9 @@ local function beltOffset(n)
     return n * WALL_OFFSET
 end
 
--- Point on the climbing line at distance s from the top. offset = true
--- moves it out from the wall to where the climber's belt should be.
+-- G.PosAt(d, s, offset): point on the climbing line at distance s from the
+-- top (d = rope:GetRopeData()). offset = true moves it out from the wall to
+-- where the climber's belt should be.
 function G.PosAt(d, s, offset)
     local pts, cum = d.pts, d.cum
     for i = d.top, d.n - 1 do
@@ -168,6 +174,8 @@ function G.ClosestS(d, point)
     return bestS, bestDist
 end
 
+-- G.Climbers(rope, except): how many players are on this rope (not
+-- counting except).
 function G.Climbers(rope, except)
     local n = 0
     for _, p in ipairs(player.GetAll()) do
@@ -176,6 +184,7 @@ function G.Climbers(rope, except)
     return n
 end
 
+-- G.Attached(ply): true while ply is on a rope.
 function G.Attached(ply)
     return IsValid(ply:GetDTEntity(G.DT_ROPE))
 end
@@ -188,6 +197,9 @@ local function detach(ply, mv, push)
         mv:SetVelocity(vel)
     end
 end
+-- G.Detach(ply, mv, push): takes ply off the rope; with a move data mv
+-- their velocity is set to push (or stopped). Used by rhylib_core's
+-- knockdowns and rhylib_medical's downing.
 G.Detach = detach
 
 local function tryAttach(ply, mv)
@@ -212,6 +224,7 @@ local function tryAttach(ply, mv)
     ply:SetDTBool(G.DT_MANTLE, false)
 end
 
+-- Climbing movement, server and client (predicted). E near a rope clips on.
 Rhylib.Hook.Add("SetupMove", "weapons.grapple", function(ply, mv)
     local rope = ply:GetDTEntity(G.DT_ROPE)
     if not IsValid(rope) then

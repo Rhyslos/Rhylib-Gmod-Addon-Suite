@@ -18,9 +18,15 @@
       bit 28    squad leader
       bit 29    radio operator
 
-    Files: sv_10_radio (state, voice, squads, channels), sv_20_hails
-    (calls), cl_05_icons, cl_10_client (keys, state), cl_20_hud (visor
-    squares, meters, markers), cl_30_page (the Radio page).
+    Files: sv_10_radio (state, voice, squads, channels, jammer checks
+    and saves), sv_20_hails (calls), sh_40_pings / sv_30_pings /
+    cl_40_pings (squad pings), cl_05_icons (vector symbols), cl_10_client
+    (keys, state), cl_20_hud (visor squares, meters, compass, markers),
+    cl_25_fx (radio sound effects, jammer static), cl_30_page (the Radio
+    page). Entities: rhylib_comms_jammer (+ _medium, _large, _map).
+
+    This file: the module table Rhylib.Radio (R), config settings, jammer
+    sizes, roles, and the state packing helpers used on both realms.
 ]]
 
 Rhylib.Radio = Rhylib.Radio or {}
@@ -73,6 +79,7 @@ Config.Register("radio", "jammerFringe", 0.35, "Comms jammers: interference zone
 Config.Register("radio", "jamReconnect", 4, "Comms jammers: seconds the radio stays jammed and reconnects after leaving the range")
 Config.Register("radio", "jamStatic", "ambient/energy/electric_loop.wav", "Comms jammer: the static loop you hear when you key the radio while jammed")
 
+-- R.Cfg(key): a radio config value (Config.Get("radio", key)). Shared.
 function R.Cfg(k) return Config.Get("radio", k) end
 
 -- Jammer sizes: class -> config key suffix and name. range nil = whole map.
@@ -90,11 +97,15 @@ R.JAMMER_SIZES = {
 -- rocket / breaching charge, 3 high explosive charge.
 R.JAMMER_TIERS = { "any grenade", "an RPS-6 rocket or a breaching charge", "a high explosive charge" }
 
+-- R.JammerSize(entOrClass): the R.JAMMER_SIZES row for a jammer entity
+-- or class name; unknown classes count as the small one. Shared.
 function R.JammerSize(ent)
     return R.JAMMER_SIZES[isstring(ent) and ent or ent:GetClass()] or R.JAMMER_SIZES.rhylib_comms_jammer
 end
 
--- Radius a jammer covers (math.huge for the map-wide one).
+-- R.JammerRange(entOrClass): radius a jammer covers in units
+-- (math.huge for the map-wide one). An entity with ENT:JamRange() (the
+-- rhylib_eod interference device) answers for itself. Shared.
 function R.JammerRange(ent)
     if not isstring(ent) and IsValid(ent) and ent.JamRange then return ent:JamRange() end   -- (rhylib_eod interference devices)
     local s = R.JammerSize(ent)
@@ -102,12 +113,16 @@ function R.JammerRange(ent)
     return R.Cfg("jammerRange" .. s.key) or 1800
 end
 
--- Is this player inside an active jammer's range? (NW2Bool set by the server.)
+-- R.Jammed(ply): is this player jammed? True inside an active jammer's
+-- range and while reconnecting after leaving it (NW2Bool "rhylib_jammed",
+-- set by the server's 0.5 s jam timer in sv_10_radio.lua). Shared.
+-- Example: if Rhylib.Radio and Rhylib.Radio.Jammed(ply) then return end
 function R.Jammed(ply)
     return IsValid(ply) and ply:GetNW2Bool("rhylib_jammed", false)
 end
 
--- Jammed but out of range again, reconnecting: seconds left (or nil).
+-- R.Reconnecting(ply): jammed but out of range again, reconnecting:
+-- seconds left (or nil). From NW2Float "rhylib_jamUntil". Shared.
 function R.Reconnecting(ply)
     if not R.Jammed(ply) then return nil end
     local t = ply:GetNW2Float("rhylib_jamUntil", 0)
@@ -115,8 +130,10 @@ function R.Reconnecting(ply)
     return math.max(0, t - CurTime())
 end
 
--- How strong the jamming is for this player, 0-1: 1 inside a jammer,
--- falling over the reconnect time after leaving, the fringe level outside.
+-- R.JamLevel(ply): how strong the jamming is for this player, 0-1:
+-- 1 inside a jammer, falling over the reconnect time after leaving, the
+-- fringe level outside (NW2Float "rhylib_jamLevel", 5% steps). The
+-- client uses it to scale the compass glitches and radio static. Shared.
 function R.JamLevel(ply)
     if not IsValid(ply) then return 0 end
     local fringe = ply:GetNW2Float("rhylib_jamLevel", 0)
@@ -127,13 +144,16 @@ function R.JamLevel(ply)
     return math.max(fringe, math.Clamp(left / total, 0, 1))
 end
 
-R.ID_BITS = 9
-R.MAX_ID = 511
-R.NAME_LEN = 24
+R.ID_BITS = 9      -- bits for squad / channel / call ids on the wire
+R.MAX_ID = 511     -- highest id (ids are 1..511; 0 = none)
+R.NAME_LEN = 24    -- longest squad / channel name (and password)
 
+-- What a player is sending on (the "tx kind" in the state bits).
 R.TX_NONE, R.TX_SQUAD, R.TX_CHAN, R.TX_CALL = 0, 1, 2, 3
 
--- Roles: visual only. { id, name, icon }
+-- Roles: visual only. { id, name, icon } (icon = R.ICONS key, cl_05_icons).
+-- The index is what is stored (5 bits, so at most 31 roles); add new
+-- ones at the end so saved choices (rhylib_radio_role) keep their meaning.
 R.ROLES = {
     { "rifleman", "Rifleman", "rifle" },
     { "assault", "Assault", "bolt" },
@@ -154,7 +174,9 @@ R.ROLES = {
 
 local band, bor, lshift, rshift = bit.band, bit.bor, bit.lshift, bit.rshift
 
--- Unpacked radio state of a player (a small table, new each call).
+-- R.Unpack(v): the radio state int as a table { off, muted, deaf,
+-- txKind, txId, squad, role, leader, ro } (a new table each call;
+-- R.State caches it). Shared.
 function R.Unpack(v)
     return {
         off = band(v, 1) ~= 0,
@@ -169,6 +191,7 @@ function R.Unpack(v)
     }
 end
 
+-- R.Pack(t): the reverse of R.Unpack: a table of fields -> the int.
 function R.Pack(t)
     local v = 0
     if t.off then v = bor(v, 1) end
@@ -183,8 +206,11 @@ function R.Pack(t)
     return v
 end
 
+-- R.Raw(ply): the packed NW2Int "rhylib_radio".
 function R.Raw(ply) return ply:GetNW2Int("rhylib_radio", 0) end
--- Unpacked state, kept per player until the value changes (read only).
+-- R.State(ply): unpacked state, kept per player until the value changes
+-- (read only: it is shared between callers). Shared.
+-- Example: if Rhylib.Radio.State(ply).off then ... end
 function R.State(ply)
     local v = R.Raw(ply)
     local c = ply.rhylibRadioC
@@ -194,7 +220,12 @@ function R.State(ply)
     return t
 end
 
--- Cheap single reads (used every frame and in the voice hook).
+-- Cheap single reads (used every frame and in the voice hook):
+-- R.SquadOf(ply) squad id (0 = none), R.RoleOf(ply) role index (1 if
+-- unset), R.IsLeader(ply), R.IsRO(ply). On the client cl_10_client.lua
+-- replaces these for other players with the directory's values (their
+-- NW2 arrives late while they're out of view).
+-- Example (rhylib_chat's squad channel): local sq = Rhylib.Radio.SquadOf(ply)
 function R.SquadOf(ply) return band(rshift(R.Raw(ply), 14), 511) end
 function R.RoleOf(ply)
     local r = band(rshift(R.Raw(ply), 23), 31)
@@ -203,7 +234,8 @@ end
 function R.IsLeader(ply) return band(R.Raw(ply), lshift(1, 28)) ~= 0 end
 function R.IsRO(ply) return band(R.Raw(ply), lshift(1, 29)) ~= 0 end
 
--- Battalion: rhylib_roster's, else the DarkRP job category.
+-- R.Battalion(ply): rhylib_roster's battalion (NW2String "rhylib_bn"),
+-- else the DarkRP job category, else "". Used for battalion-only channels.
 function R.Battalion(ply)
     local bn = ply:GetNW2String("rhylib_bn", "")
     if bn ~= "" then return bn end
@@ -211,10 +243,13 @@ function R.Battalion(ply)
     return job and job.category or ""
 end
 
+-- R.CleanName(s): a squad / channel name with control characters
+-- removed, trimmed, cut to R.NAME_LEN.
 function R.CleanName(s)
     s = string.Trim(string.gsub(tostring(s or ""), "[%c]", ""))
     return string.sub(s, 1, R.NAME_LEN)
 end
 
--- Channel access modes.
+-- Channel access modes: open to all, needs the password, or only for
+-- the creator's battalion (R.Battalion at creation).
 R.MODE_OPEN, R.MODE_PASS, R.MODE_BN = 0, 1, 2

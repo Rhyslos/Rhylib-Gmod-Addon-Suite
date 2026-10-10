@@ -4,6 +4,11 @@
     Uses a prop model (models/jajoff/sps/cgiweapons/tc13j/dc15s.mdl), held in first person by
     the trooper hands (CarrierVM). The model's addon must be installed.
     Tune with rhylib_vm_editor, then paste its lines below.
+
+    Class rhylib_dc15s. Shared: one file for server and client (AddCSLuaFile).
+    Base rhylib_base (rhylib_weapons), where every SWEP field is explained;
+    only the fields that differ are set here.
+    Training copy: rhylib_dc15s_training (also the base of both riot shields).
 ]]
 
 AddCSLuaFile()
@@ -50,6 +55,9 @@ SWEP.Primary = {
 }
 
 SWEP.FireRate = 540
+-- Recoil: view kick per shot (rhylib_weapons cl_50_recoil): up = degrees up,
+-- side = random sideways, bias = lean -1 (left) .. 1 (right), recover = share
+-- of the climb that settles back, aimMult = multiplier while aiming.
 SWEP.Recoil = { up = 0.55, side = 0.3, bias = -0.1, recover = 0.55, aimMult = 0.65 }  -- view kick per shot
 SWEP.Damage = 22
 SWEP.BoltSpeed = 7000
@@ -85,6 +93,7 @@ SWEP.ModeProxies = {
 }
 
 SWEP.UsesCell = false
+-- Spare magazines / cells put in your pouch when you pick it up (rhylib_base).
 SWEP.StartMags = 8
 SWEP.StartCells = 0
 
@@ -94,6 +103,11 @@ SWEP.InvH = 1
 SWEP.InvLarge = false
 SWEP.InvWeight = 3.0         -- kg
 
+-- Spread: cone angles in degrees (rhylib_weapons sh_10_spread): hip / aim =
+-- resting cone, kickMain / kickSide = how far the crosshair arcs move per shot,
+-- bloomPerShot (up to bloomMax) = growth of the whole cone, aimKickMult /
+-- aimOffsetMult = share of that while aiming. Each value is also a setting
+-- in Server settings > guns (rhylib_weapons sh_70_gunstats).
 SWEP.Spread = {
     hip = 1.4,
     aim = 0.7,

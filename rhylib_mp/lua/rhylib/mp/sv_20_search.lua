@@ -11,9 +11,17 @@
     searching again doesn't roll again.
 
     Messages:
-      mp.search  client -> server  target (open), or NULL (close)
-      mp.list    server -> MP      target, cuffed, then the items
-      mp.take    client -> server  target, item uid
+      mp.search  client -> server  target Entity (open), or NULL (close)
+      mp.list    server -> MP      target Entity, cuffed Bool, count UInt 8,
+                                   then per item: uid (Items.UID_BITS),
+                                   item net id (Items.NET_BITS), count UInt 8,
+                                   fill % UInt 7, container (Items.CONT_BITS).
+                                   A NULL target closes the window.
+      mp.take    client -> server  target Entity, item uid (Items.UID_BITS)
+
+    The list is kept fresh by a 1 s timer that re-sends it only when a
+    rough checksum of the target's items (MP.searchSig) changes.
+    The second half of the file is the interaction wheel (mp.wheel).
 ]]
 
 local MP = Rhylib.MP
@@ -41,6 +49,8 @@ local function toolRange(ply)
     return tonumber(r) or MP.Cfg("searchRange")
 end
 
+-- MP.CanSearch(mp, target) -> bool: mp is a living MP (not cuffed or downed),
+-- within the reach of the tool in hand, with a clear line to the target.
 local function canSearch(mp, target)
     if not (IsValid(mp) and IsValid(target) and mp:Alive() and target:Alive()) then return false end
     if mp == target or not MP.IsMP(mp) or MP.IsCuffed(mp) or mp.rhylibDown then return false end
@@ -66,7 +76,10 @@ local function isHidden(target, o)
     return o.data and o.data.hidden ~= nil and o.data.hidden == target:SteamID64() and Items.IsContraband(o.id)
 end
 
--- Does this MP see item o of target? Rolled once, then remembered.
+-- MP.SearchFinds(mp, target, o) -> bool: does this MP see item instance o
+-- of target? Items that aren't hidden contraband always show. Hidden ones
+-- are rolled once (see the header), then remembered for searchMemory s.
+-- Server only.
 function MP.SearchFinds(mp, target, o)
     if not isHidden(target, o) then return true end
     local byT = MP.searchRolls[mp]
@@ -89,8 +102,10 @@ function MP.SearchFinds(mp, target, o)
     return f
 end
 
--- Items as rows: uid, item net id, count, fill, container.
+-- MP.SendList(mp, target): sends mp the items of target they can see (net
+-- mp.list), at most 255 rows, sorted by container then uid. Server only.
 function MP.SendList(mp, target)
+
     local I = inv()
     if not I then return end
     local st = I.Get(target)
@@ -228,7 +243,12 @@ local function stopCuff(mp, tell)
     end
 end
 
--- op 0 cuff (cuffTime, stay close and still), 1 uncuff, 2 escort / let go
+-- Net mp.wheel (client -> server): op UInt 2, target Entity.
+-- op 0 cuff (cuffTime, stay close and still), 1 uncuff, 2 escort / let go.
+-- The timed cuff is a 0.1 s timer that gives up if the MP moves 40+ units,
+-- loses sight, or the target stops being cuffable; then net mp.wheelx
+-- (empty, server -> MP) tells the client to stop its progress bar.
+
 Rhylib.Net.Receive("mp.wheel", function(mp)
     local op, t = net.ReadUInt(2), net.ReadEntity()
     if not MP.IsMP(mp) or MP.IsCuffed(mp) or mp.rhylibDown or not IsValid(t) or not t:IsPlayer() then return end

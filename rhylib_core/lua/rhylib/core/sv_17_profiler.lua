@@ -12,6 +12,16 @@
     viewer leaves, the profiler goes back to how it was (rhylib_profile).
 
     Perm rhylib.profiler (superadmin).
+    Nets:
+      core.profsub   client -> server: bool (true = watch, false = stop);
+                     rate 6/s, burst 12
+      core.profdata  server -> viewers, every 1 s: UInt 16 length + data
+                     (util.Compress of JSON: tickRate, ticks, worst (ms),
+                     hookMs, perTick, bytes, mem (MB), humans, bots, ents,
+                     droids, bolts, load, mods, hooks, net)
+    Modules: a hook handler's module is its id before the first "."; a
+    net message's is its name before the first "." when the name has a
+    "." and no "_" (Rhylib style), else "other".
 ]]
 
 local Profiler = Rhylib.Profiler

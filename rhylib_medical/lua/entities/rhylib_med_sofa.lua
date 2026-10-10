@@ -2,6 +2,8 @@
     Med sofa (med bay furniture). Press E to lie down on it, E or Jump to
     get up. Looks only: no healing. Logic: rhylib_medical sv_40_medbay.lua
     (Med.SofaUse). Saved per map with rhylib_medical_save.
+    Shared entity (admins spawn it). Model: config medical sofaModel
+    (an HL2 couch if missing). Blood is drawn from patients lying here.
 ]]
 
 AddCSLuaFile()

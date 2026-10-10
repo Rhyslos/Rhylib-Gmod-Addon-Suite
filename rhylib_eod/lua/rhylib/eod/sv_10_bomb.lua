@@ -5,6 +5,44 @@
 
     bomb.eod = st (state). Viewers (window open) get eod.state (compressed
     JSON of E.View) after every change; the probe answers with eod.read.
+
+    How a bomb works (the circuit model):
+      features f   E.Roll(kind) or a builder (GM custom / training) picks
+                   what the bomb has: det, battery, antiJam, motion, lid,
+                   sensor, charge, hop, mods, timerSecs.
+      parts        buildBoard(f) places boxes on a 760 x 420 board. Each
+                   part has an id ("bat", "cap", "det", ...); parts with
+                   term = true get + and − terminals for jumpers.
+      wires        { k = kind, a = part id, b = part id, [armoured],
+                   [sealed] }. The kind (supply, feed, det, ...) is the
+                   wire's job; players never see it, only its colour and
+                   the probe's reading (E.Reading).
+      state st     E.Build(f): cut[i], drained[part], capacitor time,
+                   timer, heat, and one sub-table per module.
+      rules        cutWire (by wire kind), shortPart (a jumper from a
+                   part's + to its own −), jumpParts (a jumper between two
+                   parts), the OPS table (one function per window action),
+                   and the world timer in sv_20_world (motion, anti-jam,
+                   timer, gas leak, tilt, torch). A rule that fails calls
+                   fail(bomb, cause) -> E.Detonate with an E.CAUSES key.
+      done         cutting the detonator line ("det") while it reads DEAD
+                   sets st.safe; E.CheckDone then also waits for the gas
+                   valve and the stabiliser before st.done.
+
+    Power: "powered" = any supply wire not cut (and its battery not
+    shorted) OR a capacitor still at 5% or more. The capacitor starts to
+    drain (capDrain seconds) only once every supply is gone.
+
+    Nets (all "rhylib." prefixed by Rhylib.Net):
+      eod.act    client -> server  bomb, op (4 bits), op arguments (see
+                                   the receiver at the bottom); rate 20/s
+      eod.close  both ways         bomb (the window was closed)
+      eod.state  server -> viewer  bomb, len (16 bits), compressed JSON of E.View
+      eod.read   server -> prober  wire index (5 bits), reading string
+      eod.msg    server -> player  text, bad (bool): a log line in the window
+      eod.done   server -> viewers bomb (made safe: plays a sound)
+      eod.xray   server -> player  bomb, mount order (3 × 2 bits), seconds (float)
+      eod.boom / eod.gas / eod.far / eod.gmopen: sent from sv_20_world.
 ]]
 
 local E = Rhylib.EOD
@@ -14,9 +52,10 @@ for _, n in ipairs({ "eod.state", "eod.read", "eod.msg", "eod.boom", "eod.done",
     Net.Register(n)
 end
 
-E.bombs = E.bombs or {}
+E.bombs = E.bombs or {}   -- [bomb entity] = true, every set-up bomb (the world timer walks it)
 
 local function chance(p) return math.random() < p end
+-- Weighted pick: { key = weight, ... } -> a key.
 local function pickW(o)
     local t = 0
     for _, v in pairs(o) do t = t + v end
@@ -35,6 +74,7 @@ local function shuffle(t)
     end
     return t
 end
+-- E.Shuffle(list) -> a shuffled copy (the list itself is left alone).
 E.Shuffle = shuffle
 
 --------------------------------------------------------------------------
@@ -43,6 +83,17 @@ E.Shuffle = shuffle
 
 -- Features for a bomb type (simple / small / large). Custom bombs pass
 -- their own (GM window).
+-- E.Roll(kind) -> f: a random feature table. Server only. Fields:
+--   type       "simple" | "small" | "large" (callers may change it to
+--              "custom" / "training" afterwards)
+--   det        "timer" | "remote"
+--   antiJam    bool (remote only)       motion   nil | "normal" | "sensitive"
+--   lid        bool (lid switch)        battery  "single" | "dual" | "capacitor" | "collapse"
+--   sensor     bool (self-powered charge: own cell + sensor)
+--   charge     "he" | "gas" | "virus"   hop      bool (frequency hopping, large remote only)
+--   mods       { [module id] = true }   timerSecs (optional; builders set it)
+-- Simplified bombs are fixed: timer, lid switch, single battery, HE.
+-- Example: E.Rebuild(bomb, E.Roll("large"))
 function E.Roll(kind)
     if kind == "simple" then
         return { type = "simple", det = "timer", antiJam = false, motion = nil, lid = true, battery = "single",
@@ -62,6 +113,7 @@ function E.Roll(kind)
         mods = {},
     }
     -- Modules within the tier's budget: points = ranks, and a cap on how many.
+    -- (modules in random order; each one that fits is taken 75% of the time)
     local t = E.TIERS[f.type]
     local left, n = t.budget, 0
     for _, m in ipairs(shuffle(E.MODS)) do
@@ -76,8 +128,37 @@ function E.Roll(kind)
 end
 
 -- The board: parts (board units, 760 x 420) and wires.
+-- Returns parts (list, in this order: the client and net eod.act refer
+-- to a part by its index here) and wires (list; the index is the wire
+-- number in eod.act / eod.read, so at most 31 wires: 5 bits).
+--
+-- Part ids:  bat / batB (batteries), cap (capacitor), col (collapse
+-- circuit), aj (anti-jam), rx (receiver), tmr (timer), det (detonator),
+-- chip (logic chip), relay + load (signal relay + dummy load), ant
+-- (antenna), chg (charge), cell (charge cell of a self-powered charge).
+-- Three columns: L (power), M (detonator side), R (antenna and charge).
+--
+-- Wire kinds (w.k) and what they join:
+--   supply   bat/batB -> cap, else tmr, else det   battery power
+--   feed     cap -> tmr or det                     capacitor output
+--   tmrline  tmr -> det                            timer to detonator
+--   collapse col -> bat                            collapse sense (LOOP 3V)
+--   antenna  ant -> rx                             armoured with a relay
+--   ajmon    aj -> rx                              anti-jam monitor (MON)
+--   relay    rx -> relay, trig relay -> det        armoured (relay module)
+--   sense    bat -> chg                            self-powered charge sensor
+--   det      det -> chg                            the detonator line (sealed
+--                                                  with the sealed module)
+--   logic    chip -> det                           logic chip line
+--   tamper   tmr -> chg                            tamper loop (LOOP 5V)
+--   decoy    a pair not already wired              does nothing (1, or 2 on
+--                                                  large/custom)
+-- A new wire kind needs: a W(...) line here, a branch in E.Reading (what
+-- the probe says), a branch in cutWire (what cutting it does), a name in
+-- cl_20_gm KIND_NAMES, and a row in the manual's probe table.
 local function buildBoard(f)
     local P, parts = {}, {}
+    -- add(id, label, sub-label, x, y, w, h, term): term = has + / − terminals
     local function add(id, label, sub, x, y, w, h, term)
         local p = { id = id, label = label, sub = sub, x = x, y = y, w = w, h = h, term = term or nil }
         parts[#parts + 1] = p
@@ -104,6 +185,7 @@ local function buildBoard(f)
     if f.sensor then add("cell", "Charge cell", "+ sensor", R + 12, 316, 126, 64, true) end
 
     local wires = {}
+    -- W(kind, from part, to part, extra fields such as armoured / sealed)
     local function W(k, a, b, extra)
         local w = { k = k, a = a, b = b }
         if extra then for kk, vv in pairs(extra) do w[kk] = vv end end
@@ -124,7 +206,9 @@ local function buildBoard(f)
     if f.sensor then W("sense", "bat", "chg") end
     W("det", "det", "chg", f.mods.sealed and { sealed = true } or nil)
     if P.chip then W("logic", "chip", "det") end
+    -- (tamper loop: never on simplified, half the small bombs, always otherwise)
     if P.tmr and f.type ~= "simple" and (f.type ~= "small" or chance(0.5)) then W("tamper", "tmr", "chg") end
+    -- decoys: pairs of parts that exist and aren't wired yet
     local cand = {}
     for _, c in ipairs({ { "bat", "chg" }, { "rx", "chg" }, { "tmr", "chg" }, { "col", "chg" }, { "aj", "chg" }, { "chip", "chg" }, { "cap", "chg" }, { "batB", "det" } }) do
         local dup = false
@@ -136,10 +220,12 @@ local function buildBoard(f)
         if i > nd then break end
         W("decoy", c[1], c[2])
     end
-    if not relay then f.mods.relay = nil end
+    if not relay then f.mods.relay = nil end   -- (a relay asked for on a timer bomb is dropped)
     return parts, wires
 end
 
+-- Tilt switch drift: three sines (slow, medium, fast) with random
+-- amplitude, speed and phase. See E.TiltPos in sh_00_config.
 local function sineSet(amp)
     local s = { a = {}, w = {}, p = {} }
     local base, periods = { 0.3, 0.2, 0.12 }, { { 7, 13 }, { 4, 8 }, { 2.5, 4.5 } }
@@ -152,6 +238,26 @@ local function sineSet(amp)
 end
 
 -- A fresh state for features f.
+-- E.Build(f) -> st. Server only. Doesn't touch any entity: E.SetupBomb
+-- (sv_20_world) stores it as bomb.eod. Main fields:
+--   f, type, kindName, big, mods, parts, wires, colors[i] (E.COLOURS index per wire)
+--   freq (MHz, 2405-2475), hopAt     viewers { [ply] = true } (window open)
+--   inspected, open, lidReleased     cut[i], drained[partId], jumps, jumpers left
+--   antiJam / collapse / sensor      start from f; cutting MON / LOOP 3V or
+--                                    shorting the charge cell turns them off
+--   remoteDead, relayed              receiver can't fire the bomb any more
+--   timerSecs, timerEnd, timerLeft, timerWaiting, timerStopped
+--   capAt, capZero                   capacitor drain start / shorted empty
+--   safe, gasSealed, done, over      detonator cut / valve sealed / finished / gone off
+--   heat, heatAt                     thermal heat (cools heatCool per second)
+-- Module state (nil when the bomb doesn't have the module):
+--   sealedOpen, sealedP (0-1)        sealed plate (always open without the module)
+--   tilt  { x, y = sine sets, nx, ny = nudges, mult, t0, pausedAt }
+--   chip  { code = E.CHIP_CODES row, ok }
+--   liquid { band (green band start), period, ph, drained }
+--   fake  { removed, xrays, order (mount numbers in cut order), n, cut[3], cols[3] }
+--   stab  { dose (0.75-5.0 ml in 0.25 steps), done }
+-- A new module adds its own sub-table here, guarded by f.mods.<id>.
 function E.Build(f)
     local parts, wires = buildBoard(f)
     local t = E.TIERS[f.type] or E.TIERS.small
@@ -188,6 +294,8 @@ end
 -- Circuit helpers
 --------------------------------------------------------------------------
 
+-- Is any battery still feeding the board? (a supply wire not cut, whose
+-- battery wasn't shorted). E.AnySupply(st) -> bool.
 local function anySupply(st)
     for i, w in ipairs(st.wires) do
         if w.k == "supply" and not st.cut[i] and not st.drained[w.a] then return true end
@@ -196,6 +304,9 @@ local function anySupply(st)
 end
 E.AnySupply = anySupply
 
+-- Capacitor charge, 0-100. 100 until the supply is gone (capAt set by
+-- powerGone), then a straight line down to 0 over capDrain seconds;
+-- 0 once shorted (capZero) or with no capacitor. E.CapNow(st) -> number.
 local function capNow(st)
     if st.f.battery ~= "capacitor" or st.capZero then return 0 end
     if not st.capAt then return 100 end
@@ -203,10 +314,14 @@ local function capNow(st)
 end
 E.CapNow = capNow
 
+-- Live power anywhere: a battery, or the capacitor at 5% or more.
 local function powered(st) return anySupply(st) or capNow(st) >= 5 end
 
+-- E.Covered(bomb) -> bool: an active interference device blocked this
+-- bomb's remote signal in the last 0.5 s (the world timer refreshes it).
 function E.Covered(bomb) return (bomb.eodCovered or 0) > CurTime() end
 
+-- Board heat now (heat at heatAt, minus cooling since). E.HeatNow(st).
 local function heatNow(st) return math.max(0, st.heat - (CurTime() - st.heatAt) * (E.Cfg("heatCool") or 9)) end
 E.HeatNow = heatNow
 
@@ -222,6 +337,9 @@ local function colourName(st, i) return E.COLOURS[st.colors[i] or 1][1] end
 -- Sending
 --------------------------------------------------------------------------
 
+-- E.Msg(ply, text, bad): a line in the player's defusal window log (or
+-- chat when no window is open). bad = red, with a warning sound.
+-- Example: Rhylib.EOD.Msg(ply, "The canister valve is open: seal it", true)
 local function msg(ply, text, bad)
     if not IsValid(ply) then return end
     Net.Start("eod.msg")
@@ -232,6 +350,7 @@ end
 E.Msg = msg
 
 -- What the inspection tells (the same for everyone).
+-- A list of { label, value, warn } rows; warn = shown in the warning colour.
 local function facts(st, ply)
     local f = st.f
     local list = {
@@ -248,6 +367,12 @@ local function facts(st, ply)
     return list
 end
 
+-- E.View(bomb, ply) -> table: what this player's defusal window may know.
+-- Wires carry only ends, colour and flags (cut, sealed, arm = armoured),
+-- never the kind. Parts and modules are empty until the lid is off; the
+-- chip code and stabiliser dose only show once open. Live values (heat,
+-- timer, tilt) are sent with now = CurTime() so the client can run them
+-- on between messages. A new module adds its own v.<id> entry here.
 function E.View(bomb, ply)
     local st = bomb.eod
     local now = CurTime()
@@ -277,6 +402,7 @@ function E.View(bomb, ply)
     return v
 end
 
+-- net eod.state: bomb, length (16 bits), compressed JSON of E.View.
 local function sendTo(bomb, ply)
     local js = util.TableToJSON(E.View(bomb, ply))
     local data = util.Compress(js)
@@ -289,6 +415,8 @@ local function sendTo(bomb, ply)
 end
 
 -- Send to every viewer next tick (several changes in one tick: once).
+-- E.Changed(bomb): call after changing bomb.eod so open windows update.
+-- Example: bomb.eod.jumpers = 5  Rhylib.EOD.Changed(bomb)
 function E.Changed(bomb)
     if not IsValid(bomb) or bomb.eodQueued then return end
     bomb.eodQueued = true
@@ -303,6 +431,8 @@ function E.Changed(bomb)
     end)
 end
 
+-- E.HasKit(ply) -> bool: carries an EOD kit (always true without
+-- rhylib_inventory, so the addon still works without it). Server.
 function E.HasKit(ply)
     local Inv = Rhylib.Inventory
     if not (Inv and Inv.Has) then return true end
@@ -311,6 +441,7 @@ end
 
 -- Bomb squad (datapad "Call the bomb squad"): any Field technician skill,
 -- or an EOD kit carried. nil = let the datapad decide (job eod = true).
+-- E.IsBombSquad(ply) -> bool (the hook below turns false into nil).
 function E.IsBombSquad(ply)
     local K = Rhylib.Skills
     if K and K.NODES and K.Has then
@@ -329,8 +460,13 @@ end)
 -- Rules
 --------------------------------------------------------------------------
 
+-- Every rule that sets the bomb off ends here. Returns true so a rule
+-- can "return fail(bomb, cause)" and its caller knows to stop.
 local function fail(bomb, cause) E.Detonate(bomb, cause) return true end
 
+-- E.AddHeat(bomb, ply, amount, always) -> true if it went past 100 and
+-- fired. Only bombs with the thermal fuse heat up, unless always (the
+-- torch on a sealed plate heats any bomb).
 local function addHeat(bomb, ply, n, always)
     local st = bomb.eod
     if not (st.mods.fuse or always) then return false end
@@ -341,6 +477,8 @@ local function addHeat(bomb, ply, n, always)
 end
 E.AddHeat = addHeat
 
+-- Tilt switch: knock the bubble k in a random direction (cuts 0.12,
+-- jumpers 0.16, mount cuts 0.1).
 local function jolt(bomb, ply, k)
     local t = bomb.eod.tilt
     if not t or bomb.eod.safe then return end
@@ -350,6 +488,9 @@ local function jolt(bomb, ply, k)
 end
 
 -- Power is gone (every supply cut or drained).
+-- Self-powered charge still armed -> fires. Otherwise the capacitor
+-- starts draining and a timer stops (it keeps the time it had left).
+-- Returns true if it fired.
 local function powerGone(bomb)
     local st = bomb.eod
     if st.sensor then return fail(bomb, "sensor") end
@@ -362,6 +503,11 @@ local function powerGone(bomb)
     return false
 end
 
+-- E.CheckDone(bomb): once the detonator is cut (st.safe), the gas valve
+-- sealed (gas / virus) and the stabiliser dosed (if any), mark the bomb
+-- done: the readout says SAFE and viewers get eod.done. Called after
+-- every action; a new module that must be finished after the detonator
+-- line adds its check here.
 function E.CheckDone(bomb)
     local st = bomb.eod
     if st.done or st.over or not st.safe then return end
@@ -381,6 +527,16 @@ function E.CheckDone(bomb)
     end
 end
 
+-- E.Reading(st, i) -> string: what the probe says about wire i. This is
+-- the only way players learn a wire's job, so each kind has its own
+-- wording (the manual's "Probe readings" table explains them):
+--   supply "LIVE 9V" / "DEAD (drained)"; feed / det / tmrline: "LIVE 9V"
+--   (tmrline adds "· CLOCK"), "LIVE · CAP n%", "DEAD · CAP n%" (under 5%),
+--   "DEAD"; antenna "SIGNAL · f GHz" / "JAMMED · f GHz" / "DEAD";
+--   ajmon "MON ..."; collapse "LOOP 3V"; sense "LIVE 9V · SENSE";
+--   tamper "LOOP 5V"; logic "LOGIC · pulsing" / "DEAD · chip safe";
+--   relay / trig "RELAY ..." / "TRIGGER ..."; decoy "DEAD".
+-- st.covered must be set first (OPS[4] does) for the JAMMED reading.
 function E.Reading(st, i)
     if st.cut[i] then return "CUT" end
     local w = st.wires[i]
@@ -408,6 +564,22 @@ function E.Reading(st, i)
     return "DEAD"
 end
 
+-- Wirecutters on wire i. The rule for each wire kind:
+--   supply   collapse armed -> boom; else cut; last supply -> powerGone
+--   feed / tmrline   still powered -> boom
+--   antenna  anti-jam armed -> boom; else the receiver is dead
+--   sense    self-powered charge still armed -> boom
+--   ajmon    disarms anti-jam      collapse  disarms the collapse circuit
+--   tamper   halves a running timer
+--   logic    chip not in safe mode -> boom
+--   det      liquid charge still full, chip not safe, or still powered
+--            -> boom; else SAFE (gas / virus: the valve leaks, seal it
+--            within leakTime)
+--   decoy    nothing
+-- Sealed wires can't be cut until the plate is open; armoured never.
+-- Every cut jolts the tilt bubble and heats a fused board.
+-- "was" = powered before this cut, so cutting the last supply and then a
+-- line doesn't count as live. Returns true if the bomb went off.
 local function cutWire(bomb, ply, i)
     local st = bomb.eod
     local w = st.wires[i]
@@ -481,6 +653,14 @@ local function cutWire(bomb, ply, i)
     return false
 end
 
+-- A jumper from a part's + to its own − (a short):
+--   relay -> boom (latches closed)        load -> nothing
+--   cell  -> self-powered charge disarmed
+--   cap   -> supply still live: boom; else emptied at once
+--   det   -> powered: boom; else nothing
+--   bat / batB -> collapse armed: boom; else that battery is drained
+--                 (the last one -> powerGone)
+-- Returns true if the bomb went off.
 local function shortPart(bomb, ply, id)
     local st = bomb.eod
     local label = (partOf(st, id) or {}).label or id
@@ -513,10 +693,17 @@ local function shortPart(bomb, ply, id)
     return false
 end
 
+-- A jumper between two different parts (terminal polarity doesn't
+-- matter here):
+--   relay <-> load -> the relay is redirected: the remote can't fire it
+--   relay <-> det  -> boom
+--   det <-> a live battery or a capacitor at 5%+ -> boom
+--   anything else  -> nothing (it still uses up the jumper)
+-- Returns true if the bomb went off.
 local function jumpParts(bomb, ply, x, y)
     local st = bomb.eod
     local a, b = x, y
-    if a > b then a, b = b, a end
+    if a > b then a, b = b, a end   -- (sorted, so each pair is checked once)
     if a == "load" and b == "relay" then
         st.relayed = true
         st.remoteDead = true
@@ -537,11 +724,16 @@ end
 -- Window and actions
 --------------------------------------------------------------------------
 
+-- Close enough to work on it: reach + 40 units of slack for movement.
 local function near(ply, bomb)
     local r = E.Cfg("reach") or 130
     return IsValid(bomb) and bomb.eod and IsValid(ply) and ply:Alive() and ply:GetPos():DistToSqr(bomb:GetPos()) <= (r + 40) ^ 2
 end
 
+-- E.OpenFor(ply, bomb): open the defusal window for ply (adds them to
+-- the viewers and sends the view). Needs them within reach. Server.
+-- E.CloseFor(ply, bomb): take them off the viewers and close their window.
+-- Example: Rhylib.EOD.OpenFor(ply, bomb)
 function E.OpenFor(ply, bomb)
     if not near(ply, bomb) or bomb.eod.over then return end
     bomb.eod.viewers[ply] = true
@@ -559,6 +751,7 @@ function E.CloseFor(ply, bomb)
     net.Send(ply)
 end
 
+-- The client closed its window (bomb entity).
 Net.Receive("eod.close", function(ply)
     local bomb = net.ReadEntity()
     if IsValid(bomb) and bomb.eod then
@@ -567,8 +760,16 @@ Net.Receive("eod.close", function(ply)
     end
 end, { rate = 10, burst = 10 })
 
+-- Window actions, by op number (net eod.act). Each gets (ply, bomb, a, b,
+-- c, d) with the arguments read in the receiver below; the receiver has
+-- already checked the player is near, is a viewer, and the bomb isn't
+-- over (or done, except op 15). Return "noSend" to skip the state resend
+-- (the probe answers on its own). A new module action takes the next
+-- free op (16 needs the op field to grow past 4 bits on both sides).
 local OPS = {}
 
+-- 0 / 1: first inspection, a hold. 0 = started, 1 = finished; the server
+-- checks at least 90% of inspectTime passed between them.
 OPS[0] = function(ply, bomb) ply.eodInspect = { bomb = bomb, t = CurTime() } end
 
 OPS[1] = function(ply, bomb)
@@ -581,6 +782,7 @@ OPS[1] = function(ply, bomb)
     msg(ply, "First inspection done")
 end
 
+-- 2: release the lid-switch tab.
 OPS[2] = function(ply, bomb)
     local st = bomb.eod
     if not E.HasKit(ply) or st.open then return end
@@ -588,6 +790,7 @@ OPS[2] = function(ply, bomb)
     msg(ply, st.f.lid and "Lid-switch tab released" or "There's no lid switch on this one")
 end
 
+-- 3: lift the lid (lid switch not released -> boom). Starts the tilt bubble.
 OPS[3] = function(ply, bomb)
     local st = bomb.eod
     if not E.HasKit(ply) or st.open then return end
@@ -598,6 +801,9 @@ OPS[3] = function(ply, bomb)
     msg(ply, "Casing open: the board is exposed")
 end
 
+-- The board can be worked on: kit, lid off, fake board cover gone.
+-- (the "st.safe and false" part is always false: the board stays
+-- workable after the detonator is cut)
 local function boardReady(ply, st)
     if not E.HasKit(ply) then msg(ply, "You need an EOD kit", true) return false end
     if not st.open or st.safe and false then return false end
@@ -605,6 +811,7 @@ local function boardReady(ply, st)
     return true
 end
 
+-- 4: probe wire i -> eod.read (wire index 5 bits, reading) to this player only.
 OPS[4] = function(ply, bomb, i)
     local st = bomb.eod
     if not boardReady(ply, st) or not st.wires[i] then return end
@@ -617,12 +824,16 @@ OPS[4] = function(ply, bomb, i)
     return "noSend"
 end
 
+-- 5: cut wire i (see cutWire).
 OPS[5] = function(ply, bomb, i)
     local st = bomb.eod
     if not boardReady(ply, st) then return end
     cutWire(bomb, ply, i)
 end
 
+-- 6: jumper from part index pa (terminal pola: true = +) to part pb
+-- (polb). Both parts need terminals. Same part = a short (shortPart),
+-- two parts = jumpParts. Uses one jumper even if nothing happens.
 OPS[6] = function(ply, bomb, pa, pola, pb, polb)
     local st = bomb.eod
     if not boardReady(ply, st) then return end
@@ -638,6 +849,9 @@ OPS[6] = function(ply, bomb, pa, pola, pb, polb)
     addHeat(bomb, ply, E.Cfg("heatJumper") or 30)
 end
 
+-- 7: nudge the tilt bubble (dx, dy each -1..1; 0.14 per nudge, offsets kept within ±3).
+-- (no resend needed for the nudging client: it moved its own copy; the
+-- resend still goes out so other viewers see it)
 OPS[7] = function(ply, bomb, dx, dy)
     local st = bomb.eod
     if not (st.tilt and st.open) or st.safe then return end
@@ -645,6 +859,8 @@ OPS[7] = function(ply, bomb, dx, dy)
     st.tilt.ny = math.Clamp(st.tilt.ny + dy * 0.14, -3, 3)
 end
 
+-- 8: torch on (true) / off (false) on the sealed plate. The world timer
+-- does the cutting and heating while st.torchBy is set.
 OPS[8] = function(ply, bomb, on)
     local st = bomb.eod
     if not (st.mods.sealed and st.open) or st.sealedOpen or not E.HasKit(ply) then return end
@@ -656,6 +872,8 @@ OPS[8] = function(ply, bomb, on)
     end
 end
 
+-- 9: logic chip switches, a "0101" string. Wrong -> boom; right -> safe
+-- mode (+10 heat on a fused board).
 OPS[9] = function(ply, bomb, sw)
     local st = bomb.eod
     if not (st.chip and st.open) or st.chip.ok or not E.HasKit(ply) then return end
@@ -668,6 +886,9 @@ OPS[9] = function(ply, bomb, sw)
     addHeat(bomb, ply, 10)
 end
 
+-- 10: open the liquid charge's drain valve. Still powered -> boom;
+-- needle outside band - 2 .. band + 16 (2 units of slack each side of
+-- the 14-wide green band) -> boom.
 OPS[10] = function(ply, bomb)
     local st = bomb.eod
     if not (st.liquid and st.open) or st.liquid.drained or not E.HasKit(ply) then return end
@@ -679,6 +900,8 @@ OPS[10] = function(ply, bomb)
     msg(ply, "Liquid charge drained")
 end
 
+-- 11: X-ray the fake board: eod.xray to this player only (the order is
+-- never in the shared view).
 OPS[11] = function(ply, bomb)
     local st = bomb.eod
     if not (st.fake and st.open) or st.fake.removed or st.fake.xrays <= 0 or not E.HasKit(ply) then return end
@@ -692,6 +915,8 @@ OPS[11] = function(ply, bomb)
     msg(ply, "X-ray: the mount order shows for " .. secs .. " s")
 end
 
+-- 12: cut fake board mount m (1-3). Out of order -> boom; +20 heat on a
+-- fused board; all three cut -> the cover comes off.
 OPS[12] = function(ply, bomb, m)
     local st = bomb.eod
     if not (st.fake and st.open) or st.fake.removed or not E.HasKit(ply) or st.fake.cut[m] == nil or st.fake.cut[m] then return end
@@ -706,6 +931,8 @@ OPS[12] = function(ply, bomb, m)
     end
 end
 
+-- 13: inject the stabiliser, q quarters of a ml (5 bits). Only after the
+-- detonator is cut; any other dose -> boom.
 OPS[13] = function(ply, bomb, q)
     local st = bomb.eod
     if not st.stab or not st.safe or st.stab.done or not E.HasKit(ply) then return end
@@ -718,6 +945,7 @@ OPS[13] = function(ply, bomb, q)
     msg(ply, "Charge stabilised")
 end
 
+-- 14: seal the gas valve (gas / virus charges, after the detonator cut).
 OPS[14] = function(ply, bomb)
     local st = bomb.eod
     if not st.safe or st.f.charge == "he" or st.gasSealed then return end
@@ -726,6 +954,9 @@ OPS[14] = function(ply, bomb)
     msg(ply, "Valve sealed")
 end
 
+-- 15: Render safe skill (eod_render): take the charge from a finished
+-- bomb as rhylib_he_charge items (1, or 2 from a big bomb), once.
+-- Needs rhylib_republic (the item) and rhylib_inventory.
 OPS[15] = function(ply, bomb)
     local st = bomb.eod
     if not st.done or st.recovered or not E.Skill(ply, "eod_render") then return end
@@ -737,6 +968,14 @@ OPS[15] = function(ply, bomb)
     msg(ply, "Recovered the charge: " .. n .. " high explosive charge" .. (n == 1 and "" or "s"))
 end
 
+-- net eod.act: bomb entity, op (4 bits), then by op:
+--   4, 5   wire index (5 bits)
+--   6      part A index (4 bits), A plus (bool), part B index (4 bits), B plus (bool)
+--   7      dx (signed 3 bits), dy (signed 3 bits), clamped to -1..1
+--   8      on (bool)        9   switches (string, 4 chars)
+--   12     mount (2 bits)   13  dose in quarter ml (5 bits)
+--   others nothing
+-- Rate limit 20 per second per player.
 Net.Receive("eod.act", function(ply)
     local bomb = net.ReadEntity()
     local op = net.ReadUInt(4)

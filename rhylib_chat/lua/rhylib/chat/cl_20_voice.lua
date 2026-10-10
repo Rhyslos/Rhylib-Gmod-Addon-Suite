@@ -3,6 +3,12 @@
     meter) with a list on the right side of the screen: the speaker's
     helmet portrait, name and job, in the house style. No volume meter.
     The stripe is white for local voice, else the radio channel's colour.
+
+    Client only. Hooks: PlayerStartVoice / PlayerEndVoice (return true so
+    GMod's own panel never shows) and HUDPaint "chat.voice". The list sits
+    on the right side, 55% down the screen; newest speaker at the bottom.
+    Uses Rhylib.UI.DrawPortrait (rhylib_core) and, when rhylib_radio is
+    installed, Rhylib.Radio.SpeakerColor for the stripe.
 ]]
 
 local UI = Rhylib.UI
@@ -13,7 +19,7 @@ local COL_LIGHT = Color(170, 176, 180, 70)
 local COL_LOCAL = Color(233, 237, 239)   -- local voice; radio voices use their channel colour (rhylib_radio)
 local COL_DIM = Color(140, 142, 136)
 
-local FADE = 0.25
+local FADE = 0.25      -- seconds to fade a row in or out
 local speakers = {}   -- list of { ply, at, endAt }
 
 local function find(ply)

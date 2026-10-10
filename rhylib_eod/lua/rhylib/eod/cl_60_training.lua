@@ -14,6 +14,9 @@ local OPAQUE = Color(14, 16, 15, 255)
 
 local tr = { frame = nil, bomb = nil, c = nil }
 
+-- E.TrainAct(bomb, op, json): send net eod.train. Ops: 0 build (json =
+-- builder fields, same as the GM custom builder), 1 same again,
+-- 2 / 3 / 4 random simplified / small / large, 5 open the setup window.
 function E.TrainAct(bomb, op, js)
     if not IsValid(bomb) then return end
     Net.Start("eod.train")
@@ -23,6 +26,8 @@ function E.TrainAct(bomb, op, js)
     net.SendToServer()
 end
 
+-- E.TrainingSetup(bomb): ask the server for the setup window (it answers
+-- with eod.trainopen and the bomb's current features).
 function E.TrainingSetup(bomb)
     E.TrainAct(bomb, 5)
 end

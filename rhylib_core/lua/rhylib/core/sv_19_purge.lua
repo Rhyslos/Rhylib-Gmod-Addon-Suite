@@ -19,6 +19,15 @@
 
     After removing, hook Rhylib.DataPurged runs so modules drop what they
     cached (roster characters, datapad).
+
+    Checks: a player must be superadmin (IsSuperAdmin, not a permission).
+    Bot rows: keys containing "9007199684" (bot SteamID64s) or exactly
+    "BOT". Map modules: armoury, spawns, dp_places, med_places, mp_places,
+    training (rows keyed by map name, removed when maps/<name>.bsp is
+    missing; the current map never). Inactive: "seen" in module "char"
+    (rhylib_roster) older than <days>; every row (not module admin) whose
+    key holds that SteamID64, roster member lists, Data "char_nums"/"all".
+    Example: rhylib_purge_inactive 90 (lists), then rhylib_purge_inactive 90 confirm
 ]]
 
 local Data = Rhylib.Data

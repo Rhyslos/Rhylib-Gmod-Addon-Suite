@@ -8,6 +8,8 @@
                visor's left cheek pocket is the radio's), the top line is
                the time left.
                Last minute amber; at 0 a short "time's up" banner.
+    Client only. Admin.CurrentCall() gives the call that's up.
+    Console: rhylib_call_status prints what this client sees (for testing).
 ]]
 
 local Admin = Rhylib.Admin
@@ -31,6 +33,9 @@ local wasRunning = false
 local function S(n) return math.floor(n * ScrH() / 1080 + 0.5) end
 
 -- The current call, or nil. timed: seconds left (nil = untimed).
+-- Admin.CurrentCall(): { title, sub, by, ends (CurTime, 0 = untimed),
+-- left (seconds, nil = untimed), total (timer length) } or nil. nil also
+-- when a timer ran out, or an untimed call is older than callShowFor.
 local function current()
     local title = GetGlobal2String("rhylib_call_title", "")
     if title == "" then return nil end
@@ -55,6 +60,8 @@ local function clock(secs)
 end
 
 -- New calls (and the one that's up when you join), and timers running out.
+-- A change of rhylib_call_n = a new call or one ended; seen starts at -1,
+-- so a call that's up when you join shows its banner once.
 timer.Create("rhylib_admin_calls", 0.25, 0, function()
     if not IsValid(LocalPlayer()) then return end
     local n = GetGlobal2Int("rhylib_call_n", 0)
@@ -235,7 +242,7 @@ Rhylib.Hook.Add("HUDPaint", "admin.calls", function()
     if IsValid(wep) and wep:GetClass() == "gmod_camera" then return end
     local c = current()
     if not (c and c.left) then return end
-    -- (the left cheek pocket is the radio's now: always the top-right plate)
+    -- (the left cheek pocket is the radio's now: always the top-left plate)
     drawCornerTimer(c)
 end)
 

@@ -22,6 +22,14 @@
       rhylib_droidAggro for clients): one level for every droid, changed
       live with !droidaggro <1-5> or the toolgun's buttons (staff with the
       toolgun permission). Not saved: a map change goes back to the config.
+
+    Net droids.aggro (client -> server, the toolgun's buttons): level
+    UInt 3 (1-5). Checked against permission rhylib.toolgun (registered by
+    rhylib_toolgun; without that addon the check always says no).
+    Chat: !droidaggro / !aggression [1-5] (same permission; no number shows
+    the level). Console: rhylib_droidaggro <1-5> (server console or
+    superadmin; no number sets 3).
+    Clone markers and orders use side 1 (see D.MarkerPlaced, D.PaintMode).
 ]]
 
 local D = Rhylib.Droids
@@ -31,7 +39,11 @@ D.markers = D.markers or {}   -- [marker] = kind name
 local KIND_NAMES = { "attack", "defend", "fallback" }
 D.MARKER_KINDS = KIND_NAMES
 
--- Mode for a droid (and where its area is).
+-- D.SetMode(npc, mode, center): sets a droid's or clone's mode ("guard",
+-- "patrol", "attack", "roam", "retreat"; anything else = "guard") and,
+-- if given, its home (centre of its area). Ends following, command wheel
+-- orders, a running retreat and roam pairing. Server.
+-- Example: Rhylib.Droids.SetMode(droid, "patrol", droid:GetPos())
 function D.SetMode(droid, mode, center)
     if not (IsValid(droid) and (droid.IsRhylibDroid or droid.IsRhylibClone)) then return end
     if mode ~= "guard" and mode ~= "patrol" and mode ~= "attack" and mode ~= "roam" and mode ~= "retreat" then mode = "guard" end
@@ -47,7 +59,10 @@ function D.SetMode(droid, mode, center)
     droid:SetNW2String("rhylib_dmode", mode)
 end
 
--- A marker's order on one droid.
+-- D.ApplyMarker(npc, marker): applies one marker's order to one NPC:
+-- attack -> attack mode toward a spot near it, defend -> guard there,
+-- fallback -> its fallback point. Spots are spread 220 around the marker
+-- and snapped to the navmesh.
 function D.ApplyMarker(droid, marker)
     if not (IsValid(droid) and IsValid(marker)) then return end
     local kind = D.markers[marker]
@@ -78,6 +93,9 @@ end
 -- else droid markers (D.active, D.lastOrder / D.lastFallback).
 local function sideList(side) return side == 1 and (D.clones or {}) or D.active end
 
+-- D.MarkerPlaced(marker, kindName, side): called by a new marker entity a
+-- tick after it spawns. Applies it to that side's NPCs within markerRadius
+-- and remembers it so NPCs the toolgun places later follow it too.
 function D.MarkerPlaced(marker, kind, side)
     D.markers[marker] = kind
     if side == 1 then
@@ -94,6 +112,8 @@ function D.MarkerPlaced(marker, kind, side)
     end
 end
 
+-- D.MarkerRemoved(marker): called from the marker's OnRemove. Attackers it
+-- sent guard where they stand; its fallback point is cleared.
 function D.MarkerRemoved(marker)
     D.markers[marker] = nil
     if D.lastOrder == marker then D.lastOrder = nil end
@@ -121,7 +141,9 @@ end
 -- next one placed within 3 s and 500 units walks beside this one).
 D.roamSolo = D.roamSolo or {}
 
--- A droid the toolgun placed: the picked mode, then the latest markers.
+-- D.ToolPlaced(npc, mode): a droid or clone the toolgun (or a preset)
+-- placed: the picked mode, then the latest markers of its side. Roam
+-- placements pair up (D.roamSolo). Called by rhylib_toolgun.
 function D.ToolPlaced(droid, mode)
     if not (IsValid(droid) and (droid.IsRhylibDroid or droid.IsRhylibClone)) then return end
     D.SetMode(droid, mode or "guard", droid:GetPos())
@@ -149,6 +171,9 @@ end
 -- area centred where it stands (attack: no area).
 -- side 1 = clones (a GM can re-order a squad, which ends following an
 -- officer), else droids.
+-- D.PaintMode(pos, mode, side) -> how many NPCs got it. Called by the
+-- toolgun's order entries (ord_*, cord_*).
+-- Example: Rhylib.Droids.PaintMode(tr.HitPos, "attack")   -- droids near the spot
 function D.PaintMode(pos, mode, side)
     local r = D.Cfg("brushRadius")
     local n = 0
@@ -227,7 +252,13 @@ Rhylib.Hook.Add("Rhylib.ConfigChanged", "droids.aggro", function(m, k)
     end
 end)
 
+-- D.SetAggro(n, by): sets the live aggression for every droid (1-5,
+-- rounded and clamped; not a number = 3), publishes it to clients, makes
+-- droids re-plan and tells online admins in chat. by (player) is named in
+-- the message, may be nil. Server. Not saved.
+-- Example: Rhylib.Droids.SetAggro(5)   -- everyone charges
 function D.SetAggro(n, by)
+
     n = math.Clamp(math.Round(tonumber(n) or 3), 1, 5)
     D.aggroLive = n
     publish()

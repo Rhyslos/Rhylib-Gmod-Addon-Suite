@@ -1,7 +1,11 @@
 --[[
-    Networking helpers.
+    Networking helpers (shared).
 
-    All Rhylib messages are named "rhylib.<name>".
+    All Rhylib messages are named "rhylib.<name>". Every Rhylib.Net
+    function takes the short name ("inv.move") and adds the prefix.
+    The server must know every name (util.AddNetworkString): Net.Receive
+    and Net.CreateBatch on the server do it; for messages the server only
+    sends, call Net.Register(name) in a server file at load.
 
     1) Client-to-server requests, rate limited per player:
         -- server
@@ -33,6 +37,17 @@
 
     Write exact bit sizes (net.WriteUInt with a bit count). Never use
     net.WriteTable for anything sent often.
+
+    3) Server to client, one message (no helper needed beyond the name):
+        -- server
+        Rhylib.Net.Register("myaddon.hello")          -- at file load
+        Rhylib.Net.Start("myaddon.hello") net.WriteUInt(5, 4) net.Send(ply)
+        -- client
+        Rhylib.Net.Receive("myaddon.hello", function(len) local n = net.ReadUInt(4) end)
+
+    The server also counts every net message's bytes for the profiler by
+    wrapping net.Start and net.Send/Broadcast/SendOmit/SendPVS/SendPAS
+    (below).
 ]]
 
 Rhylib.Net = Rhylib.Net or {}
@@ -41,14 +56,19 @@ local Net = Rhylib.Net
 local PREFIX = "rhylib."
 Net.MSG_SOFT_LIMIT = 60000             -- bytes; start a new message past this
 
+-- Net.Name(name): the full message name ("rhylib." .. name), for code that
+-- calls net.Receive itself.
 function Net.Name(name)
     return PREFIX .. name
 end
 
+-- Net.Register(name): util.AddNetworkString on the server; nothing on clients.
 function Net.Register(name)
     if SERVER then util.AddNetworkString(PREFIX .. name) end
 end
 
+-- Net.Start(name): net.Start("rhylib." .. name). Write, then send as usual
+-- (net.Send / net.Broadcast / net.SendToServer).
 function Net.Start(name)
     net.Start(PREFIX .. name)
 end
@@ -114,7 +134,19 @@ end
 if SERVER then
     local buckets = {}  -- [name][ply] = { tokens, last }
 
-    -- opts.rate: messages per second allowed, opts.burst: max saved up.
+    -- Net.Receive(name, fn(ply, len), opts) (server): handle a client
+    -- request. Registers the name too. Rate limited per player with a
+    -- token bucket: opts.rate = messages per second allowed (default 10),
+    -- opts.burst = how many can be saved up (default = rate). A message
+    -- over the limit is dropped silently (fn isn't called), so a spamming
+    -- client can't cost server time. fn still has to check everything the
+    -- client sent (permissions, distances, ids).
+    -- Example:
+    --   Rhylib.Net.Receive("myaddon.use", function(ply, len)
+    --       local ent = net.ReadEntity()
+    --       if not IsValid(ent) or ent:GetPos():DistToSqr(ply:GetPos()) > 100 * 100 then return end
+    --       ...
+    --   end, { rate = 4, burst = 8 })
     function Net.Receive(name, fn, opts)
         Net.Register(name)
         local rate = opts and opts.rate or 10
@@ -138,6 +170,8 @@ if SERVER then
         end)
     end
 else
+    -- Net.Receive(name, fn(len)) (client): handle a server message. No
+    -- rate limit, no player argument.
     function Net.Receive(name, fn)
         net.Receive(PREFIX .. name, function(len)
             fn(len)
@@ -155,6 +189,10 @@ if SERVER then
 
     Net.batches = Net.batches or {}
 
+    -- Net.CreateBatch(name, writeItem(item)) (server): a batch object.
+    -- Create it once at file load (calling again with the same name keeps
+    -- the queues and swaps the writer). writeItem writes one item with
+    -- net.Write*; it must write the same bits the client's readItem reads.
     function Net.CreateBatch(name, writeItem)
         Net.Register(name)
         local b = Net.batches[name]
@@ -167,6 +205,10 @@ if SERVER then
         return b
     end
 
+    -- batch:Send(ply, item) queues item for one player; :SendTo(list, item)
+    -- for each player in a list; :Broadcast(item) for everyone. Items are
+    -- written at the end of the tick, so keep the item table unchanged
+    -- until then (make a new table per item).
     function Batch:Send(ply, item)
         local q = self.perPly[ply]
         if not q then
@@ -186,8 +228,13 @@ if SERVER then
         self.dirty = true
     end
 
-    -- Writes items into as many messages as needed (each under the soft
-    -- size limit). Also used by modules that send their own batches.
+    -- Net.SendItems(name, items, write, sendFn, target) (server): writes items
+    -- into as many messages as needed (each under the soft size limit) in
+    -- the batch wire format and sends each with sendFn(target), e.g.
+    -- net.Send + a player, or net.Broadcast. Also used by modules that send
+    -- their own batches; the client reads them with Net.ReceiveBatch.
+    -- An item is never split: one item bigger than ~4 KB past the limit
+    -- could make a message too large.
     function Net.SendItems(name, items, write, sendFn, target)
         local total, i = #items, 1
         local limit = Net.MSG_SOFT_LIMIT
@@ -216,6 +263,7 @@ if SERVER then
 
     -- Queue tables are kept and emptied, so a busy tick allocates nothing
     -- here and an idle tick costs one flag check.
+    -- batch:Flush(): send what's queued now (the Tick hook below does this).
     function Batch:Flush()
         if not self.dirty then return end
         self.dirty = false
@@ -238,6 +286,9 @@ if SERVER then
         for _, b in pairs(Net.batches) do b:Flush() end
     end, 1000)
 else
+    -- Net.ReceiveBatch(name, readItem(), onItem(item)) (client): readItem
+    -- reads one item with net.Read* and returns it; onItem gets each one in
+    -- order. At most 4096 items per message are read.
     function Net.ReceiveBatch(name, readItem, onItem)
         net.Receive(PREFIX .. name, function()
             -- A 1 bit before each item; 0 ends the list. The cap guards

@@ -1,32 +1,47 @@
 --[[
-    Server inventory. The server owns every container; clients only ask.
+    Server inventory (server only). The server owns every container;
+    clients only ask. Adds the public Rhylib.Inventory functions (AddItem,
+    Remove, Drop, Move, Count...), the hotbar, combining munitions, saving,
+    and the hooks that turn weapon pickups into inventory items.
 
-    Each player has a state table:
-        { cont = { [1] = main grid, [2] = backpack grid (while worn), [3] = back slot },
-          byUid = { [uid] = inst }, nextUid, ready }
+    Each player has a state table (Inv.Get(ply)):
+        { cont = { [cid] = { w, h, items = { [uid] = inst } } },
+          byUid = { [uid] = inst }, nextUid, ready, ply, ext (open storage) }
     Container ids and placement rules are in sh_00_items.lua.
 
     Networking (to the owner only):
       - "inv.full"  everything, sent once when the client asks after joining
+                    (container count 6 bits, then per container id 5 + w 5 + h 5,
+                    item count 8, then each item as Items.WriteInstance)
       - "inv.upd"   batched per tick: changed items, removed items, and
                     container size changes (backpack put on or taken off)
-    Client requests (rate limited): inv.req, inv.move, inv.drop, inv.use,
-    inv.split, inv.combine. Outside containers (lockers, armouries,
-    crates) are in sv_30_storage.lua.
+      - "inv.note"  a short message for the inventory window (string)
+      - "inv.busy"  combining munitions ends at this CurTime (float; 0 = stopped)
+    Client requests (rate limited): inv.req, inv.move, inv.hotbar, inv.drop,
+    inv.use, inv.split, inv.combine, inv.hide. Giving and holding are in
+    sv_40_give.lua; outside containers (lockers, armouries, crates) in
+    sv_30_storage.lua.
 
-    Issued gear (data.issued, from an armoury or ammo cabinet) isn't
-    dropped on the ground: dropping it hands it back.
+    Issued gear (data.issued, from an armoury or ammo cabinet) drops like
+    anything else, but the world item despawns sooner (config
+    issuedDropLife). Job loadout gear (data.loadout) just vanishes.
 
     Saving: changed inventories are marked dirty and written to SQLite
     every few seconds (Rhylib.Data batches the writes further).
+    Data module "inventory", key = SteamID64, value = a list of rows
+    { id, x, y, rot (0/1), count, data, container id, hotbar slot }.
 
     Weapons: an item with a `weapon` class gives that weapon while it's in
     any container, and strips it when the item leaves. Clip and power cell
     are stored in the item via the weapon's GetInventoryData / SetInventoryData.
 
-    Other modules can listen to:
-      Rhylib.InventoryChanged(ply)
+    Hooks fired (server):
+      Rhylib.InventoryChanged(ply)               -- once per tick after any change
       Rhylib.InventoryWeaponPickup(ply, class)   -- a new weapon was picked up
+      Rhylib.LoadoutDropped(ply, id)             -- job gear dropped (it vanishes)
+    Hooks asked (return a value):
+      Rhylib.CarryLimit(ply, id, def) -> number  -- how many of a gun (default 1)
+      Rhylib.InventoryLocked(ply) -> true        -- no dropping / using / storages
 ]]
 
 Rhylib.Inventory = Rhylib.Inventory or {}
@@ -58,6 +73,8 @@ Rhylib.Net.Register("inv.note")
 
 local OP_REMOVE, OP_SET, OP_DIMS = 0, 1, 2
 
+-- inv.upd, one entry: op 2 bits, then OP_SET an item (WriteInstance),
+-- OP_REMOVE its uid, OP_DIMS container id 5 + w 5 + h 5 (0 x 0 = gone).
 local updBatch = Rhylib.Net.CreateBatch("inv.upd", function(ch)
     net.WriteUInt(ch.op, 2)
     if ch.op == OP_SET then
@@ -135,7 +152,7 @@ end
 
 Inv.STOWED = "rhylib_stowed"  -- the empty weapon (lua/weapons/rhylib_stowed.lua)
 
--- Put the gun away: hold the empty Stowed weapon.
+-- Inv.Stow(ply): put the gun away: hold the empty Stowed weapon (given if missing).
 function Inv.Stow(ply)
     if not ply:HasWeapon(Inv.STOWED) then ply:Give(Inv.STOWED) end
     ply:SelectWeapon(Inv.STOWED)
@@ -160,6 +177,9 @@ local function stripWeapon(ply, inst)
     end
 end
 
+-- Inv.CaptureWeapons(ply): writes every carried weapon's live state
+-- (clip, magazine, cell, fire mode) into its item. Runs before saving and
+-- on death.
 function Inv.CaptureWeapons(ply)
     local st = Inv.states[ply]
     if not st then return end
@@ -171,6 +191,8 @@ function Inv.CaptureWeapons(ply)
     for uid, inst in pairs(st.byUid) do captureWeapon(ply, inst, true, first[inst.id] == uid) end
 end
 
+-- Inv.GiveAllWeapons(ply): gives the weapon of every weapon item carried
+-- (on spawn), each loaded from its item's data.
 function Inv.GiveAllWeapons(ply)
     -- Lowest uid first: of two copies, that one's state is the live gun's.
     local list = {}
@@ -342,6 +364,7 @@ local function serialize(st)
     return out
 end
 
+-- Loads the saved rows (see the header) into a fresh state.
 local function load(ply, st)
     local saved = Rhylib.Data.Get("inventory", ply:SteamID64())
     if not istable(saved) then return end
@@ -382,6 +405,9 @@ local function load(ply, st)
     Inv.dirty[ply] = nil
 end
 
+-- Inv.Get(ply): the player's state table, made (and loaded from the
+-- database) the first time. Every grid the player should have is made
+-- here: main grid, back slot, gear slots, belt cell pouch, skill grids.
 function Inv.Get(ply)
     local st = Inv.states[ply]
     if st then return st end
@@ -417,6 +443,8 @@ end
 -- Public API
 --------------------------------------------------------------------------
 
+-- Inv.Count(ply, id): how many of item id the player carries (all stacks).
+-- Example: if Rhylib.Inventory.Count(ply, "cell") == 0 then ... end
 function Inv.Count(ply, id)
     local n = 0
     for _, o in pairs(Inv.Get(ply).byUid) do
@@ -425,6 +453,7 @@ function Inv.Count(ply, id)
     return n
 end
 
+-- Inv.Has(ply, id): carries at least one.
 function Inv.Has(ply, id)
     return Inv.Count(ply, id) > 0
 end
@@ -440,19 +469,20 @@ function Inv.Limit(ply, id)
     return tonumber(n) or 1
 end
 
--- "You already carry one" / "... 2".
+-- Inv.LimitText(ply, id): "You already carry one" / "... 2" (for messages).
 function Inv.LimitText(ply, id)
     local n = Inv.Limit(ply, id)
     return n > 1 and ("You already carry " .. n) or "You already carry one"
 end
 
--- Carrying as many as allowed already?
+-- Inv.AtLimit(ply, id): carrying as many of a one-only item as allowed already?
 function Inv.AtLimit(ply, id)
     local def = Items.defs[id]
     return Items.Unique(def) and Inv.Count(ply, id) >= Inv.Limit(ply, id) or false
 end
 
--- May this player carry this item at all (def.carrySkill, rhylib_skills)?
+-- Inv.MayHold(ply, id): may this player carry this item at all
+-- (def.carrySkill, rhylib_skills)? Always true without rhylib_skills.
 function Inv.MayHold(ply, id)
     local def = Items.defs[id]
     if not (def and def.carrySkill) then return true end
@@ -462,7 +492,7 @@ function Inv.MayHold(ply, id)
     return K.Has(ply, def.carrySkill)
 end
 
--- Why ply can't carry id, for messages.
+-- Inv.HoldReason(id): why someone can't carry id, for messages.
 function Inv.HoldReason(id)
     local def = Items.defs[id]
     local K = Rhylib.Skills
@@ -472,7 +502,8 @@ function Inv.HoldReason(id)
     return "You need the " .. (n and n.name or "right") .. " skill to carry that"
 end
 
--- Would one item of this type fit right now?
+-- Inv.CanAdd(ply, id): would one item of this type fit right now (room,
+-- carry limit and carry skill all checked)? Returns true/false.
 function Inv.CanAdd(ply, id)
     local st = Inv.Get(ply)
     local def = Items.defs[id]
@@ -488,7 +519,15 @@ function Inv.CanAdd(ply, id)
     return findSpot(st, id) ~= nil
 end
 
--- Adds items, stacking where possible. Returns how many didn't fit.
+-- Inv.AddItem(ply, id, count, data): adds items, stacking onto matching
+-- full stacks first, then into free spots (worn slot, belt cell pouch,
+-- rack, cell pouch, holster, main grid, backpack, belt, pouches). Gives
+-- the weapon for weapon items. count defaults to 1, data to {}.
+-- Returns how many didn't fit (0 = all went in). Server only.
+-- Example:
+--   local left = Rhylib.Inventory.AddItem(ply, "mag_medium", 3)
+--   if left > 0 then Rhylib.Inventory.SpawnWorldItem(ply, "mag_medium", left) end
+--   Rhylib.Inventory.AddItem(ply, "rhylib_dc15s", 1, { issued = true })   -- armoury gear
 function Inv.AddItem(ply, id, count, data)
     local st = Inv.Get(ply)
     local def = Items.defs[id]
@@ -532,7 +571,10 @@ function Inv.AddItem(ply, id, count, data)
     return count + over
 end
 
--- Removes `amount` (default all) from one item.
+-- Inv.Remove(ply, uid, amount): removes `amount` (default all) from one
+-- item. Returns the item, or nil if there's no such uid or a worn item
+-- can't come off (a backpack that isn't empty).
+-- Example: Rhylib.Inventory.Remove(ply, inst.uid, 1)
 function Inv.Remove(ply, uid, amount)
     local st = Inv.Get(ply)
     local inst = st.byUid[uid]
@@ -547,8 +589,8 @@ function Inv.Remove(ply, uid, amount)
     return inst
 end
 
--- Takes one of the fullest item of this type (for reloads). Returns its
--- fill (0-1) and whether it was issued, or nil.
+-- Inv.TakeBest(ply, id): takes one of the fullest item of this type (for
+-- reloads). Returns its fill (0-1) and whether it was issued, or nil.
 function Inv.TakeBest(ply, id)
     local best, bestFill
     for _, o in pairs(Inv.Get(ply).byUid) do
@@ -589,12 +631,15 @@ local function makeRoom(list, max)
     end
 end
 
--- Room for one more dropped item under the global cap (the grapple hook
--- uses this for hooks that didn't grip).
+-- Inv.MakeWorldRoom(): room for one more dropped item under the global
+-- cap (the grapple hook uses this for hooks that didn't grip).
 function Inv.MakeWorldRoom()
     makeRoom(Inv.worldItems, math.max(1, Config.Get("inventory", "worldItemMax")))
 end
 
+-- Inv.SpawnWorldItem(ply, id, count, data): puts a rhylib_world_item on
+-- the ground in front of ply (oldest removed past worldItemMax /
+-- worldItemPerPlayer). Returns the entity, or nil.
 function Inv.SpawnWorldItem(ply, id, count, data)
     local mine = Inv.worldItemsBy[ply]
     if not mine then
@@ -617,14 +662,18 @@ function Inv.SpawnWorldItem(ply, id, count, data)
     return ent
 end
 
--- Adds an item, and drops whatever doesn't fit at the player's feet.
+-- Inv.AddOrDrop(ply, id, count, data): adds an item, and drops whatever
+-- doesn't fit in front of the player. Returns nothing.
+-- Example: Rhylib.Inventory.AddOrDrop(ply, "cell", 2)
 function Inv.AddOrDrop(ply, id, count, data)
     local left = Inv.AddItem(ply, id, count, data)
     -- (Issued gear on the ground despawns sooner: rhylib_world_item.)
     if left > 0 then Inv.SpawnWorldItem(ply, id, left, data) end
 end
 
--- single: drop just one off a stack (ctrl + drag out of the window).
+-- Inv.Drop(ply, uid, single): drops an item on the ground (job loadout
+-- gear vanishes instead). single: just one off a stack (ctrl + drag out
+-- of the window). Refused while locked or when it can't come off.
 function Inv.Drop(ply, uid, single)
     if Inv.Locked(ply) then return end
     local st = Inv.Get(ply)
@@ -680,7 +729,10 @@ local function moveOne(ply, st, inst, cid, x, y, rot)
     end
 end
 
--- single: move just one off a stack.
+-- Inv.Move(ply, uid, cid, x, y, rot, single): moves an item to container
+-- cid at x, y (merging onto a matching stack there); cid EXT hands it to
+-- the open storage (Inv.Deposit). single: move just one off a stack.
+-- A refused move sends the client its item back where it was.
 function Inv.Move(ply, uid, cid, x, y, rot, single)
     if cid == Items.EXT then
         if Inv.Deposit then Inv.Deposit(ply, uid, x, y, rot, single) end
@@ -736,7 +788,8 @@ end
 -- Hotbar slots (inst.hb). One item per slot.
 --------------------------------------------------------------------------
 
--- New weapons go into the first free slot (if autoHotbar is on).
+-- Inv.AutoHotbar(st, inst): new weapons go into the first free slot (if
+-- config autoHotbar is on; one slot per item type). Sets inst.hb only.
 function Inv.AutoHotbar(st, inst)
     local def = Items.defs[inst.id]
     if inst.hb or not def or not def.weapon or not Config.Get("inventory", "autoHotbar") then return end
@@ -750,7 +803,8 @@ function Inv.AutoHotbar(st, inst)
     end
 end
 
--- Put item uid in slot n (uid 0: just empty slot n).
+-- Inv.SetHotbar(ply, uid, n): put item uid in slot n (uid 0: just empty
+-- slot n). Whatever was there leaves the hotbar (and is put away if held).
 function Inv.SetHotbar(ply, uid, n)
     local st = Inv.Get(ply)
     if n < 1 or n > Items.HotbarSize(st) then return end
@@ -777,8 +831,8 @@ function Inv.SetHotbar(ply, uid, n)
     end
 end
 
--- Splits a stack in two; the new half goes to the first free spot,
--- same container first.
+-- Inv.Split(ply, uid): splits a stack in two; the new half goes to the
+-- first free spot, same container first.
 function Inv.Split(ply, uid)
     local st = Inv.Get(ply)
     local inst = st.byUid[uid]
@@ -834,7 +888,9 @@ end
 -- timer ends.
 --------------------------------------------------------------------------
 
--- A short message shown in the inventory window (it covers the HUD).
+-- Inv.Note(ply, text): a short message shown in the inventory window (it
+-- covers the HUD; a notification when the window is shut). Net inv.note.
+-- Example: Rhylib.Inventory.Note(ply, "Your locker is full")
 function Inv.Note(ply, text)
     Rhylib.Net.Start("inv.note")
     net.WriteString(text)
@@ -868,6 +924,9 @@ local function sendBusy(ply, endTime)
     net.Send(ply)
 end
 
+-- Inv.StartCombine(ply): starts combining partly used magazines / cells
+-- (config combineTime per item, 3 s to combineMax). Inv.FinishCombine
+-- runs when the timer ends; Inv.CancelCombine stops it (death).
 function Inv.StartCombine(ply)
     local st = Inv.Get(ply)
     if st.combineEnd and st.combineEnd > CurTime() then return end
@@ -924,6 +983,8 @@ function Inv.FinishCombine(ply)
     Inv.Note(ply, merged > 0 and ("Combined " .. merged .. " partly used items") or "Nothing left to combine")
 end
 
+-- Inv.SendFull(ply): sends the whole inventory (net inv.full); from then
+-- on changes go out as inv.upd (st.ready).
 function Inv.SendFull(ply)
     local st = Inv.Get(ply)
     st.ready = true
@@ -945,6 +1006,8 @@ function Inv.SendFull(ply)
     net.Send(ply)
 end
 
+-- Inv.Save(ply): writes the inventory to Data "inventory" / SteamID64
+-- (weapons' live state first).
 function Inv.Save(ply)
     local st = Inv.states[ply]
     if not st or not ply:SteamID64() then return end
@@ -956,12 +1019,24 @@ end
 -- Client requests
 --------------------------------------------------------------------------
 
--- Cuffed, stunned or jailed players (rhylib_mp) can't drop, use or hand
--- over items. Other addons answer the Rhylib.InventoryLocked hook.
+-- Inv.Locked(ply): cuffed, stunned or jailed players (rhylib_mp) can't
+-- drop, use or hand over items. Other addons answer the
+-- Rhylib.InventoryLocked hook (return true to lock).
+-- Example:
+--   Rhylib.Hook.Add("Rhylib.InventoryLocked", "myaddon.lock", function(ply)
+--       if ply.myFrozen then return true end
+--   end)
 function Inv.Locked(ply)
     return hook.Run("Rhylib.InventoryLocked", ply) == true
 end
 
+-- Client requests. Each reads exactly what cl_10_inventory writes:
+--   inv.req      nothing: send me everything
+--   inv.move     uid 16, container 5, x 5, y 5, rot 1, single 1
+--   inv.hotbar   uid 16, slot 3
+--   inv.split / inv.hide / inv.use   uid 16
+--   inv.combine  nothing
+--   inv.drop     uid 16, single 1
 Rhylib.Net.Receive("inv.req", function(ply)
     Inv.SendFull(ply)
 end, { rate = 1, burst = 2 })
@@ -1169,8 +1244,10 @@ Rhylib.Hook.Add("ShutDown", "inventory.save", function()
     end
 end, -10)  -- before the data layer's final flush
 
--- A grid from a skill (cid, w x h); 0 removes it, and what was in it moves
--- to the other grids (or the ground).
+-- Inv.SetGrid(ply, cid, w, h): adds or resizes a grid from a skill (the
+-- cell rack, the ammo belt); w or h 0 removes it, and what was in it
+-- moves to the other grids (or the ground).
+-- Example: Rhylib.Inventory.SetGrid(ply, Rhylib.Items.RACK, 5, 2)
 function Inv.SetGrid(ply, cid, w, h)
     local st = Inv.states[ply]
     if not st then return end
@@ -1206,9 +1283,10 @@ function Inv.SetGrid(ply, cid, w, h)
     changed(ply)
 end
 
--- Takes a worn item off (rhylib_gear: a part the new model can't show):
--- into the main grid or backpack, else onto the ground (job gear just goes).
--- A worn holster's pistol moves elsewhere too.
+-- Inv.TakeOff(ply, uid): takes a worn item off (rhylib_gear: a part the
+-- new model can't show): into the main grid or backpack, else onto the
+-- ground (job gear just goes). A worn holster's pistol moves elsewhere
+-- too. Returns true if it stayed in the inventory.
 function Inv.TakeOff(ply, uid)
     local st = Inv.states[ply]
     local inst = st and st.byUid[uid]
@@ -1235,13 +1313,16 @@ function Inv.TakeOff(ply, uid)
     return false
 end
 
--- Weight and carry limit sent again (a skill changed the limit).
+-- Inv.MarkChanged(ply): weight and carry limit worked out and sent again,
+-- and Rhylib.InventoryChanged fired (a skill changed the limit).
 function Inv.MarkChanged(ply)
     if Inv.states[ply] then changed(ply) end
 end
 
 -- For sv_30_storage.lua: the low-level helpers that keep the client, the
--- weapons and the save in step.
+-- weapons and the save in step. Other addons use Inv.Internal.update(ply,
+-- st, inst) after changing an item's count or data in place (ammo pack,
+-- armour kit, medical kits); prefer the public functions otherwise.
 Inv.Internal = {
     place = place,
     update = update,

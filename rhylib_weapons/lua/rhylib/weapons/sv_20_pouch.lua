@@ -14,6 +14,12 @@
 
     Counts are mirrored into GMod ammo types so the client HUD and reload
     menu can read them.
+
+    Realm: server. Also here: the fire mode / safety and reload requests
+    from the client (nets wep.mode, wep.reload), rhylib_infammo, and the
+    dual-pistol check after inventory changes.
+    Hooks listened to: PlayerSpawn, Rhylib.InventoryChanged,
+    Rhylib.InventoryWeaponPickup (rhylib_inventory).
 ]]
 
 local W = Rhylib.Weapons
@@ -54,6 +60,9 @@ end
 
 -- Shared API -----------------------------------------------------------
 
+-- Pouch.Count(ply, kind): how many of that kind the player carries
+-- (inventory items, or the fallback pouch). Example:
+--   Rhylib.Weapons.Pouch.Count(ply, "mag_medium")
 function Pouch.Count(ply, kind)
     if not KINDS[kind] then return 0 end
     local Inv = inventory()
@@ -61,15 +70,18 @@ function Pouch.Count(ply, kind)
     return #get(ply, kind)
 end
 
+-- Pouch.Sync(ply): copies every count into the mirror ammo types.
 function Pouch.Sync(ply)
     for kind, ammo in pairs(KINDS) do
         ply:SetAmmo(Pouch.Count(ply, kind), ammo)
     end
 end
 
--- Returns false if there's no room. force: never lose it (drops it on
--- the ground with the inventory, ignores the limit without).
--- issued: it came from an armoury (keeps that mark in the inventory).
+-- Pouch.Add(ply, kind, fill, force, issued): gives one magazine / cell /
+-- grapple hook with fill 0-1. Returns false if there's no room.
+-- force: never lose it (drops it on the ground with the inventory,
+-- ignores the limit without). issued: it came from an armoury (keeps that
+-- mark in the inventory). Example: Rhylib.Weapons.Pouch.Add(ply, "cell", 1)
 function Pouch.Add(ply, kind, fill, force, issued)
     if not KINDS[kind] then return false end
     fill = math.Clamp(fill, 0, 1)
@@ -110,12 +122,15 @@ function Pouch.TakeBest(ply, kind)
     return best
 end
 
+-- Pouch.Reset(ply): empties the fallback pouch (no effect on the inventory).
 function Pouch.Reset(ply)
     ply.RhylibPouch = {}
     Pouch.Sync(ply)
 end
 
--- Gives a weapon's start ammo (testing only, until armouries exist).
+-- Pouch.GiveStartAmmo(ply, swep, force): gives a weapon's start ammo
+-- (SWEP.StartMags of its preferred magazine, SWEP.StartCells cells).
+-- Testing only, until armouries exist.
 function Pouch.GiveStartAmmo(ply, swep, force)
     local kind = swep.Mags and (swep.FirstMagFor and swep:FirstMagFor(ply) or swep.Mags[1])
     if kind then
@@ -148,6 +163,8 @@ Rhylib.Hook.Add("Rhylib.InventoryWeaponPickup", "weapons.startammo", function(pl
 end)
 
 -- E + R (fire mode) and Shift + E + R (safety).
+-- Net "wep.mode" (client -> server): safety Bool (true = toggle safety,
+-- false = next fire mode). Rate 4/s.
 Rhylib.Net.Receive("wep.mode", function(ply)
     local safety = net.ReadBool()
     local wep = ply:GetActiveWeapon()
@@ -157,6 +174,8 @@ end, { rate = 4, burst = 3 })
 
 -- Reload requests from the R key and the radial menu.
 -- See W.RELOAD_REQ_* in sh_00_config.lua.
+-- Net "wep.reload" (client -> server): req UInt 4 (0 best magazine,
+-- 1-14 magazine type index, 15 power cell). Rate 4/s.
 Rhylib.Net.Receive("wep.reload", function(ply)
     local req = net.ReadUInt(W.RELOAD_REQ_BITS)
     local wep = ply:GetActiveWeapon()
@@ -171,6 +190,7 @@ end, { rate = 4, burst = 3 })
 
 -- rhylib_infammo (admins): toggles test ammo for yourself. Firing uses
 -- nothing and reloading always works and loads a full magazine / cell.
+-- Stored in the player's NW2Bool "rhylib_infammo" (SWEP:InfiniteAmmo()).
 Rhylib.Perms.Register("rhylib.weapons.infammo", "admin", "Infinite test ammo (rhylib_infammo)")
 
 concommand.Add("rhylib_infammo", function(ply)

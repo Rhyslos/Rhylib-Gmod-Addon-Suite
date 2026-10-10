@@ -2,6 +2,8 @@
     Training (client): the sim health bar (only while it's below full or
     you're eliminated, and not while a training gun is in hand: then the
     HUD's health bar turns yellow and shows it) and the respawn beacon list.
+    The list needs rhylib_menus (Menus.Kit); without it the client picks
+    the nearest beacon as soon as it may.
 ]]
 
 local T = Rhylib.Training
@@ -40,7 +42,7 @@ Rhylib.Hook.Add("HUDPaint", "training.bar", function()
     surface.DrawRect(x, y, w * math.Clamp(hp / max, 0, 1), h)
     local label = out and "ELIMINATED (SIMULATION)" or ("SIMULATION  " .. hp)
     draw.SimpleTextOutlined(label, Rhylib.UI.Font(14, 700), ScrW() * 0.5, y - S(4), COL_TEXT, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, color_black)
-end, 950)   -- (outside the visor sway: it sits under the crosshair)
+end)
 
 --------------------------------------------------------------------------
 -- Respawn list

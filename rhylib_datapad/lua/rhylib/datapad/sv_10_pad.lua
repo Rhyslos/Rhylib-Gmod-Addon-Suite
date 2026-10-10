@@ -1,17 +1,26 @@
 --[[
-    Datapad (server): notes on the pad, and the MP tools.
+    Datapad (server): the cached storage every datapad file uses, notes on
+    the pad, and the MP tools. Also registers the admin permission.
 
-    Messages (client -> server need the datapad in hand):
+    Messages (client -> server need the datapad in hand, see recv below):
       dp.open    open: server answers dp.state
-      dp.state   bn, roles, ban, limit, notes (id, kind, title, patient, time), cuffed nearby (MP)
-      dp.get     note id -> dp.body
-      dp.save    id (0 = new), kind, title, body, patient
-      dp.del     note id
-      dp.find    MP: name search -> dp.found (sid, name, arrests)
-      dp.rec     MP: sid -> dp.record (arrests, logs they wrote)
+      dp.state   bn, mp, medic, banned, limit (8), version (32),
+                 notes (count 8; id 16, kind 1, title, patient, time 32),
+                 cuffed nearby (count 4, entities; MPs only)
+      dp.get     note id (16) -> dp.body (id 16, text)
+      dp.save    id (16, 0 = new), kind (1), title, body, patient entity
+      dp.del     note id (16)
+      dp.find    MP: name search -> dp.found (count 5; sid, name, arrests 8)
+      dp.rec     MP: sid -> dp.record (sid, name, arrests (count 6; time 32,
+                 by, minutes 10, reason), then the logs they wrote)
       dp.olog    MP: logs written by MPs -> dp.ologs
-      dp.lread   MP: battalion, id -> dp.lbody
-      dp.jail    MP: prisoner, minutes, reason
+      dp.lread   MP: battalion, id (20) -> dp.lbody (author, title, time, text)
+      dp.jail    MP: prisoner entity, minutes (7), reason
+    Log lists (dp.record, dp.ologs): count 7; battalion, id 20, author,
+    title, time 32.
+
+    Data "dp_pad"/sid = list of notes { id, k kind, ti, b, t, p patient
+    sid, pn patient name }. Uploading moves them to a book (sv_20).
 ]]
 
 local D = Rhylib.Datapad
@@ -26,8 +35,12 @@ Rhylib.Perms.Register("rhylib.datapad.admin", "admin", "Place datapad computers,
 -- Storage (cached: Data.Get reads SQLite every call)
 --------------------------------------------------------------------------
 
-local cache = {}
+local cache = {}   -- ["module/key"] = the live table (edit it, then D.Store)
 
+-- D.Load(ns, key, default): the saved table for Data module ns / key,
+-- cached in memory. Not a table yet = default (or {}), also cached.
+-- Returns the live table: change it and call D.Store to save.
+-- Example: local pad = D.Load("dp_pad", ply:SteamID64(), {})
 function D.Load(ns, key, default)
     local k = ns .. "/" .. key
     local v = cache[k]
@@ -39,24 +52,30 @@ function D.Load(ns, key, default)
     return v
 end
 
--- Forget every cached copy (after saved data was changed behind it,
--- e.g. rhylib_purge_battalion).
+-- D.ClearCache(): forget every cached copy (after saved data was changed
+-- behind it, e.g. rhylib_purge_battalion or a core purge: hook Rhylib.DataPurged).
 function D.ClearCache() cache = {} end
 Rhylib.Hook.Add("Rhylib.DataPurged", "datapad.cache", function() D.ClearCache() end)
 
+-- D.Store(ns, key, v): save v (cache + Rhylib.Data). sv_50_sync wraps this:
+-- a save of "dp_log"/"dp_board" also bumps that battalion's version.
+-- D.StoreQuiet (sv_50) saves without the bump.
 function D.Store(ns, key, v)
     cache[ns .. "/" .. key] = v
     Data.Set(ns, key, v)
 end
 
--- A computer's log book: { next = id, list = { newest first } }.
+-- D.Book(key): a computer's log book (key = battalion, or D.MED_KEY):
+-- { next = id, list = { newest first } }. Entries: { id, s author sid,
+-- a author name, ti, b, t, mp (written by an MP), p/pn patient }.
 function D.Book(key)
     local b = D.Load("dp_log", key, nil)
     if not b.list then b.next, b.list = 1, {} end
     return b
 end
 
--- Every battalion that has logs (for MP lookups): a list of names.
+-- D.Battalions(): every battalion that has logs (for MP lookups): a list
+-- of names, Data "dp_log"/"__index". D.HasBattalion(bn): is it in that list.
 function D.Battalions()
     return D.Load("dp_log", "__index", {})
 end
@@ -68,13 +87,14 @@ function D.HasBattalion(bn)
     return false
 end
 
--- Bans are { ["s" .. sid] = name } (prefixed: JSON would turn a bare
--- SteamID64 key into a rounded number).
+-- D.Banned(key, sid): is sid banned from writing/uploading to that book?
+-- Bans are Data "dp_ban"/key = { ["s" .. sid] = name } (prefixed: JSON
+-- would turn a bare SteamID64 key into a rounded number).
 function D.Banned(key, sid)
     return sid ~= "" and D.Load("dp_ban", key, {})["s" .. sid] ~= nil
 end
 
--- A note on the pad by its id.
+-- D.Note(pad, id): the note with that id on a pad list, and its index.
 function D.Note(pad, id)
     for i, n in ipairs(pad) do
         if n.id == id then return n, i end
@@ -83,6 +103,7 @@ end
 
 local function sid(ply) return ply:SteamID64() or "" end
 
+-- D.Pad(ply): the notes on this player's pad (live list from D.Load).
 function D.Pad(ply)
     return D.Load("dp_pad", sid(ply), {})
 end
@@ -91,6 +112,8 @@ end
 -- State
 --------------------------------------------------------------------------
 
+-- Cuffed players an MP may jail/search from the datapad: escorted by them,
+-- or within arrestRange with a clear line from the MP's eyes. Not jailed.
 local function cuffedNear(mp)
     local MP = Rhylib.MP
     local out = {}
@@ -110,6 +133,8 @@ local function cuffedNear(mp)
     return out
 end
 
+-- D.SendState(ply): send dp.state (what the datapad window shows). Sent on
+-- open and after every pad change; an open window rebuilds from it.
 function D.SendState(ply)
     local pad = D.Pad(ply)
     local bn = D.Battalion(ply)
@@ -136,7 +161,8 @@ function D.SendState(ply)
     net.Send(ply)
 end
 
--- Every datapad message needs the pad in hand.
+-- Every datapad message needs the pad in hand (and a living sender).
+-- mpOnly: MPs only. limits: Rhylib.Net rate limit (default 4/s, burst 6).
 local function recv(name, fn, limits, mpOnly)
     Rhylib.Net.Receive(name, function(ply, len)
         if not ply:Alive() or not D.Holding(ply) then return end
@@ -145,6 +171,8 @@ local function recv(name, fn, limits, mpOnly)
     end, limits or { rate = 4, burst = 6 })
 end
 
+-- D.PadRecv(name, fn(ply, len), limits, mpOnly): receive a datapad message
+-- with those checks. Used by sv_50/60/80/90.
 D.PadRecv = recv   -- (sv_50_sync.lua)
 
 recv("dp.open", function(ply) D.SendState(ply) end, { rate = 2, burst = 3 })
@@ -182,7 +210,7 @@ recv("dp.save", function(ply)
         end
         local top = 0
         for _, o in ipairs(pad) do top = math.max(top, o.id or 0) end
-        local n = { id = top % 65535 + 1, k = kind, ti = title, b = body, t = os.time() }
+        local n = { id = top % 65535 + 1, k = kind, ti = title, b = body, t = os.time() }   -- id: next free 16-bit id
         if kind == D.KIND_MED then
             if not (IsValid(patient) and patient:IsPlayer()) then return end
             n.p, n.pn = sid(patient), patient:Nick()
@@ -211,11 +239,14 @@ end)
 --------------------------------------------------------------------------
 
 -- Search tool: with the datapad out, rhylib_mp's search works like the baton.
--- Returns the reach: the datapad searches anyone it could jail.
+-- Hook Rhylib.MPSearchTool(ply, weapon) (rhylib_mp asks it): returns the
+-- reach (arrestRange): the datapad searches anyone it could jail.
 Rhylib.Hook.Add("Rhylib.MPSearchTool", "datapad", function(ply, w)
     if w:GetClass() == D.Cfg("class") then return D.Cfg("arrestRange") end
 end)
 
+-- Online players by name, plus everyone rhylib_mp has on file (Data
+-- "mp_idx"/"all" = { ["s"..sid] = name }); at most 20.
 recv("dp.find", function(ply)
     local q = string.lower(D.Clip(net.ReadString(), 32))
     if q == "" then return end
@@ -317,6 +348,8 @@ recv("dp.lread", function(ply)
     end
 end, { rate = 4, burst = 6 }, true)
 
+-- Jail from the datapad: the prisoner must still be in cuffedNear;
+-- rhylib_mp's MP.Jail does the rest (and refuses with a reason).
 recv("dp.jail", function(ply)
     local p = net.ReadEntity()
     local minutes = net.ReadUInt(7)

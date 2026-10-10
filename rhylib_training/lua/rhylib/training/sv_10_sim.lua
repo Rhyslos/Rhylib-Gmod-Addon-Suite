@@ -10,8 +10,18 @@
     (rhylib_core Lying.Knock with no end) until they respawn at a beacon.
 
     Messages
-      train.out    server -> player: open (attacker name, beacons) / close
-      train.pick   client: beacon entity index (0 = nearest)
+      train.out    server -> player: Bool open (false = close); then String
+                   attacker name, Float ready time (outMin), Float auto
+                   time (chooseTime), UInt 6 count (max 32), per beacon:
+                   UInt 13 entindex, String name, UInt 16 metres (nearest first)
+      train.pick   client: UInt 13 beacon entity index (0 = nearest); rate 2/s.
+                   Before outMin is up the pick waits until then.
+
+    Ends early (no respawn): Rhylib.PlayerDowned, PlayerDeath, PlayerSpawn;
+    getting up another way (Rhylib.PlayerUnknocked) clears the out state.
+    Perm rhylib.training.admin (admin): rhylib_training_save.
+    Saved: Data "training"/<map> = { { name, pos, yaw } }, permanent
+    beacons only (registered with Rhylib.Perma).
 ]]
 
 local T = Rhylib.Training
@@ -62,7 +72,9 @@ local function clearOut(ply, quiet)
     if not quiet and IsValid(ply) then sendClose(ply) end
 end
 
--- Back in at a beacon (or the nearest, or where they lie if there are none).
+-- T.Respawn(ply, beacon): back in at a beacon (or the nearest, or where
+-- they lie if there are none): up, full sim health, immune for a moment.
+-- Does nothing if they aren't out.
 function T.Respawn(ply, beacon)
     local o = T.out[ply]
     if not o then return end
@@ -83,7 +95,10 @@ function T.Respawn(ply, beacon)
     end
 end
 
+-- T.Eliminate(ply, by): knock them down (L.Knock with no end), send the
+-- beacon list, start the auto-pick timer. by = the attacker (for the name).
 -- Returns true if they're out now.
+-- Example: Rhylib.Training.Eliminate(ply, attacker)
 function T.Eliminate(ply, by)
     if T.out[ply] then return false end
     -- Knocked by a blast meanwhile: up first, then out properly.
@@ -119,6 +134,9 @@ function T.Eliminate(ply, by)
     return true
 end
 
+-- The training hit: returns true when it eliminated them, false when the
+-- hit was ignored (out, downed, lying, immune), nil for a normal hit. The
+-- HUD hit marker is sent here too (rhylib_hud, yellow).
 Rhylib.Hook.Add("Rhylib.TrainingHit", "training.hit", function(ply, attacker, amount, inflictor, group)
     if not ply:IsPlayer() or not ply:Alive() or ply.rhylibDown or T.out[ply] then return false end
     if (ply.rhylibSimImmune or 0) > CurTime() then return false end
@@ -188,6 +206,8 @@ end)
 -- Beacons per map (Data "training"/map)
 --------------------------------------------------------------------------
 
+-- T.SaveBeacons(): save this map's permanent beacons; returns the count.
+-- T.SpawnBeacons(): spawn the saved beacons (marked permanent).
 function T.SaveBeacons()
     local rows = {}
     for _, b in ipairs(ents.FindByClass(BEACON)) do

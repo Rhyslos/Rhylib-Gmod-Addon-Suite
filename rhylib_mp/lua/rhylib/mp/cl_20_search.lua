@@ -2,6 +2,11 @@
     Search window: the searched player's items (main grid, backpack, back
     slot). "Take" buttons only while they're cuffed. Closes when the server
     says the search ended (out of range, baton put away, ...).
+    Client only. Needs rhylib_menus (Menus.Kit) to draw; without it the
+    list arrives but no window opens.
+
+    Also here: the MP options on the rhylib_menus interaction wheel
+    (Search, Cuff, Uncuff, Escort / Let go), sent as net mp.wheel.
 ]]
 
 local MP = Rhylib.MP
@@ -12,6 +17,9 @@ CONT_NAMES[18] = "Belt pouches"
 CONT_NAMES[19] = "Cell pouch"
 CONT_NAMES[20] = "Belt cells"
 
+-- MP.OpenSearch(target): asks the server to search target (net mp.search).
+-- The server checks everything and answers with mp.list. Client only.
+-- Example (from another addon's button): Rhylib.MP.OpenSearch(ply)
 function MP.OpenSearch(target)
     Rhylib.Net.Start("mp.search")
     net.WriteEntity(target)
@@ -40,7 +48,11 @@ Rhylib.Net.Receive("mp.list", function()
     MP.ShowSearch(target, cuffed, rows)
 end)
 
+-- MP.ShowSearch(target, cuffed, rows): opens or refreshes the search window.
+-- rows = { uid, def, count, fill, c } as read from mp.list. Closing it
+-- sends mp.search with NULL so the server stops refreshing. Client only.
 function MP.ShowSearch(target, cuffed, rows)
+
     local K = Rhylib.Menus and Rhylib.Menus.Kit
     if not K then return end
     local s = K.S

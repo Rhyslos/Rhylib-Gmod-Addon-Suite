@@ -42,6 +42,19 @@
       helper:         rhylib_medAct (action, see A_*), rhylib_medT (target),
                       rhylib_medS / rhylib_medE (start / end time),
                       rhylib_dragging (entity being dragged)
+
+    This file (shared, loads first): every "medical" config key except the
+    injury and illness ones (sh_30_injuries.lua, sh_50_illness.lua), the
+    action and item ids, the plain medical items, and the state readers
+    other addons call (Med.IsDown, Med.TimeLeft, Med.IsMedic ...).
+    The rest of the addon:
+      sh_10_move      downed / dragging / helper movement and the lying pose
+      sv_10_downed    going down, bleeding out, reviving, dragging
+      sv_20_actions   timed actions (stabilise, revive, heal, treat a part)
+      sh/sv/cl_30     body part injuries and the H menu
+      sh/sv/cl_40     med bay: bacta tank, chemistry bench, med sofa
+      sh/sv/cl_50     illness, blood tests and medicine
+      cl_10_hud       downed / helper HUD, markers, E menu, wheel options
 ]]
 
 Rhylib.Medical = Rhylib.Medical or {}
@@ -76,6 +89,7 @@ Config.Register("medical", "medkitMedicOnly", false, "Only medics can use medkit
 Config.Register("medical", "selfMult", 2, "Treating yourself takes this many times longer")
 Config.Register("medical", "dragSpeed", 100, "Top speed while dragging someone")
 Config.Register("medical", "dragLeash", 45, "How far behind the dragger the body trails")
+-- (a set: weapon class = true)
 Config.Register("medical", "dragWeapons", { rhylib_stowed = true, keys = true }, "Weapons that count as empty hands for dragging")
 Config.Register("medical", "noTarget", true, "NPCs ignore downed players")
 Config.Register("medical", "downSequences", { "death_04", "death_03", "death_02", "death_01", "zombie_slump_idle_02" }, "Lying poses to try, first that exists on the model wins (last frame is used)")
@@ -111,6 +125,8 @@ Config.Register("medical", "tankSetBones", 8, "Bacta tank: seconds inside before
 Config.Register("medical", "tankSpecialist", 300, "Bacta specialist: tanks within this range of you heal twice as fast")
 Config.Register("medical", "benchModel", "models/fyu/cedi/misc/v4/misc_30.mdl", "Chemistry bench model")
 Config.Register("medical", "craftTime", 3, "Chemistry bench: seconds per batch")
+-- (each row's place in the list is its recipe number on the wire, chem.make
+-- 5 bits, so at most 31 recipes)
 Config.Register("medical", "chemRecipes", {
     { "rhylib_burngel", 1 }, { "rhylib_painkiller", 1 },
     { "rhylib_splint", 1 }, { "rhylib_bloodpack", 2 }, { "rhylib_medkit", 2 },
@@ -118,17 +134,24 @@ Config.Register("medical", "chemRecipes", {
     { "rhylib_antiviral", 2, 10 }, { "rhylib_antibiotics", 2, 10 }, { "rhylib_antidote", 2, 10 },
 }, "Chemistry bench recipes: { item, medical supplies it takes, how many it makes (default 1) }")
 
+-- Med.Cfg(key): a "medical" config value (in-game override > host file >
+-- default). Read it when needed rather than copying it at load, so
+-- Server settings changes apply at once.
+-- Example: local secs = Rhylib.Medical.Cfg("bleedTime")
 function Med.Cfg(key)
     return Config.Get("medical", key)
 end
 
--- Simplified medical system (Server settings, live): afflictions off,
--- health as a share of the job's max health, kits heal by share.
+-- Med.Simple(): true when the simplified medical system is on (Server
+-- settings, live): afflictions off, health as a share of the job's max
+-- health, kits heal by share. Shared.
+-- Example: if Rhylib.Medical.Simple() then return end   -- skip injury work
 function Med.Simple()
     return Config.Get("medical", "simplified") == true
 end
 
--- Health as a whole percent of max health (HUDs in the simplified system).
+-- Med.HealthPct(ply): health as a whole percent of max health, 0-100
+-- (HUDs in the simplified system).
 function Med.HealthPct(ply)
     -- (rounded down, so 100% only at full health; 1% while any is left)
     local hp = math.max(ply:Health(), 0)
@@ -136,7 +159,8 @@ function Med.HealthPct(ply)
     return math.Clamp(math.floor(hp / math.max(ply:GetMaxHealth(), 1) * 100), 1, 100)
 end
 
--- Actions a helper can be doing.
+-- Actions a helper can be doing (NW2Int rhylib_medAct, and the kind sent
+-- in med.act, Med.ACT_BITS = 4 bits, so at most 15).
 Med.A_NONE = 0
 Med.A_STAB = 1      -- stabilising (open-ended)
 Med.A_REVIVE = 2    -- reviving with a revive kit
@@ -151,6 +175,7 @@ Med.ACT_BITS = 4
 -- Revives (pause the bleed-out, need a downed target).
 Med.REVIVES = { [Med.A_REVIVE] = true, [Med.A_FA_REVIVE] = true, [Med.A_HAND_REVIVE] = true }
 
+-- HUD names of the actions, by A_* number.
 Med.ActName = {
     [1] = "Stabilising",
     [2] = "Reviving",
@@ -182,6 +207,8 @@ for k, v in pairs(Med.TREAT_ITEMS) do Med.TREAT_KIND[v] = k end
 -- Anyone may use these (first aid kits and blood packs are for medics).
 Med.ANYONE = { [Med.MEDKIT] = true, [Med.SPLINT] = true, [Med.BURN_GEL] = true, [Med.PAINKILLER] = true }
 
+-- Plain items registered with rhylib_inventory:
+-- { id, name, description, stack size, weight, model }.
 Med.ITEMS = {
     { Med.SUPPLIES, "Medical supplies", "Chemists turn these into medicine at a chemistry bench", 10, 0.2, "models/items/healthkit.mdl" },
     { Med.SPLINT, "Splint", "Holds a broken bone until the med bay (drag onto the part)", 3, 0.3, "models/props_debris/wood_board04a.mdl" },
@@ -190,13 +217,18 @@ Med.ITEMS = {
     { Med.BLOOD_PACK, "Blood pack", "Medics: buys a downed player another minute (E menu)", 3, 0.4, "models/healthvial.mdl" },
 }
 
--- Medicines: items with no effect yet (ideas for later treatments).
+-- Medicines for illnesses: { id, name, description }. Given in units with
+-- "Give medicine" on the interaction wheel (sv_50_illness.lua); the stack
+-- size is raised to 20 in sh_50_illness.lua. The order matters: the dose
+-- message sends the medicine as its place in this list (2 bits).
 Med.MEDICINES = {
     { "rhylib_antiviral", "Antiviral", "Viral infections (blue strip). In units: the analyser gives the dose" },
     { "rhylib_antidote", "Antidote", "Poisoning (purple strip). In units: the analyser gives the dose" },
     { "rhylib_antibiotics", "Antibiotics", "Bacterial infections (green strip). In units: the analyser gives the dose" },
 }
 
+-- Registers Med.ITEMS and Med.MEDICINES with rhylib_inventory (skipped
+-- without it, and for ids another addon already registered).
 local function registerMedicines()
     local Items = Rhylib.Items
     if not Items or not Items.Register then return end
@@ -221,6 +253,8 @@ registerMedicines()
 
 -- Items the simplified medical system takes out (armouries and crates
 -- leave them out, H menu items can't be used, the bench is closed).
+-- Hook Rhylib.ItemDisabled(id) (asked by rhylib_armoury): true = leave
+-- this item out.
 Med.HARDCORE_ITEMS = {
     [Med.SUPPLIES] = true, [Med.SPLINT] = true, [Med.BURN_GEL] = true, [Med.PAINKILLER] = true, [Med.BLOOD_PACK] = true,
     rhylib_antiviral = true, rhylib_antidote = true, rhylib_antibiotics = true,
@@ -230,8 +264,9 @@ Rhylib.Hook.Add("Rhylib.ItemDisabled", "medical.simple", function(id)
     if Med.HARDCORE_ITEMS[id] and Med.Simple() then return true end
 end)
 
--- Medkits stack 3 for troopers and 5 for medics, +3 with Deep pockets
--- (rhylib_inventory asks this).
+-- Medkits stack medkitStack for troopers and medkitStackMedic for medics,
+-- + deepPockets with the Deep pockets skill (hook Rhylib.ItemStack(def,
+-- ply), asked by rhylib_inventory; return a number to set the stack size).
 Rhylib.Hook.Add("Rhylib.ItemStack", "medical.stack", function(def, ply)
     if def.id == "rhylib_medkit" and IsValid(ply) then
         local n = Med.IsMedic(ply) and Med.Cfg("medkitStackMedic") or Med.Cfg("medkitStack")
@@ -240,19 +275,25 @@ Rhylib.Hook.Add("Rhylib.ItemStack", "medical.stack", function(def, ply)
     end
 end)
 
--- A medic skill (rhylib_skills); only counts while the player is a medic.
+-- Med.Skill(ply, id): true if ply has the rhylib_skills skill `id` and is
+-- a medic right now (medic skills only count in a medic job). False
+-- without rhylib_skills. Shared.
+-- Example: if Rhylib.Medical.Skill(ply, "triage") then ... end
 function Med.Skill(ply, id)
     local K = Rhylib.Skills
     if not (K and K.Has and IsValid(ply) and ply:IsPlayer()) then return false end
     return K.Has(ply, id) and Med.IsMedic(ply)
 end
 
+-- Med.DragSpeed(ply): top speed while dragging (dragSpeed, or
+-- dragSpeedSkill with Field drag).
 function Med.DragSpeed(ply)
     return Med.Skill(ply, "field_drag") and Med.Cfg("dragSpeedSkill") or Med.Cfg("dragSpeed")
 end
 
--- Is ply in a med bay (near a bacta tank or medical holotable)? The
--- anchor list is refreshed every few seconds.
+-- Med.InMedBay(ply): true if ply is within medBayRange of an entity of a
+-- medBayClasses class (bacta tank, medical holotable). The list of those
+-- entities is refreshed at most every 3 s. Shared.
 local anchors, anchorsAt = {}, 0
 function Med.InMedBay(ply)
     local now = CurTime()
@@ -273,43 +314,58 @@ function Med.InMedBay(ply)
 end
 
 --------------------------------------------------------------------------
--- State readers (shared)
+-- State readers (shared): read the NW2 values, so they work on both realms.
 --------------------------------------------------------------------------
 
+-- Med.IsDown(ply): true while ply is downed. (On the server,
+-- ply.rhylibDown is the same thing without a NW2 read.)
+-- Example: if Rhylib.Medical and Rhylib.Medical.IsDown(ply) then return end
 function Med.IsDown(ply)
     return ply:GetNW2Bool("rhylib_down", false)
 end
 
+-- Med.StabilisedBy(ply): the player whose action pauses ply's bleed-out
+-- (stabilising, reviving, or a Medevac drag), or nil.
 function Med.StabilisedBy(ply)
     local e = ply:GetNW2Entity("rhylib_stabBy")
     return IsValid(e) and e or nil
 end
 
+-- Med.DraggedBy(ply): who is dragging the downed ply, or nil.
 function Med.DraggedBy(ply)
     local e = ply:GetNW2Entity("rhylib_dragBy")
     return IsValid(e) and e or nil
 end
 
+-- Med.Dragging(ply): the downed player ply is dragging, or nil.
 function Med.Dragging(ply)
     local e = ply:GetNW2Entity("rhylib_dragging")
     return IsValid(e) and e or nil
 end
 
--- Seconds of bleed-out left.
+-- Med.TimeLeft(ply): seconds of bleed-out left. While paused (stabilised)
+-- this is the frozen rhylib_downLeft; otherwise rhylib_downEnd - now.
 function Med.TimeLeft(ply)
     if Med.StabilisedBy(ply) then return ply:GetNW2Float("rhylib_downLeft", 0) end
     return math.max(0, ply:GetNW2Float("rhylib_downEnd", 0) - CurTime())
 end
 
--- action, target, start, end
+-- Med.Action(ply): what ply is doing as a helper. Returns 0 when nothing,
+-- else action (A_*), target, start time, end time (end 0 = open-ended,
+-- stabilising).
+-- Example: local a, target = Rhylib.Medical.Action(ply)
+--          if a == Rhylib.Medical.A_STAB then ... end
 function Med.Action(ply)
     local a = ply:GetNW2Int("rhylib_medAct", 0)
     if a == 0 then return 0 end
     return a, ply:GetNW2Entity("rhylib_medT"), ply:GetNW2Float("rhylib_medS", 0), ply:GetNW2Float("rhylib_medE", 0)
 end
 
--- DarkRP job flag (medic = true). Other gamemodes can answer the
--- Rhylib.IsMedic hook.
+-- Med.IsMedic(ply): true if ply's DarkRP job has medic = true. Hook
+-- Rhylib.IsMedic(ply) is asked first: return true/false to decide
+-- yourself (other gamemodes, special jobs); nil = use the job flag.
+-- Example (your addon): hook.Add("Rhylib.IsMedic", "myaddon", function(ply)
+--     if ply:GetNWBool("isDoctor") then return true end end)
 function Med.IsMedic(ply)
     local r = hook.Run("Rhylib.IsMedic", ply)
     if r ~= nil then return r end
@@ -317,6 +373,8 @@ function Med.IsMedic(ply)
     return job and job.medic == true or false
 end
 
+-- Med.HoldingHands(ply): true if ply holds nothing, the rhylib_inventory
+-- Stowed weapon, or a class in dragWeapons (empty hands, can drag).
 function Med.HoldingHands(ply)
     local wep = ply:GetActiveWeapon()
     if not IsValid(wep) then return true end
@@ -324,7 +382,8 @@ function Med.HoldingHands(ply)
     return wep.IsRhylibStowed or (istable(list) and list[wep:GetClass()]) or false
 end
 
--- Centre of a lying body (for aiming and range checks).
+-- Med.BodyPos(ply): centre of a lying body, a Vector (for aiming and range
+-- checks).
 function Med.BodyPos(ply)
     -- rhylib_core measures where the lying pose really puts the body.
     if Rhylib.Lying and Rhylib.Lying.BodyPos then return Rhylib.Lying.BodyPos(ply) end
@@ -335,6 +394,9 @@ end
     The downed player `ply` is aiming at, within range. Lying bodies are
     small, so this checks aim direction against every downed player
     instead of tracing for hitboxes. The list is short.
+    Med.FindDowned(ply, list): list = players to check (server:
+    Med.downList, client: Med.clientDown; nil = everyone). Returns the
+    downed player most in line with the aim, with no wall between, or nil.
 ]]
 function Med.FindDowned(ply, list)
     local eye = ply:EyePos()
@@ -347,7 +409,9 @@ function Med.FindDowned(ply, list)
             local dist = to:Length()
             if dist > 1 and dist <= range then
                 local dot = dir:Dot(to / dist)
-                -- A body about 30 units around, plus some slack.
+                -- A body about 30 units around, plus some slack: the aim
+                -- must be within atan(30 / dist) + 0.1 rad of the body
+                -- (at most 1.2 rad close up).
                 local need = math.cos(math.min(math.atan(30 / dist) + 0.1, 1.2))
                 if dot >= need and (not best or dot > bestDot) then
                     local tr = util.TraceLine({ start = eye, endpos = Med.BodyPos(t), filter = { ply, t }, mask = MASK_SOLID_BRUSHONLY })
@@ -359,7 +423,8 @@ function Med.FindDowned(ply, list)
     return best
 end
 
--- A standing player in front of `ply`, within range.
+-- Med.FindStanding(ply): the living, not downed player ply aims at within
+-- range + 20 (a small hull trace), or nil.
 function Med.FindStanding(ply)
     local tr = util.TraceHull({
         start = ply:EyePos(),

@@ -6,6 +6,12 @@
         MP.StoreProperty(ply, list)   list of { id, count, data } into
                                       ply's property; returns what didn't fit
         MP.OpenProperty(ply, ent)     E on a locker
+
+    How it works: the locker is a rhylib_inventory grid storage with a
+    `variant` function, so each player who opens it gets their own
+    sub-storage (propertyW x propertyH cells, noDeposit: take out only),
+    loaded from and saved to Data "mp_prop"/SteamID64 (row deleted when
+    empty). Needs rhylib_inventory.
 ]]
 
 local MP = Rhylib.MP
@@ -62,6 +68,9 @@ local function setup(ent)
     return I.GetStorage(ent) or I.CreateStorage(ent, { kind = "grid", w = 1, h = 1, title = "Property locker", variant = variant })
 end
 
+-- MP.StoreProperty(ply, list) -> leftover list. Adds { id, count, data }
+-- entries to ply's saved property and closes any open copy so it reloads.
+-- Returns what didn't fit (same shape). Server only.
 function MP.StoreProperty(ply, list)
     local I = Inv()
     if not I then return list end
@@ -85,7 +94,10 @@ function MP.StoreProperty(ply, list)
     return over
 end
 
+-- MP.OpenProperty(ply, ent): opens ply's own property at locker ent, if
+-- they have any and aren't jailed. Server only.
 function MP.OpenProperty(ply, ent)
+
     if not setup(ent) then
         ply:PrintMessage(HUD_PRINTCENTER, "Needs rhylib_inventory")
         return

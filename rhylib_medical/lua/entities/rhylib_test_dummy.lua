@@ -16,6 +16,13 @@
     within 1500 units). The tough dummy (rhylib_test_dummy_tough) takes
     no damage at all: no injuries, never goes down; it only shows what a
     hit would have done (after armour).
+
+    Shared file: the client part (damage numbers) returns early; the rest
+    is server only. Net dummy.dmg (server -> players within 1500): bot
+    entity, damage 12 bits, head bool. The bot has ply.rhylibDummy = its
+    marker (illness code lets it give blood standing). Global DUMMY_MOVE.
+    A variant only needs ENT.Base = "rhylib_test_dummy" plus BotName and
+    Tough (see rhylib_test_dummy_tough.lua).
 ]]
 
 AddCSLuaFile()
@@ -37,8 +44,8 @@ local function dummyModel()
     return util.IsValidModel(MODEL) and MODEL or MODEL_FALLBACK
 end
 local MARKER = "models/hunter/blocks/cube025x025x025.mdl"
-ENT.BotName = "Test dummy"
-ENT.Tough = false
+ENT.BotName = "Test dummy"   -- bot name, a number is added
+ENT.Tough = false            -- true: blocks all damage, only shows it
 
 if CLIENT then
     function ENT:Draw() end  -- the marker is invisible; the bot is what you see

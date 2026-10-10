@@ -3,7 +3,14 @@
     this, fall back here. Placed with the toolgun; only admins see it.
     Not solid (bolts fly through it); the toolgun's RMB removes it when
     aimed near it. Not saved: markers last until removed or a map change.
+
+    Shared entity. To place one from code (server), set the fields before
+    Spawn: e.MarkerKind = 1 attack / 2 defend / 3 fallback, e.MarkerSide =
+    0 droids / 1 clones. They become DT vars Kind and Side (clients draw
+    from them). A tick after spawning it calls D.MarkerPlaced; OnRemove
+    calls D.MarkerRemoved.
 ]]
+
 
 AddCSLuaFile()
 

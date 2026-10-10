@@ -3,6 +3,17 @@
     rhylib.eod.gm. Shows the answers (wire kinds, chip code, dose, fake
     board order), and sets the bomb up: re-roll, type, custom build,
     timer, remote signal, spotter, detonate, disarm.
+
+    Opened by net eod.gmopen (the server checks rhylib.eod.gm); every
+    button sends net eod.gm (bomb, op 4 bits, argument) and the server
+    answers with a fresh eod.gmopen and a note. Ops: 0 re-roll, 1-3 new
+    simplified / small / large, 4 custom (JSON of the builder), 5 start
+    timer, 6 pause / resume, 7 set seconds (11 bits), 8 signal now,
+    9 spotter in N s (11 bits, 0 = call off), 10 detonate, 11 disarm,
+    12 refresh, 13 open the defusal window.
+    The custom builder's JSON has the same fields as a feature table
+    (see E.Roll), with mods as a list of ids; the server checks it
+    (E.CustomFeatures).
 ]]
 
 local E = Rhylib.EOD
@@ -11,6 +22,7 @@ local Net = Rhylib.Net
 local function K() return Rhylib.Menus and Rhylib.Menus.Kit end
 local OPAQUE = Color(14, 16, 15, 255)
 
+-- Wire kind -> the name shown in the answers list (add new wire kinds here).
 local KIND_NAMES = {
     supply = "battery supply", feed = "capacitor feed", tmrline = "timer line", collapse = "collapse sense",
     antenna = "antenna lead", ajmon = "anti-jam monitor", relay = "relay signal", trig = "relay trigger",
@@ -33,6 +45,7 @@ local function close()
     gm.frame = nil
 end
 
+-- The builder's starting values: the bomb's current features.
 local function customFrom(f)
     local mods = {}
     for id in pairs(f.mods or {}) do mods[#mods + 1] = id end
@@ -49,6 +62,7 @@ local function toggleMod(c, id)
     c.mods[#c.mods + 1] = id
 end
 
+-- (Re)builds the window's contents from gm.info.
 local function build()
     local k = K()
     if not k or not IsValid(gm.frame) then return end

@@ -1,6 +1,7 @@
 --[[
-    Quick response calls from the datapad (config "calls"): call MPs, a
-    medic, the bomb squad, reinforcements, resupply (with a list of what's needed).
+    Quick response calls from the datapad (server; config "calls"): call
+    MPs, a medic, the bomb squad, reinforcements, resupply (with a list of
+    what's needed). A call kind is its index in the "calls" list (1-7).
 
     A call goes to the players its "to" names (not the caller). Calls
     with accept = false show the caller's position to them at once; with
@@ -8,10 +9,20 @@
     the caller ("Medic inbound: ..."). A call ends when the caller
     cancels it, leaves, or after callLife seconds. Calls live in memory.
 
-      dp.call   datapad: kind (3), items (16 bits)
-      dp.callr  respond to call id     dp.callx  caller: end call id
-      dp.callu  server -> player: a call's state (or that it ended)
+      dp.call   datapad: kind (3), items (16 bits, one per supplyItems entry)
+      dp.callr  respond to call id (16)     dp.callx  caller: end call id (16)
+      dp.callu  server -> player: id 16, active; if active: kind 3, caller
+                entity, caller name, age in s (16), items 16, your role (2:
+                0 asked, 1 responding, 2 caller), sees position + position,
+                responders (count 5, names)
       dp.callp  server -> player: call id, caller position (every 3 s)
+
+    Who a call reaches ("to"): mp (D.IsMP), medic (D.IsMedic), eod
+    (D.IsBombSquad), battalion (same D.Battalion as the caller), anything
+    else = everyone. Never the caller, only living players; the list is
+    refreshed every 3 s (respawns, joins, job changes).
+    One open call per kind per caller (a new one replaces it); callCooldown
+    between two of the same kind.
 ]]
 
 local D = Rhylib.Datapad
@@ -22,6 +33,7 @@ D.calls = D.calls or {}   -- [id] = { id, kind, caller, name, pos, t, items, to 
 local nextId = D.callNextId or 1
 local lastCall = {}         -- [ply] = { [kind] = CurTime }
 
+-- The call's entry in config "calls" ({ id, name, short, to, accept, inbound, items }).
 local function def(kind) return (D.Cfg("calls") or {})[kind] end
 
 local function wants(p, d, caller)
@@ -62,6 +74,7 @@ local function involved(c)
     return out
 end
 
+-- Send dp.callu (one call, as p sees it) to p.
 local function sendCall(c, p, active)
     if not IsValid(p) then return end
     Rhylib.Net.Start("dp.callu")

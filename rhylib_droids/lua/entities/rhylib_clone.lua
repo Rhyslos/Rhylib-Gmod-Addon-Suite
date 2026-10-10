@@ -13,7 +13,11 @@
       - "follow" mode: reinforcements stay with the officer who called them
     Kinds ct_trooper / ct_rifleman / ct_heavy / ct_medic / ct_commander
     (rhylib_droids sh_00_config.lua). Base class only: spawn the subclasses.
+    A new clone kind: a D.KINDS row with side = "republic", a D.CLASSES
+    entry, and a one-line file with ENT.Base = "rhylib_clone".
+    Shared entity; this file only adds the medic ring (client).
 ]]
+
 
 AddCSLuaFile()
 

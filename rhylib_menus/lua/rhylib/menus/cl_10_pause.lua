@@ -14,12 +14,28 @@
     Groups (Menus.AddGroup) are submenus in the side bar: clicking one
     opens it (and its first page); a group with one page is a plain
     button. Pages without a group are plain buttons too.
+
+    page fields: title, order (lower = higher up; default 50), group (a
+    Menus.AddGroup id), visible() (hidden when it returns false), build(panel)
+    (called every time the page is shown, into a cleared panel; errors are
+    caught and printed), sub (optional dim text on the page's header; may
+    be set by build).
+
+    Client only. Adds: Menus.AddPage, Menus.AddGroup, Menus.pages,
+    Menus.groups, Menus.PAGE_ALIAS, Menus.OpenPause, Menus.ClosePause,
+    Menus.RefreshPause, Menus.PreviewHover, Menus.pause (the open panel,
+    a "RhylibPauseMenu"), Menus.lastPage. Console command: rhylib_menu.
+    Hook: OnPauseMenuShow "menus.pause" (decides what Esc does).
 ]]
 
 local Menus = Rhylib.Menus
 local K = Menus.Kit
 local C = K.C
 
+-- Menus.AddPage(id, page): adds (or replaces) a pause menu page. See the
+-- header for the fields. Safe to call again on a Lua refresh.
+-- Example: Rhylib.Menus.AddPage("mypage", { title = "My page", group = "unit", order = 40,
+--              build = function(p) Rhylib.Menus.Kit.Label(p, "Hello", 14):Dock(TOP) end })
 Menus.pages = Menus.pages or {}
 function Menus.AddPage(id, page)
     page.id = id
@@ -27,6 +43,8 @@ function Menus.AddPage(id, page)
 end
 
 -- Submenus, in side bar order (owner: the flat list was messy).
+-- Menus.AddGroup(id, { title, order }): adds a submenu. The five below are
+-- the built-in ones; pages name one of them in their `group` field.
 Menus.groups = Menus.groups or {}
 function Menus.AddGroup(id, g)
     g.id = id
@@ -39,6 +57,7 @@ Menus.AddGroup("settings", { title = "Settings", order = 40 })
 Menus.AddGroup("staff", { title = "Staff", order = 50 })
 
 -- Old page ids still used by other code (and saved as the last page).
+-- id -> new id, or a function returning it. ShowPage resolves through it.
 Menus.PAGE_ALIAS = { settings = function() return Menus.SettingsPageId and Menus.SettingsPageId(Menus.settingsTab) end }
 
 local function visible(p) return not p.visible or p.visible() end
@@ -53,6 +72,7 @@ local function sortedPages()
 end
 
 -- Side bar entries: { group = g, pages = {...} } or { page = p }, in order.
+-- Only visible pages count; a group with no visible pages isn't listed.
 local function navEntries()
     local byGroup, entries = {}, {}
     for _, p in ipairs(sortedPages()) do
@@ -78,6 +98,10 @@ local function title()
     return t
 end
 
+-- The pause menu panel ("RhylibPauseMenu"): full screen. Left: the side
+-- bar (server title, Resume, page buttons, Game menu, Disconnect). Right:
+-- the page area (the same width for every page). Opens on the last page
+-- shown (Menus.lastPage), else the first page.
 local PANEL = {}
 
 function PANEL:Init()
@@ -161,6 +185,7 @@ function PANEL:Init()
     end
 end
 
+-- Old id -> current id (Menus.PAGE_ALIAS).
 function PANEL:Resolve(id)
     local a = Menus.PAGE_ALIAS[id]
     if isfunction(a) then return a() or id end
@@ -214,6 +239,8 @@ function PANEL:BuildNav()
     end
 end
 
+-- PANEL:ShowPage(id): shows a page (rebuilds it from scratch) and opens its
+-- group in the side bar. Example: Rhylib.Menus.pause:ShowPage("skills")
 function PANEL:ShowPage(id)
     id = self:Resolve(id)
     local pg = Menus.pages[id]
@@ -231,6 +258,8 @@ end
 -- HUD preview: while the mouse is on a setting marked `preview` (HUD
 -- shape sliders), the game isn't dimmed or blurred, and while dragging it
 -- the menu fades so the HUD behind it shows.
+-- Menus.PreviewHover(): true while the hovered panel (or one of up to 8
+-- parents) has rhylibPreview set (cl_20_settings sets it on preview rows).
 function Menus.PreviewHover()
     local p = vgui.GetHoveredPanel()
     for _ = 1, 8 do
@@ -263,6 +292,8 @@ end
 
 vgui.Register("RhylibPauseMenu", PANEL, "EditablePanel")
 
+-- Menus.OpenPause() / Menus.ClosePause(): open or close the pause menu.
+-- ClosePause returns true if it was open.
 function Menus.OpenPause()
     if IsValid(Menus.pause) then return end
     Menus.pause = vgui.Create("RhylibPauseMenu")
@@ -296,6 +327,10 @@ Menus.RegisterCloser("inventory", function()
 end)
 
 -- Esc: our menu (or close what's open). Shift + Esc: Garry's Mod's menu.
+-- Returning false stops GMod's menu; returning nothing lets it open.
+-- Order: the Game menu button's pass, Shift, key rebinding (Esc cancels it),
+-- model pick mode in the spawn window, any open Rhylib window (closers),
+-- else our pause menu.
 Rhylib.Hook.Add("OnPauseMenuShow", "menus.pause", function()
     if Menus.passGameUI then
         Menus.passGameUI = false
@@ -313,6 +348,7 @@ Rhylib.Hook.Add("OnPauseMenuShow", "menus.pause", function()
     return false
 end)
 
+-- rhylib_menu: toggles the pause menu (for binds and testing).
 concommand.Add("rhylib_menu", function()
     if not Menus.ClosePause() then Menus.OpenPause() end
 end)

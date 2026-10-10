@@ -32,12 +32,20 @@
     NW2Int rhylib_ill = kind (0-3) + stage (0-3) × 4 (stage from the load,
     for symptoms; the load itself stays on the server). NW2Float
     rhylib_overdose = until when sight is blurred.
+    Stage from the load: 1 under 35, 2 under 70, 3 from 70.
+
+    This file (shared): illness kinds (Med.ILL), item ids, the illness
+    config keys, Med.IllState / Med.Overdosed / Med.IllStaminaMult, and the
+    blood kit, sample, test strip and used strip items.
 ]]
 
 local Med = Rhylib.Medical
 local Config = Rhylib.Config
 
 Med.ILL_NONE, Med.ILL_VIRAL, Med.ILL_BACTERIAL, Med.ILL_POISON = 0, 1, 2, 3
+-- Kinds by number: medicine = the item that cures it, colour/col = the
+-- test strip colour (name, Color), floor = health share the drain stops
+-- at, stamina = stamina cap lost per stage.
 Med.ILL = {
     [1] = { id = "viral", name = "Viral infection", medicine = "rhylib_antiviral", colour = "Blue", col = Color(90, 150, 255), floor = 0.5, stamina = 0.07 },
     [2] = { id = "bacterial", name = "Bacterial infection", medicine = "rhylib_antibiotics", colour = "Green", col = Color(90, 210, 110), floor = 0.25, stamina = 0.1 },
@@ -63,17 +71,22 @@ Config.Register("medical", "stripMax", 120, "Test strip: seconds a light infecti
 Config.Register("medical", "stripMin", 30, "Test strip: seconds a severe infection takes to show")
 Config.Register("medical", "sampleLife", 1800, "Seconds before a blood sample or used strip spoils and is thrown away")
 
+-- Med.IllState(ply): kind (0 none, Med.ILL_*) and stage (0-3) from the
+-- NW2Int. Always 0, 0 in the simplified system. Shared.
+-- Example: local kind, stage = Rhylib.Medical.IllState(ply)
 function Med.IllState(ply)
     if Med.Simple() then return 0, 0 end   -- (simplified medical system: no illness)
     local v = ply:GetNW2Int("rhylib_ill", 0)
     return v % 4, math.floor(v / 4)   -- kind, stage
 end
 
+-- Med.Overdosed(ply): true while sight is blurred (after a wrong dose).
 function Med.Overdosed(ply)
     return ply:GetNW2Float("rhylib_overdose", 0) > CurTime()
 end
 
--- Stamina cap from illness (multiplied into Med.StaminaCap).
+-- Med.IllStaminaMult(ply): stamina cap from illness, 1 - stage × kind
+-- stamina (multiplied into Med.StaminaCap).
 function Med.IllStaminaMult(ply)
     local kind, stage = Med.IllState(ply)
     local k = Med.ILL[kind]
@@ -81,6 +94,8 @@ function Med.IllStaminaMult(ply)
     return 1 - stage * k.stamina
 end
 
+-- Items with note = true carry a text line in data.note that the
+-- inventory shows and networks (the sample's label and reading).
 local function registerItems()
     local Items = Rhylib.Items
     if not (Items and Items.Register) then return end

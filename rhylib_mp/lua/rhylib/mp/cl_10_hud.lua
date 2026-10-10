@@ -1,7 +1,9 @@
 --[[
     Status text for the local player: stunned, cuffed, escorted, jailed.
     One small plate under the crosshair area, house style.
+    Client only. Reads the NW2 state from sh_00_config; no messages.
 ]]
+
 
 local MP = Rhylib.MP
 local UI = Rhylib.UI

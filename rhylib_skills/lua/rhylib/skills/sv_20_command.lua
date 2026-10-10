@@ -2,7 +2,12 @@
     Command orders on the server: giving one (K.IssueOrder, from the
     comlink), Field triage healing, handing out the comlink, Press
     forward against knockdowns. Shared state and numbers: sh_20_command.lua.
-    Net skills.order (order index 3 bits, issuer) to everyone it reached.
+    Net skills.order (order index 3 bits, issuer entity) to everyone it reached.
+    Also: Reinforcements (K.CallReinforcements -> rhylib_droids
+    D.CallSquad) and the squad wheel (net skills.squad: option index 3
+    bits into K.SQUAD_OPS -> rhylib_droids D.SquadOrder).
+    Cooldowns are kept by SteamID64 in memory (K.orderCd, K.reinfCd), not
+    saved: a map change resets them.
 ]]
 
 local K = Rhylib.Skills
@@ -33,7 +38,12 @@ local function canReceive(p)
     return true
 end
 
--- Give this officer's order. Returns ok, reason.
+-- K.IssueOrder(ply): give this officer's order to themselves and everyone
+-- alive and not downed within K.OrderRadius in sight (brush trace from the
+-- eyes), plus the whole radio squad with Chain of command. Checks the
+-- skill, rank, cooldown, cuffs/stun. Returns ok, reason. Server only;
+-- the comlink's left click calls it.
+-- Example: local ok, why = Rhylib.Skills.IssueOrder(ply)  if not ok then Rhylib.Skills.Note(ply, why, true) end
 function K.IssueOrder(ply)
     local o = K.OrderOf(ply)
     if not o then return false, "You have no command order" end
@@ -97,7 +107,9 @@ function K.IssueOrder(ply)
 end
 
 -- Reinforcements (Commander capstone, 2026-10-06az): a clone squad
--- (rhylib_droids D.CallSquad) around the officer. Returns ok, reason.
+-- (rhylib_droids D.CallSquad) around the officer. Returns true and the
+-- number of clones that came, or false and the reason. The cooldown is
+-- only spent if at least one clone came. Server only.
 function K.CallReinforcements(ply)
     if not K.HasReinforcements(ply) then return false, "You haven't learned Reinforcements" end
     if not canReceive(ply) then return false, "You can't call reinforcements right now" end
@@ -151,6 +163,8 @@ local function signal(ply, op)
     end
 end
 
+-- (0.4 s rate limit per player on top of the net rate limit; the comlink
+-- must be in hand)
 Rhylib.Net.Receive("skills.squad", function(ply)
     local op = K.SQUAD_OPS[net.ReadUInt(3)]
     if not op then return end
@@ -209,8 +223,9 @@ Rhylib.Hook.Add("Rhylib.CanKnockDown", "skills.press", function(p)
     if K.OrderIs(p, "press") then return false end
 end)
 
--- The comlink: job gear for anyone with a command order (back after a
--- respawn if it was dropped; dropped by K.SetSkills when the skill goes).
+-- K.GiveCommlink(ply): the comlink as job gear (issued + loadout) for
+-- anyone with a command order (back after a respawn if it was dropped;
+-- dropped by K.SetSkills when the skill goes). Needs rhylib_inventory.
 function K.GiveCommlink(ply)
     local Inv = Rhylib.Inventory
     if not (Inv and Inv.AddItem and Inv.Count) or not K.OrderOf(ply) then return end

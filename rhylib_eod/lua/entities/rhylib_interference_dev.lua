@@ -13,6 +13,11 @@
 
     Cell: a line (Cell at CellAt, draining at Rate per second while on),
     so nothing is networked while it runs.
+
+    Shared. Rules and the window's net messages: sv_20_world.lua
+    (E.OpenDevice, E.DevSetActive, E.DevFill). Server fields: viewers,
+    eodOwner (who placed it: Signal blackout), eodIssued (the cell's
+    armoury flag), eodLong (always false now).
 ]]
 
 AddCSLuaFile()
@@ -29,13 +34,14 @@ ENT.ModelFromConfig = true   -- (eod modelDevice)
 function ENT:SetupDataTables()
     self:NetworkVar("Bool", 0, "Active")
     self:NetworkVar("Bool", 1, "Tuned")
-    self:NetworkVar("Int", 0, "Radius")
-    self:NetworkVar("Float", 0, "Dial")
-    self:NetworkVar("Float", 1, "Cell")
+    self:NetworkVar("Int", 0, "Radius")     -- (metres, 1-15)
+    self:NetworkVar("Float", 0, "Dial")     -- (MHz, 2400-2480; tuned mode)
+    self:NetworkVar("Float", 1, "Cell")     -- (fill 0-1 at CellAt)
     self:NetworkVar("Float", 2, "CellAt")
-    self:NetworkVar("Float", 3, "Rate")
+    self:NetworkVar("Float", 3, "Rate")     -- (fill lost per second while on)
 end
 
+-- ENT:Fill() -> cell fill now, 0-1 (shared).
 function ENT:Fill()
     local f = self:GetCell()
     if self:GetActive() then f = f - (CurTime() - self:GetCellAt()) * self:GetRate() end

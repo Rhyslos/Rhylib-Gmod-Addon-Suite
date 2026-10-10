@@ -3,6 +3,10 @@
     expanding ring, blue light, lightning arcs out to the radius).
     Flags 1: lightning crawling over a hit droid (around the origin; the
     droid itself is gone by the time this runs).
+    EffectData: Origin, Flags (0 / 1), Radius (blast size, min 60), Color
+    (palette below). Client only (effects are sent to clients by GMod).
+    Used by rhylib_grenade (EMP), rhylib_droids (B2 rocket, colour 1) and
+    rhylib_eod (bomb EMP effects).
 ]]
 
 local BOLT = Material("trails/electric")

@@ -13,6 +13,12 @@
         "text a / text b" (Fire / aim). In a combo the last key is the main
         one, the others are modifiers.
     Rebuilt when the page opens and every 2 s while it's open (rebinds).
+
+    Client only. Adds one page, "settings.layout" (group "settings",
+    right after Controls). Nothing to call from outside: add keys with
+    Menus.AddSetting (kind "key") or Menus.AddControl and they show here.
+    To give a key a short cap label, set `short` on the setting, or add
+    its convar / control text to SHORT below.
 ]]
 
 local Menus = Rhylib.Menus
@@ -181,6 +187,8 @@ local function split(s, sep)
 end
 
 -- Every entry: { section, text, short, keys (shown), codes, main, rebind }.
+-- A control with "A / B" keys and "prefix: a / b" text becomes two entries
+-- (A -> prefix: a, B -> prefix: b) when the counts match.
 local function collect()
     local list = {}
     -- Rebindable keys.
@@ -277,6 +285,8 @@ local function build(page)
             end
         end
         -- Per key: main-key single entries first (rebindable keys first of all).
+        -- rank = 0 rebindable / 2 fixed, +1 if this key is only a modifier or
+        -- part of a combo, + a tiny bit for the original order (stable sort).
         local most = 0
         for c, list in pairs(L.byCode) do
             for i, e in ipairs(list) do e.rank = (e.rebind and 0 or 2) + (((ALIAS[e.main] or e.main) == c and #e.codes == 1) and 0 or 1) + i * 0.001 end
@@ -289,6 +299,8 @@ local function build(page)
     end
 
     -- Places the caps for width w; returns the height used by caps.
+    -- u = one key unit in pixels: the board is 15 units wide plus the mouse
+    -- block, so 19.4 units fill the width (max 64 px at 1080p).
     local function layout(w)
         local u = math.floor(math.min(w / 19.4, S(64)))
         L.u = u

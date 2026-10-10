@@ -2,6 +2,11 @@
     Interference device window (client) and the inventory option to
     place one. The device's settings are its network vars; the scanner
     (receivers nearby: frequency, strength, hopping) comes twice a second.
+
+    Nets: eod.dev opens it; eod.devscan fills the scanner; eod.devset
+    (device, op 3 bits, argument) changes it: 0 power, 1 radius (4 bits),
+    2 tuned (bool), 3 dial - 2400 (7 bits), 4 swap cell, 5 pick up,
+    6 closed. eod.place (item uid) places one from the inventory.
 ]]
 
 local E = Rhylib.EOD
@@ -10,6 +15,7 @@ local Net = Rhylib.Net
 local function K() return Rhylib.Menus and Rhylib.Menus.Kit end
 local OPAQUE = Color(14, 16, 15, 255)
 
+-- pending = slider values not sent yet (sent at most every 0.15 s).
 local dev = { frame = nil, ent = nil, scan = {}, pending = {}, sentAt = 0 }
 
 local function send(op, write)

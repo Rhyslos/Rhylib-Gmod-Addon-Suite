@@ -3,18 +3,32 @@
     players its channel reaches. One small net message per recipient
     group, nothing per tick.
 
-    Others can listen to Rhylib.ChatMessage(sender, channelId, text, target)
-    (e.g. for logs). Messages also go to the server console.
+    Flow: the client sends chat.send -> Chat.CanUse -> hook Rhylib.CanChat
+    -> the channel's route below picks the recipients -> chat.msg to them
+    -> hook Rhylib.ChatMessage and a console line.
+
+    Hooks fired:
+      Rhylib.CanChat(ply, channelId, text, target)
+          return false, "reason" to stop a message (rhylib_admin mutes use it).
+          target is the PM receiver, or nil.
+      Rhylib.ChatMessage(sender, channelId, text, target)
+          after a message was sent (e.g. for logs). target only for PMs.
+    Messages also go to the server console.
+
+    Permissions: rhylib.chat.admin (admin: see the Admin channel),
+    rhylib.chat.event (admin: post in the Event channel).
 ]]
 
 local Chat = Rhylib.Chat
 local Config = Rhylib.Config
 
+-- chat.msg (server -> the recipients): channel index (CHANNEL_BITS, 0 =
+-- a system note), sender entity, target entity (PM receiver or NULL), text.
 Rhylib.Net.Register("chat.msg")
 Rhylib.Perms.Register("rhylib.chat.admin", "admin", "See the admin chat channel")
 Rhylib.Perms.Register("rhylib.chat.event", "admin", "Post in the Event chat channel")
 
-local lastAdvert = setmetatable({}, { __mode = "k" })
+local lastAdvert = setmetatable({}, { __mode = "k" })  -- [ply] = CurTime of their last advert
 
 local function send(recipients, ch, sender, text, target)
     -- Radio text doesn't reach anyone inside a comms jammer (rhylib_radio).
@@ -34,6 +48,8 @@ local function send(recipients, ch, sender, text, target)
     net.Send(recipients)
 end
 
+-- Chat.Note(ply, text): a grey system line in one player's chat. Server only.
+-- Example: Rhylib.Chat.Note(ply, "You can't do that here")
 local function note(ply, text)
     Rhylib.Net.Start("chat.msg")
     net.WriteUInt(0, Chat.CHANNEL_BITS)  -- 0 = a system note to this player only
@@ -44,6 +60,9 @@ local function note(ply, text)
 end
 Chat.Note = note
 
+-- route[channel id](ply, ch, text, target): sends the message to whoever
+-- the channel reaches. Return false when nothing was sent (or the route
+-- sent and logged it itself), so the hook and console line are skipped.
 local route = {}
 
 route.public = function(ply, ch, text)
@@ -142,6 +161,8 @@ route.pm = function(ply, ch, text, target)
     send({ ply, target }, ch, ply, text, target)
 end
 
+-- chat.send (client -> server): channel index (CHANNEL_BITS), target entity
+-- (PM receiver, else NULL), text. Rate 2/s, burst 5.
 Rhylib.Net.Receive("chat.send", function(ply)
     local ch = Chat.CHANNELS[net.ReadUInt(Chat.CHANNEL_BITS)]
     local target = net.ReadEntity()
@@ -168,6 +189,8 @@ Rhylib.Net.Receive("chat.send", function(ply)
 end, { rate = 2, burst = 5 })
 
 -- Typing indicator (the HUD's icons above heads read this).
+-- chat.typing (client -> server): one bool, typing or not. Sets NW2Bool
+-- rhylib_typing on the player.
 -- (A generous limit, so the final "stopped typing" isn't dropped when the
 -- chat is opened and closed quickly; it's also cleared on spawn and death.)
 Rhylib.Net.Receive("chat.typing", function(ply)

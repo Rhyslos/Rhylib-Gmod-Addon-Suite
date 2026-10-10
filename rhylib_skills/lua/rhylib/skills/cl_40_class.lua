@@ -5,6 +5,9 @@
     Officer card picks a command order first. Staff get a button to switch
     class mode off (switching it on is on the Skills page or
     rhylib_classmode).
+    Client only; needs rhylib_menus. Sends skills.classpick (class index
+    UInt 4, order index UInt 3, 0 = none), skills.classleave, and
+    skills.classmode (bool; the server checks the permission).
 ]]
 
 local K = Rhylib.Skills

@@ -10,6 +10,21 @@
         K.Label(parent, "text", size, weight, color)
 
     Sizes are given at 1080p and scaled with K.S(n).
+
+    Client only. Loaded first in rhylib_menus (cl_00) so every other file,
+    and other addons' windows (datapad, radio, skills, EOD...), can use it.
+
+    What's here (all on Rhylib.Menus.Kit, "K"):
+      K.C                    the colour set (K.C.accent etc.)
+      K.S / K.Scale / K.Font sizes and fonts
+      K.SetCol, K.Ticks, K.Plate, K.Caps, K.Fit     drawing helpers (use in Paint)
+      K.Tint                 give a window its own accent colour
+      K.Button, K.Label, K.Heading, K.Scroll, K.Row panels
+      K.Choices, K.Toggle, K.Slider, K.TextEntry    controls bound to get/set
+      K.Menu, K.Prompt       a right-click menu and a text question popup
+    Also Menus.prompts / Menus.closers / Menus.RegisterCloser / Menus.CloseAll
+    (what Esc closes first; see the bottom of this file).
+    The guide (docs/addons/rhylib_menus.md) has an example for each widget.
 ]]
 
 local UI = Rhylib.UI
@@ -17,6 +32,9 @@ local Menus = Rhylib.Menus
 Menus.Kit = Menus.Kit or {}
 local K = Menus.Kit
 
+-- K.C: the house colours. text/textDim/accent/good/warn/bad come from
+-- Rhylib.UI.Colors (rhylib_core), so they match the HUD. K.Tint and the
+-- skills' command orders swap C.accent for a while; read it each frame.
 K.C = {
     dim = Color(0, 0, 0, 170),
     bg = Color(14, 16, 15, 242),
@@ -40,6 +58,10 @@ K.C = {
 }
 local C = K.C
 
+-- K.Scale(): screen height / 1080. K.S(n): n pixels at 1080p, scaled to
+-- this screen and rounded. K.Font(size, weight): Rhylib.UI.Font (sizes at
+-- 1080p, scaled for you; weight 400 normal, 700 bold).
+-- Example: panel:SetTall(K.S(34))  draw.SimpleText("Hi", K.Font(14, 700), ...)
 function K.Scale() return ScrH() / 1080 end
 function K.S(n) return math.floor(n * ScrH() / 1080 + 0.5) end
 function K.Font(size, weight) return UI.Font(size, weight) end
@@ -49,9 +71,12 @@ local function setCol(col, a)
     scratch.r, scratch.g, scratch.b, scratch.a = col.r, col.g, col.b, (col.a or 255) * (a or 255) / 255
     surface.SetDrawColor(scratch)
 end
+-- K.SetCol(col, a): surface.SetDrawColor with an extra alpha (0-255)
+-- multiplied in, without making a new Color. Example: K.SetCol(K.C.accent, 120)
 K.SetCol = setCol
 
--- Corner ticks (bottom corners, or all four).
+-- K.Ticks(x, y, w, h, all, a): small corner ticks (bottom corners, or all
+-- four when all is true). a = alpha. Draw in a Paint.
 function K.Ticks(x, y, w, h, all, a)
     local t = K.S(7)
     setCol(C.tick, a)
@@ -72,6 +97,8 @@ end
     header (height, default 30 at 1080p when titled), rule (colour),
     ticks (true: bottom corners, "all": all four), alpha.
     Returns the y where the content starts.
+    Example (in a Paint):
+        local top = K.Plate(0, 0, w, h, { title = "Armoury", sub = "6 items", ticks = "all" })
 ]]
 function K.Plate(x, y, w, h, opts)
     opts = opts or {}
@@ -99,12 +126,15 @@ function K.Plate(x, y, w, h, opts)
     return top
 end
 
--- Small caps label drawn in a Paint.
+-- K.Caps(text, x, y, col, align): small upper-case label drawn in a Paint
+-- (vertically centred on y). Default colour C.label, left aligned.
 function K.Caps(text, x, y, col, align)
     draw.SimpleText(string.upper(text), K.Font(12, 700), x, y, col or C.label, align or TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 end
 
--- Cut text to fit a width (cached; cut by whole UTF-8 characters).
+-- K.Fit(text, font, maxW): returns text cut to fit maxW pixels with "…" at
+-- the end (or the text as is when it fits). Cached; cut by whole UTF-8
+-- characters. Example: draw.SimpleText(K.Fit(name, f, w - 20), f, 10, 10, C.text)
 local fitCache, fitCount = {}, 0
 function K.Fit(text, font, maxW)
     text = tostring(text or "")
@@ -134,8 +164,11 @@ end
 -- Panels
 --------------------------------------------------------------------------
 
--- Give a window its own accent colour: its Paint swaps the accent in and
--- PaintOver (after the children) puts it back. getCol() returns a Color or nil.
+-- K.Tint(panel, getCol): give a window its own accent colour: its Paint swaps
+-- the accent in and PaintOver (after the children) puts it back, so every
+-- Kit widget inside draws with it. getCol() returns a Color or nil (= normal).
+-- Call it after setting the panel's own Paint. Used by the datapad.
+-- Example: K.Tint(frame, function() return Color(230, 130, 40) end)
 function K.Tint(panel, getCol)
     local paint, over = panel.Paint, panel.PaintOver
     function panel:Paint(w, h)
@@ -153,8 +186,16 @@ function K.Tint(panel, getCol)
     end
 end
 
--- A button. opts: accent (filled stripe), danger (red stripe), small,
--- enabled (function or bool), tooltip, align ("left"), icon text.
+-- K.Button(parent, text, fn, opts): a DButton in the house style. Returns it
+-- (size and dock it yourself; height is set: 34, or 26 when small).
+-- text: a string or a function returning one (redrawn every frame).
+-- fn(button): called on click (not when disabled). opts:
+--   accent   bright stripe          danger   red stripe
+--   small    26 px tall, small font enabled  bool or function -> bool (dim + no click when false)
+--   selected function -> bool: drawn pressed (tabs, choices)
+--   col      Color: colour-coded button (faint wash + wide strip)
+--   tooltip  text                   align    "left" (default centred)
+-- Example: K.Button(panel, "Save", function() save() end, { accent = true }):Dock(BOTTOM)
 function K.Button(parent, text, fn, opts)
     opts = opts or {}
     local b = vgui.Create("DButton", parent)
@@ -207,7 +248,8 @@ function K.Button(parent, text, fn, opts)
     return b
 end
 
--- A text label panel (auto-sized height).
+-- K.Label(parent, text, size, weight, col): a wrapping DLabel whose height
+-- follows its text (dock it TOP). size/weight as K.Font, col default C.text.
 function K.Label(parent, text, size, weight, col)
     local l = vgui.Create("DLabel", parent)
     l:SetFont(K.Font(size or 14, weight))
@@ -218,7 +260,8 @@ function K.Label(parent, text, size, weight, col)
     return l
 end
 
--- A section heading: caps text with a rule under it.
+-- K.Heading(parent, text, col): a section heading panel (32 px): caps text
+-- with a rule under it. Returns the panel (dock it TOP).
 -- col (optional): a colour-coded section (a chip before the title, the
 -- title and rule in that colour).
 function K.Heading(parent, text, col)
@@ -239,7 +282,8 @@ function K.Heading(parent, text, col)
     return p
 end
 
--- A scroll panel with a thin bar in the house style.
+-- K.Scroll(parent): a DScrollPanel with a thin bar in the house style.
+-- Dock children TOP inside it. Leave ~10 px right margin on them for the bar.
 function K.Scroll(parent)
     local sp = vgui.Create("DScrollPanel", parent)
     local bar = sp:GetVBar()
@@ -256,8 +300,10 @@ function K.Scroll(parent)
     return sp
 end
 
--- A row with a label (and a dim description) on the left and a control
--- on the right. Returns the row; put the control in row.right.
+-- K.Row(parent, title, desc): a row with a label (and a dim description) on
+-- the left and a control on the right. Returns the row; put the control in
+-- row.right (320 px wide; change with row.right:SetWide). 40 px tall, 52
+-- with a description.
 function K.Row(parent, title, desc)
     local row = vgui.Create("DPanel", parent)
     row:SetTall(desc and K.S(52) or K.S(40))
@@ -279,8 +325,10 @@ function K.Row(parent, title, desc)
     return row
 end
 
--- A row of mutually exclusive choice buttons. options = { { value, label }, ... }.
--- get() returns the current value, set(value) changes it.
+-- K.Choices(parent, options, get, set): a row of mutually exclusive buttons.
+-- options = { { value, label }, ... } (left to right). get() returns the
+-- current value (that button is drawn pressed), set(value) is called on a
+-- click. Returns a panel with no size of its own: Dock(FILL) it in a row.
 function K.Choices(parent, options, get, set)
     local p = vgui.Create("DPanel", parent)
     p.Paint = nil
@@ -295,7 +343,8 @@ function K.Choices(parent, options, get, set)
     return p
 end
 
--- An on/off switch bound to get/set.
+-- K.Toggle(parent, get, set): an ON/OFF switch, 64 px wide. get() -> bool,
+-- set(newBool) on click. Returns the DButton (dock it RIGHT in a row).
 function K.Toggle(parent, get, set)
     local b = vgui.Create("DButton", parent)
     b:SetText("")
@@ -322,7 +371,9 @@ function K.Toggle(parent, get, set)
     return b
 end
 
--- A number slider bound to get/set (whole numbers unless decimals given).
+-- K.Slider(parent, min, max, decimals, get, set): a drag bar with the value
+-- on its right. Whole numbers unless decimals is given. set(v) runs only
+-- when the rounded value changes. Returns a panel (Dock(FILL) it).
 function K.Slider(parent, min, max, decimals, get, set)
     local p = vgui.Create("DPanel", parent)
     p.Paint = nil
@@ -360,7 +411,9 @@ function K.Slider(parent, min, max, decimals, get, set)
     return p
 end
 
--- A one-line text box in the house style.
+-- K.TextEntry(parent, placeholder): a one-line DTextEntry in the house style
+-- (30 px tall; accent outline while focused). Use its normal methods:
+-- GetValue, SetText, OnEnter, OnChange, SetUpdateOnType + OnValueChange.
 function K.TextEntry(parent, placeholder)
     local e = vgui.Create("DTextEntry", parent)
     e:SetFont(K.Font(14))
@@ -380,7 +433,8 @@ function K.TextEntry(parent, placeholder)
     return e
 end
 
--- A small dropdown menu in the house style (DMenu with painted options).
+-- K.Menu(): a DermaMenu in the house style. AddOption(text, fn) is restyled;
+-- AddSpacer / AddSubMenu work as normal. Call m:Open() to show it at the mouse.
 function K.Menu()
     local m = DermaMenu()
     function m:Paint(w, h)
@@ -405,7 +459,10 @@ function K.Menu()
     return m
 end
 
--- Ask for text (a reason, a number). onOk(text) is called when confirmed.
+-- K.Prompt(title, desc, default, onOk): a small modal box asking for text (a
+-- reason, a number). onOk(text) is called on OK or Enter; Cancel or Esc
+-- just closes it. Returns the frame. Open prompts are kept in Menus.prompts
+-- (Esc closes them first).
 Menus.prompts = Menus.prompts or {}
 function K.Prompt(title, desc, default, onOk)
     local f = vgui.Create("EditablePanel")
@@ -440,8 +497,15 @@ function K.Prompt(title, desc, default, onOk)
     return f
 end
 
--- Close every Rhylib menu that is open (pause, F4, scoreboard mouse).
--- Returns true if something was closed.
+-- Closers: what Esc closes before the pause menu opens (cl_10_pause.lua).
+-- Menus.RegisterCloser(id, fn): fn() closes your window if it's open and
+-- returns true if it closed something. Same id = replaced (refresh-safe).
+-- Example: Rhylib.Menus.RegisterCloser("mywindow", function()
+--              if IsValid(myFrame) then myFrame:Remove() return true end
+--              return false
+--          end)
+-- Menus.CloseAll(): runs every closer (pause, F4, scoreboard mouse, prompts,
+-- inventory, spawn window...). Returns true if something was closed.
 Menus.closers = Menus.closers or {}
 Menus.closers.prompts = function()
     local any = false
