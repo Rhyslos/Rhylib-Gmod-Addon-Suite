@@ -72,15 +72,16 @@ function E.MineReset(mine)
     E.SetupMine(mine)
 end
 
--- Half buried: the top third shows (again after a training mine switches
--- AP/LAP, since the model and its size change).
--- E.BuryMine(mine): needs mine.eodGround = { ground pos, ground normal }
--- (set by E.PlaceMines). Sinks it so 38% of its height shows.
+-- E.BuryMine(mine): puts the mine back on its ground point
+-- (mine.eodGround = { ground pos, ground normal }, set by E.PlaceMines;
+-- again after a training mine switches AP/LAP). The origin sits on the
+-- ground; the client draws the model with config mineSink of its height
+-- below the ground (E.MineMatrix), so how deep it looks never depends on
+-- the server's idea of the model bounds.
 function E.BuryMine(mine)
     local g = mine.eodGround
     if not g then return end
-    local mn, mx = mine:OBBMins(), mine:OBBMaxs()
-    mine:SetPos(g[1] + g[2] * (-mn.z - (mx.z - mn.z) * 0.62))
+    mine:SetPos(g[1])   -- (on the ground: the client draws it sunk, E.MineMatrix)
 end
 
 -- Toolgun: n mines around the aimed spot (spread 0 = exactly there),

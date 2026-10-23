@@ -1,6 +1,13 @@
 {
-	"title": "Rhylib Core",
+	"title": "Rhy's Core",
 	"type": "servercontent",
-	"tags": ["roleplay", "realism"],
-	"ignore": ["*.md", "*.psd", "*.bat"]
+	"tags": [
+		"roleplay",
+		"realism"
+	],
+	"ignore": [
+		"*.md",
+		"*.psd",
+		"*.bat"
+	]
 }

@@ -4,8 +4,8 @@
 -- live in rhylib_republic. See docs/addons/rhylib_weapons.md.
 
 if not Rhylib then
-    print("[Rhylib] rhylib_weapons needs rhylib_core. Install it and restart the map.")
+    print("[Rhy's] Rhy's Weapons (rhylib_weapons) needs Rhy's Core (rhylib_core). Install it and restart the map.")
     return
 end
 
-Rhylib.LoadModule("weapons", { name = "Weapons", version = "0.1.0" })
+Rhylib.LoadModule("weapons", { name = "Rhy's Weapons", version = "0.1.0" })

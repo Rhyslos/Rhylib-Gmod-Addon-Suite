@@ -1,6 +1,13 @@
 {
-	"title": "Rhylib Skills",
+	"title": "Rhy's Skill Trees",
 	"type": "servercontent",
-	"tags": ["roleplay", "fun"],
-	"ignore": ["*.md", "*.psd", "*.bat"]
+	"tags": [
+		"roleplay",
+		"fun"
+	],
+	"ignore": [
+		"*.md",
+		"*.psd",
+		"*.bat"
+	]
 }

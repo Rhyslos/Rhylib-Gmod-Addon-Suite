@@ -12,7 +12,7 @@
 AddCSLuaFile()
 SWEP.Base = "rhylib_droidpopper"
 SWEP.PrintName = "Droid popper (Training)"
-SWEP.Category = "Rhylib: Training"
+SWEP.Category = "Rhy's Training"
 SWEP.Spawnable = true
 SWEP.Training = true
 SWEP.TrainingOf = "rhylib_droidpopper"

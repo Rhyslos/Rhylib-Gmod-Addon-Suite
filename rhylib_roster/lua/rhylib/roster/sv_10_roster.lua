@@ -198,6 +198,10 @@ local function checkJob(ply)
     end
     R.ApplyName(ply)
 end
+-- R.CheckJob(ply): move the player to their home job if their job is out
+-- of reach (or they're a cadet/CT with something better), then reapply
+-- their name. Staff > Jobs calls it after switching a job off.
+R.CheckJob = checkJob
 
 local function needCharacter(ply)
     Rhylib.Net.Start("roster.need")

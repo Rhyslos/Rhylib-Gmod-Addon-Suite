@@ -1,5 +1,5 @@
 if not Rhylib then
-    print("[Rhylib] rhylib_skills needs rhylib_core. Install it and restart the map.")
+    print("[Rhy's] Rhy's Skill Trees (rhylib_skills) needs Rhy's Core (rhylib_core). Install it and restart the map.")
     return
 end
 
@@ -8,4 +8,4 @@ end
 -- specialisations and the skills that change weapons, movement and
 -- carrying; also command orders, marks and class mode. Module files are in
 -- lua/rhylib/skills/ (shared, then server, then client).
-Rhylib.LoadModule("skills", { name = "Skills", version = "0.1.0" })
+Rhylib.LoadModule("skills", { name = "Rhy's Skill Trees", version = "0.1.0" })

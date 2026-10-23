@@ -9,7 +9,7 @@ AddCSLuaFile()
 
 SWEP.Base = "rhylib_riotshield"
 SWEP.PrintName = "Republic shield (DC-15S)"
-SWEP.Category = "Rhylib: Equipment"
+SWEP.Category = "Rhy's Equipment"
 SWEP.Spawnable = true
 
 SWEP.CarrySkill = false   -- (false, not nil: nil would inherit the CG shield's skill)

@@ -1,6 +1,13 @@
 {
-	"title": "Rhylib Roster",
+	"title": "Rhy's Roster",
 	"type": "servercontent",
-	"tags": ["roleplay", "build"],
-	"ignore": ["*.md", "*.psd", "*.bat"]
+	"tags": [
+		"roleplay",
+		"build"
+	],
+	"ignore": [
+		"*.md",
+		"*.psd",
+		"*.bat"
+	]
 }

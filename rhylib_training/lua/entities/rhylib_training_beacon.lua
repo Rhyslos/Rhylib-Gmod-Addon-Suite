@@ -12,7 +12,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Training respawn beacon"
-ENT.Category = "Rhylib: Training"
+ENT.Category = "Rhy's Training"
 ENT.Spawnable = true
 ENT.AdminOnly = true
 ENT.RenderGroup = RENDERGROUP_BOTH

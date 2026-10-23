@@ -1,0 +1,13 @@
+{
+	"title": "Rhy's Bounty Hunters",
+	"type": "servercontent",
+	"tags": [
+		"roleplay",
+		"fun"
+	],
+	"ignore": [
+		"*.md",
+		"*.psd",
+		"*.bat"
+	]
+}

@@ -21,7 +21,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Bomb (small)"
-ENT.Category = "Rhylib: EOD"
+ENT.Category = "Rhy's EOD"
 ENT.Spawnable = true
 ENT.AdminOnly = true
 ENT.RenderGroup = RENDERGROUP_BOTH

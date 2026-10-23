@@ -1,6 +1,13 @@
 {
-	"title": "Rhylib Admin",
+	"title": "Rhy's Admin",
 	"type": "servercontent",
-	"tags": ["roleplay", "fun"],
-	"ignore": ["*.md", "*.psd", "*.bat"]
+	"tags": [
+		"roleplay",
+		"fun"
+	],
+	"ignore": [
+		"*.md",
+		"*.psd",
+		"*.bat"
+	]
 }

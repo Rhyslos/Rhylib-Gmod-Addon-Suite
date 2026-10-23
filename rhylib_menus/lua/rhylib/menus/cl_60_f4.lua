@@ -4,8 +4,12 @@
       Jobs       jobs by category; pick one to see its model, description
                  and weapons, then become it (or start a vote).
       Shop       entities, shipments, single weapons, ammo and vehicles you
-                 can buy as your current job.
-      Character  money, salary, job, and money / name / door commands.
+                 can buy as your current job (only shown when the server
+                 has anything to sell).
+      Character  job, kills, carried weight; money, salary and the money /
+                 door commands only while money is in use (rhylib_roster's
+                 money setting, R.MoneyOn); RP name only without
+                 rhylib_roster (names come from the character).
 
     Everything runs DarkRP's own console commands ("darkrp <command>"),
     so DarkRP checks money, limits and jobs on the server as usual.
@@ -34,6 +38,13 @@ end
 local function myMoney()
     local ply = LocalPlayer()
     return ply.getDarkRPVar and (ply:getDarkRPVar("money") or 0) or 0
+end
+
+-- Is DarkRP money in use? rhylib_roster's money setting (R.MoneyOn); without
+-- rhylib_roster always yes.
+local function moneyOn()
+    local Ro = Rhylib.Roster
+    return not (Ro and Ro.MoneyOn) or Ro.MoneyOn()
 end
 
 local function canAfford(price)
@@ -426,10 +437,12 @@ local function buildCharacter(body, frame)
         local lines = {
             { "Name", ply:Nick() },
             { "Job", (ply.getDarkRPVar and ply:getDarkRPVar("job")) or team.GetName(ply:Team()) },
-            { "Money", money(myMoney()) },
-            { "Salary", money(ply.getDarkRPVar and ply:getDarkRPVar("salary") or 0) },
-            { "Kills / deaths", ply:Frags() .. " / " .. ply:Deaths() },
         }
+        if moneyOn() then
+            lines[#lines + 1] = { "Money", money(myMoney()) }
+            lines[#lines + 1] = { "Salary", money(ply.getDarkRPVar and ply:getDarkRPVar("salary") or 0) }
+        end
+        lines[#lines + 1] = { "Kills / deaths", ply:Frags() .. " / " .. ply:Deaths() }
         local weight = ply:GetNW2Float("rhylib_weight", -1)
         if weight >= 0 then
             lines[#lines + 1] = { "Carrying", string.format("%.1f / %.0f kg", weight, ply:GetNW2Float("rhylib_carry", 20)) }
@@ -454,26 +467,31 @@ local function buildCharacter(body, frame)
         local n = tonumber(string.Trim(text or ""))
         return n and n > 0 and math.floor(n) or nil
     end
-    local actions = {
-        { "Drop money", function()
+    -- Money and door actions only while money is in use; the name comes
+    -- from the character when rhylib_roster is installed.
+    local actions = {}
+    if moneyOn() then
+        actions[#actions + 1] = { "Drop money", function()
             K.Prompt("Drop money", "How much?", "", function(t) local n = number(t) if n then RunConsoleCommand("darkrp", "dropmoney", tostring(n)) end end)
-        end },
-        { "Give money", function()
+        end }
+        actions[#actions + 1] = { "Give money", function()
             K.Prompt("Give money", "To the player you're looking at. How much?", "", function(t) local n = number(t) if n then RunConsoleCommand("darkrp", "give", tostring(n)) end end)
-        end },
-        { "Change RP name", function()
-            K.Prompt("RP name", "Your new name", ply:Nick(), function(t) t = string.Trim(t) if t ~= "" then RunConsoleCommand("darkrp", "rpname", t) end end)
-        end },
-        { "Sell all doors", function()
+        end }
+        actions[#actions + 1] = { "Sell all doors", function()
             K.Prompt("Sell all doors", "Type yes to sell every door you own.", "", function(t)
                 if string.lower(string.Trim(t)) == "yes" then RunConsoleCommand("darkrp", "unownalldoors") end
             end)
-        end },
-        { "Inventory", function()
-            frame:Remove()
-            if Rhylib.Inventory and Rhylib.Inventory.Toggle then Rhylib.Inventory.Toggle() end
-        end },
-    }
+        end }
+    end
+    if not Rhylib.Roster then
+        actions[#actions + 1] = { "Change RP name", function()
+            K.Prompt("RP name", "Your new name", ply:Nick(), function(t) t = string.Trim(t) if t ~= "" then RunConsoleCommand("darkrp", "rpname", t) end end)
+        end }
+    end
+    actions[#actions + 1] = { "Inventory", function()
+        frame:Remove()
+        if Rhylib.Inventory and Rhylib.Inventory.Toggle then Rhylib.Inventory.Toggle() end
+    end }
     for _, a in ipairs(actions) do
         local b = K.Button(grid, a[1], a[2])
         b:SetSize(s(200), s(36))
@@ -493,15 +511,27 @@ local frame = { Remove = function() Menus.ClosePause() end }
 local function sub()
     local ply = LocalPlayer()
     local job = (ply.getDarkRPVar and ply:getDarkRPVar("job")) or team.GetName(ply:Team())
+    if not moneyOn() then return job end
     return job .. "   ·   " .. money(myMoney())
 end
 
-local function page(id, title, order, fn, group)
+-- Is there anything at all in the shop (any category of any kind with a
+-- member)? A server that removed every DarkRP item has no Shop page.
+local function shopHasItems()
+    for _, kind in ipairs({ "entities", "shipments", "weapons", "ammo", "vehicles" }) do
+        for _, cat in ipairs(categories(kind)) do
+            if cat.members and #cat.members > 0 then return true end
+        end
+    end
+    return false
+end
+
+local function page(id, title, order, fn, group, visible)
     Menus.AddPage(id, {
         title = title,
         order = order,
         group = group,
-        visible = isDarkRP,
+        visible = visible or isDarkRP,
         build = function(p)
             Menus.pages[id].sub = sub()
             fn(p, frame)
@@ -509,8 +539,16 @@ local function page(id, title, order, fn, group)
     })
 end
 page("jobs", "Jobs", 1, buildJobs, "play")
-page("shop", "Shop", 2, buildShop, "play")
+page("shop", "Shop", 2, buildShop, "play", function() return isDarkRP() and shopHasItems() end)
 page("character", "Profile", 20, buildCharacter, "character")
+
+-- The side bar group is "Jobs & shop" only when there's a shop.
+local function groupTitle()
+    if Menus.groups and Menus.groups.play then
+        Menus.groups.play.title = (isDarkRP() and not shopHasItems()) and "Jobs" or "Jobs & shop"
+    end
+end
+Rhylib.Hook.Add("InitPostEntity", "menus.f4group", groupTitle)
 
 -- Menus.ToggleF4(): F4. Opens the pause menu on Jobs; if it's already open
 -- on Jobs it closes it, on another page it switches to Jobs.

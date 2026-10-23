@@ -7,7 +7,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "rhylib_bn_computer"
 ENT.PrintName = "Medical holotable"
-ENT.Category = "Rhylib: Terminals"
+ENT.Category = "Rhy's Terminals"
 ENT.Spawnable = true
 ENT.AdminOnly = true
 ENT.ModelKey = "medical"

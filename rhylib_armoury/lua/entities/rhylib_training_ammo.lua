@@ -3,7 +3,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "rhylib_armoury_base"
 ENT.PrintName = "Training ammo"
-ENT.Category = "Rhylib: Training"
+ENT.Category = "Rhy's Training"
 ENT.Spawnable = true
 ENT.AdminOnly = true
 ENT.ArmouryKind = "trainingAmmo"

@@ -1,8 +1,8 @@
-# Rhylib
+# Rhy's Clone Wars RP Suite
 
 A free, modular Clone Wars roleplay suite for Garry's Mod, built for performance first.
 
-Rhylib is a set of addons that run on top of DarkRP / StarWarsRP. One required core addon holds shared code, and every other system (weapons, HUD, stamina, medic, inventory and so on) is a separate addon that hosts can add or leave out.
+Rhy's addons (Rhy's Core, Rhy's Weapons, Rhy's Medical System and so on; code name **Rhylib**, used for the folders, Lua tables and commands) are a set of addons that run on top of DarkRP / StarWarsRP. One required core addon holds shared code, and every other system (weapons, HUD, stamina, medic, inventory and so on) is a separate addon that hosts can add or leave out.
 
 ## Documentation
 

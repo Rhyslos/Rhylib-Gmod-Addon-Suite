@@ -10,7 +10,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Republic mine"
-ENT.Category = "Rhylib: EOD"
+ENT.Category = "Rhy's EOD"
 ENT.Spawnable = false
 ENT.Model = "models/props/starwars/weapons/ap_mine.mdl"
 ENT.FallbackModel = "models/props_combine/combine_mine01.mdl"
@@ -45,10 +45,9 @@ if SERVER then
     function ENT:Initialize()
         self:SetModel(self:WantedModel())
         self:SetSolid(SOLID_BBOX)
-        local sc = self:MineScale()
-        local mn, mx = self:GetModelBounds()
-        local half = math.max(8, math.max(-mn.x, mx.x, -mn.y, mx.y) * sc)
-        self:SetCollisionBounds(Vector(-half, -half, mn.z * sc), Vector(half, half, mx.z * sc + 3))
+        local E = Rhylib.EOD
+        local mn, mx = E.MineBox(E.Cfg("mineSize") or 20)   -- (origin on the ground; see E.MineMatrix)
+        self:SetCollisionBounds(mn, mx)
         self:SetMoveType(MOVETYPE_NONE)
         self:SetCollisionGroup(COLLISION_GROUP_DEBRIS)
         self.armAt = CurTime() + 2
@@ -64,13 +63,13 @@ end
 
 if CLIENT then
     function ENT:Draw()
-        local key = self:GetModel() .. ((Rhylib.EOD and Rhylib.EOD.Cfg("mineSize")) or 20)
-        if self.rhylibScaled ~= key then
+        local E = Rhylib.EOD
+        local w = E and E.Cfg("mineSize") or 20
+        local key = self:GetModel() .. "|" .. w .. "|" .. tostring(E and E.Cfg("mineSink"))
+        if self.rhylibScaled ~= key and E and E.MineMatrix then
             self.rhylibScaled = key
-            local m = Matrix()
-            m:Scale(Vector(1, 1, 1) * self:MineScale())
-            self:EnableMatrix("RenderMultiply", m)
-            self:SetRenderBounds(self:OBBMins() - Vector(8, 8, 8), self:OBBMaxs() + Vector(8, 8, 8))
+            self:EnableMatrix("RenderMultiply", E.MineMatrix(self, w))
+            self:SetRenderBounds(Vector(-48, -48, -48), Vector(48, 48, 48))
         end
         render.SetColorModulation(0.7, 0.85, 1)
         self:DrawModel()

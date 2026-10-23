@@ -1,6 +1,13 @@
 {
-	"title": "Rhylib Third Person",
+	"title": "Rhy's Third Person",
 	"type": "servercontent",
-	"tags": ["roleplay", "realism"],
-	"ignore": ["*.md", "*.psd", "*.bat"]
+	"tags": [
+		"roleplay",
+		"realism"
+	],
+	"ignore": [
+		"*.md",
+		"*.psd",
+		"*.bat"
+	]
 }

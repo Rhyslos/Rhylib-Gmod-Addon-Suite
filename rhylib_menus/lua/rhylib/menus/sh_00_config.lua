@@ -1,5 +1,5 @@
 --[[
-    Rhylib menus: the pause menu (Esc; Shift + Esc opens Garry's Mod's own
+    Rhy's menus: the pause menu (Esc; Shift + Esc opens Garry's Mod's own
     menu), with settings and an admin command page, the scoreboard, the
     killfeed, and a DarkRP F4 menu. Everything is client side; the admin
     commands are the admin mod's own (rhylib_admin, ULX or SAM) and

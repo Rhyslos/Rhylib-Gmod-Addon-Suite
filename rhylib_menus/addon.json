@@ -1,0 +1,13 @@
+{
+	"title": "Rhy's Menus",
+	"type": "servercontent",
+	"tags": [
+		"roleplay",
+		"realism"
+	],
+	"ignore": [
+		"*.md",
+		"*.psd",
+		"*.bat"
+	]
+}

@@ -1,6 +1,13 @@
 {
-	"title": "Rhylib Armoury",
+	"title": "Rhy's Armoury",
 	"type": "servercontent",
-	"tags": ["roleplay", "build"],
-	"ignore": ["*.md", "*.psd", "*.bat"]
+	"tags": [
+		"roleplay",
+		"build"
+	],
+	"ignore": [
+		"*.md",
+		"*.psd",
+		"*.bat"
+	]
 }

@@ -79,9 +79,9 @@ AddCSLuaFile()
 
 SWEP.Base = "weapon_base"
 SWEP.PrintName = "Rhylib base"
-SWEP.Category = "Rhylib"
+SWEP.Category = "Rhy's"
 SWEP.Spawnable = false
-SWEP.Author = "Rhylib"
+SWEP.Author = "Rhy"
 SWEP.IsRhylib = true
 
 SWEP.ViewModel = "models/weapons/c_smg1.mdl"

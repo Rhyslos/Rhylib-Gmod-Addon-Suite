@@ -1,6 +1,12 @@
 {
-	"title": "Rhylib Chat",
+	"title": "Rhy's Chat",
 	"type": "servercontent",
-	"tags": ["roleplay"],
-	"ignore": ["*.md", "*.psd", "*.bat"]
+	"tags": [
+		"roleplay"
+	],
+	"ignore": [
+		"*.md",
+		"*.psd",
+		"*.bat"
+	]
 }

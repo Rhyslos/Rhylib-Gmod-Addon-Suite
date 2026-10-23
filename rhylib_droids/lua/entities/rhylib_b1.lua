@@ -53,7 +53,7 @@ AddCSLuaFile()
 ENT.Base = "base_nextbot"
 ENT.Type = "nextbot"
 ENT.PrintName = "B1 battle droid"
-ENT.Category = "Rhylib: B1 battle droids"
+ENT.Category = "Rhy's B1 battle droids"
 ENT.Spawnable = false   -- spawned from the NPCs tab (list "NPC") or the toolgun
 ENT.AdminOnly = true
 ENT.IsRhylibDroid = true

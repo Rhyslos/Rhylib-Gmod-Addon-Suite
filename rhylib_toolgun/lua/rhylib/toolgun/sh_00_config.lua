@@ -16,7 +16,7 @@
     Entry fields (the ALL list below; Tool.Entries() returns the installed
     ones, with `index` added):
       id, name, cat       unique id (client convar rhylib_tool_entry), label,
-                          category in the spawn window's Rhylib tab
+                          category in the spawn window's Rhy's tab
       class               entity placed by LMB (RMB removes things of it)
       count = true        "Droids at once" 1/3/5 places that many in a ring
       named = true        gets the "Beacon name" text (SetBeaconName)
@@ -132,7 +132,7 @@ local ALL = {
     { id = "dummyt", name = "Test dummy (tough)", cat = "Testing", class = "rhylib_test_dummy_tough" },
 }
 
--- The Rhylib tab's categories, top to bottom (owner: NPCs on their own,
+-- The Rhy's tab's categories, top to bottom (owner: NPCs on their own,
 -- not alphabetical); others follow alphabetically.
 Tool.CAT_ORDER = { "Staff tools", "Clone NPCs", "Clone orders", "Droid NPCs", "Droid orders", "EOD", "Spawns", "Armoury", "Medical", "Base", "Training", "Testing" }
 

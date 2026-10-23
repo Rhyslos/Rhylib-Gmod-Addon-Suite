@@ -3,8 +3,8 @@
 -- gear items live there); that loads after this addon, so the items are
 -- registered once it's ready (sh_00_config.lua).
 if not Rhylib then
-    print("[Rhylib] rhylib_gear needs rhylib_core. Install it and restart the map.")
+    print("[Rhy's] Rhy's Wearable Gear (rhylib_gear) needs Rhy's Core (rhylib_core). Install it and restart the map.")
     return
 end
 
-Rhylib.LoadModule("gear", { name = "Wearable gear", version = "0.1.0" })
+Rhylib.LoadModule("gear", { name = "Rhy's Wearable Gear", version = "0.1.0" })

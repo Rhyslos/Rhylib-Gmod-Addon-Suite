@@ -65,6 +65,17 @@ Config.Register("roster", "quals", {
     { "jump", "Jump trooper" }, { "pilot", "Pilot" }, { "engineer", "Engineer" },
 }, "Qualifications: { id, name }. The id is also an armoury role and a job's qual = id")
 
+Config.Register("roster", "money", false,
+    "DarkRP money. Off: no paydays or NPC kill pay, /give, /dropmoney and /cheque are gone, doors can't be bought, and the HUD and Profile page don't show money")
+
+-- DarkRP's money chat commands (taken out while money is off; no job may
+-- use them as its command).
+R.MONEY_COMMANDS = { "give", "dropmoney", "moneydrop", "cheque", "check" }
+
+-- R.MoneyOn(): is DarkRP money in use (config roster money)? Both realms.
+-- Other addons ask it only if rhylib_roster is installed (money shows without it).
+function R.MoneyOn() return Config.Get("roster", "money") == true end
+
 -- R.Cfg(key): a "roster" config value. Example: R.Cfg("manageRank") -> "SGT"
 function R.Cfg(k) return Config.Get("roster", k) end
 
@@ -218,9 +229,11 @@ end
 
 -- R.JobBlock(ply, job): why a player can't take a DarkRP job right now (a
 -- sentence for the job list), or nil if they can. Reads the job's
--- needsTraining / battalion / minRank / qual fields.
+-- needsTraining / battalion / minRank / qual fields, and rhylibOff (a job
+-- switched off or deleted in Staff > Jobs, sh_40_jobs.lua).
 -- Example: local why = Rhylib.Roster.JobBlock(ply, RPExtraTeams[ply:Team()])
 function R.JobBlock(ply, j)
+    if j.rhylibOff then return "Switched off by staff" end
     local c = R.Get(ply)
     if not c.has and (j.needsTraining or j.battalion) then return "Create your character first" end
     if j.needsTraining and not c.trained then return "Needs basic training (ask a Sergeant or higher)" end
@@ -234,13 +247,16 @@ function R.JobBlock(ply, j)
 end
 
 -- Add our rules to the DarkRP jobs (customCheck runs on both sides and
--- in the F4 / job list). Done once the jobs exist. The job's own
--- customCheck / CustomCheckFailMsg still run after ours; j.rhylibWrapped
--- stops a second wrap on Lua refresh.
+-- in the F4 / job list). Done once the jobs exist, and again when jobs
+-- are made or edited in game (R.WrapJobs, from sh_40_jobs.lua). Every job
+-- is wrapped: R.JobBlock reads the job's fields each time, so a field
+-- added later still counts. The job's own customCheck /
+-- CustomCheckFailMsg still run after ours; j.rhylibWrapped stops a
+-- second wrap.
 local function wrapJobs()
     if not RPExtraTeams then return end
     for _, j in pairs(RPExtraTeams) do
-        if (j.needsTraining or j.battalion or j.qual) and not j.rhylibWrapped then
+        if not j.rhylibWrapped then
             j.rhylibWrapped = true
             local oldCheck, oldMsg = j.customCheck, j.CustomCheckFailMsg
             j.customCheck = function(ply)
@@ -256,6 +272,7 @@ local function wrapJobs()
         end
     end
 end
+R.WrapJobs = wrapJobs
 Rhylib.Hook.Add("InitPostEntity", "roster.jobs", wrapJobs)
 Rhylib.Hook.Add("DarkRPFinishedLoading", "roster.jobs", wrapJobs)
 wrapJobs()  -- (Lua refresh)

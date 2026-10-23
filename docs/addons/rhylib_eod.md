@@ -210,6 +210,7 @@ Config module `eod`:
 | `mineModel` | `models/props/starwars/weapons/ap_mine.mdl` | AP mine model (HL2 hopper mine if missing). Also the Republic mine. |
 | `mineModelLarge` | `models/props/starwars/weapons/lasertrap.mdl` | LAP (large AP) mine model (HL2 hopper mine if missing). |
 | `mineSize` | `20` | AP mine: width it is drawn at (units; the model is scaled to fit, LAP ×1.4). |
+| `mineSink` | `0.55` | Mines: share of a mine's height drawn below the ground (0 = sits on top, 0.9 = almost hidden). The mine itself sits on the ground; only the drawing sinks. |
 | `mineChain` | `140` | Mines: another mine within this (units) of an explosion goes off too. |
 | `repDamage` | `260` | Republic mine: blast damage to droids at the centre. |
 | `repRadius` | `280` | Republic mine: blast radius (units; Minefield ×repFieldRadius). |

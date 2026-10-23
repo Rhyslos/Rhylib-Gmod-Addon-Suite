@@ -26,7 +26,7 @@ Config.Register("weapons", "topSpeed", 1500, "RPS-6 top attack: rocket speed (un
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Top-attack rocket"
-ENT.Category = "Rhylib: Heavy"
+ENT.Category = "Rhy's Heavy"
 ENT.Model = "models/weapons/w_missile_closed.mdl"
 ENT.Spawnable = false
 ENT.RenderGroup = RENDERGROUP_BOTH

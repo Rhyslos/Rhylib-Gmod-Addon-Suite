@@ -9,8 +9,8 @@
 AddCSLuaFile()
 
 SWEP.PrintName = "Stowed"
-SWEP.Author = "Rhylib"
-SWEP.Category = "Rhylib"
+SWEP.Author = "Rhy"
+SWEP.Category = "Rhy's"
 SWEP.Spawnable = false
 SWEP.Slot = 0
 SWEP.SlotPos = 0

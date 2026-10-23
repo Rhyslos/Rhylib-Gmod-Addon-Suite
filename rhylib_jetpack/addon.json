@@ -1,6 +1,13 @@
 {
-	"title": "Rhylib Jetpack",
+	"title": "Rhy's Jetpack",
 	"type": "servercontent",
-	"tags": ["roleplay", "fun"],
-	"ignore": ["*.md", "*.psd", "*.bat"]
+	"tags": [
+		"roleplay",
+		"fun"
+	],
+	"ignore": [
+		"*.md",
+		"*.psd",
+		"*.bat"
+	]
 }

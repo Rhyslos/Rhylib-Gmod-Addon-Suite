@@ -1,6 +1,7 @@
 --[[
     Health and armour on a plate in the bottom-left corner (client, third
-    person). With DarkRP, also job and money. In the helmet visor the
+    person). With DarkRP, also job and money (money only while rhylib_roster's
+    money setting is on, R.MoneyOn). In the helmet visor the
     armour and health bars (cl_60_visor.lua) replace this, so nothing is
     drawn here then.
 
@@ -56,9 +57,13 @@ Rhylib.Hook.Add("HUDPaint", "hud.status", function()
 
     if darkrp then
         local job = ply:getDarkRPVar("job") or team.GetName(ply:Team())
-        local money = ply:getDarkRPVar("money") or 0
-        local moneyText = DarkRP.formatMoney and DarkRP.formatMoney(money) or ("$" .. money)
         HUD.Text(job, 15, x, y + math.floor(3 * s), C.dim)
-        HUD.Text(moneyText, 15, x + w, y + math.floor(3 * s), C.text, TEXT_ALIGN_RIGHT)
+        -- (money only while it's in use: rhylib_roster's money setting)
+        local Ro = Rhylib.Roster
+        if not (Ro and Ro.MoneyOn) or Ro.MoneyOn() then
+            local money = ply:getDarkRPVar("money") or 0
+            local moneyText = DarkRP.formatMoney and DarkRP.formatMoney(money) or ("$" .. money)
+            HUD.Text(moneyText, 15, x + w, y + math.floor(3 * s), C.text, TEXT_ALIGN_RIGHT)
+        end
     end
 end)

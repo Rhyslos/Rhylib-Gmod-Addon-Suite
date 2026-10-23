@@ -1,6 +1,13 @@
 {
-	"title": "Rhylib Datapad",
+	"title": "Rhy's Datapad",
 	"type": "servercontent",
-	"tags": ["roleplay", "build"],
-	"ignore": ["*.md", "*.psd", "*.bat"]
+	"tags": [
+		"roleplay",
+		"build"
+	],
+	"ignore": [
+		"*.md",
+		"*.psd",
+		"*.bat"
+	]
 }

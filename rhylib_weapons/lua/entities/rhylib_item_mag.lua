@@ -5,7 +5,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "rhylib_item_base"
 ENT.PrintName = "Medium magazine"
-ENT.Category = "Rhylib: Items & ammo"
+ENT.Category = "Rhy's Items & ammo"
 ENT.Spawnable = false
 ENT.Model = "models/items/boxmrounds.mdl"  -- placeholder
 ENT.Kind = "mag_medium"

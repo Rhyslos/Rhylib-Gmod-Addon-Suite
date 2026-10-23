@@ -1,6 +1,13 @@
 {
-	"title": "Rhylib Medical",
+	"title": "Rhy's Medical System",
 	"type": "servercontent",
-	"tags": ["roleplay", "realism"],
-	"ignore": ["*.md", "*.psd", "*.bat"]
+	"tags": [
+		"roleplay",
+		"realism"
+	],
+	"ignore": [
+		"*.md",
+		"*.psd",
+		"*.bat"
+	]
 }

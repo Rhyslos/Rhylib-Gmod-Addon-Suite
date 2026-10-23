@@ -5,8 +5,8 @@
 ]]
 
 if not Rhylib then
-    print("[Rhylib] rhylib_mp needs rhylib_core. Install it and restart the map.")
+    print("[Rhy's] Rhy's Military Police (rhylib_mp) needs Rhy's Core (rhylib_core). Install it and restart the map.")
     return
 end
 
-Rhylib.LoadModule("mp", { name = "Military police", version = "0.1.0" })
+Rhylib.LoadModule("mp", { name = "Rhy's Military Police", version = "0.1.0" })

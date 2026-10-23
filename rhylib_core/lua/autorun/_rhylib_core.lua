@@ -121,6 +121,6 @@ function Rhylib.LoadConfigFiles()
     end
 end
 
-Rhylib.LoadModule("core", { name = "Core", version = Rhylib.Version })
+Rhylib.LoadModule("core", { name = "Rhy's Core", version = Rhylib.Version })
 Rhylib.LoadConfigFiles()
 hook.Run("Rhylib.CoreLoaded")

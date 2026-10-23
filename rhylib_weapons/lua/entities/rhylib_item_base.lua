@@ -14,7 +14,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Rhylib item"
-ENT.Category = "Rhylib: Items & ammo"
+ENT.Category = "Rhy's Items & ammo"
 ENT.Spawnable = false
 ENT.Model = "models/items/boxmrounds.mdl"
 ENT.PickupSound = "items/ammo_pickup.wav"

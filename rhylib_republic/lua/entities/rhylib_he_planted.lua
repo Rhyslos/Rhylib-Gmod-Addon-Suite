@@ -31,7 +31,7 @@ Config.Register("weapons", "heIdleLife", 900, "High explosive charge: seconds a 
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "High explosive charge"
-ENT.Category = "Rhylib: Grenades & charges"
+ENT.Category = "Rhy's Grenades & charges"
 ENT.Model = "models/weapons/w_slam.mdl"
 ENT.Spawnable = false
 ENT.RenderGroup = RENDERGROUP_BOTH

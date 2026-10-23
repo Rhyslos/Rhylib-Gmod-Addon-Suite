@@ -61,7 +61,7 @@ function Tool.Chosen()
     return list[1]
 end
 
--- The "Rhylib" tab of the spawn window (rhylib_menus cl_85_spawn.lua):
+-- The "Rhy's" tab of the spawn window (rhylib_menus cl_85_spawn.lua):
 -- our placements as tiles by category, plus count, beacon name and save.
 local function buildTab(body)
     local M = Rhylib.Menus
@@ -212,7 +212,7 @@ local function addTab()
     if not (M and M.Spawn and M.Spawn.AddTab) then return end
     M.Spawn.PickForTool = pickForTool
     M.Spawn.AddTab("rhylib", {
-        title = "Rhylib", order = 0,
+        title = "Rhy's", order = 0,
         build = buildTab,
         search = function(body, q) if body.search then body.search(q) end end,
     })

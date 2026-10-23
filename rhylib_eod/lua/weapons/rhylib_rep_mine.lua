@@ -12,7 +12,7 @@ DEFINE_BASECLASS("rhylib_grenade_base")
 
 SWEP.Base = "rhylib_grenade_base"
 SWEP.PrintName = "Republic mine"
-SWEP.Category = "Rhylib: Grenades & charges"
+SWEP.Category = "Rhy's Grenades & charges"
 SWEP.InvGroup = "grenade"
 SWEP.Spawnable = true
 SWEP.ImpactMode = false

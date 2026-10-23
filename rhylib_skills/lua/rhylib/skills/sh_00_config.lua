@@ -458,6 +458,37 @@ for _, c in ipairs(K.CATEGORIES) do
     for _, s in ipairs(c.specs or {}) do K.specById[s.id] = s end
 end
 
+-- K.AddTree(cat, nodes): a skill tree from another addon (both realms, before
+-- players join; e.g. on Rhylib.ModuleLoaded "skills"). cat as K.CATEGORIES
+-- plus optional allowed = fn(ply) -> ok, reason (who may learn it), rule =
+-- a line for the Skills page, noBorrow = true (Adaptable can't borrow it).
+-- nodes as K.NODES. Same ids again = replaced (refresh-safe). Node indexes
+-- go over the wire in 8 bits: 255 nodes in all.
+-- Example: Rhylib.Skills.AddTree({ id = "hunter", name = "Bounty hunter", specs = {} },
+--     { { id = "bh_licence", cat = "hunter", tier = 1, cost = 2, name = "Guild licence", desc = "..." } })
+function K.AddTree(cat, nodes)
+    local have = K.catById[cat.id]
+    if have then
+        for i, c in ipairs(K.CATEGORIES) do if c == have then K.CATEGORIES[i] = cat end end
+    else
+        K.CATEGORIES[#K.CATEGORIES + 1] = cat
+    end
+    K.catById[cat.id] = cat
+    for _, s in ipairs(cat.specs or {}) do K.specById[s.id] = s end
+    for _, n in ipairs(nodes) do
+        local old = K.byId[n.id]
+        if old then
+            n.index = old.index
+            K.NODES[old.index] = n
+        else
+            K.NODES[#K.NODES + 1] = n
+            n.index = #K.NODES
+        end
+        K.byId[n.id] = n
+    end
+    if #K.NODES > 255 then ErrorNoHalt("[Rhylib] Skills: more than 255 skills; the rest can't be learned\n") end
+end
+
 --------------------------------------------------------------------------
 -- What a player has
 --------------------------------------------------------------------------
@@ -504,6 +535,8 @@ K.ADAPT = { { id = "adapt_1", tier = 4 } }   -- (owner 2026-10-05: one borrowed 
 function K.Borrowed(set, id)
     local n = K.byId[id]
     if not (n and set.adapt_1 and K.Cfg("onePath")) then return false end
+    local c = K.catById[n.cat]
+    if c and c.noBorrow then return false end   -- (trees from other addons can opt out)
     if n.cat ~= K.ADAPT_CAT then return true end
     local own = K.byId.adapt_1 and K.byId.adapt_1.spec
     return n.spec ~= nil and own ~= nil and n.spec ~= own
@@ -622,6 +655,10 @@ function K.CanLearn(ply, set, id)
     if set[id] then return false, "Already learned" end
     if K.ClassOf and K.ClassOf(ply) then return false, "You're playing a class (leave it on the Class page first)" end
     local cat = K.catById[n.cat]
+    if cat and cat.allowed then
+        local ok, why = cat.allowed(ply)
+        if not ok then return false, why or "Not for your job" end
+    end
     if cat and cat.medicOnly then
         local Med = Rhylib.Medical
         if not (Med and Med.IsMedic and Med.IsMedic(ply)) then return false, "Medics only" end

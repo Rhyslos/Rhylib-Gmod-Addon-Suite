@@ -6,7 +6,7 @@
     The tank also makes a med bay around it (Med.InMedBay).
     Logic: rhylib_medical sv_40_medbay.lua. Saved per map with
     rhylib_medical_save.
-    Shared entity (admins spawn it: Rhylib: Medical). Model: config medical
+    Shared entity (admins spawn it: Rhy's Medical). Model: config medical
     tankModel (a fridge if that model is missing). NetworkVar Occupant =
     who is inside (for the label and the blue light).
 ]]
@@ -16,7 +16,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Bacta tank"
-ENT.Category = "Rhylib: Medical"
+ENT.Category = "Rhy's Medical"
 ENT.Spawnable = true
 ENT.AdminOnly = true
 ENT.IsRhylibMedBay = true   -- (marks med bay fixtures)

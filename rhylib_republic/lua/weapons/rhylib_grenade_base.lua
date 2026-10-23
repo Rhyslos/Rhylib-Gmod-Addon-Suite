@@ -51,7 +51,7 @@ Config.Register("weapons", "breachReach", 80, "Breaching charge: how far you can
 
 SWEP.Base = "weapon_base"
 SWEP.PrintName = "Grenade"
-SWEP.Category = "Rhylib: Grenades & charges"
+SWEP.Category = "Rhy's Grenades & charges"
 SWEP.InvGroup = "grenade"   -- (armoury shelf: rhylib_inventory Items.GroupOf)
 SWEP.Spawnable = false
 SWEP.Slot = 4
@@ -141,6 +141,7 @@ end
 function SWEP:SkillOK()
     local K = Rhylib.Skills
     if not (self.RequiresSkill and K and K.Has) then return true end
+    if hook.Run("Rhylib.SkillGranted", self:GetOwner(), self.RequiresSkill) == true then return true end   -- (rhylib_bounty)
     return K.Has(self:GetOwner(), self.RequiresSkill)
 end
 

@@ -52,7 +52,7 @@ Rhylib.Hook.Add("SetupMove", "mp.move", function(ply, mv)
         -- Escorting slows the MP (rhylib_skills Escort drills: not at all).
         if MP.Escorting(ply) then
             local K = Rhylib.Skills
-            if not (K and K.Has and K.Has(ply, "escort_drills")) then
+            if not (K and K.Has and (K.Has(ply, "escort_drills") or K.Has(ply, "bh_bring"))) then   -- (bh_bring: rhylib_bounty Bring them in)
                 local m = MP.Cfg("escortSlow")
                 mv:SetMaxClientSpeed(mv:GetMaxClientSpeed() * m)
                 mv:SetMaxSpeed(mv:GetMaxSpeed() * m)

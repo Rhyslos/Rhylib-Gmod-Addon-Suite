@@ -14,7 +14,7 @@ AddCSLuaFile()
 
 SWEP.Base = "rhylib_dp23"
 SWEP.PrintName = "DP-23 (Training)"
-SWEP.Category = "Rhylib: Training"
+SWEP.Category = "Rhy's Training"
 SWEP.Spawnable = true
 SWEP.AdminOnly = false
 

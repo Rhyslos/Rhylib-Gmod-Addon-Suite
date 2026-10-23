@@ -1,0 +1,13 @@
+{
+	"title": "Rhy's Training",
+	"type": "servercontent",
+	"tags": [
+		"roleplay",
+		"realism"
+	],
+	"ignore": [
+		"*.md",
+		"*.psd",
+		"*.bat"
+	]
+}

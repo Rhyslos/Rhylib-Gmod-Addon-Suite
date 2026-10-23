@@ -379,6 +379,7 @@ local function build(page)
                 table.insert(rules, 1, "You're playing the " .. playing.name .. " class (class mode): these are its skills. Go back to your own tree on the Class page.")
             end
             if cat.mpOnly then table.insert(rules, 1, "Military police jobs only.") end
+            if cat.rule then table.insert(rules, 1, cat.rule) end
             if cat.id == K.ADAPT_CAT then
                 rules[#rules + 1] = "Adaptable: learn one skill of tier 4 or lower from another tree or the other officer side; job rules still apply."
                 rules[#rules + 1] = "Command orders: pick one. Needs the rank " .. tostring(K.Cfg("commandRank")) .. "; issued with the command comlink."

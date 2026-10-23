@@ -1,6 +1,13 @@
 {
-	"title": "Rhylib HUD",
+	"title": "Rhy's HUD",
 	"type": "servercontent",
-	"tags": ["roleplay", "realism"],
-	"ignore": ["*.md", "*.psd", "*.bat"]
+	"tags": [
+		"roleplay",
+		"realism"
+	],
+	"ignore": [
+		"*.md",
+		"*.psd",
+		"*.bat"
+	]
 }

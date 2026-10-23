@@ -11,7 +11,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "rhylib_eod_mine"
 ENT.PrintName = "Training mine"
-ENT.Category = "Rhylib: EOD"
+ENT.Category = "Rhy's EOD"
 ENT.Spawnable = true
 ENT.AdminOnly = true
 ENT.MineType = "ap"

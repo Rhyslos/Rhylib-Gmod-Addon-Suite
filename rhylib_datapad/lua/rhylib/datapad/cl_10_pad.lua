@@ -1073,12 +1073,41 @@ local TABS = {
     { id = "arrest", name = "Arrest", build = arrestTab, mp = true },
 }
 
+-- Tabs other addons add: D.AddTab({ id, name, build = fn(content, kit),
+-- has = fn() -> bool, order }) (client). They come after the built-in ones
+-- (by order, default 50), before the MP tabs. Same id = replaced.
+-- Example (rhylib_bounty): Rhylib.Datapad.AddTab({ id = "bounty", name = "Bounties",
+--     build = function(content, k) ... end, has = function() return true end })
+D.extraTabs = D.extraTabs or {}
+function D.AddTab(t)
+    for i, o in ipairs(D.extraTabs) do
+        if o.id == t.id then D.extraTabs[i] = t return end
+    end
+    D.extraTabs[#D.extraTabs + 1] = t
+    table.sort(D.extraTabs, function(a, b) return (a.order or 50) < (b.order or 50) end)
+end
+
+-- The built-in tabs with the extra ones before the MP tabs.
+local function allTabs()
+    if #D.extraTabs == 0 then return TABS end
+    local out = {}
+    for _, t in ipairs(TABS) do
+        if t.id == "records" then
+            for _, e in ipairs(D.extraTabs) do
+                out[#out + 1] = { id = e.id, name = e.name, has = e.has, build = function() e.build(content, K()) end }
+            end
+        end
+        out[#out + 1] = t
+    end
+    return out
+end
+
 local function allowed(t)
     return (not t.mp or D.state.mp) and (not t.bn or D.state.bn ~= "") and (not t.has or t.has() and true or false)
 end
 
 local function tabOk(id)
-    for _, t in ipairs(TABS) do
+    for _, t in ipairs(allTabs()) do
         if t.id == id then return allowed(t) end
     end
     return false
@@ -1090,7 +1119,7 @@ function buildNav()
     local k = K()
     local s = k.S
     nav:Clear()
-    for _, t in ipairs(TABS) do
+    for _, t in ipairs(allTabs()) do
         if allowed(t) then
             local b = k.Button(nav, t.name, function()
                 tab = t.id
@@ -1112,7 +1141,7 @@ end
 function buildTab()
     if not IsValid(content) or not D.state then return end
     clear()
-    for _, t in ipairs(TABS) do
+    for _, t in ipairs(allTabs()) do
         if t.id == tab then t.build() return end
     end
 end

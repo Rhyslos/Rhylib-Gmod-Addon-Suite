@@ -11,7 +11,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Med sofa"
-ENT.Category = "Rhylib: Medical"
+ENT.Category = "Rhy's Medical"
 ENT.Spawnable = true
 ENT.AdminOnly = true
 

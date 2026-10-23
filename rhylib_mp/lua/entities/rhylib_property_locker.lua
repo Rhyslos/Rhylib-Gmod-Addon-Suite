@@ -15,7 +15,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Property locker"
-ENT.Category = "Rhylib: Military police"
+ENT.Category = "Rhy's Military police"
 ENT.Spawnable = true
 ENT.AdminOnly = true
 

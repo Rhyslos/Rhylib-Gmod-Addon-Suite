@@ -15,7 +15,7 @@ AddCSLuaFile()
 
 SWEP.Base = "weapon_base"
 SWEP.PrintName = "Mine scanner"
-SWEP.Category = "Rhylib: Equipment"
+SWEP.Category = "Rhy's Equipment"
 SWEP.Spawnable = true
 SWEP.AdminOnly = false
 SWEP.Slot = 4

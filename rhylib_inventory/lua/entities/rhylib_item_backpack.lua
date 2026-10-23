@@ -8,7 +8,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "rhylib_world_item"
 ENT.PrintName = "Backpack"
-ENT.Category = "Rhylib: Items & ammo"
+ENT.Category = "Rhy's Items & ammo"
 ENT.Spawnable = true
 
 if SERVER then

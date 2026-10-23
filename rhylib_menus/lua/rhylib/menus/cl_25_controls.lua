@@ -185,7 +185,7 @@ end)
 local function has(name) return function() return Rhylib[name] ~= nil end end
 local A = Menus.AddControl
 
-A("Menus", "ESC", "Rhylib menu (Shift + Esc: the game's own menu)")
+A("Menus", "ESC", "Rhy's menu (Shift + Esc: the game's own menu)")
 A("Menus", "F1", "This controls page")
 A("Menus", "F4", "Jobs, shop and character")
 A("Menus", "{+showscores}", "Scoreboard (right-click frees the mouse)")

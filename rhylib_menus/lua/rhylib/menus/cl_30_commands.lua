@@ -16,7 +16,7 @@
             -- or choices = { { "arg", "Label" }, ... }, run = function(arg) end
             --    current = function() return "arg" end   (which choice is lit)
         })
-    The group name is the heading ("Server" is shown as "Rhylib tools").
+    The group name is the heading ("Server" is shown as "Rhy's tools").
     Same id in the same group = replaced.
 
     Client only: every button runs a chat/console command, and the server
@@ -35,7 +35,7 @@ local C = K.C
 --------------------------------------------------------------------------
 
 local MODS = {
-    { id = "rhylib", name = "Rhylib Admin",
+    { id = "rhylib", name = "Rhy's Admin",
       detect = function() return Rhylib.Admin ~= nil and Rhylib.Admin.Run ~= nil end },
     { id = "ulx", name = "ULX",
       detect = function() return ulx ~= nil and ULib ~= nil end,
@@ -533,7 +533,7 @@ local function buildServer(sp)
     for g in pairs(Menus.commands) do groups[#groups + 1] = g end
     table.sort(groups)
     for _, g in ipairs(groups) do
-        heading(sp, g == "Server" and "Rhylib tools" or g)
+        heading(sp, g == "Server" and "Rhy's tools" or g)
         local list = table.Copy(Menus.commands[g])
         table.sort(list, function(a, b) return (a.order or 50) < (b.order or 50) end)
         for _, cmd in ipairs(list) do

@@ -19,7 +19,7 @@ AddCSLuaFile()
 
 SWEP.Base = "rhylib_base"
 SWEP.PrintName = "DC-15X"
-SWEP.Category = "Rhylib: Snipers"
+SWEP.Category = "Rhy's Snipers"
 SWEP.InvGroup = "sniper"   -- (armoury shelf: rhylib_inventory Items.GroupOf)
 SWEP.Spawnable = true
 SWEP.AdminOnly = false

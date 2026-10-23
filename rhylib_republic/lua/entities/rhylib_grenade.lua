@@ -42,7 +42,7 @@ Config.Register("weapons", "empRadius", 190, "Droid popper (EMP): radius it kill
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Grenade"
-ENT.Category = "Rhylib: Grenades & charges"
+ENT.Category = "Rhy's Grenades & charges"
 ENT.Model = "models/jajoff/sps/cgiweapons/tc13j/thermalgrenade.mdl"
 ENT.Spawnable = false
 

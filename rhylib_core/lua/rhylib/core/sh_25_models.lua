@@ -123,7 +123,8 @@ end
 
 local function strip(cat)
     cat = tostring(cat or "")
-    return (string.gsub(cat, "^Rhylib:%s*", ""))
+    cat = string.gsub(cat, "^Rhylib:%s*", "")   -- (old category names)
+    return (string.gsub(cat, "^Rhy's%s*", ""))
 end
 
 local SWEP_FIELDS = {

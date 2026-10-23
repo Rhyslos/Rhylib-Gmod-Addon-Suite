@@ -30,7 +30,7 @@ Config.Register("weapons", "launcherRadius", 300, "Grenade launcher: blast radiu
 
 SWEP.Base = "rhylib_base"
 SWEP.PrintName = "T-19 grenade launcher"
-SWEP.Category = "Rhylib: Heavy"
+SWEP.Category = "Rhy's Heavy"
 SWEP.InvGroup = "heavy"   -- (armoury shelf)
 SWEP.Spawnable = true
 SWEP.AdminOnly = false

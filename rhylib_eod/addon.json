@@ -1,0 +1,13 @@
+{
+	"title": "Rhy's EOD: Bombs & Mines",
+	"type": "servercontent",
+	"tags": [
+		"roleplay",
+		"realism"
+	],
+	"ignore": [
+		"*.md",
+		"*.psd",
+		"*.bat"
+	]
+}

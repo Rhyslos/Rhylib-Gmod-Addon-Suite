@@ -22,7 +22,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "B2 rocket"
-ENT.Category = "Rhylib: Droids"
+ENT.Category = "Rhy's Droids"
 ENT.Model = "models/weapons/w_missile_closed.mdl"   -- (Server settings > Models can swap it)
 ENT.Spawnable = false
 ENT.RenderGroup = RENDERGROUP_BOTH

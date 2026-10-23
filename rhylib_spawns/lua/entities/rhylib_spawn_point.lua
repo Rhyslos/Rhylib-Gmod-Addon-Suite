@@ -12,7 +12,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Spawn point"
-ENT.Category = "Rhylib: Spawn points"
+ENT.Category = "Rhy's Spawn points"
 ENT.Spawnable = true
 ENT.AdminOnly = true
 ENT.RenderGroup = RENDERGROUP_BOTH

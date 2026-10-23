@@ -13,7 +13,7 @@
 AddCSLuaFile()
 SWEP.Base = "rhylib_thermal"
 SWEP.PrintName = "Thermal detonator (Training)"
-SWEP.Category = "Rhylib: Training"
+SWEP.Category = "Rhy's Training"
 SWEP.Spawnable = true
 SWEP.Training = true
 SWEP.TrainingOf = "rhylib_thermal"

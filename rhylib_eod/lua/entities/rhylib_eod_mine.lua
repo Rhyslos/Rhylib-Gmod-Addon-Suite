@@ -22,7 +22,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Mine (AP)"
-ENT.Category = "Rhylib: EOD"
+ENT.Category = "Rhy's EOD"
 ENT.Spawnable = true
 ENT.AdminOnly = true
 ENT.RenderGroup = RENDERGROUP_TRANSLUCENT
@@ -59,6 +59,12 @@ function ENT:WantedModel()
     if isstring(mdl) and (util.IsValidModel(mdl) or (CLIENT and file.Exists(mdl, "GAME"))) then return mdl end
     return self.FallbackModel
 end
+-- Width it's drawn at: mineSize (LAP ×1.4).
+function ENT:MineWidth()
+    local E = Rhylib.EOD
+    return (E and E.Cfg("mineSize") or 20) * (self:IsLarge() and 1.4 or 1)
+end
+
 -- Drawn scaled so its width matches mineSize (LAP ×1.4), whatever the model.
 function ENT:MineScale()
     local E = Rhylib.EOD
@@ -81,15 +87,15 @@ if SERVER then
         if E and E.SetupMine then E.SetupMine(self) end
     end
 
-    -- The model is drawn smaller on the client; the box is set by hand from
-    -- the model's own bounds, so nothing is scaled twice.
+    -- The origin sits on the ground; the box is a fixed slab around it
+    -- (E.MineBox), and only the client's drawing sinks and scales the model
+    -- (E.MineMatrix), so the box never depends on the server's model bounds.
     function ENT:SetupBox()
         local mdl = self:WantedModel()
         if self:GetModel() ~= mdl then self:SetModel(mdl) end   -- (training mines switch AP/LAP)
-        local sc = self:MineScale()
-        local mn, mx = self:GetModelBounds()
-        local half = math.max(8, math.max(-mn.x, mx.x, -mn.y, mx.y) * sc)
-        self:SetCollisionBounds(Vector(-half, -half, mn.z * sc), Vector(half, half, mx.z * sc + 3))
+        local E = Rhylib.EOD
+        local mn, mx = E.MineBox(self:MineWidth())
+        self:SetCollisionBounds(mn, mx)
     end
 
     function ENT:OnTakeDamage(dmg)
@@ -127,13 +133,12 @@ if CLIENT then
     function ENT:DrawTranslucent()
         local a = self:VisibleAmount()
         if a <= 0.02 then return end
-        local key = self:GetModel() .. (self:IsLarge() and "L" or "") .. ((Rhylib.EOD and Rhylib.EOD.Cfg("mineSize")) or 20)
-        if self.rhylibScaled ~= key then
+        local E = Rhylib.EOD
+        local key = self:GetModel() .. "|" .. self:MineWidth() .. "|" .. tostring(E and E.Cfg("mineSink"))
+        if self.rhylibScaled ~= key and E and E.MineMatrix then
             self.rhylibScaled = key
-            local m = Matrix()
-            m:Scale(Vector(1, 1, 1) * self:MineScale())
-            self:EnableMatrix("RenderMultiply", m)
-            self:SetRenderBounds(self:OBBMins() - Vector(8, 8, 8), self:OBBMaxs() + Vector(8, 8, 8))
+            self:EnableMatrix("RenderMultiply", E.MineMatrix(self, self:MineWidth()))
+            self:SetRenderBounds(Vector(-48, -48, -48), Vector(48, 48, 48))
         end
         render.SetBlend(a)
         if self:GetSafe() then render.SetColorModulation(0.6, 1, 0.6)

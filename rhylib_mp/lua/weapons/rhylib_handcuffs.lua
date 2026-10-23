@@ -15,7 +15,7 @@
 AddCSLuaFile()
 
 SWEP.PrintName = "Handcuffs"
-SWEP.Category = "Rhylib: Military police"
+SWEP.Category = "Rhy's Military police"
 SWEP.Spawnable = true
 SWEP.AdminOnly = true
 SWEP.Slot = 0
@@ -42,6 +42,22 @@ function SWEP:SetupDataTables()
     self:NetworkVar("Float", 0, "CuffEnd")
 end
 
+-- SWEP:MayUse(ply, target, action): may this owner cuff / uncuff / escort
+-- (action "cuff", "uncuff", "escort") that target with it? Server.
+-- Handcuffs: military police. Subclasses (rhylib_bounty's binders) override.
+function SWEP:MayUse(ply, target, action)
+    local MP = Rhylib.MP
+    -- (a bounty hunter's prisoner, bound with rhylib_bounty's binders, isn't
+    -- the MPs' to free or move)
+    if action ~= "cuff" and IsValid(target) and target.rhylibBound then return false end
+    return MP ~= nil and MP.IsMP(ply)
+end
+
+-- SWEP:CuffTime(): seconds to cuff (handcuffs: mp cuffTime).
+function SWEP:CuffTime()
+    return Rhylib.MP.Cfg("cuffTime")
+end
+
 local function canBeCuffed(MP, t)
     if not IsValid(t) or MP.IsCuffed(t) then return false end
     return MP.IsStunned(t) or (t.rhylibDown or (Rhylib.Medical and Rhylib.Medical.IsDown and Rhylib.Medical.IsDown(t))) and true or false
@@ -60,12 +76,12 @@ function SWEP:PrimaryAttack()
     end
     if self:GetCuffTarget() ~= t then
         self:SetCuffTarget(t)
-        self:SetCuffEnd(CurTime() + MP.Cfg("cuffTime"))
+        self:SetCuffEnd(CurTime() + self:CuffTime())
         return
     end
     if CurTime() >= self:GetCuffEnd() then
         self:SetCuffTarget(NULL)
-        if SERVER and MP.IsMP(owner) then MP.Cuff(t, owner) end
+        if SERVER and self:MayUse(owner, t, "cuff") then MP.Cuff(t, owner) end
     end
 end
 
@@ -82,7 +98,7 @@ function SWEP:SecondaryAttack()
     local MP = Rhylib.MP
     local owner = self:GetOwner()
     local t = MP and MP.Target(owner, MP.Cfg("cuffRange"))
-    if t and MP.IsCuffed(t) and MP.IsMP(owner) then MP.Uncuff(t, owner) end
+    if t and MP.IsCuffed(t) and self:MayUse(owner, t, "uncuff") then MP.Uncuff(t, owner) end
 end
 
 function SWEP:Reload()
@@ -91,7 +107,7 @@ function SWEP:Reload()
     if (self.nextEscort or 0) > CurTime() then return end
     self.nextEscort = CurTime() + 0.4
     local MP = Rhylib.MP
-    if not MP or not MP.IsMP(owner) then return end
+    if not MP then return end
     -- Already escorting someone: let go.
     for p in pairs(MP.cuffed) do
         if IsValid(p) and MP.EscortedBy(p) == owner then
@@ -100,7 +116,7 @@ function SWEP:Reload()
         end
     end
     local t = MP.Target(owner, MP.Cfg("cuffRange"))
-    if t and MP.IsCuffed(t) then MP.SetEscort(t, owner) end
+    if t and MP.IsCuffed(t) and self:MayUse(owner, t, "escort") then MP.SetEscort(t, owner) end
 end
 
 if CLIENT then
@@ -108,7 +124,7 @@ if CLIENT then
         local t = self:GetCuffTarget()
         if not IsValid(t) then return end
         local MP = Rhylib.MP
-        local f = 1 - math.Clamp((self:GetCuffEnd() - CurTime()) / MP.Cfg("cuffTime"), 0, 1)
+        local f = 1 - math.Clamp((self:GetCuffEnd() - CurTime()) / self:CuffTime(), 0, 1)
         local w, h = ScrW() * 0.16, 6
         local x, y = (ScrW() - w) * 0.5, ScrH() * 0.56
         surface.SetDrawColor(0, 0, 0, 180)

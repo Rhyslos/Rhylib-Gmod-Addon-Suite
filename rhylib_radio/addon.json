@@ -1,0 +1,13 @@
+{
+	"title": "Rhy's Radio & Squads",
+	"type": "servercontent",
+	"tags": [
+		"roleplay",
+		"realism"
+	],
+	"ignore": [
+		"*.md",
+		"*.psd",
+		"*.bat"
+	]
+}

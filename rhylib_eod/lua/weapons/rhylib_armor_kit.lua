@@ -16,7 +16,7 @@ AddCSLuaFile()
 
 SWEP.Base = "weapon_base"
 SWEP.PrintName = "Armour repair kit"
-SWEP.Category = "Rhylib: Equipment"
+SWEP.Category = "Rhy's Equipment"
 SWEP.Spawnable = true
 SWEP.Slot = 4
 SWEP.DrawAmmo = false

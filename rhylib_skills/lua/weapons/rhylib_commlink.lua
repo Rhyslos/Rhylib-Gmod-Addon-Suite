@@ -17,7 +17,7 @@ AddCSLuaFile()
 
 SWEP.Base = "weapon_base"
 SWEP.PrintName = "Command comlink"
-SWEP.Category = "Rhylib: Equipment"
+SWEP.Category = "Rhy's Equipment"
 SWEP.Spawnable = true
 SWEP.AdminOnly = true
 SWEP.Slot = 4

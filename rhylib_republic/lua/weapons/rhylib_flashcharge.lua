@@ -6,7 +6,7 @@
 AddCSLuaFile()
 SWEP.Base = "rhylib_grenade_base"
 SWEP.PrintName = "Flash charge"
-SWEP.Category = "Rhylib: Grenades & charges"
+SWEP.Category = "Rhy's Grenades & charges"
 SWEP.InvGroup = "grenade"   -- (armoury shelf: rhylib_inventory Items.GroupOf)
 SWEP.Spawnable = true
 SWEP.GrenadeKind = "flash"

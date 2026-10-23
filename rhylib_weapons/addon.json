@@ -1,6 +1,13 @@
 {
-	"title": "Rhylib Weapons",
+	"title": "Rhy's Weapons",
 	"type": "weapon",
-	"tags": ["roleplay", "realism"],
-	"ignore": ["*.md", "*.psd", "*.bat"]
+	"tags": [
+		"roleplay",
+		"realism"
+	],
+	"ignore": [
+		"*.md",
+		"*.psd",
+		"*.bat"
+	]
 }

@@ -14,7 +14,7 @@
 AddCSLuaFile()
 
 SWEP.PrintName = "Stun baton"
-SWEP.Category = "Rhylib: Military police"
+SWEP.Category = "Rhy's Military police"
 SWEP.Spawnable = true
 SWEP.AdminOnly = true
 SWEP.Slot = 0

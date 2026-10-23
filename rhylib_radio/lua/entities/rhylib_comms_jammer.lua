@@ -30,7 +30,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Comms jammer (small)"
-ENT.Category = "Rhylib: Military police"
+ENT.Category = "Rhy's Military police"
 ENT.Spawnable = true
 ENT.AdminOnly = true
 ENT.RenderGroup = RENDERGROUP_BOTH

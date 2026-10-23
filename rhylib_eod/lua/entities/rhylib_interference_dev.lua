@@ -25,7 +25,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Interference device"
-ENT.Category = "Rhylib: EOD"
+ENT.Category = "Rhy's EOD"
 ENT.Spawnable = false
 ENT.RenderGroup = RENDERGROUP_BOTH
 ENT.Model = "models/props_lab/reciever01a.mdl"

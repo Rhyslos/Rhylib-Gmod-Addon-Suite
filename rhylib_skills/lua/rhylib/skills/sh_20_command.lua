@@ -152,7 +152,10 @@ end
 -- the inventory's "needs ..." message).
 K.COMMLINK = "rhylib_commlink"
 K.CARRY_NAMES = { command = "a command order" }
+-- Hook Rhylib.SkillGranted(ply, skill) returning true lets another addon
+-- hand out what a skill gates (rhylib_bounty: grenades for bounty hunters).
 function K.CarryOk(ply, skill)
+    if hook.Run("Rhylib.SkillGranted", ply, skill) == true then return true end
     if skill == "command" then return K.OrderOf(ply) ~= nil end
     return K.Has(ply, skill)
 end

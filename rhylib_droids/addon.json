@@ -1,6 +1,13 @@
 {
-	"title": "Rhylib Droids",
+	"title": "Rhy's Droids & Clones",
 	"type": "servercontent",
-	"tags": ["roleplay", "fun"],
-	"ignore": ["*.md", "*.psd", "*.bat"]
+	"tags": [
+		"roleplay",
+		"fun"
+	],
+	"ignore": [
+		"*.md",
+		"*.psd",
+		"*.bat"
+	]
 }

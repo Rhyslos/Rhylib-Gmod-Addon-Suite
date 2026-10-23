@@ -1,6 +1,13 @@
 {
-	"title": "Rhylib Stamina",
+	"title": "Rhy's Stamina",
 	"type": "servercontent",
-	"tags": ["roleplay", "realism"],
-	"ignore": ["*.md", "*.psd", "*.bat"]
+	"tags": [
+		"roleplay",
+		"realism"
+	],
+	"ignore": [
+		"*.md",
+		"*.psd",
+		"*.bat"
+	]
 }

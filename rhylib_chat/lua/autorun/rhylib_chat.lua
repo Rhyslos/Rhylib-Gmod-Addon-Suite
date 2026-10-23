@@ -5,8 +5,8 @@
 -- cl_20_voice.
 
 if not Rhylib then
-    print("[Rhylib] rhylib_chat needs rhylib_core. Install it and restart the map.")
+    print("[Rhy's] Rhy's Chat (rhylib_chat) needs Rhy's Core (rhylib_core). Install it and restart the map.")
     return
 end
 
-Rhylib.LoadModule("chat", { name = "Chat", version = "0.1.0" })
+Rhylib.LoadModule("chat", { name = "Rhy's Chat", version = "0.1.0" })

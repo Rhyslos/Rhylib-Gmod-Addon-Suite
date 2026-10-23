@@ -92,6 +92,7 @@ reg("mineScanCone", 22, "Mine scanner: half-angle of its beam (degrees)")
 reg("mineModel", "models/props/starwars/weapons/ap_mine.mdl", "AP mine model (HL2 hopper mine if missing)")
 reg("mineModelLarge", "models/props/starwars/weapons/lasertrap.mdl", "LAP (large AP) mine model (HL2 hopper mine if missing)")
 reg("mineSize", 20, "AP mine: width it is drawn at (units; the model is scaled to fit, LAP ×1.4)")
+reg("mineSink", 0.55, "Mines: share of a mine's height drawn below the ground (0 = sits on top, 0.9 = almost hidden)")
 reg("mineChain", 140, "Mines: another mine within this (units) of an explosion goes off too")
 -- Republic mines (EOD Republic mines skill, 2026-10-10)
 reg("repDamage", 260, "Republic mine: blast damage to droids at the centre")
@@ -348,6 +349,31 @@ end)
 -- The exposed top of a (half-buried) mine: blasts and sight lines start here.
 -- E.MineTop(mine) -> world Vector. Shared.
 function E.MineTop(m) return m:LocalToWorld(Vector(0, 0, m:OBBMaxs().z)) end
+
+-- Mines (droid, training and Republic) sit with their origin ON the ground
+-- (2026-10-11, owner: they were sunk right through the floor: the server
+-- buried them by its own model bounds, which didn't match the drawn
+-- model). The collision box is a fixed slab around the ground point, and
+-- only the drawing sinks the model: E.MineBox(width) for the box,
+-- E.MineMatrix(ent, width) for the client draw (scaled to width, mineSink
+-- of its height below the ground). width: mineSize (LAP ×1.4).
+function E.MineBox(width)
+    local half = math.max(8, width * 0.5)
+    return Vector(-half, -half, -2), Vector(half, half, 6)
+end
+
+function E.MineMatrix(ent, width)
+    local mn, mx = ent:GetModelBounds()
+    local m = Matrix()
+    if not mn then return m end
+    local wide = math.max(mx.x - mn.x, mx.y - mn.y)
+    local sc = wide >= 1 and math.Clamp(width / wide, 0.05, 4) or 1
+    local h = (mx.z - mn.z) * sc
+    local sink = math.Clamp(E.Cfg("mineSink") or 0.55, 0, 0.9)
+    m:Translate(Vector(0, 0, -mn.z * sc - sink * h))
+    m:Scale(Vector(sc, sc, sc))
+    return m
+end
 
 -- Something that goes away for good in play (a mine that went off or was
 -- lifted, a bomb that went off) stays in the permanent map setup: it comes

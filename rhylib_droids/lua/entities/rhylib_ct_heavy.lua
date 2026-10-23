@@ -3,7 +3,7 @@ AddCSLuaFile()
 ENT.Base = "rhylib_clone"
 ENT.Type = "nextbot"
 ENT.PrintName = "Clone heavy"
-ENT.Category = "Rhylib: Clone troopers"
+ENT.Category = "Rhy's Clone troopers"
 ENT.Spawnable = false
 ENT.AdminOnly = true
 ENT.DroidKind = "ct_heavy"

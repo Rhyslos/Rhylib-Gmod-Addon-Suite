@@ -39,7 +39,7 @@ DEFINE_BASECLASS("rhylib_dc15s")
 
 SWEP.Base = "rhylib_dc15s"
 SWEP.PrintName = "CG riot shield (DC-15S)"
-SWEP.Category = "Rhylib: Equipment"
+SWEP.Category = "Rhy's Equipment"
 SWEP.Spawnable = true
 
 SWEP.RiotShield = true
