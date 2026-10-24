@@ -392,7 +392,7 @@ local function capture(ent)
     local c = { model = ent:GetModel(), skin = ent:GetSkin(), pos = ent:GetPos(), ang = ent:GetAngles(), mats = {}, groups = {},
         col = ent.GetPlayerColor and ent:GetPlayerColor() or nil, vel = ent:GetVelocity() }
     for _, bg in ipairs(ent:GetBodyGroups() or {}) do c.groups[bg.id] = ent:GetBodygroup(bg.id) end
-    ent:SetupBones()
+    if ent.SetupBones then ent:SetupBones() end   -- (client only; the server's bones are current anyway)
     for i = 0, ent:GetBoneCount() - 1 do
         local m = ent:GetBoneMatrix(i)
         if m then c.mats[i] = m end

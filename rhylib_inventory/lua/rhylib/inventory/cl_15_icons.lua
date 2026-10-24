@@ -321,7 +321,7 @@ end
 
 -- A gun / item model (spec.model) into the tile.
 local function shootModel(ent, spec, tx, ty, tw, th)
-    for k, v in pairs(spec.bodygroups or {}) do ent:SetBodygroup(k, v) end
+    for k, v in pairs(spec.bodygroups or {}) do if isnumber(k) and isnumber(v) then ent:SetBodygroup(k, v) end end
     ent:SetupBones()
     local mins, maxs = boundsOf(ent)
     local center = (mins + maxs) * 0.5

@@ -1,5 +1,5 @@
 --[[
-    SE-14C (rhylib_bounty, pistol). Burst-fire pistol. Placeholder model: the DC-17.
+    SE-14C (rhylib_bounty, pistol). Burst-fire pistol. Placeholder model: the DC-17 (no model given yet).
     Built on rhylib_dc17 for its first- and third-person placement; swap
     the model in Server settings > Model overrides and retune it with
     rhylib_vm_editor / rhylib_wm_editor. Bounty hunter gun: sold at the

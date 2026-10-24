@@ -1648,7 +1648,8 @@ if CLIENT then
         ent:SetNoDraw(true)
         ent:SetModelScale(scale, 0)
         ent.rhylibScale = scale
-        for k, v in pairs(self.PropBodygroups or {}) do ent:SetBodygroup(k, v) end
+        -- (numbers only: GMod's weapon inheritance can leave a BaseClass key in sub-tables)
+        for k, v in pairs(self.PropBodygroups or {}) do if isnumber(k) and isnumber(v) then ent:SetBodygroup(k, v) end end
         self[key] = ent
         return ent
     end

@@ -166,6 +166,19 @@ local function buildJobs(body, frame)
         detail.job = job
         local model, models = firstModel(job)
         local modelIndex = 1
+        -- Start on the model you wear (your job) or the one you picked before.
+        if models then
+            local me = LocalPlayer()
+            local want = job.team == me:Team() and me:GetModel()
+                or (DarkRP.getPreferredJobModel and DarkRP.getPreferredJobModel(job.team))
+            for i, m in ipairs(models) do
+                if want and string.lower(m) == string.lower(want) then modelIndex = i end
+            end
+            model = models[modelIndex]
+        end
+        local function wearing()
+            return string.lower(LocalPlayer():GetModel() or "") == string.lower(models and models[modelIndex] or model or "")
+        end
 
         local top = vgui.Create("DPanel", detail)
         top:Dock(TOP)
@@ -190,6 +203,19 @@ local function buildJobs(body, frame)
         end, { accent = true, enabled = function() return jobBlocked(job) == nil end })
         become:Dock(RIGHT)
         become:SetWide(s(240))
+        -- Your own job with several models: put the picked one on now
+        -- (rhylib_roster changes it in place, no respawn; DarkRP remembers it).
+        if models and #models > 1 and job.team == LocalPlayer():Team() and Rhylib.Roster then
+            become:SetVisible(false)
+            local upd = K.Button(bottom, "Update job", function()
+                if DarkRP.setPreferredJobModel then DarkRP.setPreferredJobModel(job.team, models[modelIndex]) end
+                Rhylib.Net.Start("roster.jobmodel")
+                net.WriteString(models[modelIndex])
+                net.SendToServer()
+            end, { accent = true, enabled = function() return not wearing() end, tooltip = "Wear the model shown, and keep it next time" })
+            upd:Dock(RIGHT)
+            upd:SetWide(s(240))
+        end
         local note = vgui.Create("DPanel", bottom)
         note:Dock(FILL)
         function note:Paint(w, h)

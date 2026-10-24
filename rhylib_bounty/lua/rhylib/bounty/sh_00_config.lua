@@ -65,10 +65,9 @@ Config.Register("bounty", "puckMid", 2500, "Puck: from here in it beeps every 3 
 Config.Register("bounty", "puckClose", 300, "Puck: within this it beeps rapidly")
 Config.Register("bounty", "puckLevel", 62, "Puck beep loudness (dB); others nearby hear it too")
 Config.Register("bounty", "shop", {
-    { "rhylib_bh_valken", 9000 }, { "rhylib_bh_cycler", 11000 }, { "rhylib_bh_a280", 7000 },
-    { "rhylib_bh_ee3", 5500 }, { "rhylib_bh_e11", 4500 }, { "rhylib_bh_dh17", 4000 },
-    { "rhylib_bh_dl44", 3000 }, { "rhylib_bh_westar34", 3200 }, { "rhylib_bh_ll30", 2500 },
-    { "rhylib_bh_se14c", 2800 }, { "rhylib_bh_q2", 1800 },
+    { "rhylib_bh_m35sniper", 9000 }, { "rhylib_bh_longrifle", 11000 }, { "rhylib_bh_rifle", 7000 },
+    { "rhylib_bh_m35commando", 5500 }, { "rhylib_bh_e7", 4500 }, { "rhylib_bh_dlt16s", 6000 },
+    { "rhylib_bh_dr18", 3500 }, { "rhylib_bh_b10", 2600 }, { "rhylib_bh_m35pistol", 3000 },
     { "rhylib_bounty_puck", 1500 }, { "rhylib_binders", 600 },
     { "mag_small", 60 }, { "mag_medium", 100 }, { "mag_large", 250 }, { "cell", 150 },
     { "rhylib_thermal", 400 }, { "rhylib_thermal_impact", 450 }, { "rhylib_droidpopper", 400 },
@@ -194,9 +193,9 @@ B.NODES = {
     { id = "bh_draw", cat = "hunter", spec = "bh_gunslinger", tier = 3, cost = 3, name = "Quick draw", icon = "pistol",
       desc = "Bounty hunter pistols come out faster.", needs = { "bh_kit" } },
     { id = "bh_scope", cat = "hunter", spec = "bh_gunslinger", tier = 3, cost = 3, name = "Steady scope", icon = "crosshair",
-      desc = "The Valken-38x and Cycler rifle are steadier and kick less while aimed.", needs = { "bh_kit" } },
-    { id = "bh_twin", cat = "hunter", spec = "bh_gunslinger", tier = 4, cost = 3, name = "Twin Westars", icon = "dual",
-      desc = "Carry two Westar-34s and fire them both (dual mode, E + R).", needs = { "bh_draw" } },
+      desc = "The Westar-M35 sniper and the Long rifle are steadier and kick less while aimed.", needs = { "bh_kit" } },
+    { id = "bh_twin", cat = "hunter", spec = "bh_gunslinger", tier = 4, cost = 3, name = "Twin revolvers", icon = "dual",
+      desc = "Carry two B-10 revolvers and fire them both (dual mode, E + R).", needs = { "bh_draw" } },
     { id = "bh_marked", cat = "hunter", spec = "bh_gunslinger", tier = 4, cost = 3, name = "Marked man", icon = "target",
       desc = "15% more damage to the target of a contract you carry.", needs = { "bh_scope" } },
     { id = "bh_deadshot", cat = "hunter", spec = "bh_gunslinger", tier = 5, cost = 4, name = "Dead shot", icon = "aim",
@@ -261,7 +260,8 @@ end)
 -- Sets what every bounty hunter gun shares: category, not in the
 -- Republic armouries, stun mode for Stun rounds (not the MP rule), no
 -- Republic skill modes. opts: pistol / sniper (skill flags), dual (the
--- dual mode's skill), modes (FireModes).
+-- dual mode's skill), modes (FireModes), color (bolt colour, default 2
+-- red), autoModes.
 function B.Gun(SWEP, opts)
     opts = opts or {}
     SWEP.Category = "Rhy's Bounty hunters"
@@ -284,7 +284,7 @@ function B.Gun(SWEP, opts)
     SWEP.AutoModes = opts.autoModes or { auto = true }
     SWEP.ScopeSkill = false
     SWEP.CarrySkill = false
-    SWEP.BoltColor = 2
+    SWEP.BoltColor = opts.color or 2   -- (red unless the gun says: 3 green, 7 yellow)
     -- Stun: Stun rounds (not military police); everything else as usual.
     function SWEP:ModeAllowedBase(i)
         local name = self.FireModes[i]

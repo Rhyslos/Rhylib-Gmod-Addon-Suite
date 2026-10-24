@@ -1835,7 +1835,7 @@ if CLIENT then
         if gun.rhylibPlace ~= pl then
             gun.rhylibPlace = pl
             gun:SetModelScale(pl.scale, 0)
-            for i, v in pairs(pl.bg or {}) do gun:SetBodygroup(i, v) end
+            for i, v in pairs(pl.bg or {}) do if isnumber(i) and isnumber(v) then gun:SetBodygroup(i, v) end end
         end
         local mdl = self:GetModel()
         local b = handBone[mdl]

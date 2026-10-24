@@ -23,6 +23,8 @@
       roster.act      action (UInt 2, R.ACT_*), target sid, value (UInt 8:
                       the new rank index for ACT_RANK)
       roster.open     server -> player: open the Battalion page (/roster)
+      roster.jobmodel player -> server: model string: wear that model of
+                      your job now (F4 Jobs > Update job; rate 1 per 2 s)
 
     Hooks fired: Rhylib.RosterJoined(sid, battalion) after R.AddMember;
     Rhylib.RosterNote(battalion, sid) -> a short note shown next to a
@@ -620,6 +622,30 @@ end
 Rhylib.Net.Receive("roster.get", function(ply)
     R.SendRoster(ply, string.sub(net.ReadString(), 1, 64))
 end, { rate = 3, burst = 4 })
+
+-- roster.jobmodel (client -> server, model string; rate 1 per 2 s): wear
+-- another of your job's models now (F4 Jobs > Update job). DarkRP's own
+-- preferred job model (sent by the client just before) picks it, so it is
+-- also kept for the next spawn and rejoin; the model is changed in place,
+-- no respawn (rhylib_gear re-applies parts, hair and skin on the change).
+Rhylib.Net.Receive("roster.jobmodel", function(ply)
+    local want = string.lower(string.sub(net.ReadString(), 1, 200))
+    local job = RPExtraTeams and RPExtraTeams[ply:Team()]
+    if not (job and istable(job.model)) then return end
+    local found
+    for _, m in ipairs(job.model) do if string.lower(m) == want then found = m end end
+    if not found then return end
+    if not ply:Alive() or ply.rhylibDown or ply:GetNW2Bool("rhylib_cuffed", false) then
+        ply:ChatPrint("You can't change your model right now")
+        return
+    end
+    local L = Rhylib.Lying
+    if L and L.Ragdoll and IsValid(L.Ragdoll(ply)) then return ply:ChatPrint("You can't change your model right now") end
+    ply:SetModel(found)
+    ply:SetupHands()
+    hook.Run("Rhylib.JobModelChanged", ply, found)
+    ply:ChatPrint("Model updated")
+end, { rate = 0.5, burst = 2 })
 
 -- /roster opens the Battalion page.
 Rhylib.Hook.Add("PlayerSay", "roster.cmd", function(ply, text)
