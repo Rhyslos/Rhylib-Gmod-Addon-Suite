@@ -23,8 +23,8 @@ function G.OpticsAllowed(ply, kind)
     return slot ~= nil and G.Active(ply, slot)
 end
 
--- The sun visor down: a red tactical view over the normal HUD (owner
--- 2026-10-05, from the clones' helmet view): NW2Bool rhylib_visorDown.
+-- The sun visor down: a red tactical view over the normal HUD (from the
+-- clones' helmet view): NW2Bool rhylib_visorDown.
 -- Separate from rhylib_optics, so you keep shooting and the HUD stays.
 function G.VisorDown(ply)
     return ply:GetNW2Bool("rhylib_visorDown", false)

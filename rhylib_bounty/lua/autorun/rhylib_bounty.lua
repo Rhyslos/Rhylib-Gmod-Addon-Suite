@@ -7,4 +7,9 @@ if not Rhylib then
     return
 end
 
-Rhylib.LoadModule("bounty", { name = "Rhy's Bounty Hunters", version = "0.1.0" })
+Rhylib.LoadModule("bounty", {
+    name = "Rhy's Bounty Hunters",
+    version = "0.1.0",
+    needs = { "inventory", "weapons" },
+    wants = { "menus", "mp", "medical", "skills", "roster", "datapad" },
+})

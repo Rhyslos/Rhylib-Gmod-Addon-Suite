@@ -35,10 +35,11 @@ local Config = Rhylib.Config
 
 Config.Register("radio", "localRange", 800, "Local voice reaches this far (units, 800 = 15 m)")
 Config.Register("radio", "maxChannels", 200, "Most custom channels on the server at once")
+Config.Register("radio", "hailCooldown", 8, "Seconds before the same player can hail again (stops hail spam)")
 Config.Register("radio", "hailTime", 30, "Seconds a hail rings before it counts as missed")
 Config.Register("radio", "squadNames", { "Aurek", "Besh", "Cresh", "Dorn", "Esk", "Forn", "Grek", "Herf", "Isk", "Jenth" }, "Squad name suggestions (with a number after)")
 
--- Radio sound (2026-10-07, owner): GMod can't filter voice audio itself,
+-- Radio sound : GMod can't filter voice audio itself,
 -- so radio voices get squelch clicks, tiny drop-outs and the odd burst of
 -- interference instead (cl_25_fx.lua).
 Config.Register("radio", "fxDropEvery", 7, "Radio voice: average seconds between tiny drop-outs per talker (0 = none)")
@@ -49,10 +50,10 @@ Config.Register("radio", "fxSquelchOff", "npc/combine_soldier/vo/off1.wav", "Rad
 Config.Register("radio", "fxCrackle", { "ambient/energy/zap1.wav", "ambient/energy/zap2.wav", "ambient/energy/zap3.wav" }, "Radio voice: crackles at a drop-out")
 Config.Register("radio", "fxNoise", { "ambient/levels/prison/radio_random1.wav", "ambient/levels/prison/radio_random2.wav", "ambient/levels/prison/radio_random3.wav", "ambient/levels/prison/radio_random4.wav", "ambient/levels/prison/radio_random5.wav" }, "Radio voice: interference bursts")
 
--- Comms jammer (2026-10-07, owner): inside its range the radio is dead
+-- Comms jammer : inside its range the radio is dead
 -- (static when you try, only local voice), and the radio text channels
 -- (squad, battalion, command, comms) can't be used.
--- Four sizes (2026-10-07, owner): small, medium (twice the range), large
+-- Four sizes : small, medium (twice the range), large
 -- (four times), and one that covers the whole map. A model that isn't
 -- installed falls back to jammerFallbackModel. Only explosives destroy
 -- them (until the next map change or cleanup): small = any grenade,
@@ -64,7 +65,7 @@ Config.Register("radio", "jammerModel", "models/props/starwars/weapons/hoth_bomb
 Config.Register("radio", "jammerRangeMedium", 3600, "Medium comms jammer: radius it jams (units)")
 Config.Register("radio", "jammerModelMedium", "models/lordtrilobite/starwars/props/barrel_scarif2c_phys.mdl", "Medium comms jammer: model")
 Config.Register("radio", "jammerRangeLarge", 7200, "Large comms jammer: radius it jams (units; meant to cover about a quarter of the map)")
--- Large jammer (2026-10-07, owner): damage points add up: 1 HE charge,
+-- Large jammer : damage points add up: 1 HE charge,
 -- 2 rockets, 3 breaching charges or a mix (2 charges + 1 rocket).
 Config.Register("radio", "jammerPointsLarge", 6, "Large comms jammer: damage points to destroy it (they add up; see jamPoints*)")
 Config.Register("radio", "jamPointsHE", 6, "Comms jammers: damage points of a high explosive charge (large jammer)")
@@ -80,7 +81,7 @@ Config.Register("radio", "jamReconnect", 4, "Comms jammers: seconds the radio st
 Config.Register("radio", "jamStatic", "ambient/energy/electric_loop.wav", "Comms jammer: the static loop you hear when you key the radio while jammed")
 
 -- R.Cfg(key): a radio config value (Config.Get("radio", key)). Shared.
-function R.Cfg(k) return Config.Get("radio", k) end
+R.Cfg = Config.For and Config.For("radio") or function(k) return Config.Get("radio", k) end
 
 -- Jammer sizes: class -> config key suffix and name. range nil = whole map.
 -- tier = explosive strength needed (R.JAMMER_TIERS); points = config key
@@ -125,7 +126,7 @@ end
 -- seconds left (or nil). From NW2Float "rhylib_jamUntil". Shared.
 function R.Reconnecting(ply)
     if not R.Jammed(ply) then return nil end
-    local t = ply:GetNW2Float("rhylib_jamUntil", 0)
+    local t = ply:GetNW2Float(Rhylib.NW.JAM_UNTIL, 0)
     if t <= 0 then return nil end
     return math.max(0, t - CurTime())
 end
@@ -174,35 +175,49 @@ R.ROLES = {
 
 local band, bor, lshift, rshift = bit.band, bit.bor, bit.lshift, bit.rshift
 
+-- The radio state int (NW2Int "rhylib_radio"), bit by bit:
+--   bit 0 off, bit 1 muted, bit 2 deaf         (R.BIT_OFF / _MUTED / _DEAF)
+--   bits 3-4   what you transmit on: 0 none, 1 squad, 2 channel, 3 call
+--   bits 5-13  its id (squad / channel / call)
+--   bits 14-22 your squad id
+--   bits 23-27 your squad role
+--   bit 28 squad leader, bit 29 radio operator
+R.BIT_OFF, R.BIT_MUTED, R.BIT_DEAF = 1, 2, 4
+R.SHIFT_TXKIND, R.MASK_TXKIND = 3, 3
+R.SHIFT_TXID, R.MASK_TXID = 5, 511
+R.SHIFT_SQUAD, R.MASK_SQUAD = 14, 511
+R.SHIFT_ROLE, R.MASK_ROLE = 23, 31
+R.BIT_LEADER, R.BIT_RO = lshift(1, 28), lshift(1, 29)
+
 -- R.Unpack(v): the radio state int as a table { off, muted, deaf,
 -- txKind, txId, squad, role, leader, ro } (a new table each call;
 -- R.State caches it). Shared.
 function R.Unpack(v)
     return {
-        off = band(v, 1) ~= 0,
-        muted = band(v, 2) ~= 0,
-        deaf = band(v, 4) ~= 0,
-        txKind = band(rshift(v, 3), 3),
-        txId = band(rshift(v, 5), 511),
-        squad = band(rshift(v, 14), 511),
-        role = band(rshift(v, 23), 31),
-        leader = band(v, lshift(1, 28)) ~= 0,
-        ro = band(v, lshift(1, 29)) ~= 0,
+        off = band(v, R.BIT_OFF) ~= 0,
+        muted = band(v, R.BIT_MUTED) ~= 0,
+        deaf = band(v, R.BIT_DEAF) ~= 0,
+        txKind = band(rshift(v, R.SHIFT_TXKIND), R.MASK_TXKIND),
+        txId = band(rshift(v, R.SHIFT_TXID), R.MASK_TXID),
+        squad = band(rshift(v, R.SHIFT_SQUAD), R.MASK_SQUAD),
+        role = band(rshift(v, R.SHIFT_ROLE), R.MASK_ROLE),
+        leader = band(v, R.BIT_LEADER) ~= 0,
+        ro = band(v, R.BIT_RO) ~= 0,
     }
 end
 
 -- R.Pack(t): the reverse of R.Unpack: a table of fields -> the int.
 function R.Pack(t)
     local v = 0
-    if t.off then v = bor(v, 1) end
-    if t.muted then v = bor(v, 2) end
-    if t.deaf then v = bor(v, 4) end
-    v = bor(v, lshift(band(t.txKind or 0, 3), 3))
-    v = bor(v, lshift(band(t.txId or 0, 511), 5))
-    v = bor(v, lshift(band(t.squad or 0, 511), 14))
-    v = bor(v, lshift(band(t.role or 0, 31), 23))
-    if t.leader then v = bor(v, lshift(1, 28)) end
-    if t.ro then v = bor(v, lshift(1, 29)) end
+    if t.off then v = bor(v, R.BIT_OFF) end
+    if t.muted then v = bor(v, R.BIT_MUTED) end
+    if t.deaf then v = bor(v, R.BIT_DEAF) end
+    v = bor(v, lshift(band(t.txKind or 0, R.MASK_TXKIND), R.SHIFT_TXKIND))
+    v = bor(v, lshift(band(t.txId or 0, R.MASK_TXID), R.SHIFT_TXID))
+    v = bor(v, lshift(band(t.squad or 0, R.MASK_SQUAD), R.SHIFT_SQUAD))
+    v = bor(v, lshift(band(t.role or 0, R.MASK_ROLE), R.SHIFT_ROLE))
+    if t.leader then v = bor(v, R.BIT_LEADER) end
+    if t.ro then v = bor(v, R.BIT_RO) end
     return v
 end
 
@@ -226,18 +241,18 @@ end
 -- replaces these for other players with the directory's values (their
 -- NW2 arrives late while they're out of view).
 -- Example (rhylib_chat's squad channel): local sq = Rhylib.Radio.SquadOf(ply)
-function R.SquadOf(ply) return band(rshift(R.Raw(ply), 14), 511) end
+function R.SquadOf(ply) return band(rshift(R.Raw(ply), R.SHIFT_SQUAD), R.MASK_SQUAD) end
 function R.RoleOf(ply)
-    local r = band(rshift(R.Raw(ply), 23), 31)
+    local r = band(rshift(R.Raw(ply), R.SHIFT_ROLE), R.MASK_ROLE)
     return R.ROLES[r] and r or 1
 end
-function R.IsLeader(ply) return band(R.Raw(ply), lshift(1, 28)) ~= 0 end
-function R.IsRO(ply) return band(R.Raw(ply), lshift(1, 29)) ~= 0 end
+function R.IsLeader(ply) return band(R.Raw(ply), R.BIT_LEADER) ~= 0 end
+function R.IsRO(ply) return band(R.Raw(ply), R.BIT_RO) ~= 0 end
 
 -- R.Battalion(ply): rhylib_roster's battalion (NW2String "rhylib_bn"),
 -- else the DarkRP job category, else "". Used for battalion-only channels.
 function R.Battalion(ply)
-    local bn = ply:GetNW2String("rhylib_bn", "")
+    local bn = ply:GetNW2String(Rhylib.NW.BATTALION, "")
     if bn ~= "" then return bn end
     local job = RPExtraTeams and RPExtraTeams[ply:Team()]
     return job and job.category or ""
@@ -253,3 +268,19 @@ end
 -- Channel access modes: open to all, needs the password, or only for
 -- the creator's battalion (R.Battalion at creation).
 R.MODE_OPEN, R.MODE_PASS, R.MODE_BN = 0, 1, 2
+
+--------------------------------------------------------------------------
+-- Server settings page: this module's name, side-bar category and
+-- sections (Config.Describe + Config.Sections: patterns over the keys, the
+-- first match wins; core applies them to every key of the module).
+--------------------------------------------------------------------------
+
+local PAGE_SECTIONS = {
+    { "Radio", { "^localRange$", "^maxChannels$", "^hailTime$", "^hailCooldown$", "^squadNames$" } },
+    { "Radio effects", { "^fx" } },
+    { "Comms jammers", { "^jam" } },
+    { "Squad pings", { "^ping" } },
+}
+
+Config.Describe("radio", { name = "Radio & squads", category = "Units & roles" })
+Config.Sections("radio", PAGE_SECTIONS)   -- (core: applies to keys registered before and after)

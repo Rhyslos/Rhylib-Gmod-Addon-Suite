@@ -49,9 +49,9 @@ if SERVER then
         self:SetItemCount(self.itemCount or 1)
 
         -- Dropped items don't pile up forever; issued (armoury) gear goes sooner.
-        local life = Rhylib.Config.Get("inventory", "worldItemLife") or 0
+        local life = Rhylib.Config.Get("inventory", "worldItemLife")
         if self.itemData and self.itemData.issued then
-            local il = Rhylib.Config.Get("inventory", "issuedDropLife") or 300
+            local il = Rhylib.Config.Get("inventory", "issuedDropLife")
             if il > 0 then life = life > 0 and math.min(life, il) or il end
         end
         if life > 0 then SafeRemoveEntityDelayed(self, life) end
@@ -76,7 +76,7 @@ if SERVER then
             local dupe = Inv.AtLimit(ply, self.itemId)
             local text = dupe and Inv.LimitText(ply, self.itemId) or "No room in your inventory"
             if Inv.MayHold and not Inv.MayHold(ply, self.itemId) then text = Inv.HoldReason(self.itemId) end
-            ply:PrintMessage(HUD_PRINTCENTER, text)
+            Rhylib.Notify(ply, text, "bad", "Inventory")
         end
     end
 end

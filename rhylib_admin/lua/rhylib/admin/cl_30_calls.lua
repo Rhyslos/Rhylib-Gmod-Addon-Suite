@@ -44,7 +44,7 @@ local function current()
     if ends > 0 then
         left = ends - CurTime()
         if left <= 0 then return nil end
-    elseif CurTime() - GetGlobal2Float("rhylib_call_at", 0) > (Admin.Cfg("callShowFor") or 900) then
+    elseif CurTime() - GetGlobal2Float("rhylib_call_at", 0) > Admin.Cfg("callShowFor") then
         return nil
     end
     return { title = title, sub = GetGlobal2String("rhylib_call_sub", ""), by = GetGlobal2String("rhylib_call_by", ""),
@@ -70,7 +70,7 @@ timer.Create("rhylib_admin_calls", 0.25, 0, function()
         seen = n
         if c then
             banner = { title = c.title, sub = c.sub, by = c.by, at = RealTime() }
-            surface.PlaySound(Admin.Cfg("callSound") or "ambient/alarms/warningbell1.wav")
+            surface.PlaySound(Admin.Cfg("callSound"))
             chat.AddText(GOLD, "[" .. c.title .. "] ", TEXT, c.sub ~= "" and c.sub or "",
                 DIM, c.left and ("  (" .. clock(c.left) .. ")") or "")
         else

@@ -14,9 +14,9 @@
     tank is back to unlockAt.
 
     Shared. Hook: SetupMove "jetpack.move" (priority 0; medical's downed
-    hook at -100 runs first). Writes DTBool 29 (thrusting) and 30 (locked)
+    hook at -100 runs first). Writes J.DT_THRUST and J.DT_LOCKED
     and the fuel line. In the air without thrusting the fuel holds. On a
-    grapple rope (DTEntity 31 set, rhylib_weapons) thrust is off and fuel
+    grapple rope (DT entity "grapple.rope" set, rhylib_weapons) thrust is off and fuel
     holds. No thrust under water (WaterLevel 2+) or off MOVETYPE_WALK.
     Shift (sprint key) = hover, jump = climb.
 ]]
@@ -25,9 +25,7 @@ local J = Rhylib.Jetpack
 local Config = Rhylib.Config
 local gravityVar = GetConVar("sv_gravity")
 
-local function cfg(key)
-    return Config.Get("jetpack", key)
-end
+local cfg = Config.For("jetpack")
 
 -- Per-player values (rhylib_skills Airborne changes fuel and speed).
 local PER_PLAYER = { fuelTime = true, rechargeTime = true, climbSpeed = true, airAccel = true, maxAirSpeed = true, hoverFuel = true }
@@ -46,8 +44,8 @@ end
 Rhylib.Hook.Add("SetupMove", "jetpack.move", function(ply, mv)
     if not ply:GetDTBool(J.DT_HAS) then return end
     local now = CurTime()
-    if IsValid(ply:GetDTEntity(31)) then
-        -- On a grapple rope (rhylib_weapons): no thrust, flames off, fuel held.
+    if IsValid(ply:GetDTEntity(J.DT_ROPE)) or IsValid(ply:GetDTEntity(J.DT_ZIP)) then
+        -- On a grapple rope or zipline (rhylib_weapons): no thrust, flames off, fuel held.
         if ply:GetDTBool(J.DT_THRUST) then ply:SetDTBool(J.DT_THRUST, false) end
         setRate(ply, J.Fuel(ply, now), now, 0)
         return
@@ -80,8 +78,8 @@ Rhylib.Hook.Add("SetupMove", "jetpack.move", function(ply, mv)
 
     if thrusting then
         -- Heavier loads burn fuel faster (weight and cap come from rhylib_inventory).
-        local cap = ply:GetNW2Float("rhylib_carry", 0)
-        local load = cap > 0 and math.min(ply:GetNW2Float("rhylib_weight", 0) / cap, 1) or 0
+        local cap = ply:GetNW2Float(Rhylib.NW.CARRY, 0)
+        local load = cap > 0 and math.min(ply:GetNW2Float(Rhylib.NW.WEIGHT, 0) / cap, 1) or 0
         local burn = (1 + cfg("loadFuelMult") * load) / pcfg(ply, "fuelTime")
         if hover then burn = burn * pcfg(ply, "hoverFuel") end   -- (Airborne Hover)
         setRate(ply, fuel, now, -burn)

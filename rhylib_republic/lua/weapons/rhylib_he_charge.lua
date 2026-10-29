@@ -1,5 +1,5 @@
 --[[
-    High explosive charge (2026-10-07, owner): the heavy demolition charge,
+    High explosive charge: the heavy demolition charge,
     the only thing that brings down large and map-wide comms jammers.
     4 inventory cells (2x2), stacks by 2.
 
@@ -8,7 +8,8 @@
     (rhylib_menus): set the timer (default heFuse 30 s) or "Sync" (no
     timer). A synced charge waits. Placing a charge with a timer starts
     its countdown and every synced charge of yours takes the same timer,
-    so any number of charges go off together (rhylib_he_planted entity;
+    so they go off together; at most heMaxPer (6) planted per player and
+    heMaxAll (30) on the server (rhylib_he_planted entity;
     it can't share the weapon's class name: ents.Create would make the weapon).
     The setting is the weapon's NetworkVar FuseSet (0 = sync) and is kept
     on the player for the next charge (ply.rhylibHeFuse).
@@ -30,6 +31,8 @@ local Config = Rhylib.Config
 Config.Register("weapons", "heFuse", 30, "High explosive charge: default timer (seconds)")
 Config.Register("weapons", "heMinFuse", 5, "High explosive charge: shortest timer you can set (seconds)")
 Config.Register("weapons", "heMaxFuse", 120, "High explosive charge: longest timer you can set (seconds, up to 255)")
+Config.Register("weapons", "heMaxPer", 6, "High explosive charge: most charges one player may have planted at once (timed and synced)")
+Config.Register("weapons", "heMaxAll", 30, "High explosive charge: most charges planted on the whole server at once")
 Config.Register("weapons", "heReach", 90, "High explosive charge: how far you can reach to place it (units)")
 
 SWEP.Base = "rhylib_grenade_base"
@@ -46,7 +49,7 @@ SWEP.InvH = 2
 SWEP.InvStack = 2
 SWEP.InvWeight = 2.5
 
--- HL2's SLAM as the charge (ships with GMod; tune with rhylib_vm_editor /
+-- HL2's SLAM as the charge (ships with GMod; tune with rhylib_vm_editor (Rhy's Dev Tools) /
 -- rhylib_wm_editor).
 SWEP.WorldModel = "models/weapons/w_slam.mdl"
 SWEP.PropModel = "models/weapons/w_slam.mdl"
@@ -64,14 +67,14 @@ end
 local function clampFuse(v)
     v = math.floor(tonumber(v) or 0)
     if v <= 0 then return 0 end
-    local lo = math.max(1, Config.Get("weapons", "heMinFuse") or 5)
-    local hi = math.Clamp(Config.Get("weapons", "heMaxFuse") or 120, lo, 255)
+    local lo = math.max(1, Config.Get("weapons", "heMinFuse"))
+    local hi = math.Clamp(Config.Get("weapons", "heMaxFuse"), lo, 255)
     return math.Clamp(v, lo, hi)
 end
 
 function SWEP:Initialize()
     BaseClass.Initialize(self)
-    if SERVER then self:SetFuseSet(clampFuse(Config.Get("weapons", "heFuse") or 30)) end
+    if SERVER then self:SetFuseSet(clampFuse(Config.Get("weapons", "heFuse"))) end
 end
 
 function SWEP:Deploy()
@@ -92,14 +95,32 @@ function SWEP:PlaceCharge()
     self:SetNextPrimaryFire(CurTime() + 0.5)
     self:SetNextSecondaryFire(CurTime() + 0.5)
     local tr = util.TraceLine({
-        start = o:GetShootPos(), endpos = o:GetShootPos() + o:GetAimVector() * (Config.Get("weapons", "heReach") or 90),
+        start = o:GetShootPos(), endpos = o:GetShootPos() + o:GetAimVector() * (Config.Get("weapons", "heReach")),
         filter = o, mask = MASK_SOLID,
     })
     local e = tr.Entity
     local ok = tr.Hit and not tr.HitSky and (tr.HitWorld or (IsValid(e) and not e:IsPlayer() and not e:IsNPC() and not e:IsNextBot()))
     if not ok then
-        if SERVER then o:ChatPrint("Look at a wall, the floor or an object close by to place the charge") end
+        if SERVER then Rhylib.Notify(o, "Look at a wall, the floor or an object close by to place the charge", "bad", "Weapons") end
         return
+    end
+    -- Caps (each planted charge thinks; many at once could hitch the server).
+    if SERVER then
+        local sid, mine, all = o:SteamID64() or "0", 0, 0
+        for _, c in ipairs(ents.FindByClass("rhylib_he_planted")) do
+            if not c.done then
+                all = all + 1
+                if c.sid == sid then mine = mine + 1 end
+            end
+        end
+        if mine >= (Config.Get("weapons", "heMaxPer")) then
+            Rhylib.Notify(o, "You already have " .. mine .. " charges planted: set them off first", "bad", "Weapons")
+            return
+        end
+        if all >= (Config.Get("weapons", "heMaxAll")) then
+            Rhylib.Notify(o, "Too many charges are planted on the server right now", "bad", "Weapons")
+            return
+        end
     end
     self:SetNextPrimaryFire(CurTime() + self.ThrowDelay)
     self:SetNextSecondaryFire(CurTime() + self.ThrowDelay)
@@ -110,7 +131,7 @@ function SWEP:PlaceCharge()
     if CLIENT then return end
     local c = ents.Create("rhylib_he_planted")
     if not IsValid(c) then
-        o:ChatPrint("The charge entity is missing on the server (rhylib_republic entities/rhylib_he_planted.lua)")
+        Rhylib.Notify(o, "The charge entity is missing on the server (rhylib_republic entities/rhylib_he_planted.lua)", "bad", "Weapons")
         return
     end
     -- lying flat on the surface (the SLAM's top facing out)
@@ -159,9 +180,9 @@ if CLIENT then
             return
         end
         if IsValid(win) then win:Remove() return end
-        local lo = math.max(1, Config.Get("weapons", "heMinFuse") or 5)
-        local hi = math.Clamp(Config.Get("weapons", "heMaxFuse") or 120, lo, 255)
-        local pick = w:GetFuseSet() > 0 and w:GetFuseSet() or math.Clamp(Config.Get("weapons", "heFuse") or 30, lo, hi)
+        local lo = math.max(1, Config.Get("weapons", "heMinFuse"))
+        local hi = math.Clamp(Config.Get("weapons", "heMaxFuse"), lo, 255)
+        local pick = w:GetFuseSet() > 0 and w:GetFuseSet() or math.Clamp(Config.Get("weapons", "heFuse"), lo, hi)
         local f = vgui.Create("EditablePanel")
         win = f
         M.prompts[f] = true

@@ -9,6 +9,23 @@
     the game.
 ]]
 
+-- Colours used while drawing (made once, not every frame).
+local COL_110_150_255 = Color(110, 150, 255)
+local COL_14_16_15 = Color(14, 16, 15)
+local COL_170_120_235 = Color(170, 120, 235)
+local COL_200_200_205 = Color(200, 200, 205)
+local COL_220_60_60 = Color(220, 60, 60)
+local COL_235_90_80 = Color(235, 90, 80)
+local COL_240_140_50 = Color(240, 140, 50)
+local COL_245_200_60 = Color(245, 200, 60)
+local COL_245_217_10 = Color(245, 217, 10)
+local COL_30_34_32 = Color(30, 34, 32)
+local COL_60_210_220 = Color(60, 210, 220)
+local COL_60_60_66 = Color(60, 60, 66)
+local COL_70_190_120 = Color(70, 190, 120)
+local COL_80_160_255 = Color(80, 160, 255)
+local COL_90_170_255 = Color(90, 170, 255)
+
 local E = Rhylib.EOD
 
 -- Who gets the datapad tab: the Bomb manual skill (eod_manual).
@@ -18,17 +35,17 @@ end
 
 -- Section colours.
 local COL = {
-    start = Color(90, 170, 255),
-    order = Color(70, 190, 120),
-    tools = Color(200, 200, 205),
-    probe = Color(245, 200, 60),
-    guard = Color(235, 90, 80),
-    mods = Color(170, 120, 235),
-    chip = Color(60, 210, 220),
-    device = Color(110, 150, 255),
-    mines = Color(240, 140, 50),
-    train = Color(245, 217, 10),
-    boom = Color(220, 60, 60),
+    start = COL_90_170_255,
+    order = COL_70_190_120,
+    tools = COL_200_200_205,
+    probe = COL_245_200_60,
+    guard = COL_235_90_80,
+    mods = COL_170_120_235,
+    chip = COL_60_210_220,
+    device = COL_110_150_255,
+    mines = COL_240_140_50,
+    train = COL_245_217_10,
+    boom = COL_220_60_60,
 }
 
 local RED, AMBER, GREEN = Color(229, 72, 77), Color(245, 170, 40), Color(70, 190, 100)
@@ -55,11 +72,11 @@ local function build(content, k)
     if not (k and IsValid(content)) then return end
     local s = k.S
     local C = k.C
-    local sensorM = metres(E.Cfg("sensorRange") or 315)
-    local wakeM = metres(E.Cfg("timerWake") or 900)
-    local capS = E.Cfg("capDrain") or 15
-    local leakS = E.Cfg("leakTime") or 20
-    local inspectS = E.Cfg("inspectTime") or 2.5
+    local sensorM = metres(E.Cfg("sensorRange"))
+    local wakeM = metres(E.Cfg("timerWake"))
+    local capS = E.Cfg("capDrain")
+    local leakS = E.Cfg("leakTime")
+    local inspectS = E.Cfg("inspectTime")
 
     local sp = k.Scroll(content)
     sp:Dock(FILL)
@@ -162,7 +179,7 @@ local function build(content, k)
             left = function(w, h)
                 local r = s(11)
                 draw.RoundedBox(r, s(12), s(17) - r, r * 2, r * 2, col)
-                draw.SimpleText(tostring(n), k.Font(13, 800), s(12) + r, s(17), Color(14, 16, 15), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                draw.SimpleText(tostring(n), k.Font(13, 800), s(12) + r, s(17), COL_14_16_15, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
             end,
         })
     end
@@ -237,9 +254,9 @@ local function build(content, k)
     local tools = {
         { "PROBE", "Reads a wire: power, signal, what it does." },
         { "CUTTERS", "Cut a wire. Can't be undone." },
-        { "JUMPER", (E.Cfg("jumpers") or 3) .. " per bomb. Joins two terminals; a part's own + and − shorts it." },
+        { "JUMPER", (E.Cfg("jumpers")) .. " per bomb. Joins two terminals; a part's own + and − shorts it." },
         { "TORCH", "Opens a sealed plate. Heats the board while it burns." },
-        { "X-RAY", (E.Cfg("xrays") or 2) .. " shots. Shows a fake board's mount order for a few seconds." },
+        { "X-RAY", (E.Cfg("xrays")) .. " shots. Shows a fake board's mount order for a few seconds." },
     }
     for _, t in ipairs(tools) do
         row({ leftW = s(110), text = t[2], strip = COL.tools, left = function(w, h)
@@ -326,7 +343,7 @@ local function build(content, k)
             draw.SimpleText(rk, k.Font(12, 700), x, s(15), C.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
             x = x - tw - s(8)
             for i = 3, 1, -1 do
-                local c = i <= m.rank and COL.mods or Color(60, 60, 66)
+                local c = i <= m.rank and COL.mods or COL_60_60_66
                 draw.RoundedBox(s(2), x - s(8), s(11), s(8), s(8), c)
                 x = x - s(11)
             end
@@ -373,7 +390,7 @@ local function build(content, k)
             for j = 1, #c[2] do
                 local on = string.sub(c[2], j, j) == "1"
                 local swx = sx + (j - 1) * s(26)
-                draw.RoundedBox(s(3), swx, cy + s(6), s(18), s(32), Color(30, 34, 32))
+                draw.RoundedBox(s(3), swx, cy + s(6), s(18), s(32), COL_30_34_32)
                 draw.RoundedBox(s(2), swx + s(3), on and cy + s(9) or cy + s(23), s(12), s(12), on and COL.chip or GREY)
             end
             if cw > s(300) then draw.SimpleText(c[2], k.Font(13, 700), cx + cw - s(10), cy + ch / 2, C.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER) end
@@ -385,7 +402,7 @@ local function build(content, k)
     section("device", "Interference device", COL.device, "Place it from your inventory (right-click). Needs a power cell.")
     row({ leftW = s(110), text = "Blocks every remote signal and blinds motion sensors inside its circle. Also jams your own radio and compass there.", strip = COL.device,
         left = function(w, h) drawChip("WIDEBAND", COL.device, s(10), math.min(h / 2, s(15)) - s(10), s(20)) end })
-    row({ leftW = s(110), text = "Blocks one frequency (read it with the probe or the scanner), lasts four times longer and leaves your radio alone. A hopping receiver jumps away every ~" .. (E.Cfg("hopEvery") or 25) .. " s.", strip = COL.device,
+    row({ leftW = s(110), text = "Blocks one frequency (read it with the probe or the scanner), lasts four times longer and leaves your radio alone. A hopping receiver jumps away every ~" .. (E.Cfg("hopEvery")) .. " s.", strip = COL.device,
         left = function(w, h) drawChip("TUNED", COL.device, s(10), math.min(h / 2, s(15)) - s(10), s(20)) end })
     note("Signal blackout (Sapper skill): your wideband device also jams droids inside it. Their commanders' boost stops, they react half as fast, and their artillery can't fire on anyone inside.", C.textDim)
     header("Radius", "Wideband per cell", "Tuned per cell", s(80))
@@ -412,7 +429,7 @@ local function build(content, k)
     row({ leftW = s(110), text = "Grenades and other blasts set mines off from a distance, and so does shooting one you can see. Mines close together set each other off.", strip = COL.mines,
         left = function(w, h) drawChip("CLEARING", COL.mines, s(10), math.min(h / 2, s(15)) - s(10), s(20)) end })
     row({ leftW = s(110), text = "Blue outline = one of ours (Sapper skill). Only droids set them off and the blast only hurts droids: walk over them. Whoever planted one picks it up with E.", strip = COL.mines,
-        left = function(w, h) drawChip("REPUBLIC", Color(80, 160, 255), s(10), math.min(h / 2, s(15)) - s(10), s(20)) end })
+        left = function(w, h) drawChip("REPUBLIC", COL_80_160_255, s(10), math.min(h / 2, s(15)) - s(10), s(20)) end })
 
     -- 10. Training ---------------------------------------------------------------------
 
@@ -455,6 +472,4 @@ local function register()
     D.EodManualBuild = build
     D.HasEodManual = hasManual
 end
-register()
-Rhylib.Hook.Add("InitPostEntity", "eod.manual", register)
-Rhylib.Hook.Add("Rhylib.ModuleLoaded", "eod.manual", function(id) if id == "datapad" then register() end end)
+Rhylib.After("datapad", register)

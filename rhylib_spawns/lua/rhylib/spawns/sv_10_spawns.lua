@@ -13,16 +13,17 @@
                    on/off, 3 teleport everyone here), String text for 0/1
                    (max 40 characters); rate 4/s
     Perm rhylib.spawns.admin (admin) for edits, teleports and saving.
-    Saved: Data "spawns"/<map> = { { class, name, bn, pos, yaw } } (event
-    spawns load switched off). Loaded at InitPostEntity +1 s and after a
-    map cleanup. Registered with Rhylib.Perma (only permanent points save).
+    Saved: Data "spawns"/<map> = { { class, name, bn, pos, ang } } (older
+    rows have yaw; event spawns load switched off) through core's
+    Rhylib.Perma.Placements (S.places): loaded at InitPostEntity +1 s and
+    after a map cleanup, only permanent points saved; rhylib_spawns_save
+    re-saves them and says how many are placed but not permanent.
     Placement: PlayerSpawn puts the player on S.Target a tick later (the
     gamemode has placed them by then); jailed players are skipped; admin
     revives and the jail move players after this and win.
 ]]
 
 local S = Rhylib.Spawns
-local Data = Rhylib.Data
 
 Rhylib.Net.Register("spawn.list")
 Rhylib.Net.Register("spawn.edit")
@@ -165,9 +166,7 @@ end
 
 local function setEvent(ent, on, by)
     ent:SetActive(on)
-    for _, p in ipairs(player.GetAll()) do
-        p:ChatPrint(on and ("Event spawn \"" .. ent:GetBeaconName() .. "\" is open: you can respawn there") or ("Event spawn \"" .. ent:GetBeaconName() .. "\" closed"))
-    end
+    Rhylib.Notify(true, on and ("Event spawn \"" .. ent:GetBeaconName() .. "\" is open: you can respawn there") or ("Event spawn \"" .. ent:GetBeaconName() .. "\" closed"), on and "good" or "info", "Spawns")
     S.RefreshDead()
 end
 
@@ -187,7 +186,7 @@ Rhylib.Net.Receive("spawn.set", function(ply)
             return
         elseif op == 3 then
             local n = S.TeleportAll(ent)
-            ply:ChatPrint("Teleported " .. n .. " players to " .. ent:GetBeaconName())
+            Rhylib.Notify(ply, "Teleported " .. n .. " players to " .. ent:GetBeaconName(), "good", "Spawns")
             return
         else
             return
@@ -198,60 +197,30 @@ Rhylib.Net.Receive("spawn.set", function(ply)
 end, { rate = 4, burst = 4 })
 
 --------------------------------------------------------------------------
--- Saving per map (Data "spawns"/map); event spawns come back switched off
+-- Saving per map (core's Rhylib.Perma.Placements, Data "spawns"/map);
+-- event spawns come back switched off
 --------------------------------------------------------------------------
 
--- S.Save(): save the permanent points of this map; returns the count.
--- S.Load(): remove every point and spawn the saved ones (marked permanent).
-function S.Save()
-    local rows = {}
-    for _, class in ipairs({ S.POINT, S.EVENT }) do
-        for _, e in ipairs(ents.FindByClass(class)) do
-            if (not Rhylib.Perma or Rhylib.Perma.Is(e)) then   -- (only permanent ones, 2026-10-09u)
-                local p, a = e:GetPos(), e:GetAngles()
-                rows[#rows + 1] = { class = class, name = e:GetBeaconName(), bn = e:GetBattalion(), pos = { p.x, p.y, p.z }, yaw = a.y }
-            end
-        end
-    end
-    Data.Set("spawns", game.GetMap(), rows)
-    return #rows
-end
+-- Rows { class, name, bn, pos, yaw } (older) or { class, name, bn, pos,
+-- ang }: both load. Only permanent points are saved.
+S.places = Rhylib.Perma.Placements("spawns", {
+    classes = { S.POINT, S.EVENT },
+    dataModule = "spawns",
+    save = function(e) return { name = e:GetBeaconName(), bn = e:GetBattalion() } end,
+    load = function(e, row)
+        e:SetBeaconName(tostring(row.name or "Spawn"))
+        e:SetBattalion(tostring(row.bn or ""))
+    end,
+    command = "rhylib_spawns_save",
+    perm = "rhylib.spawns.admin",
+    freeze = false,
+})
 
-function S.Load()
-    for _, class in ipairs({ S.POINT, S.EVENT }) do
-        for _, e in ipairs(ents.FindByClass(class)) do e:Remove() end
-    end
-    local rows = Data.Get("spawns", game.GetMap())
-    if not istable(rows) then return end
-    for _, row in ipairs(rows) do
-        if (row.class == S.POINT or row.class == S.EVENT) and istable(row.pos) then
-            local e = ents.Create(row.class)
-            if IsValid(e) then
-                e:SetPos(Vector(row.pos[1], row.pos[2], row.pos[3]))
-                e:SetAngles(Angle(0, row.yaw or 0, 0))
-                e:Spawn()
-                e:SetBeaconName(tostring(row.name or "Spawn"))
-                e:SetBattalion(tostring(row.bn or ""))
-                if Rhylib.Perma then Rhylib.Perma.Mark(e, true) end
-            end
-        end
-    end
-end
+-- S.Save() -> count saved (the permanent points of this map).
+-- S.Load(): spawn the saved points again.
+function S.Save() return (S.places:Save()) end
+function S.Load() return S.places:Load() end
 
-if Rhylib.Perma and Rhylib.Perma.Register then Rhylib.Perma.Register({ S.POINT, S.EVENT }, S.Save) end
-Rhylib.Hook.Add("InitPostEntity", "spawns.load", function() timer.Simple(1, S.Load) end)
-Rhylib.Hook.Add("PostCleanupMap", "spawns.load", S.Load)
 Rhylib.Hook.Add("EntityRemoved", "spawns.removed", function(ent)
     if S.IsPoint(ent) then timer.Simple(0, S.RefreshDead) end
-end)
-
-concommand.Add("rhylib_spawns_save", function(ply)
-    local function reply(msg)
-        if IsValid(ply) then ply:ChatPrint(msg) else print(msg) end
-    end
-    if not IsValid(ply) then
-        reply("Saved " .. S.Save() .. " spawn points for " .. game.GetMap())
-        return
-    end
-    isStaff(ply, function() reply("Saved " .. S.Save() .. " spawn points for " .. game.GetMap()) end)
 end)

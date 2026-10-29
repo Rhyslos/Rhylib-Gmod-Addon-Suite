@@ -380,19 +380,29 @@ local function recover(ply)
     end
 end
 
+-- Players with the Recovery skill: worked out every 5 s (skills change
+-- rarely), so the 1 s heal timer only walks them.
+local regenSet, regenScan = {}, 0
 timer.Create("Rhylib.Medical.Recovery", 1, 0, function()
     if not (Rhylib.Skills and Rhylib.Skills.Has) then return end
     local now = CurTime()
+    if now >= regenScan then
+        regenScan = now + 5
+        regenSet = {}
+        for _, p in ipairs(player.GetAll()) do
+            if Med.Skill(p, "recovery") then regenSet[p] = true else p.rhylibRegenAt = nil end
+        end
+    end
     local every = math.max(1, tonumber(cfg("regenEvery")) or 6)
-    for _, ply in ipairs(player.GetAll()) do
-        if ply:Alive() and not ply.rhylibDown and Med.Skill(ply, "recovery") then
+    for ply in pairs(regenSet) do
+        if IsValid(ply) and ply:Alive() and not ply.rhylibDown then
             if not ply.rhylibRegenAt then
                 ply.rhylibRegenAt = now + every
             elseif now >= ply.rhylibRegenAt then
                 ply.rhylibRegenAt = now + every
                 recover(ply)
             end
-        else
+        elseif IsValid(ply) then
             ply.rhylibRegenAt = nil
         end
     end

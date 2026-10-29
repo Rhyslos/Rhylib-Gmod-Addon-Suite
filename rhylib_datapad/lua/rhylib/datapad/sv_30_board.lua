@@ -31,8 +31,9 @@
       dp.bpin    entity, id (16)
       dp.binfo   entity, text: save the battalion info
 
-    Data "dp_board"/battalion = { next, list } (post: { id, sec, ti, b, at,
-    oc, ses, a, s, t, pin, rv, ci }; rv/ci: see sv_60_unit).
+    Data "dp_board"/battalion: a row book (sv_10_pad.lua: the index there,
+    one "dp_boardent"/"<battalion>|<id>" row per post). Post: { id, sec,
+    ti, b, at, oc, ses, a, s, t, pin, rv, ci }; rv/ci: see sv_60_unit.
 ]]
 
 local D = Rhylib.Datapad
@@ -74,10 +75,9 @@ D.TermRecv("dp.tfind", {
 --------------------------------------------------------------------------
 
 -- D.Board(bn): the battalion's board { next, list (newest first) }.
+-- A row book (sv_10_pad.lua): save with D.SaveBook("dp_board", bn, board[, edited post]).
 function D.Board(bn)
-    local b = D.Load("dp_board", bn, nil)
-    if not b.list then b.next, b.list = 1, {} end
-    return b
+    return D.RowBook("dp_board", bn)
 end
 
 -- D.CanPost(ply, bn, admin): full posting rights on bn's board (sessions,
@@ -218,6 +218,7 @@ D.TermRecv("dp.bsave", {
         local ses = aar and arg.ses or 0
         if arg.sec ~= D.SEC_AAR then arg.b = D.Clip(arg.b, D.Cfg("bodyMax"), true) end   -- (AARs may be twice bodyMax)
         local board = D.Board(bn)
+        local edited
         if arg.id == 0 then
             table.insert(board.list, 1, {
                 id = board.next, sec = arg.sec, ti = arg.ti, b = arg.b, at = at, oc = oc, ses = ses,
@@ -229,8 +230,9 @@ D.TermRecv("dp.bsave", {
             local p = findPost(board, arg.id)
             if not p or not canChange(ply, bn, a.admin, p) then return end
             p.sec, p.ti, p.b, p.at, p.oc, p.ses = arg.sec, arg.ti, arg.b, at, oc, ses
+            edited = p
         end
-        D.Store("dp_board", bn, board)
+        D.SaveBook("dp_board", bn, board, edited)
         sendBoard(ply, ent, a)
     end,
 }, { rate = 2, burst = 3 })
@@ -244,7 +246,7 @@ D.TermRecv("dp.bdel", {
         local p, i = findPost(board, id)
         if not i or not canChange(ply, bn, a.admin, p) then return end
         table.remove(board.list, i)
-        D.Store("dp_board", bn, board)
+        D.SaveBook("dp_board", bn, board)
         sendBoard(ply, ent, a)
     end,
 })
@@ -259,7 +261,7 @@ D.TermRecv("dp.bpin", {
         local p = findPost(board, id)
         if not p then return end
         p.pin = not p.pin or nil
-        D.Store("dp_board", bn, board)
+        D.SaveBook("dp_board", bn, board, p)
         sendBoard(ply, ent, a)
     end,
 })

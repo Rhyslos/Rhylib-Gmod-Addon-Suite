@@ -150,6 +150,8 @@ Rhylib.Net.Receive("radio.hail", function(ply)
     if kind == 1 then target = net.ReadUInt(R.ID_BITS) else target = net.ReadEntity() end
     local st = R.State(ply)
     if st.off then return R.Note(ply, "Your radio is off") end
+    local wait = (ply.rhylibHailAt or 0) + (R.Cfg("hailCooldown") or 8) - CurTime()
+    if wait > 0 then return R.Note(ply, "Wait " .. math.ceil(wait) .. " s before hailing again") end
     local list, name = ringTargets(ply, kind, target)
     if not list or #list == 0 then return R.Note(ply, "Nobody to hail there") end
     local reach = {}
@@ -172,6 +174,7 @@ Rhylib.Net.Receive("radio.hail", function(ply)
         ring(t, c, true)
     end
     sendCall(c, ply)
+    ply.rhylibHailAt = CurTime()
     R.Note(ply, "Hailing " .. name .. "...")
 end, { rate = 1, burst = 3 })
 

@@ -4,7 +4,7 @@
     without gravity, at r.diveAt and turns straight down into the floor
     b2DiveDist before it (or once it has passed it), so it works indoors.
     Moved by hand each tick (gravity, one trace per tick), so it never
-    tunnels. Blast: config b2RocketDamage / b2RocketRadius, purple EMP-style
+    tunnels. Blast (rhylib_weapons W.Explode): config b2RocketDamage / b2RocketRadius, purple EMP-style
     effect (rhylib_republic's rhylib_emp, colour 1). Training droids' rockets
     (r.training) only take sim health (orange-yellow).
 
@@ -58,21 +58,15 @@ if SERVER then
         local D = Rhylib.Droids
         local owner = IsValid(self.owner) and self.owner or self
         local radius, damage = D.Cfg("b2RocketRadius"), D.Cfg("b2RocketDamage")
-        local W = Rhylib.Weapons
-        if self.training then
-            if W and W.TrainingBlast then W.TrainingBlast(pos, radius, damage, owner, self) end
-        else
-            util.BlastDamage(self, owner, pos, radius, damage)
-            util.Decal("Scorch", pos + Vector(0, 0, 8), pos - Vector(0, 0, 40), self)
-        end
-        local ed = EffectData()
-        ed:SetOrigin(pos)
-        ed:SetRadius(radius)
-        ed:SetFlags(0)
-        ed:SetColor(self.training and 2 or 1)
-        util.Effect("rhylib_emp", ed, true, true)
-        util.ScreenShake(pos, 5, 100, 0.6, radius * 2)
-        sound.Play("ambient/explosions/explode_" .. math.random(1, 4) .. ".wav", pos, 85, 115)
+        -- (the rhylib_emp blast look: purple, orange for training; no jammer hook)
+        Rhylib.Weapons.Explode({
+            pos = pos, radius = radius, damage = damage,
+            attacker = owner, inflictor = self, training = self.training,
+            effect = "rhylib_emp", effectData = { radius = radius, flags = 0, color = self.training and 2 or 1 },
+            sound = { "ambient/explosions/explode_" .. math.random(1, 4) .. ".wav", 85, 115 },
+            shake = { 5, 100, 0.6, radius * 2 },
+            decal = not self.training, decalFilter = self,
+        })
         self:StopSound("weapons/rpg/rocket1.wav")
         self:Remove()
     end
@@ -90,7 +84,7 @@ if SERVER then
                 local to2 = Vector(self.diveAt.x - from.x, self.diveAt.y - from.y, 0)
                 local v2 = Vector(self.vel.x, self.vel.y, 0)
                 -- Eases off a little over the last b2SlowTime before the dive
-                -- (owner: it came in too fast at the end).
+                -- (it came in too fast at the end).
                 local D = Rhylib.Droids
                 self.speed0 = self.speed0 or self.vel:Length()
                 local window = self.speed0 * D.Cfg("b2SlowTime")

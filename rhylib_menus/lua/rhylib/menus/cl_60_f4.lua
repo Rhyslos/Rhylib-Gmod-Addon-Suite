@@ -6,7 +6,11 @@
       Shop       entities, shipments, single weapons, ammo and vehicles you
                  can buy as your current job (only shown when the server
                  has anything to sell).
-      Character  job, kills, carried weight; money, salary and the money /
+      Character  job, kills, carried weight; with rhylib_roster the clone
+                 number, battalion, rank and qualifications; with
+                 rhylib_skills the skill points left; buttons to the
+                 Appearance, Skills and Battalion pages (when installed);
+                 money, salary and the money /
                  door commands only while money is in use (rhylib_roster's
                  money setting, R.MoneyOn); RP name only without
                  rhylib_roster (names come from the character).
@@ -468,11 +472,31 @@ local function buildCharacter(body, frame)
             lines[#lines + 1] = { "Money", money(myMoney()) }
             lines[#lines + 1] = { "Salary", money(ply.getDarkRPVar and ply:getDarkRPVar("salary") or 0) }
         end
+        -- The character (rhylib_roster) and skill points (rhylib_skills).
+        local R = Rhylib.Roster
+        if R and R.Get then
+            local c = R.Get(ply)
+            if c.has then
+                lines[#lines + 1] = { "Clone number", c.num ~= "" and c.num or "-" }
+                lines[#lines + 1] = { "Battalion", c.bn ~= "" and c.bn or (c.trained and "None yet" or "Cadet: waiting for basic training") }
+                lines[#lines + 1] = { "Rank", R.RankName and R.RankName(c.rank) or tostring(c.rank) }
+                local q = {}
+                for id in string.gmatch(ply:GetNW2String("rhylib_quals", ""), "[^,]+") do q[#q + 1] = R.QualName and R.QualName(id) or id end
+                lines[#lines + 1] = { "Qualifications", #q > 0 and table.concat(q, ", ") or "None" }
+            end
+        end
+        local Sk = Rhylib.Skills
+        if Sk and Sk.Points and Sk.Spent and Sk.Set then
+            local pts = Sk.Points(ply)
+            lines[#lines + 1] = { "Skill points", pts == math.huge and "Free (testing)" or (math.max(0, pts - Sk.Spent(Sk.Set(ply))) .. " left of " .. pts) }
+        end
         lines[#lines + 1] = { "Kills / deaths", ply:Frags() .. " / " .. ply:Deaths() }
         local weight = ply:GetNW2Float("rhylib_weight", -1)
         if weight >= 0 then
             lines[#lines + 1] = { "Carrying", string.format("%.1f / %.0f kg", weight, ply:GetNW2Float("rhylib_carry", 20)) }
         end
+        local need = s(24) + math.ceil(#lines / 2) * s(42)
+        if math.abs(self:GetTall() - need) > 1 then self:SetTall(need) end   -- (as many rows as lines)
         local colW = w / 2
         for i, l in ipairs(lines) do
             local cx = s(16) + ((i - 1) % 2) * colW
@@ -513,6 +537,17 @@ local function buildCharacter(body, frame)
         actions[#actions + 1] = { "Change RP name", function()
             K.Prompt("RP name", "Your new name", ply:Nick(), function(t) t = string.Trim(t) if t ~= "" then RunConsoleCommand("darkrp", "rpname", t) end end)
         end }
+    end
+    -- Shortcuts to the character's own pages (when their addons are there).
+    local function goPage(id)
+        return function()
+            if IsValid(Menus.pause) and Menus.pages and Menus.pages[id] then Menus.pause:ShowPage(id) end
+        end
+    end
+    if Menus.pages then
+        if Menus.pages.looks then actions[#actions + 1] = { "Appearance", goPage("looks") } end
+        if Menus.pages.skills then actions[#actions + 1] = { "Skills", goPage("skills") } end
+        if Menus.pages.roster then actions[#actions + 1] = { "Battalion", goPage("roster") } end
     end
     actions[#actions + 1] = { "Inventory", function()
         frame:Remove()

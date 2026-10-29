@@ -1,6 +1,8 @@
 --[[
     Test bots with a bounty (server, staff: rhylib.bounty.gm or the server
-    console). For checking the whole loop on your own.
+    console). For checking the whole loop on your own. Developer tool:
+    the commands only exist while convar rhylib_dev is 1 (or with the
+    rhylib_devtools addon installed).
 
       !bountybot [dead|alive|either] [reward]    chat (also /bountybot)
       rhylib_bounty_bot [dead|alive|either] [reward]   console
@@ -19,7 +21,7 @@ B.testBots = B.testBots or {}   -- [bot] = true
 local count = 0
 
 local function say(ply, text)
-    if IsValid(ply) then ply:ChatPrint("[Bounty] " .. text) else print("[Bounty] " .. text) end
+    Rhylib.Notify(IsValid(ply) and ply or nil, text, "info", "Bounty")
 end
 
 local function clear(ply)
@@ -49,7 +51,7 @@ function B.SpawnTestBot(by, mode, reward)
             bot:SetPos(ground.HitPos)
             bot:SetEyeAngles(Angle(0, (by:GetPos() - ground.HitPos):Angle().y, 0))
         end
-        B.Add({ kind = "player", tkey = "p" .. (bot:SteamID64() or ""), sid = bot:SteamID64() or "", name = bot:Nick(), model = bot:GetModel(),
+        B.Add({ kind = "player", tkey = B.PlayerKey(bot), sid = "", botId = bot:UserID(), name = bot:Nick(), model = bot:GetModel(),
             reward = reward, mode = mode, by = "", byName = "Bounty office (test)", free = true })
         say(by, bot:Nick() .. " added with a " .. mode .. " bounty of " .. B.Money(reward))
     end)
@@ -57,9 +59,9 @@ end
 
 Rhylib.Hook.Add("Rhylib.BountyClosed", "bounty.testbot", function(b)
     for bot in pairs(B.testBots) do
-        if IsValid(bot) and b.tkey == "p" .. (bot:SteamID64() or "") and #B.OnTarget(b.tkey) == 0 then
+        if IsValid(bot) and b.tkey == B.PlayerKey(bot) and #B.OnTarget(b.tkey) == 0 then
             timer.Simple(20, function()
-                if IsValid(bot) and #B.OnTarget("p" .. (bot:SteamID64() or "")) == 0 then
+                if IsValid(bot) and #B.OnTarget(B.PlayerKey(bot)) == 0 then
                     B.testBots[bot] = nil
                     bot:Kick("Bounty test over")
                 end
@@ -84,13 +86,22 @@ local function run(ply, args)
     Rhylib.Perms.Check(ply, "rhylib.bounty.gm", function(ok) if IsValid(ply) then go(ok) end end)
 end
 
-concommand.Add("rhylib_bounty_bot", function(ply, _, args) run(ply, args) end)
-
-Rhylib.Hook.Add("PlayerSay", "bounty.testbot", function(ply, text)
-    local cmd, rest = string.match(string.Trim(text), "^[!/](%S+)%s*(.*)$")
-    if not cmd or string.lower(cmd) ~= "bountybot" then return end
-    local args = {}
-    for w in string.gmatch(rest or "", "%S+") do args[#args + 1] = w end
-    run(ply, args)
-    return ""
-end)
+-- Dev only: the commands exist while convar rhylib_dev is 1 or the
+-- rhylib_devtools addon is installed (checked at InitPostEntity and when
+-- rhylib_dev changes).
+local devVar = GetConVar("rhylib_dev") or CreateConVar("rhylib_dev", "0", FCVAR_ARCHIVE, "Rhy's: developer tools on (test commands, debug output)")
+local registered = false
+local function register()
+    if registered then return end
+    if not (devVar:GetBool() or (Rhylib.Modules and Rhylib.Modules.devtools)) then return end
+    registered = true
+    -- (run() checks rhylib.bounty.gm itself; the console may always)
+    Rhylib.Command.Add({
+        name = "rhylib_bounty_bot", chat = { "bountybot" }, tag = "Bounty",
+        help = "Add a test bot with a bounty, or clear them", args = "[dead|alive|either] [reward] | clear",
+        fn = function(ply, args) run(IsValid(ply) and ply or nil, args) end,
+    })
+end
+Rhylib.Hook.Add("InitPostEntity", "bounty.testbot", register)
+cvars.AddChangeCallback("rhylib_dev", function() register() end, "bounty.testbot")
+if GAMEMODE then register() end   -- (Lua refresh after load)

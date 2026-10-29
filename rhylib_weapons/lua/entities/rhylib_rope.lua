@@ -82,8 +82,9 @@ function ENT:SetGripped(ent)
     self.gripped = ent
     local rope = self
     ent:CallOnRemove("rhylib_rope_" .. self:EntIndex(), function()
-        if not IsValid(rope) then return end
-        Rhylib.Weapons.Grapple.DropHook(rope:GetPos())
+        if not IsValid(rope) or rope.taken then return end
+        rope.taken = true   -- (Remove is deferred: no second hook from Use this tick)
+        Rhylib.Weapons.Grapple.DropHook(rope:GetPos(), rope.rhylibIssued)
         rope:Remove()
     end)
 end
@@ -154,17 +155,19 @@ end
 
 if SERVER then
     function ENT:Use(ply)
-        if not IsValid(ply) or not ply:IsPlayer() then return end
+        if self.taken or not IsValid(ply) or not ply:IsPlayer() then return end
         local G = Rhylib.Weapons.Grapple
         if G.Climbers(self) > 0 then
-            ply:PrintMessage(HUD_PRINTCENTER, "Someone is on the rope")
+            Rhylib.Notify(ply, "Someone is on the rope", "bad", "Grapple")
             return
         end
-        if Rhylib.Weapons.Pouch.Add(ply, G.ITEM, 1) then
+        -- (an armoury hook stays issued; taken: Remove() is deferred to the tick's end)
+        if Rhylib.Weapons.Pouch.Add(ply, G.ITEM, 1, false, self.rhylibIssued) then
+            self.taken = true
             ply:EmitSound("physics/metal/metal_solid_impact_soft1.wav", 60)
             self:Remove()
         else
-            ply:PrintMessage(HUD_PRINTCENTER, "No room for the grapple hook")
+            Rhylib.Notify(ply, "No room for the grapple hook", "bad", "Grapple")
         end
     end
 end

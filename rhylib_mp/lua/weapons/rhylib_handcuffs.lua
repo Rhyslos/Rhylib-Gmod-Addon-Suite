@@ -7,7 +7,9 @@
     Shared SWEP. Cuffing is predicted: the progress is two DT vars
     (CuffTarget, CuffEnd) so the bar in DrawHUD matches the server;
     only the server actually cuffs (MP.Cuff), and only if the owner is
-    an MP. Letting go of LMB or aiming away resets it.
+    an MP. Letting go of LMB or aiming away resets it. While not cuffing,
+    DrawHUD shows "name · SWEP.Hint" under the crosshair when a player is
+    in reach (rhylib_bounty's binders inherit it with their own Hint).
     Also an inventory item (InvW/InvH/InvWeight/InvCategory, rhylib_inventory).
 ]]
 
@@ -24,6 +26,9 @@ SWEP.WorldModel = ""
 SWEP.UseHands = true
 SWEP.HoldType = "normal"
 SWEP.Instructions = "LMB: cuff   RMB: uncuff   R: escort"
+-- Shown under the crosshair while aiming at a player in reach (DrawHUD);
+-- rhylib_bounty's binders set their own.
+SWEP.Hint = "Hold LMB cuff  ·  RMB uncuff  ·  R escort"
 
 SWEP.Primary = { ClipSize = -1, DefaultClip = -1, Automatic = true, Ammo = "none" }
 SWEP.Secondary = { ClipSize = -1, DefaultClip = -1, Automatic = false, Ammo = "none" }
@@ -60,7 +65,7 @@ end
 
 local function canBeCuffed(MP, t)
     if not IsValid(t) or MP.IsCuffed(t) then return false end
-    return MP.IsStunned(t) or (t.rhylibDown or (Rhylib.Medical and Rhylib.Medical.IsDown and Rhylib.Medical.IsDown(t))) and true or false
+    return MP.IsStunned(t) or Rhylib.State.IsDown(t) and true or false
 end
 
 -- Hold LMB on a stunned or downed player.
@@ -122,8 +127,23 @@ end
 if CLIENT then
     function SWEP:DrawHUD()
         local t = self:GetCuffTarget()
-        if not IsValid(t) then return end
         local MP = Rhylib.MP
+        if not IsValid(t) then
+            -- Key hint while aiming at someone in reach (cached 0.15 s: two traces).
+            if not MP then return end
+            local now = CurTime()
+            if not self.rhylibHintAt or now > self.rhylibHintAt then
+                self.rhylibHintAt = now + 0.15
+                self.rhylibHintT = MP.Target(LocalPlayer(), MP.Cfg("cuffRange"))
+            end
+            local who = self.rhylibHintT
+            if IsValid(who) then
+                local s = ScrH() / 1080
+                draw.SimpleText(who:Nick() .. "   ·   " .. (self.Hint or ""), Rhylib.UI.Font(14, 500), ScrW() * 0.5, ScrH() * 0.5 + 68 * s,
+                    Rhylib.UI.Colors.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
+            end
+            return
+        end
         local f = 1 - math.Clamp((self:GetCuffEnd() - CurTime()) / self:CuffTime(), 0, 1)
         local w, h = ScrW() * 0.16, 6
         local x, y = (ScrW() - w) * 0.5, ScrH() * 0.56

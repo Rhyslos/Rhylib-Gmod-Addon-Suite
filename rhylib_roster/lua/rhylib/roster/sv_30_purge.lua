@@ -1,6 +1,6 @@
 --[[
-    Removing an old battalion's saved data (server only; owner 2026-10-05:
-    the 501st and 327th were replaced by the 212th and 41st).
+    Removing an old battalion's saved data (server only), e.g. after a
+    battalion is replaced by another.
     Who: the server console or a superadmin (checked with IsSuperAdmin, not
     a Rhylib permission). Reads the rhylib_kv SQLite table directly, so it
     flushes Data's pending writes first. Fires Rhylib.DataPurged at the end
@@ -13,7 +13,8 @@
 
     Deletes every saved row keyed by the battalion's name (roster, roster
     log, datapad logs/board/orders/LOA/applications/info/missions/stats/
-    bans), takes its members out of it (characters keep everything else,
+    bans) and the datapad's entry rows "<battalion>|<id>" (dp_logent,
+    dp_boardent, dp_misent), takes its members out of it (characters keep everything else,
     rank back to none), drops it from the datapad's battalion index and
     clears it from saved spawn points and computers on every map. Change
     the map afterwards so cached copies (datapad) are read again.
@@ -22,6 +23,15 @@
 local R = Rhylib.Roster
 local Data = Rhylib.Data
 local TABLE = "rhylib_kv"   -- (rhylib_core sv_10_data.lua)
+
+-- Battalion-keyed modules (datapad and roster). Keys starting with "__"
+-- (e.g. dp_log "__index") aren't battalions and are skipped.
+local BN_MODULES = { "roster", "roster_log", "dp_log", "dp_board", "dp_ver", "dp_ord", "dp_orders", "dp_loa",
+    "dp_apps", "dp_info", "dp_mis", "dp_misarc", "dp_stats", "dp_ban" }
+-- The datapad's entry rows (rhylib_datapad: "<bn>|<id>" keys under these).
+local ROW_MODULES = { "dp_logent", "dp_boardent", "dp_misent" }
+local BN_SET = {}
+for _, m in ipairs(BN_MODULES) do BN_SET[m] = true end
 
 local function decode(str)
     local t = util.JSONToTable(str or "")
@@ -32,9 +42,26 @@ local function purge(bn, say)
     Data.Flush()   -- (pending writes first, so the queries see them)
     local q = sql.SQLStr(bn)
 
-    -- Rows keyed by the battalion's name, in any module.
+    -- Rows keyed by the battalion's name, in the battalion modules only
+    -- (BN_MODULES: roster and the datapad's battalion books): a battalion named like
+    -- another module's key ("all", "open", a map) must not wipe that.
     local rows = sql.Query("SELECT module FROM " .. TABLE .. " WHERE key = " .. q) or {}
-    for _, row in ipairs(rows) do Data.Delete(row.module, bn) end
+    for _, row in ipairs(rows) do
+        if BN_SET[row.module] then Data.Delete(row.module, bn) end
+    end
+    -- The datapad's one-row-per-entry books (keys "<bn>|<id>"). LIKE
+    -- ignores case and treats % _ as wildcards, so check the prefix again.
+    local prefix = bn .. "|"
+    local likeQ = sql.SQLStr(string.gsub(bn, "[%%_\\]", "\\%0") .. "|%")
+    for _, m in ipairs(ROW_MODULES) do
+        for _, row in ipairs(sql.Query("SELECT key FROM " .. TABLE .. " WHERE module = " .. sql.SQLStr(m)
+            .. " AND key LIKE " .. likeQ .. " ESCAPE '\\'") or {}) do
+            if string.sub(row.key, 1, #prefix) == prefix then
+                Data.Delete(m, row.key)
+                rows[#rows + 1] = row
+            end
+        end
+    end
 
     -- Members: out of the battalion.
     local members = 0
@@ -110,10 +137,6 @@ concommand.Add("rhylib_purge_battalion", function(ply, _, args)
     purge(bn, say)
 end)
 
--- Battalion-keyed modules (datapad and roster). Keys starting with "__"
--- (e.g. dp_log "__index") aren't battalions and are skipped.
-local BN_MODULES = { "roster", "roster_log", "dp_log", "dp_board", "dp_ver", "dp_ord", "dp_orders", "dp_loa",
-    "dp_apps", "dp_info", "dp_mis", "dp_misarc", "dp_stats", "dp_ban" }
 
 -- Battalions the jobs still have (their battalion field and category).
 local function current()

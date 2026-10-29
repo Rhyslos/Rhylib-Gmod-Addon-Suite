@@ -24,7 +24,7 @@ ENT.IsDroidMarker = true
 local KINDS = { "attack", "defend", "fallback" }
 local LABELS = { "ATTACK HERE", "DEFEND THIS", "FALL BACK HERE" }
 local COLS = { Color(235, 70, 60), Color(70, 150, 255), Color(255, 200, 60) }
--- Clone markers (Side 1, 2026-10-06bb): own colours and a "CLONES" tag.
+-- Clone markers (Side 1): own colours and a "CLONES" tag.
 local CLONE_COLS = { Color(255, 140, 40), Color(80, 230, 200), Color(255, 200, 60) }
 
 function ENT:SetupDataTables()
@@ -34,9 +34,13 @@ end
 
 function ENT:KindName() return KINDS[self:GetKind()] or "attack" end
 
+-- (an invisible helper: not a Models setting; the toolgun's spawn window
+-- shows this as its picture)
+ENT.PreviewModel = "models/hunter/blocks/cube025x025x025.mdl"
+
 if SERVER then
     function ENT:Initialize()
-        self:SetModel("models/hunter/blocks/cube025x025x025.mdl")
+        self:SetModel(self.PreviewModel)
         self:SetSolid(SOLID_NONE)
         self:SetMoveType(MOVETYPE_NONE)
         self:DrawShadow(false)

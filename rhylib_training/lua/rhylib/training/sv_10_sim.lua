@@ -20,8 +20,9 @@
     Ends early (no respawn): Rhylib.PlayerDowned, PlayerDeath, PlayerSpawn;
     getting up another way (Rhylib.PlayerUnknocked) clears the out state.
     Perm rhylib.training.admin (admin): rhylib_training_save.
-    Saved: Data "training"/<map> = { { name, pos, yaw } }, permanent
-    beacons only (registered with Rhylib.Perma).
+    Saved: Data "training"/<map> = { { class, name, pos, ang } } (older rows
+    { name, pos, yaw } still load), permanent beacons only, through core's
+    Rhylib.Perma.Placements (T.places).
 ]]
 
 local T = Rhylib.Training
@@ -44,7 +45,7 @@ local function setHealth(ply, hp)
     else
         T.hp[ply] = hp
     end
-    if ply:GetNW2Int("rhylib_sim", max) ~= hp then ply:SetNW2Int("rhylib_sim", hp) end
+    if ply:GetNW2Int(Rhylib.NW.SIM, max) ~= hp then ply:SetNW2Int(Rhylib.NW.SIM, hp) end
 end
 
 -- Beacons by distance from a point: { ent, name, dist }.
@@ -68,7 +69,7 @@ local function clearOut(ply, quiet)
     if not T.out[ply] then return end
     T.out[ply] = nil
     timer.Remove("Rhylib.Training.Out." .. ply:EntIndex())
-    ply:SetNW2Bool("rhylib_simOut", false)
+    ply:SetNW2Bool(Rhylib.NW.SIM_OUT, false)
     if not quiet and IsValid(ply) then sendClose(ply) end
 end
 
@@ -107,8 +108,8 @@ function T.Eliminate(ply, by)
     local now = CurTime()
     T.out[ply] = { at = now }
     T.hp[ply], T.lastHit[ply] = nil, nil
-    ply:SetNW2Int("rhylib_sim", 0)
-    ply:SetNW2Bool("rhylib_simOut", true)
+    ply:SetNW2Int(Rhylib.NW.SIM, 0)
+    ply:SetNW2Bool(Rhylib.NW.SIM_OUT, true)
     ply:SetNW2Float("rhylib_simOutAt", now)
     ply:EmitSound("buttons/combine_button_locked.wav", 65, 90)
 
@@ -138,7 +139,8 @@ end
 -- hit was ignored (out, downed, lying, immune), nil for a normal hit. The
 -- HUD hit marker is sent here too (rhylib_hud, yellow).
 Rhylib.Hook.Add("Rhylib.TrainingHit", "training.hit", function(ply, attacker, amount, inflictor, group)
-    if not ply:IsPlayer() or not ply:Alive() or ply.rhylibDown or T.out[ply] then return false end
+    -- (uncached downed check: it can change inside this tick)
+    if not ply:IsPlayer() or not ply:Alive() or ply.rhylibDown or ply:GetNW2Bool(Rhylib.NW.DOWN, false) or T.out[ply] then return false end
     if (ply.rhylibSimImmune or 0) > CurTime() then return false end
     if L.Ragdoll(ply) then return false end   -- (stunned or knocked down: lying already)
     local hp = (T.hp[ply] or T.Cfg("simHealth")) - amount
@@ -189,7 +191,7 @@ end)
 local function reset(ply)
     clearOut(ply)
     T.hp[ply], T.lastHit[ply] = nil, nil
-    if IsValid(ply) then ply:SetNW2Int("rhylib_sim", T.Cfg("simHealth")) end
+    if IsValid(ply) then ply:SetNW2Int(Rhylib.NW.SIM, T.Cfg("simHealth")) end
 end
 Rhylib.Hook.Add("Rhylib.PlayerDowned", "training.reset", reset)
 Rhylib.Hook.Add("PlayerDeath", "training.reset", reset)
@@ -203,49 +205,25 @@ Rhylib.Hook.Add("PlayerDisconnected", "training.reset", function(ply)
 end)
 
 --------------------------------------------------------------------------
--- Beacons per map (Data "training"/map)
+-- Beacons per map (Data "training"/map, core's Rhylib.Perma.Placements)
 --------------------------------------------------------------------------
 
--- T.SaveBeacons(): save this map's permanent beacons; returns the count.
--- T.SpawnBeacons(): spawn the saved beacons (marked permanent).
-function T.SaveBeacons()
-    local rows = {}
-    for _, b in ipairs(ents.FindByClass(BEACON)) do
-        if (not Rhylib.Perma or Rhylib.Perma.Is(b)) then   -- (only permanent ones, 2026-10-09u)
-            local p, a = b:GetPos(), b:GetAngles()
-            rows[#rows + 1] = { name = b:GetBeaconName(), pos = { p.x, p.y, p.z }, yaw = a.y }
-        end
-    end
-    Rhylib.Data.Set("training", game.GetMap(), rows)
-    return #rows
-end
+-- Rows { name, pos, yaw } (older, no class) or { class, name, pos, ang }.
+T.places = Rhylib.Perma.Placements("training", {
+    classes = { BEACON },
+    dataModule = "training",
+    defaultClass = BEACON,
+    save = function(b) return { name = b:GetBeaconName() } end,
+    preSpawn = function(b, row) b:SetBeaconName(tostring(row.name or "Beacon")) end,
+    command = "rhylib_training_save",
+    perm = "rhylib.training.admin",
+    freeze = false,
+})
 
-function T.SpawnBeacons()
-    local rows = Rhylib.Data.Get("training", game.GetMap())
-    if not istable(rows) then return end
-    for _, row in ipairs(rows) do
-        local b = ents.Create(BEACON)
-        if IsValid(b) then
-            b:SetPos(Vector(row.pos[1], row.pos[2], row.pos[3]))
-            b:SetAngles(Angle(0, row.yaw or 0, 0))
-            b:SetBeaconName(tostring(row.name or "Beacon"))
-            b:Spawn()
-            if Rhylib.Perma then Rhylib.Perma.Mark(b, true) end
-        end
-    end
-end
-
-Rhylib.Hook.Add("InitPostEntity", "training.beacons", function() timer.Simple(1, T.SpawnBeacons) end)
-Rhylib.Hook.Add("PostCleanupMap", "training.beacons", T.SpawnBeacons)
+-- T.SaveBeacons() -> count saved (this map's permanent beacons).
+-- T.SpawnBeacons(): spawn the saved beacons again.
+function T.SaveBeacons() return (T.places:Save()) end
+function T.SpawnBeacons() return T.places:Load() end
 
 Rhylib.PLACEMENT_CLASSES = Rhylib.PLACEMENT_CLASSES or {}
 Rhylib.PLACEMENT_CLASSES[BEACON] = true
-if Rhylib.Perma and Rhylib.Perma.Register then Rhylib.Perma.Register({ BEACON }, T.SaveBeacons) end
-
-concommand.Add("rhylib_training_save", function(ply)
-    local function reply(m) if IsValid(ply) then ply:ChatPrint(m) else print(m) end end
-    Rhylib.Perms.Check(ply, "rhylib.training.admin", function(ok)
-        if not ok then return reply("You don't have permission for rhylib_training_save") end
-        reply("Saved " .. T.SaveBeacons() .. " training beacons for " .. game.GetMap())
-    end)
-end)

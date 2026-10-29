@@ -70,7 +70,7 @@ Rhylib.Hook.Add("Rhylib.WheelEntityOptions", "bounty.wheel", function(ent, me, a
     end
     if ent.rhylibBountyNPC and isStaff() then
         add("Put a bounty on it", function(t)
-            local K = Rhylib.Menus and Rhylib.Menus.Kit
+            local K = Rhylib.UI and Rhylib.UI.Kit
             if not K then return end
             K.Prompt("Bounty on an NPC", "Reward (paid by the office)", "5000", function(r)
                 local reward = math.floor(tonumber(r) or 0)
@@ -136,6 +136,4 @@ local function addDatapadTab()
         end,
     })
 end
-addDatapadTab()
-Rhylib.Hook.Add("Rhylib.ModuleLoaded", "bounty.datapad", function(id) if id == "datapad" then addDatapadTab() end end)
-Rhylib.Hook.Add("InitPostEntity", "bounty.datapad", addDatapadTab)
+B.After("datapad", addDatapadTab)

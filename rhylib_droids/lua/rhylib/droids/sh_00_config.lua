@@ -19,7 +19,7 @@
       Training B1 / B2 (rhylib_b1_training, rhylib_b2_training): like the
       B1 and B2 with orange-yellow bolts that only take sim health
       (rhylib_training).
-      Fewer but tougher (owner): B1s take cover when hit a few times
+      Fewer but tougher: B1s take cover when hit a few times
       (or suppressed), blind fire from it, and pull back once when badly
       hurt; B2s don't. Route and cover searches are spread over ticks
       (pathPerTick).
@@ -91,7 +91,7 @@ Config.Register("droids", "b2SlowTime", 1, "B2 rocket droid: seconds before the 
 Config.Register("droids", "b2SlowMult", 0.65, "B2 rocket droid: speed share it slows to by the dive (kept through the curve)")
 Config.Register("droids", "b2DiveDist", 220, "B2 rocket droid: how far before its target the rocket starts curving down into the floor")
 -- Command wheel (rhylib_skills, D.SquadOrder in sv_30_clones): the two
--- cmd* keys below. Then artillery (2026-10-06be, owner: genuine artillery
+-- cmd* keys below. Then artillery (genuine artillery
 -- to fight against): the mortar squad's mortars fire mostly rockets, at
 -- anything any droid sees within artyRange, walking their shots in on a
 -- target.
@@ -121,7 +121,7 @@ Config.Register("droids", "moveSpread", 0.003, "Extra aim cone (degrees) per uni
 Config.Register("droids", "flashSuppress", 3, "Flash charge: droid aim cone multiplier while dazzled")
 Config.Register("droids", "flashTime", 5, "Flash charge: seconds droids stay dazzled")
 
--- Smarter B1s (2026-10-05as, owner: fewer but stronger droids): cover when
+-- Smarter B1s (fewer but stronger droids): cover when
 -- under fire, blind fire from it, pull back once when badly hurt. B2s
 -- don't (they walk into fire). Needs a navmesh; without one they fight
 -- in the open like before.
@@ -132,7 +132,7 @@ Config.Register("droids", "coverCooldown", 8, "B1: seconds after leaving cover b
 Config.Register("droids", "coverRadius", 700, "B1: how far it looks for a cover spot")
 Config.Register("droids", "blindSpread", 4, "B1: aim cone multiplier when blind firing from cover")
 Config.Register("droids", "retreatFrac", 0.35, "Health share below which a B1 pulls back once (0 = never)")
--- Peeking (2026-10-05at, owner: 5 B1s and a commander killed you before
+-- Peeking (5 B1s and a commander killed you before
 -- you got 4 shots off): aim settles in after first sight, and big groups
 -- focusing one player aim worse per extra shooter.
 Config.Register("droids", "settleTime", 0.8, "Seconds after first seeing a target before a droid aims at its best")
@@ -140,11 +140,11 @@ Config.Register("droids", "settleMult", 1.6, "Aim cone multiplier at first sight
 Config.Register("droids", "crowdFree", 3, "Droids that can fire at one player at full accuracy")
 Config.Register("droids", "crowdMult", 0.12, "Extra aim cone per droid above crowdFree firing at the same player")
 Config.Register("droids", "crowdMax", 1.4, "Most the crowd rule widens the aim cone (multiplier)")
--- Orders (2026-10-06ay, owner): modes per droid (guard / patrol /
+-- Orders : modes per droid (guard / patrol /
 -- attack), admin-only markers (attack here, defend this, fall back here)
 -- and one aggression level for every droid that GMs turn up or down live.
 Config.Register("droids", "aggression", 3, "Droid aggression 1-5: 1 retreat (withdraw from the enemy: run, turn and fire, run on; last stand when cornered), 2 fall back (to a fallback marker or their post while firing, then back off from anyone close, no pushing), 3 moderate (default), 4 march forward firing (charge when spread out or in tight spaces), 5 running charge. GMs change it live with !droidaggro or the toolgun")
--- Retreat (2026-10-09w, owner): mode "retreat" (toolgun order) and
+-- Retreat : mode "retreat" (toolgun order) and
 -- aggression 1. Nowhere in particular, just away from the enemy.
 Config.Register("droids", "retreatLeg", 550, "Retreat: how far each run away from the enemy goes before turning to fight")
 Config.Register("droids", "retreatStand", 3.5, "Retreat: seconds it turns and fights between runs")
@@ -162,7 +162,7 @@ Config.Register("droids", "runSpread", 1.4, "Aim cone multiplier while running")
 Config.Register("droids", "walkSpread", 1.1, "Aim cone multiplier while walking")
 Config.Register("droids", "pathPerTick", 4, "Most route and cover searches all droids start in one tick (spreads the cost)")
 
--- Clone troopers (2026-10-06az, owner): friendly NPCs on the droid brain.
+-- Clone troopers : friendly NPCs on the droid brain.
 -- They fight droids, never hurt players (or get hurt by them), and the
 -- Commander's Reinforcements skill calls a squad of them.
 Config.Register("droids", "cloneMax", 40, "Most clone NPCs alive at once")
@@ -196,7 +196,7 @@ Config.Register("droids", "ctMedicRepair", 4, "Clone medic: injury damage and bu
 Config.Register("droids", "ctMedicReviveRadius", 1500, "Clone medic: goes to downed or just-dead players this close")
 Config.Register("droids", "ctMedicReviveTime", 5, "Clone medic: seconds crouched on the body to get someone up")
 Config.Register("droids", "ctMedicReviveHealth", 0.3, "Clone medic: share of max health a revived player gets up with")
--- Spread out / doctrine (2026-10-06bd, owner): roaming in twos; clones
+-- Spread out / doctrine : roaming in twos; clones
 -- call for help, fall back when outnumbered, hold when even, charge when
 -- they outnumber the droids, and crouch when there's no cover.
 Config.Register("droids", "roamRadius", 4000, "Spread out (roam): how far a roaming NPC picks its next spot")
@@ -216,7 +216,7 @@ Config.Register("droids", "ctDownRadius", 1500, "Clones this close to a downed p
 
 -- D.Cfg(key): shortcut for Rhylib.Config.Get("droids", key). Shared.
 -- Example: local hp = Rhylib.Droids.Cfg("b1Health")
-function D.Cfg(k) return Config.Get("droids", k) end
+D.Cfg = Config.For and Config.For("droids") or function(k) return Config.Get("droids", k) end
 
 D.B1_MODEL = "models/aussiwozzi/cgi/b1droids/b1_battledroid.mdl"   -- (same pack as the variants, B2s and training droids)
 D.E5_MODEL = "models/jajoff/sps/cgiweapons/tc13j/e5.mdl"
@@ -281,7 +281,7 @@ D.KINDS.b1_heavy = variant("b1", "B1 heavy droid", B1V .. "heavy.mdl",
 D.KINDS.b1_commander = variant("b1", "B1 commander droid", B1V .. "commander.mdl", { health = "cmdHealth", commander = true })
 D.KINDS.b2_cannon = variant("b2", "B2 mortar droid", "models/aussiwozzi/cgi/b1droids/b2_battledroid_cannon.mdl",
     { rpm = "b2cRPM", burst = { 2, 4 }, dual = false, rockets = true })
--- (owner's original idea: a level rocket that dives down just before you)
+-- (a level rocket that dives down just before you)
 D.KINDS.b2_rocket = variant("b2", "B2 rocket droid", "models/aussiwozzi/cgi/b1droids/b2_battledroid_cannon.mdl",
     { rpm = "b2cRPM", burst = { 2, 4 }, dual = false, rockets = true, direct = true })
 
@@ -343,7 +343,7 @@ end
 
 D.MODES = { "guard", "patrol", "attack", "roam" }   -- (index 1-4 on the wire, toolgun "New droids")
 D.MODE_NAMES = { guard = "Guard", patrol = "Patrol", attack = "Attack", follow = "Follow", roam = "Spread out", retreat = "Retreat", laststand = "Last stand" }
--- (owner 2026-10-09w: retreat = leave the front entirely, fall back = relocate)
+-- (retreat = leave the front entirely, fall back = relocate)
 D.AGGRO_NAMES = { "Retreat", "Fall back", "Moderate", "March", "Charge" }
 -- A commander's own clones (command wheel): 3 = by the odds (their doctrine).
 D.SQUAD_AGGRO_NAMES = { "Retreat", "Fall back to me", "By the odds", "March", "Charge" }
@@ -380,7 +380,7 @@ for kind, class in pairs(D.CLASSES) do
     list.Set("NPC", class, {
         Name = D.KINDS[kind].name,
         Class = class,
-        -- (owner: split up so they're easier to find)
+        -- (split up so they're easier to find)
         Category = D.KINDS[kind].side == "republic" and "Rhy's Clone troopers" or D.KINDS[kind].training and "Rhy's Training droids"
             or (string.sub(kind, 1, 2) == "b2" and "Rhy's B2 super battle droids" or "Rhy's B1 battle droids"),
         AdminOnly = true,
@@ -388,8 +388,32 @@ for kind, class in pairs(D.CLASSES) do
     if CLIENT then language.Add(class, D.KINDS[kind].name) end
 end
 
--- Players and clone NPCs don't collide (2026-10-06bc): friendlies never
+-- Players and clone NPCs don't collide: friendlies never
 -- block a doorway or a way out. Bolts still pass by their own rule.
 Rhylib.Hook.Add("ShouldCollide", "droids.clones", function(a, b)
     if (a.IsRhylibClone and b:IsPlayer()) or (b.IsRhylibClone and a:IsPlayer()) then return false end
 end)
+
+--------------------------------------------------------------------------
+-- Server settings page: this module's name, side-bar category and
+-- sections (Config.Describe + Config.Sections: patterns over the keys, the
+-- first match wins; core applies them to every key of the module).
+--------------------------------------------------------------------------
+
+local PAGE_SECTIONS = {
+    { "General", { "^maxActive$", "^aggression$", "^pathPerTick$", "^walkMult$", "^runSpread$", "^walkSpread$", "^moveSpread$", "^marchGroup$" } },
+    { "Orders & areas", { "^guardRadius$", "^patrolRadius$", "^markerRadius$", "^brushRadius$", "^roamRadius$" } },
+    { "B1 grenades", { "^b1Nade" } },
+    { "B1 battle droids", { "^b1", "^e5" } },
+    { "B2 rockets & mortars", { "^b2Rocket", "^b2Direct", "^b2Slow", "^b2Dive", "^arty" } },
+    { "B2 super battle droids", { "^b2" } },
+    { "Heavy & commander droids", { "^heavy", "^cmdHealth$", "^cmdRadius$", "^cmdSpread$", "^cmdReaction$", "^cmdPause$", "^cmdDeath" } },
+    { "Cover & accuracy", { "^cover", "^blindSpread$", "^retreatFrac$", "^flash", "^settle", "^crowd" } },
+    { "Retreat", { "^retreat", "^lastStand" } },
+    { "Clone medics", { "^ctMedic", "^ctDown", "^reviveShield" } },
+    { "Clone tactics", { "^ctCall", "^ctOdds", "^ctFallBackOdds$", "^ctChargeOdds$", "^ctCrouch", "^ctPopper" } },
+    { "Clone troopers", { "^clone", "^ct", "^cmdFollowRadius$", "^cmdMaxFollowers$" } },
+}
+
+Config.Describe("droids", { name = "Droids & clones", category = "NPCs" })
+Config.Sections("droids", PAGE_SECTIONS)   -- (core: applies to keys registered before and after)

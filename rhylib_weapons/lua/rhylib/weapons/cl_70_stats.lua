@@ -13,7 +13,7 @@ local stats = { open = false, code = nil }
 
 local MODE_NAMES = {
     semi = "Semi", auto = "Auto", burst = "Burst", dual = "Dual", sidearm = "Sidearm",
-    stun = "Stun", grapple = "Grapple", overcharge = "Overcharge",
+    stun = "Stun", grapple = "Grapple", zipline = "Zipline", overcharge = "Overcharge",
 }
 
 local function gun(me)
@@ -49,7 +49,7 @@ local function build(w, me)
     add("Damage", pellets > 1 and (math.Round(dmg) .. " × " .. pellets .. " pellets") or tostring(math.Round(dmg)),
         math.Clamp(dmg * pellets / 150, 0, 1))
     add("Fire rate", math.Round(rpm) .. " rpm", math.Clamp(rpm / 900, 0, 1))
-    if mode ~= "stun" and mode ~= "grapple" then
+    if mode ~= "stun" and mode ~= "grapple" and mode ~= "zipline" then
         add("Damage / second", tostring(math.Round(dmg * pellets * rpm / 60)), math.Clamp(dmg * pellets * rpm / 60 / 450, 0, 1))
     end
     local Cfg = Rhylib.Config
@@ -151,7 +151,7 @@ Rhylib.Hook.Add("HUDPaint", "weapons.stats", function()
         end
         local maxW = pw - pad * 2 - labelW - (r[3] and barW + math.floor(8 * s) or 0)
         local text = r[2]
-        local K = Rhylib.Menus and Rhylib.Menus.Kit
+        local K = Rhylib.UI and Rhylib.UI.Kit
         if K and K.Fit then text = K.Fit(text, UI.Font(14, 600), maxW) end
         draw.SimpleText(text, UI.Font(14, 600), tx, ry + rh * 0.5, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
     end

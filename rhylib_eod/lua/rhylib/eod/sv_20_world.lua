@@ -212,8 +212,8 @@ local function blastSmall(bomb, pos)
     util.Effect("Explosion", ed, true, true)
     util.Effect("HelicopterMegaBomb", ed, true, true)
     sound.Play("weapons/explosives_cannons_superlazers/sw_detonator_explosion.ogg", pos, 120, 90)
-    local r = E.Cfg("smallRadius") or 600
-    util.BlastDamage(bomb, bomb, pos, r, E.Cfg("smallDamage") or 300)
+    local r = E.Cfg("smallRadius")
+    util.BlastDamage(bomb, bomb, pos, r, E.Cfg("smallDamage"))
     util.ScreenShake(pos, 12, 150, 1.2, r * 3)
     util.Decal("Scorch", pos + Vector(0, 0, 8), pos - Vector(0, 0, 60), bomb)
 end
@@ -224,8 +224,8 @@ end
 -- largeDamage to 0, halved when a brush is between. util.BlastDamage
 -- does only the near props. Everyone on the server gets eod.far.
 local function blastLarge(bomb, pos)
-    local kill, r = E.Cfg("largeKill") or 2200, E.Cfg("largeRadius") or 7000
-    local peak = E.Cfg("largeDamage") or 450
+    local kill, r = E.Cfg("largeKill"), E.Cfg("largeRadius")
+    local peak = E.Cfg("largeDamage")
     for i = 0, 5 do
         local ed = EffectData()
         local a = i * 60
@@ -298,7 +298,7 @@ local function cloudTick()
                             c.hit[p] = true
                             local kind = c.kind == "virus" and 1 or 3
                             local cur = Med.Illness and Med.Illness(p)
-                            local load = E.Cfg("gasLoad") or 35
+                            local load = E.Cfg("gasLoad")
                             if cur and cur.kind == kind then load = math.max(load, cur.load + load * 0.5) end
                             Med.Infect(p, kind, math.min(100, load))
                         end
@@ -360,11 +360,11 @@ function E.Detonate(bomb, cause)
             util.BlastDamage(bomb, bomb, pos, 180, 40)
         end
         sound.Play("ambient/gas/steam2.wav", pos, 90, 80)
-        local r = (E.Cfg("gasRadius") or 550) * (st.big and 3 or 1)
-        E.Cloud(pos, charge, r, E.Cfg("gasTime") or 25)
+        local r = (E.Cfg("gasRadius")) * (st.big and 3 or 1)
+        E.Cloud(pos, charge, r, E.Cfg("gasTime"))
     end
     -- interference devices caught in it are wrecked
-    local reach = charge == "he" and (st.big and (E.Cfg("largeKill") or 2200) or (E.Cfg("smallRadius") or 600) * 0.6) or 0
+    local reach = charge == "he" and (st.big and (E.Cfg("largeKill")) or (E.Cfg("smallRadius")) * 0.6) or 0
     if reach > 0 then
         for dev in pairs(E.devices) do
             if IsValid(dev) and dev:GetPos():DistToSqr(pos) <= reach * reach then
@@ -441,7 +441,7 @@ Rhylib.Hook.Add("Rhylib.EMP", "eod.emp", function(pos, radius, attacker, inflict
                 zap:SetOrigin(c)
                 zap:SetFlags(1)
                 util.Effect("rhylib_emp", zap, true, true)
-                if math.random() < (E.Cfg("popperChance") or 0.1) then
+                if math.random() < (E.Cfg("popperChance")) then
                     E.Disarm(bomb, "The EMP fried the bomb's electronics")
                     if IsValid(attacker) and attacker:IsPlayer() then E.Msg(attacker, "Lucky: the droid popper fried the bomb") end
                 end
@@ -566,16 +566,32 @@ Net.Receive("eod.place", function(ply)
     local inst = Inv.Get(ply).byUid[uid]
     if not inst or inst.id ~= E.DEVICE then return end
     if not Inv.Has(ply, "cell") then E.Msg(ply, "It needs a power cell", true) return end
+    -- Caps (each device is scanned by the EOD and radio timers).
+    local mine, all = 0, 0
+    for _, d in ipairs(ents.FindByClass("rhylib_interference_dev")) do
+        if not d.eodPicked then
+            all = all + 1
+            if d.eodOwner == ply then mine = mine + 1 end
+        end
+    end
+    if mine >= (tonumber(E.Cfg("deviceMaxPer")) or 2) then E.Msg(ply, "You already have the most devices placed: pick one up first", true) return end
+    if all >= (tonumber(E.Cfg("deviceMaxAll")) or 12) then E.Msg(ply, "Too many interference devices are out on the server", true) return end
     local tr = util.TraceLine({ start = ply:EyePos(), endpos = ply:EyePos() + ply:GetAimVector() * 110, filter = ply, mask = MASK_SOLID })
     if not tr.Hit or tr.HitNormal.z < 0.6 then
         tr = util.TraceLine({ start = ply:GetPos() + Vector(0, 0, 10) + ply:GetForward() * 40, endpos = ply:GetPos() + ply:GetForward() * 40 - Vector(0, 0, 80), filter = ply, mask = MASK_SOLID })
         if not tr.Hit then E.Msg(ply, "Put it on the ground", true) return end
     end
+    local devIssued = inst.data and inst.data.issued or nil
     if not Inv.Remove(ply, uid, 1) then return end
     local fill, issued = Inv.TakeBest(ply, "cell")
     fill = fill or 1
     local dev = ents.Create("rhylib_interference_dev")
-    if not IsValid(dev) then Inv.AddOrDrop(ply, E.DEVICE, 1) Inv.AddOrDrop(ply, "cell", 1, { fill = fill }) return end
+    if not IsValid(dev) then
+        Inv.AddOrDrop(ply, E.DEVICE, 1, devIssued and { issued = devIssued } or nil)
+        Inv.AddOrDrop(ply, "cell", 1, { fill = fill, issued = issued })
+        return
+    end
+    dev.eodDevIssued = devIssued
     dev:SetPos(tr.HitPos)
     dev:SetAngles(Angle(0, ply:EyeAngles().y + 180, 0))
     dev.eodLong = false
@@ -594,7 +610,10 @@ end, { rate = 3, burst = 3 })
 -- Arguments: 1 radius in metres (4 bits, 1-15, also capped by
 -- deviceMaxRadius), 2 tuned (bool), 3 dial - 2400 (7 bits, 0-80).
 -- commit() folds the drain so far into Cell before anything that
--- changes the rate. Any player near it may change it (not only the owner).
+-- changes the rate. Any player near it may change it (not only the owner);
+-- picking it up (5) is for the one who placed it, the bomb squad
+-- (E.IsBombSquad) and admins, once (eodPicked), and gives back the
+-- device's own issued flag (eodDevIssued) and the cell's.
 Net.Receive("eod.devset", function(ply)
     local dev = net.ReadEntity()
     local op = net.ReadUInt(3)
@@ -602,7 +621,7 @@ Net.Receive("eod.devset", function(ply)
     if op == 1 then a = net.ReadUInt(4)
     elseif op == 2 then a = net.ReadBool()
     elseif op == 3 then a = net.ReadUInt(7) end
-    if not (IsValid(dev) and dev:GetClass() == "rhylib_interference_dev") then return end
+    if not (IsValid(dev) and dev:GetClass() == "rhylib_interference_dev") or dev.eodPicked then return end
     if op == 6 then if dev.viewers then dev.viewers[ply] = nil end return end
     if not walkOk(ply) or ply:GetPos():DistToSqr(dev:GetPos()) > 220 * 220 then return end
     local Inv = Rhylib.Inventory
@@ -610,7 +629,7 @@ Net.Receive("eod.devset", function(ply)
         if not E.DevSetActive(dev, not dev:GetActive()) then E.Msg(ply, "The cell is empty", true) end
     elseif op == 1 then
         commit(dev)
-        dev:SetRadius(math.Clamp(a, 1, math.min(15, E.Cfg("deviceMaxRadius") or 15)))
+        dev:SetRadius(math.Clamp(a, 1, math.min(15, E.Cfg("deviceMaxRadius"))))
         dev:SetRate(rate(dev))
     elseif op == 2 then
         commit(dev)
@@ -631,10 +650,16 @@ Net.Receive("eod.devset", function(ply)
         dev:SetCellAt(CurTime())
         dev:EmitSound("items/battery_pickup.wav", 60)
     elseif op == 5 then
-        if not Inv then return end
+        if not Inv or dev.eodPicked then return end
+        -- Only the one who placed it, the bomb squad, or staff.
+        if dev.eodOwner ~= ply and not E.IsBombSquad(ply) and not ply:IsAdmin() then
+            E.Msg(ply, "Only whoever placed it or the bomb squad can pick it up", true)
+            return
+        end
+        dev.eodPicked = true   -- (Remove() is deferred to the end of the tick)
         local fill = E.DevFill(dev)
         dev:Remove()
-        Inv.AddOrDrop(ply, E.DEVICE, 1)
+        Inv.AddOrDrop(ply, E.DEVICE, 1, dev.eodDevIssued and { issued = dev.eodDevIssued } or nil)
         if fill > 0.01 then Inv.AddOrDrop(ply, "cell", 1, { fill = fill, issued = dev.eodIssued }) end
         E.Msg(ply, "Interference device picked up")
     end
@@ -659,10 +684,10 @@ end
 -- holders, and the first 4 s after the bomb was set up (armAt).
 local function tooFast(bomb, st, now)
     if now < (st.armAt or 0) then return nil end
-    local r = E.Cfg("sensorRange") or 315
+    local r = E.Cfg("sensorRange")
     local c = bomb:WorldSpaceCenter()
     for _, p in ipairs(player.GetAll()) do
-        if walkOk(p) and not p:GetNW2Bool("rhylib_cloak", false) then
+        if walkOk(p) and not p:GetNW2Bool(Rhylib.NW.CLOAK, false) then
             local w = p:GetActiveWeapon()
             if not (IsValid(w) and w:GetClass() == "rhylib_toolgun") then   -- (the GM setting it up)
                 local pc = p:WorldSpaceCenter()
@@ -774,7 +799,7 @@ local function tick()
 
         if IsValid(bomb) and st and not st.over then
             -- timers wake up when someone comes close
-            if st.timerWaiting and not st.gmHeld and now >= (st.armAt or 0) and E.AnySupply(st) and not st.safe and anyoneNear(bomb:GetPos(), E.Cfg("timerWake") or 900) then
+            if st.timerWaiting and not st.gmHeld and now >= (st.armAt or 0) and E.AnySupply(st) and not st.safe and anyoneNear(bomb:GetPos(), E.Cfg("timerWake")) then
                 E.StartTimer(bomb)
             end
             -- frequency hopping
@@ -785,7 +810,7 @@ local function tick()
                     if math.abs(f - st.freq) >= 10 then break end
                 end
                 st.freq = f
-                st.hopAt = now + (E.Cfg("hopEvery") or 25)
+                st.hopAt = now + (E.Cfg("hopEvery"))
             end
             -- tilt switch
             local t = st.tilt
@@ -811,9 +836,9 @@ local function tick()
                     local dt = now - (st.torchTick or now)
                     st.torchTick = now
                     if dt > 0 then
-                        st.sealedP = math.min(1, st.sealedP + dt / math.max(0.5, E.Cfg("torchTime") or 5))
+                        st.sealedP = math.min(1, st.sealedP + dt / math.max(0.5, E.Cfg("torchTime")))
                         -- (st = nil: it went off, skip the rest)
-                        if E.AddHeat(bomb, tp, (E.Cfg("heatTorch") or 26) * dt, true) then st = nil end
+                        if E.AddHeat(bomb, tp, (E.Cfg("heatTorch")) * dt, true) then st = nil end
                     end
                     if st and st.sealedP >= 1 then
                         st.sealedOpen = true
@@ -832,7 +857,7 @@ local function tick()
 
         if IsValid(bomb) and st and not st.over then
             -- windows: walked off, died or left
-            local r = (E.Cfg("reach") or 130) + 80
+            local r = (E.Cfg("reach")) + 80
             for p in pairs(st.viewers) do
                 if not IsValid(p) then
                     st.viewers[p] = nil
@@ -1007,7 +1032,7 @@ Net.Receive("eod.gm", function(ply)
 end, { rate = 8, burst = 8 })
 
 --------------------------------------------------------------------------
--- Training bombs (2026-10-09z): anyone near one sets it up like a custom
+-- Training bombs: anyone near one sets it up like a custom
 -- bomb (or rolls a random one); failing only fails, then it re-arms.
 -- eod.train ops: 0 build (JSON), 1 again (same setup, fresh board),
 -- 2 random simplified, 3 random small, 4 random large, 5 open the setup.

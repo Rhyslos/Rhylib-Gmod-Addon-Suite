@@ -6,7 +6,7 @@
 
     Uses a prop model (models/jajoff/sps/cgiweapons/tc13j/dc15x.mdl), held
     in first person by the trooper hands (CarrierVM, DC-15A hold). The
-    model's addon must be installed. Tune with rhylib_vm_editor /
+    model's addon must be installed. Tune with rhylib_vm_editor (Rhy's Dev Tools) /
     rhylib_wm_editor, then paste the lines below. First guesses.
 
     Class rhylib_dc15x. Shared: one file for server and client (AddCSLuaFile).
@@ -75,7 +75,7 @@ SWEP.ClipCap = 15
 SWEP.Grapple = true
 SWEP.FireModes = { "semi" }
 
--- Power cell too (2026-10-09t, owner: snipers and shotguns take cells; each shot draws a lot: 4 magazines of 15 per cell).
+-- Power cell too (snipers and shotguns take cells; each shot draws a lot: 4 magazines of 15 per cell).
 SWEP.UsesCell = true
 SWEP.CellShots = 60
 SWEP.CellReloadMult = 1.6
@@ -83,7 +83,7 @@ SWEP.CellReloadMult = 1.6
 SWEP.StartMags = 2
 SWEP.StartCells = 1
 
-SWEP.InvW = 6   -- (long guns are 6 long, the inventory is 6 wide; owner 2026-10-07)
+SWEP.InvW = 6   -- (long guns are 6 long, the inventory is 6 wide)
 SWEP.InvH = 1
 SWEP.InvLarge = true
 SWEP.InvWeight = 7         -- kg

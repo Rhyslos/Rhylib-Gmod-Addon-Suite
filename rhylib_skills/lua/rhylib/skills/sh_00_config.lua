@@ -40,11 +40,24 @@ local Config = Rhylib.Config
 Config.Register("skills", "freePoints", true, "Every skill is free and can be reset any time (testing)")
 Config.Register("skills", "startPoints", 24, "Skill points everyone has while freePoints is off (every path costs 24, so any one can be finished)")
 Config.Register("skills", "commandRank", "LT", "Lowest rank (roster prefix) that can learn and issue command orders")
+Config.Register("skills", "resetCooldownDays", 7, "Free skill resets: one every this many days per player while freePoints is off (0 = none; the Rhylib.CanResetSkills hook still decides first)")
 Config.Register("skills", "onePath", true, "Only one category (Trooper, Support, Officer, Airborne, Medic, Shock Trooper) at a time")
+
+-- K.ResetInfo(ply) (shared): may they reset now? Returns ok, nextAt
+-- (os.time of the next free reset; -1 = never; 0 = now). Reads NW2Int
+-- rhylib_skillReset, which the server keeps up to date (sv_10_skills
+-- K.ResetState). Example: local ok, at = Rhylib.Skills.ResetInfo(LocalPlayer())
+function K.ResetInfo(ply)
+    if Config.Get("skills", "freePoints") then return true, 0 end
+    local at = IsValid(ply) and ply:GetNW2Int("rhylib_skillReset", -1) or -1
+    if at == 0 then return true, 0 end
+    if at > 0 and os.time() >= at then return true, 0 end
+    return false, at
+end
 
 -- K.Cfg(key): a "skills" config value (registered here, in sh_10_effects
 -- and in sh_20_command). Example: Rhylib.Skills.Cfg("markTime") -> 15
-function K.Cfg(key) return Config.Get("skills", key) end
+K.Cfg = Config.For and Config.For("skills") or function(key) return Config.Get("skills", key) end
 
 -- Categories: the tabs of the Skills page. { id, name, desc, medicOnly,
 -- mpOnly, specs = { { id, name, desc, branches = { { id, name, desc } } } } }.
@@ -69,7 +82,7 @@ K.CATEGORIES = {
           { id = "pistol", name = "Pistol", desc = "Two DC-17s, fast hands and footwork for close fights" },
           { id = "commander", name = "Commander", desc = "Locks targets for the squad, buffs them nearby and gives stronger orders" },
       } },
-    -- Airborne page (2026-10-09x, owner): also holds the Field technician
+    -- Airborne page : also holds the Field technician
     -- (EOD) path, which isn't Airborne; it's here because the Support page
     -- is full. The two are separate specialisations: pick one.
     { id = "airborne", name = "Specialist", desc = "Airborne (jetpacks and getting in close) or Field technician (combat engineer: demolitions or sapper)",
@@ -128,12 +141,15 @@ K.NODES = {
     { id = "load_bearer", cat = "trooper", spec = "autorifleman", tier = 4, cost = 3, name = "Load bearer",
       desc = "+6 kg carry limit, 25% less stamina penalty from weight, and a cell rack (5 power cells).",
       needs = { "droid_popper" } },
-    { id = "ammo_pack", cat = "trooper", spec = "autorifleman", tier = 5, cost = 5, name = "Ammo pack",
+    { id = "ammo_pack", cat = "trooper", spec = "autorifleman", tier = 5, cost = 4, name = "Ammo pack",
       desc = "Carry and use ammo packs: they top up a teammate's magazines and hand out full ones for any blaster.",
       needs = { "eff_cells", "load_bearer" } },
-    { id = "overcharge", cat = "trooper", spec = "autorifleman", tier = 5, cost = 3, name = "Overcharge", icon = "bolt",
+    { id = "overcharge", cat = "trooper", spec = "autorifleman", tier = 5, cost = 2, name = "Overcharge", icon = "bolt",
       desc = "DC-15A Overcharge fire mode (E + R): full auto, 30% more damage and bigger bolts, a bit more kick, and the power cell drains 4x faster.",
       needs = { "eff_cells" } },
+    { id = "zip_rigger", cat = "trooper", spec = "autorifleman", tier = 5, cost = 2, name = "Zipline rigger", icon = "anchor",
+      desc = "Grapple zipline mode: the far end goes anywhere you aim (a hook on the floor plants a second post there), and both grapple modes reach 10 m further.",
+      needs = { "load_bearer" } },
     { id = "sustained_fire", cat = "trooper", spec = "autorifleman", tier = 6, cost = 3, name = "Sustained fire", icon = "burst",
       desc = "DC-15A full auto: the kick eases off the longer you hold the trigger (40% less after 1.5 s), and hits on the same target add 2% damage each, up to +10%.",
       needsGroups = { { "overcharge" }, { "ammo_pack" } }, needsLabel = "Needs Overcharge or Ammo pack" },
@@ -186,8 +202,7 @@ K.NODES = {
     { id = "suppression", cat = "support", spec = "heavy", tier = 6, cost = 4, name = "Suppression", icon = "barrels",
       desc = "Droids near one you hit with the Z-6 aim much worse for 3 s.", needs = { "juggernaut" } },
 
-    -- Officer: Mark target, then one of two specialisations (owner
-    -- 2026-10-05): Pistol (Rex, the old tree) or Commander (Cody, Gree,
+    -- Officer: Mark target, then one of two specialisations: Pistol (Rex, the old tree) or Commander (Cody, Gree,
     -- Fox). Both full paths cost 24. The command orders sit in both specs
     -- (same orders: `order` names the base skill, K.ORDERS): Pistol at
     -- tier 6, Commander at tier 3 so its order upgrades come after them.
@@ -238,7 +253,7 @@ K.NODES = {
       desc = "No knockback from hits, no explosion knockdowns, and 20% faster sprinting. You and everyone near you, 6 s; 6 min cooldown.",
       needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
 
-    -- Commander (owner: LT and up from the first skill, rankCfg on all):
+    -- Commander (LT and up from the first skill, rankCfg on all):
     -- 1-6-3-4-2. The orders alone at tier 3 (two sides next to them looked
     -- messy), then Rifle drill / Command presence / Field logistics.
     { id = "tactical_visor", cat = "officer", spec = "commander", tier = 2, cost = 2, name = "Tactical visor", icon = "scope", rankCfg = "commandRank",
@@ -289,12 +304,12 @@ K.NODES = {
     { id = "chain_command", cat = "officer", spec = "commander", tier = 6, cost = 2, name = "Chain of command", rankCfg = "commandRank",
       desc = "Your orders also reach every radio squad mate, however far away (alive and not downed).",
       needsGroups = { { "seasoned_cmd" }, { "standing_orders" } }, needsLabel = "Needs Seasoned command or Standing orders" },
-    -- Capstone (2026-10-06az, owner). Path still 24: Adaptable and
+    -- Capstone . Path still 24: Adaptable and
     -- Seasoned command each cost one point less to make room.
     { id = "reinforcements", cat = "officer", spec = "commander", tier = 7, cost = 2, name = "Reinforcements", icon = "stack", rankCfg = "commandRank",
       desc = "Right-click with the command comlink: a clone squad (a trooper, a medic, a rifleman and a heavy) arrives around you, steps toward the enemy and follows you, for 10 minutes. You lead them: clones near you aim better, react faster and pause less. 15 min cooldown.",
       needsGroups = { { "adapt_1" }, { "chain_command" } }, needsLabel = "Needs Adaptable or Chain of command" },
-    -- The Pistol officer's copy (2026-10-09t, owner: it's an officer path too).
+    -- The Pistol officer's copy (it's an officer path too).
     -- Path still 24: Pistol proficiency and Critical hits cost one less.
     { id = "reinforcements_p", cat = "officer", spec = "pistol", tier = 7, cost = 2, name = "Reinforcements", icon = "stack", rankCfg = "commandRank",
       reinforce = true,
@@ -336,7 +351,7 @@ K.NODES = {
       needsGroups = { { "dp23_prof", "blast_hardened" }, { "dp23_prof", "battle_rush" }, { "blast_hardened", "battle_rush" } },
       needsLabel = "Needs two of DP-23 proficiency, Blast hardened and Battle rush" },
 
-    -- Field technician (EOD, rhylib_eod; reworked 2026-10-10, owner: no
+    -- Field technician (EOD, rhylib_eod; no
     -- skill makes defusing easier, they're too niche: the defusal is the
     -- same for everyone). A combat engineer: shared trunk (12), then the
     -- Demolitions or Sapper branch (12 each). Every path 24.
@@ -385,7 +400,7 @@ K.NODES = {
       desc = "Revive with no kit at all (E menu). Very slow, and they get up with 15 health.", needs = { "field_drag" } },
     { id = "steady_hands", cat = "medic", tier = 2, cost = 1, name = "Steady hands",
       desc = "Treatments (not revives) are 15% faster.", needs = { "field_drag" } },
-    -- (2026-10-09s, owner: both medic paths; Hands-on and Steady hands went 2 -> 1 so paths stay 24)
+    -- (both medic paths; Hands-on and Steady hands went 2 -> 1 so paths stay 24)
     { id = "recovery", cat = "medic", tier = 2, cost = 2, name = "Recovery",
       desc = "You heal 4 health every 6 seconds, and your own injuries heal at the same pace: bleeding eases a step each time (heavy, then light, then stopped), damage and burns drop by 4, and a broken bone knits once its damage is gone.",
       needs = { "field_drag" } },
@@ -402,7 +417,7 @@ K.NODES = {
     { id = "medevac", cat = "medic", spec = "combat_medic", tier = 5, cost = 4, name = "Medevac", icon = "drag",
       desc = "A downed player's bleed-out pauses while you drag them to cover.",
       needs = { "under_fire" } },
-    -- (2026-10-09t, owner; path still 24: Medevac 6 -> 4)
+    -- (path still 24: Medevac 6 -> 4)
     { id = "drag_revive", cat = "medic", spec = "combat_medic", tier = 6, cost = 2, name = "Revive on the move",
       desc = "While dragging someone, right click to revive them with a revive kit as you walk. It takes as long as a normal revive; letting go of the body stops it.",
       needs = { "medevac" } },
@@ -528,7 +543,7 @@ end
 -- Adaptable: the officer skills that let you borrow from other trees,
 -- and the highest tier each one takes.
 K.ADAPT_CAT = "officer"
-K.ADAPT = { { id = "adapt_1", tier = 4 } }   -- (owner 2026-10-05: one borrowed skill, tier 4 or lower)
+K.ADAPT = { { id = "adapt_1", tier = 4 } }   -- (one borrowed skill, tier 4 or lower)
 
 -- Is id a borrowed skill in this set (another tree's, or the other officer
 -- specialisation's, through Adaptable)?
@@ -617,7 +632,7 @@ function K.RankOk(ply, key)
     local R = Rhylib.Roster
     if not (prefix and prefix ~= "" and R and R.RankIndex) then return true end
     local need = R.RankIndex(prefix)
-    if need and ply:GetNW2Int("rhylib_rank", 0) < need then
+    if need and ply:GetNW2Int(Rhylib.NW.RANK, 0) < need then
         return false, "Needs the rank " .. (R.RankName and R.RankName(need) or prefix)
     end
     return true
@@ -806,3 +821,26 @@ function K.UndoAllowed(learnedAt, id)
     local t = learnedAt and learnedAt[id]
     return t ~= nil and CurTime() - t <= K.Cfg("undoWindow")
 end
+
+--------------------------------------------------------------------------
+-- Server settings page: this module's name, side-bar category and
+-- sections (Config.Describe + Config.Sections: patterns over the keys, the
+-- first match wins; core applies them to every key of the module).
+--------------------------------------------------------------------------
+
+local PAGE_SECTIONS = {
+    { "Points & rules", { "^freePoints$", "^startPoints$", "^commandRank$", "^onePath$", "^undoWindow$", "^resetCooldownDays$" } },
+    { "Trooper", { "^quickHands", "^runGun", "^pointBlank", "^lightKit", "^momentum", "^extMag", "^effCells", "^loadBearer", "^cellRack$", "^gunRunner", "^steadySpread$", "^steadyRecoil$", "^rapidFire", "^overcharge", "^sustain" } },
+    { "Marksman", { "^stanceSpread$", "^steadyAimSpread$", "^headhunter", "^boltDrills", "^longGun", "^carbine", "^calledShot", "^priority", "^rhythm", "^firstShot" } },
+    { "Heavy", { "^reinforcedHealth$", "^planted", "^ammoBelt$", "^shotgun", "^juggernaut", "^suppress" } },
+    { "Officer: pistol", { "^pistolSpread$", "^steadyGrip", "^dualRate$", "^crit", "^lightRounds", "^quickDraw", "^speedLoader", "^sidearm", "^sidestep", "^lightMagBonus$" } },
+    { "Officer: marks & commander", { "^mark", "^visorSpot", "^squadSkillRange$", "^logiReload$", "^line", "^rifleDrill", "^vet" } },
+    { "Command orders", { "^command", "^windRegen$", "^triage", "^focus", "^pressSprint$", "^presenceMult$", "^seasoned", "^standingTime$" } },
+    { "Reinforcements & squad wheel", { "^reinf", "^squadSignal" } },
+    { "Airborne", { "^rush", "^grenade", "^airborne", "^fallMult$", "^tankMult$", "^springJump$", "^hover", "^afterburner", "^combatDrop", "^blastMult$", "^airMult$", "^slam" } },
+    { "Medic", { "^underFire" } },
+    { "Shock Trooper", { "^holdLine", "^bash", "^searchMult$" } },
+}
+
+Config.Describe("skills", { name = "Skills", category = "Soldiers" })
+Config.Sections("skills", PAGE_SECTIONS)   -- (core: applies to keys registered before and after)

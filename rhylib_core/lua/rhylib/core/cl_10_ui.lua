@@ -7,8 +7,8 @@
     Fonts are created once per size and weight, then reused.
 
     UI.Colors: the shared palette (bg, panel, border, text, textDim,
-    accent, good, warn, bad). The fuller menu kit (panels, buttons) is
-    rhylib_menus' Rhylib.Menus.Kit.
+    accent, good, warn, bad). The fuller kit (panels, buttons, prompts) is
+    Rhylib.UI.Kit in cl_12_kit.lua (old name Rhylib.Menus.Kit).
 ]]
 
 Rhylib.UI = Rhylib.UI or {}

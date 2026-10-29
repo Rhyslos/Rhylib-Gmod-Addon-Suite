@@ -84,7 +84,7 @@ function R.Ranks() return R.Cfg("ranks") or {} end
 
 -- R.RankIndex(prefix): rank index by prefix ("SGT" -> 4 with the default
 -- ladder), or nil. Index 0 means "no rank" everywhere (NW2Int rhylib_rank).
--- Example: if ply:GetNW2Int("rhylib_rank", 0) >= Rhylib.Roster.RankIndex("LT") then ... end
+-- Example: if ply:GetNW2Int(Rhylib.NW.RANK, 0) >= Rhylib.Roster.RankIndex("LT") then ... end
 function R.RankIndex(prefix)
     if not prefix then return nil end
     for i, r in ipairs(R.Ranks()) do
@@ -202,8 +202,8 @@ function R.Get(ply)
         num = ply:GetNW2String("rhylib_num", ""),
         nick = ply:GetNW2String("rhylib_nick", ""),
         trained = ply:GetNW2Bool("rhylib_trained", false),
-        bn = ply:GetNW2String("rhylib_bn", ""),
-        rank = ply:GetNW2Int("rhylib_rank", 0),
+        bn = ply:GetNW2String(Rhylib.NW.BATTALION, ""),
+        rank = ply:GetNW2Int(Rhylib.NW.RANK, 0),
     }
 end
 
@@ -276,3 +276,6 @@ R.WrapJobs = wrapJobs
 Rhylib.Hook.Add("InitPostEntity", "roster.jobs", wrapJobs)
 Rhylib.Hook.Add("DarkRPFinishedLoading", "roster.jobs", wrapJobs)
 wrapJobs()  -- (Lua refresh)
+
+-- Server settings page: this module's name and sidebar category.
+Config.Describe("roster", { name = "Roster & ranks", category = "Units & roles" })

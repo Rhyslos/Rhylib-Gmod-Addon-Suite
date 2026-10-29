@@ -1,5 +1,5 @@
 --[[
-    Saved item picture settings (server only; 2026-10-08, owner: tune each
+    Saved item picture settings (server only; tune each
     picture in game and keep it). Staff with rhylib.inventory.icons adjust an item's
     picture in the picture editor (cl_15_icons); the server keeps every
     item's settings in Data "inventory" "icontune" and sends the whole
@@ -99,7 +99,7 @@ Rhylib.Net.Receive("inv.icontune", function(ply)
         net.WriteUInt(1, 12)
         writeOne(id, t)
         net.Broadcast()
-        ply:ChatPrint((reset and "Picture back to automatic: " or "Picture saved for everyone: ") .. (Items.defs[id].name or id))
+        Rhylib.Notify(ply, (reset and "Picture back to automatic: " or "Picture saved for everyone: ") .. (Items.defs[id].name or id), "good", "Inventory")
     end)
 end, { rate = 4, burst = 8 })
 
@@ -107,30 +107,26 @@ end, { rate = 4, burst = 8 })
 --   rhylib_icons_redraw_all            everyone
 --   rhylib_icons_redraw_all <name>     one player (part of the name works)
 Rhylib.Net.Register("inv.iconsredraw")
-concommand.Add("rhylib_icons_redraw_all", function(ply, _, args)
-    local function run()
+Rhylib.Command.Add({
+    name = "rhylib_icons_redraw_all",
+    perm = "rhylib.inventory.icons",
+    args = "[player name]",
+    help = "Make the inventory item pictures again for everyone, or for one player (name)",
+    tag = "Inventory",
+    fn = function(ply, args)
         local target
         local who = args[1] and string.lower(table.concat(args, " ")) or nil
         if who then
             for _, p in ipairs(player.GetAll()) do
                 if string.find(string.lower(p:Nick()), who, 1, true) then target = p break end
             end
-            if not target then
-                local msg = "[Rhylib] No player matches " .. who
-                if IsValid(ply) then ply:ChatPrint(msg) else print(msg) end
-                return
-            end
+            if not target then return "No player matches " .. who, "bad" end
         end
         Rhylib.Net.Start("inv.iconsredraw")
         if target then net.Send(target) else net.Broadcast() end
-        local msg = "[Rhylib] Inventory pictures redrawn for " .. (target and target:Nick() or "everyone")
-        if IsValid(ply) then ply:ChatPrint(msg) else print(msg) end
-    end
-    if not IsValid(ply) then run() return end   -- (server console)
-    Rhylib.Perms.Check(ply, "rhylib.inventory.icons", function(ok)
-        if ok and IsValid(ply) then run() else ply:ChatPrint("You can't do that") end
-    end)
-end, nil, "Make the inventory item pictures again for everyone, or for one player (name)")
+        return "Inventory pictures redrawn for " .. (target and target:Nick() or "everyone"), "good"
+    end,
+})
 
 -- Load every item model on the server at start, so it's in every client's
 -- model list from the moment they join (a model nobody has used yet draws

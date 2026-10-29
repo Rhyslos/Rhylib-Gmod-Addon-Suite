@@ -25,6 +25,7 @@
 
 local A = Rhylib.Armoury
 local Config = Rhylib.Config
+local cfg = Config.For("armoury")
 
 Rhylib.Perms.Register("rhylib.armoury.admin", "admin", "Save armoury placements, refill supply crates, unclaim lockers")
 Rhylib.Net.Register("armoury.prompt")
@@ -42,13 +43,13 @@ A.FIRST_WEAPONS = { "rhylib_dc15a", "rhylib_dc15s" }
 -- (Items with the armoury roles config are left out: they live in the
 -- specialist racks. Only IsRhylib, Spawnable weapons without NoArmoury.)
 local function weaponStock(training)
-    local list = Config.Get("armoury", training and "trainingWeapons" or "weapons")
+    local list = cfg(training and "trainingWeapons" or "weapons")
     if istable(list) and #list > 0 then return list end
     local Items = Rhylib.Items
     Items.EnsureReady()
     -- Role gear lives in the specialist armouries.
     local roleItem = {}
-    local roles = Config.Get("armoury", "roles")
+    local roles = cfg("roles")
     if istable(roles) then
         for _, r in pairs(roles) do
             for _, kind in ipairs({ "weapons", "gear" }) do
@@ -65,7 +66,7 @@ local function weaponStock(training)
             end
         end
     end
-    -- The standard rifles first (owner), then biggest first.
+    -- The standard rifles first, then biggest first.
     local first = A.FIRST_WEAPONS or {}
     local function rank(id)
         local base = string.gsub(id, "_training$", "")
@@ -94,7 +95,7 @@ end
 -- modules add for them (rhylib_gear: parts their model shows and they may take).
 local function gearStock(ply)
     local out = {}
-    for _, id in ipairs(Config.Get("armoury", "gearStock") or {}) do
+    for _, id in ipairs(cfg("gearStock") or {}) do
         if Rhylib.Items.defs[id] then out[#out + 1] = id end
     end
     hook.Run("Rhylib.GearStock", out)
@@ -127,7 +128,7 @@ function A.FillCrate(ent, storage)
         Inv().StorageAdd(storage, ent.CrateMag, 999, { fill = 1 })
         return
     end
-    local list = ent.CrateStock and Config.Get("armoury", ent.CrateStock)
+    local list = ent.CrateStock and cfg(ent.CrateStock)
     if not istable(list) then return end
     Rhylib.Items.EnsureReady()
     for _, row in ipairs(list) do
@@ -138,12 +139,12 @@ end
 
 -- Specialist stock for a set of roles (only items that exist).
 local function roleStock(roles, kind)
-    local cfg = Config.Get("armoury", "roles")
+    local roleCfg = cfg("roles")
     local out, seen = {}, {}
-    if not istable(cfg) then return out end
+    if not istable(roleCfg) then return out end
     Rhylib.Items.EnsureReady()
     for _, r in ipairs(roles) do
-        local list = istable(cfg[r]) and cfg[r][kind]
+        local list = istable(roleCfg[r]) and roleCfg[r][kind]
         if istable(list) then
             for _, id in ipairs(list) do
                 -- (hook Rhylib.ItemDisabled: e.g. field items under the simplified medical system)
@@ -157,7 +158,7 @@ end
 -- One depot per set of roles, made when someone with that set opens it.
 -- Items the player may not hold yet (skill-locked, e.g. the CG riot shield
 -- until Riot shield is learned) are left out, so learning a skill makes them
--- appear (owner 2026-10-09).
+-- appear.
 local function specVariant(storage, ply)
     local roles = A.Roles(ply)
     local all = roleStock(roles, storage.specKind)
@@ -170,7 +171,7 @@ local function specVariant(storage, ply)
     local sub = storage.subs[key]
     if not sub then
         if #stock == 0 then
-            ply:PrintMessage(HUD_PRINTCENTER, "Nothing here for your role")
+            Rhylib.Notify(ply, "Nothing here for your role", "bad", "Armoury")
             return nil
         end
         sub = Inv().NewStorage(storage.ent, { kind = "depot", w = 6, title = storage.title, stock = stock })
@@ -216,7 +217,7 @@ local function depositSave(sid, storage)
         return
     end
     -- (a new trip starts the clock)
-    A.deposits[sid] = A.deposits[sid] or Config.Get("armoury", "depositTime")
+    A.deposits[sid] = A.deposits[sid] or cfg("depositTime")
     Rhylib.Data.Set("train_dep", sid, { rows = Inv().StorageSerialize(storage), left = A.deposits[sid] })
     retitle(sid, storage)
 end
@@ -251,14 +252,23 @@ local function depositExpire(sid, ply)
             Inv().RefreshStorage(ent)
         end
     end
-    if IsValid(ply) then ply:ChatPrint("Your training deposit ran out of time and was cleared") end
+    if IsValid(ply) then Rhylib.Notify(ply, "Your training deposit ran out of time and was cleared", "bad", "Armoury") end
 end
 
 Rhylib.Hook.Add("PlayerInitialSpawn", "armoury.deposit", function(ply)
     local sid = ply:SteamID64()
     if not sid then return end
     local rows, left = depositRead(sid)
-    if rows then A.deposits[sid] = left or Config.Get("armoury", "depositTime") end
+    if rows then
+        A.deposits[sid] = left or cfg("depositTime")
+        -- (a reminder that something is still stored, and how long it lasts)
+        local secs = A.deposits[sid]
+        timer.Simple(15, function()
+            if IsValid(ply) and A.deposits[sid] then
+                Rhylib.Notify(ply, "You have things in a training deposit: cleared after " .. math.ceil(secs / 60) .. " more minutes online", "info", "Armoury")
+            end
+        end)
+    end
 end)
 
 Rhylib.Hook.Add("PlayerDisconnected", "armoury.deposit", function(ply)
@@ -281,6 +291,11 @@ timer.Create("Rhylib.Armoury.Deposit", 60, 0, function()
                 if istable(d) and d.rows then
                     d.left = left
                     Rhylib.Data.Set("train_dep", sid, d)
+                    -- Warnings at 30, 10 and 2 minutes left.
+                    local mins = math.ceil(left / 60)
+                    if mins == 30 or mins == 10 or mins == 2 then
+                        Rhylib.Notify(ply, "Your training deposit is cleared in " .. mins .. " minutes: take your things out (Take all)", "bad", "Armoury")
+                    end
                 else
                     A.deposits[sid] = nil
                 end
@@ -342,14 +357,14 @@ function A.Setup(ent)
     elseif kind == "crate" then
         storage = I.CreateStorage(ent, {
             kind = "grid", title = ent.PrintName,
-            w = Config.Get("armoury", "crateW"), h = Config.Get("armoury", "crateH"),
+            w = cfg("crateW"), h = cfg("crateH"),
         })
         A.FillCrate(ent, storage)
         return storage
     elseif kind == "locker" then
         storage = I.CreateStorage(ent, {
             kind = "grid", title = lockerTitle(ent),
-            w = Config.Get("armoury", "lockerW"), h = Config.Get("armoury", "lockerH"),
+            w = cfg("lockerW"), h = cfg("lockerH"),
             onChanged = function() A.SaveLocker(ent) end,
             controls = function(_, ply)
                 return { canLock = ply:SteamID64() == ent:GetOwnerSid(), locked = ent:GetLocked() }
@@ -371,7 +386,7 @@ function A.Use(ent, ply)
     if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return end
     local storage = A.Setup(ent)
     if not storage then
-        ply:PrintMessage(HUD_PRINTCENTER, "Needs rhylib_inventory")
+        Rhylib.Notify(ply, "Needs Rhy's Inventory", "bad", "Armoury")
         return
     end
 
@@ -385,7 +400,7 @@ function A.Use(ent, ply)
         end
         -- Military police can search locked lockers (rhylib_mp answers the hook).
         if sid ~= ply:SteamID64() and ent:GetLocked() and hook.Run("Rhylib.CanSearchLocker", ply, ent) ~= true then
-            ply:PrintMessage(HUD_PRINTCENTER, "Locked. This is " .. ent:GetOwnerName() .. "'s locker")
+            Rhylib.Notify(ply, "Locked. This is " .. ent:GetOwnerName() .. "'s locker", "bad", "Armoury")
             return
         end
     end
@@ -412,7 +427,7 @@ function A.Claim(ply, ent)
     local sid = ply:SteamID64()
     if not sid then return end
     if ownsLocker(sid) then
-        ply:PrintMessage(HUD_PRINTCENTER, "You already have a locker")
+        Rhylib.Notify(ply, "You already have a locker", "bad", "Armoury")
         return
     end
     ent:SetOwnerSid(sid)
@@ -477,106 +492,75 @@ end, { rate = 3, burst = 3 })
 -- Placements per map
 --------------------------------------------------------------------------
 
-A.placements = A.placements or {}
+-- Placements per map (Data "armoury"/<map>) through core's
+-- Rhylib.Perma.Placements: only permanent armoury entities are saved;
+-- lockers keep owner, ownerName and locked in their row. Loaded 1 s after
+-- InitPostEntity and after a map cleanup (earlier copies removed first,
+-- so two copies of a locker never load the same contents).
+local function placementClasses()
+    local classes = {}
+    for c in pairs(A.CLASSES) do classes[#classes + 1] = c end
+    table.sort(classes)
+    return classes
+end
 
-local function rowFor(ent)
-    local p, a = ent:GetPos(), ent:GetAngles()
-    local row = { class = ent:GetClass(), pos = { p.x, p.y, p.z }, ang = { a.p, a.y, a.r } }
-    if ent:GetClass() == "rhylib_locker" then
-        row.owner, row.ownerName, row.locked = ent:GetOwnerSid(), ent:GetOwnerName(), ent:GetLocked()
-    end
-    return row
+local function setupPlaces()
+    A.places = Rhylib.Perma.Placements("armoury", {
+        classes = placementClasses(),
+        dataModule = "armoury",
+        save = function(ent)
+            if ent:GetClass() == "rhylib_locker" then
+                return { owner = ent:GetOwnerSid(), ownerName = ent:GetOwnerName(), locked = ent:GetLocked() }
+            end
+        end,
+        load = function(ent, row)
+            if row.class == "rhylib_locker" and row.owner and row.owner ~= "" then
+                ent:SetOwnerSid(row.owner)
+                ent:SetOwnerName(row.ownerName or "")
+                ent:SetLocked(row.locked and true or false)
+            end
+            ent.placeIndex = true   -- (rhylib_admin's freezeprops checks it)
+        end,
+        command = "rhylib_armoury_save",
+        perm = "rhylib.armoury.admin",
+    })
+end
+setupPlaces()
+
+-- A.AddClass(class): another addon's armoury-style entity (e.g. a custom
+-- crate) is saved and loaded with the armoury rows. Server.
+-- Example: Rhylib.Armoury.AddClass("my_grenade_crate")
+function A.AddClass(class)
+    A.CLASSES[class] = true
+    setupPlaces()
 end
 
 -- A.SavePlacements() -> count: saves every permanent armoury entity on
--- this map (Data "armoury"/<map>). Without rhylib_core's Perma (older
--- cores) it saves all of them. Registered with Rhylib.Perma, so the
--- toolgun's Permanent tool calls it. Server.
-function A.SavePlacements()
-    local rows = {}
-    for class in pairs(A.CLASSES) do
-        for _, ent in ipairs(ents.FindByClass(class)) do
-            -- (only permanent ones: the toolgun's Permanent tool, 2026-10-09u)
-            if (not Rhylib.Perma or Rhylib.Perma.Is(ent)) then
-                rows[#rows + 1] = rowFor(ent)
-                ent.placeIndex = #rows
-            else
-                ent.placeIndex = nil
-            end
-        end
-    end
-    A.placements = rows
-    Rhylib.Data.Set("armoury", game.GetMap(), rows)
-    return #rows
-end
+-- this map. Registered with Rhylib.Perma (the toolgun's Permanent tool).
+function A.SavePlacements() return (A.places:Save()) end
 
--- Keep a saved locker's claim when it changes.
+-- A.SpawnPlacements(): spawns the saved armoury entities again.
+function A.SpawnPlacements() return A.places:Load() end
+
+-- A.UpdatePlacement(ent): a permanent locker's claim or lock changed:
+-- save the map's placements again.
 function A.UpdatePlacement(ent)
-    local i = ent.placeIndex
-    if not i or not A.placements[i] then return end
-    A.placements[i] = rowFor(ent)
-    Rhylib.Data.Set("armoury", game.GetMap(), A.placements)
+    if IsValid(ent) and Rhylib.Perma.Is(ent) then A.places:Save() end
 end
-
--- A.SpawnPlacements(): spawns the saved armoury entities (with locker
--- owners) and marks them permanent. Runs 1 s after InitPostEntity and
--- after a map cleanup. Server.
-function A.SpawnPlacements()
-    local rows = Rhylib.Data.Get("armoury", game.GetMap())
-    if not istable(rows) then return end
-    A.placements = rows
-    for i, row in ipairs(rows) do
-        if A.CLASSES[row.class] then
-            local ent = ents.Create(row.class)
-            if IsValid(ent) then
-                ent:SetPos(Vector(row.pos[1], row.pos[2], row.pos[3]))
-                ent:SetAngles(Angle(row.ang[1], row.ang[2], row.ang[3]))
-                ent:Spawn()
-                if row.class == "rhylib_locker" and row.owner and row.owner ~= "" then
-                    ent:SetOwnerSid(row.owner)
-                    ent:SetOwnerName(row.ownerName or "")
-                    ent:SetLocked(row.locked and true or false)
-                end
-                ent.placeIndex = i
-                if Rhylib.Perma then Rhylib.Perma.Mark(ent, true) end
-            end
-        end
-    end
-    Rhylib.Print("armoury", "Placed %d armoury entities on %s", #rows, game.GetMap())
-end
-
-if Rhylib.Perma and Rhylib.Perma.Register then
-    local list = {}
-    for c in pairs(A.CLASSES) do list[#list + 1] = c end
-    Rhylib.Perma.Register(list, A.SavePlacements)
-end
-
-Rhylib.Hook.Add("InitPostEntity", "armoury.spawn", function()
-    timer.Simple(1, A.SpawnPlacements)
-end)
-
-Rhylib.Hook.Add("PostCleanupMap", "armoury.spawn", function()
-    A.SpawnPlacements()
-end)
 
 --------------------------------------------------------------------------
 -- Admin commands
 --------------------------------------------------------------------------
 
-local function reply(ply, msg)
-    if IsValid(ply) then ply:ChatPrint(msg) else print(msg) end
+local function reply(ply, msg, kind)
+    Rhylib.Notify(IsValid(ply) and ply or nil, msg, kind or "info", "Armoury")
 end
 
-local function adminCommand(name, fn)
-    concommand.Add(name, function(ply, _, args)
-        Rhylib.Perms.Check(ply, "rhylib.armoury.admin", function(ok)
-            if not ok then
-                reply(ply, "You don't have permission for " .. name)
-                return
-            end
-            fn(ply, args)
-        end)
-    end)
+local function adminCommand(name, fn, help)
+    Rhylib.Command.Add({
+        name = name, perm = "rhylib.armoury.admin", help = help, tag = "Armoury",
+        fn = function(ply, args) fn(ply, args) end,
+    })
 end
 
 local function lookedAt(ply, class)
@@ -584,10 +568,6 @@ local function lookedAt(ply, class)
     local ent = ply:GetEyeTrace().Entity
     if IsValid(ent) and (not class or ent:GetClass():find(class, 1, true)) then return ent end
 end
-
-adminCommand("rhylib_armoury_save", function(ply)
-    reply(ply, "Saved " .. A.SavePlacements() .. " armoury entities for " .. game.GetMap())
-end)
 
 adminCommand("rhylib_crate_refill", function(ply, args)
     local list = {}
@@ -608,16 +588,16 @@ adminCommand("rhylib_crate_refill", function(ply, args)
             n = n + 1
         end
     end
-    reply(ply, "Refilled " .. n .. " crate" .. (n == 1 and "" or "s"))
-end)
+    reply(ply, "Refilled " .. n .. " crate" .. (n == 1 and "" or "s"), "good")
+end, "Refill the supply crate you look at (or: all)")
 
 adminCommand("rhylib_locker_unclaim", function(ply)
     local ent = lookedAt(ply, "rhylib_locker")
     if not ent or ent:GetOwnerSid() == "" then
-        reply(ply, "Look at a claimed locker")
+        reply(ply, "Look at a claimed locker", "bad")
         return
     end
     local name = ent:GetOwnerName()
     A.Unclaim(ent)
-    reply(ply, "Unclaimed " .. name .. "'s locker (their items are kept for their next locker)")
-end)
+    reply(ply, "Unclaimed " .. name .. "'s locker (their items are kept for their next locker)", "good")
+end, "Unclaim the locker you look at")

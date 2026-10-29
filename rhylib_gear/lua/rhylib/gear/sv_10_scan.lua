@@ -89,15 +89,16 @@ function G.Scan()
     return lines
 end
 
-concommand.Add("rhylib_gear_scan", function(ply)
-    local function run()
+Rhylib.Command.Add({
+    name = "rhylib_gear_scan",
+    perm = "rhylib.gear.admin",
+    help = "List every job model's bodygroups (console and data/rhylib_gear_scan.txt)",
+    tag = "Gear",
+    fn = function(ply)
         local lines = G.Scan()
         for _, l in ipairs(lines) do
             if IsValid(ply) then ply:PrintMessage(HUD_PRINTCONSOLE, l) else print(l) end
         end
-        local msg = "Bodygroup scan done (" .. #lines .. " lines): see the console, or data/rhylib_gear_scan.txt on the server."
-        if IsValid(ply) then ply:ChatPrint(msg) else print(msg) end
-    end
-    if not IsValid(ply) then return run() end
-    Rhylib.Perms.Check(ply, "rhylib.gear.admin", function(ok) if ok then run() end end)
-end)
+        return "Bodygroup scan done (" .. #lines .. " lines): see the console, or data/rhylib_gear_scan.txt on the server.", "good"
+    end,
+})

@@ -9,10 +9,22 @@
     6 closed. eod.place (item uid) places one from the inventory.
 ]]
 
+-- Colours used while drawing (made once, not every frame).
+local COL_150_255_180 = Color(150, 255, 180)
+local COL_255_150_40 = Color(255, 150, 40)
+local COL_255_209_102 = Color(255, 209, 102)
+local COL_40_70_52_255 = Color(40, 70, 52, 255)
+local COL_6_14_10_255 = Color(6, 14, 10, 255)
+local COL_70_140_95_255 = Color(70, 140, 95, 255)
+local COL_80_200_255 = Color(80, 200, 255)
+local COL_80_200_255_255 = Color(80, 200, 255, 255)
+local COL_80_200_255_40 = Color(80, 200, 255, 40)
+local COL_90_130_105 = Color(90, 130, 105)
+
 local E = Rhylib.EOD
 local Net = Rhylib.Net
 
-local function K() return Rhylib.Menus and Rhylib.Menus.Kit end
+local function K() return Rhylib.UI and Rhylib.UI.Kit end
 local OPAQUE = Color(14, 16, 15, 255)
 
 -- pending = slider values not sent yet (sent at most every 0.15 s).
@@ -90,7 +102,7 @@ local function open(ent)
         surface.DrawRect(0, 0, w, h)
         local on = e:GetActive() and e:Fill() > 0
         draw.SimpleText(on and (e:GetTuned() and "ON · TUNED" or "ON · WIDEBAND") or "OFF", k.Font(18, 800), s(12), s(18),
-            on and (e:GetTuned() and Color(80, 200, 255) or Color(255, 150, 40)) or C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            on and (e:GetTuned() and COL_80_200_255 or COL_255_150_40) or C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
         local fill = e:Fill()
         draw.SimpleText(string.format("Cell %d%%", math.floor(fill * 100)), k.Font(14, 700), w - s(12), s(18), fill < 0.15 and C.bad or C.text, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
         local life = E.CellLife(e:GetRadius(), e:GetTuned(), e:GetNW2Bool("rhylib_eodLong", false))
@@ -112,7 +124,7 @@ local function open(ent)
     t:Dock(RIGHT)
 
     local r2 = row("Radius (m)", "Bigger lasts much shorter (radius²)")
-    local sl = k.Slider(r2.right, 1, math.min(15, E.Cfg("deviceMaxRadius") or 15), 0,
+    local sl = k.Slider(r2.right, 1, math.min(15, E.Cfg("deviceMaxRadius")), 0,
         function() return dev.pending.r or (IsValid(dev.ent) and dev.ent:GetRadius() or 5) end,
         function(v) dev.pending.r = math.floor(v) end)
     sl:Dock(FILL)
@@ -135,7 +147,7 @@ local function open(ent)
     sc:DockMargin(0, s(6), 0, s(8))
     function sc:Paint(w, h)
         local e = dev.ent
-        k.SetCol(Color(6, 14, 10, 255))
+        k.SetCol(COL_6_14_10_255)
         surface.DrawRect(0, 0, w, h)
         k.SetCol(C.edgeDark)
         surface.DrawOutlinedRect(0, 0, w, h)
@@ -143,14 +155,14 @@ local function open(ent)
         local top, bot = s(26), h - s(22)
         local function fx(f) return s(8) + (w - s(16)) * (f - E.F0) / (E.F1 - E.F0) end
         -- grid
-        k.SetCol(Color(40, 70, 52, 255))
+        k.SetCol(COL_40_70_52_255)
         for f = E.F0, E.F1, 10 do
             local x = fx(f)
             surface.DrawRect(x, top, 1, bot - top)
-            draw.SimpleText(tostring(f), k.Font(10), x, bot + s(10), Color(90, 130, 105), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            draw.SimpleText(tostring(f), k.Font(10), x, bot + s(10), COL_90_130_105, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         end
         -- noise floor
-        k.SetCol(Color(70, 140, 95, 255))
+        k.SetCol(COL_70_140_95_255)
         local now = CurTime()
         local lastX, lastY
         for i = 0, 80 do
@@ -167,14 +179,14 @@ local function open(ent)
         for _, p in ipairs(dev.scan) do
             local x = fx(E.F0 + p[1])
             local y = bot - (bot - top - s(10)) * p[2] / 100 - s(18)
-            draw.SimpleText(string.format("%.3f%s", (E.F0 + p[1]) / 1000, p[3] and " HOP" or ""), k.Font(11, 700), x, y, p[3] and Color(255, 209, 102) or Color(150, 255, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            draw.SimpleText(string.format("%.3f%s", (E.F0 + p[1]) / 1000, p[3] and " HOP" or ""), k.Font(11, 700), x, y, p[3] and COL_255_209_102 or COL_150_255_180, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         end
         -- the dial (tuned): marker and the band it blocks
         if IsValid(e) and e:GetTuned() then
             local d = dev.pending.dial or e:GetDial()
-            k.SetCol(Color(80, 200, 255, 40))
+            k.SetCol(COL_80_200_255_40)
             surface.DrawRect(fx(d - 2.5), top, fx(d + 2.5) - fx(d - 2.5), bot - top)
-            k.SetCol(Color(80, 200, 255, 255))
+            k.SetCol(COL_80_200_255_255)
             surface.DrawRect(fx(d), top, 2, bot - top)
         end
     end
@@ -215,7 +227,7 @@ Rhylib.Hook.Add("Rhylib.ItemMenu", "eod.place", function(inst, menu)
 end)
 
 Rhylib.Hook.Add("InitPostEntity", "eod.devcloser", function()
-    if Rhylib.Menus and Rhylib.Menus.RegisterCloser then
-        Rhylib.Menus.RegisterCloser("eoddev", function() if IsValid(dev.frame) then close(true) return true end end)
+    if Rhylib.UI and Rhylib.UI.RegisterCloser then
+        Rhylib.UI.RegisterCloser("eoddev", function() if IsValid(dev.frame) then close(true) return true end end)
     end
 end)

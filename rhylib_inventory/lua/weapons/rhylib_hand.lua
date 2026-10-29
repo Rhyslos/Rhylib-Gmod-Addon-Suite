@@ -41,7 +41,7 @@ end
 -- SWEP:Receiver(): the live player in front of you within giveRange, or nil.
 function SWEP:Receiver()
     local owner = self:GetOwner()
-    local r = Rhylib.Config.Get("inventory", "giveRange") or 130
+    local r = Rhylib.Config.Get("inventory", "giveRange")
     local tr = util.TraceHull({
         start = owner:EyePos(), endpos = owner:EyePos() + owner:GetAimVector() * r,
         filter = owner, mins = Vector(-6, -6, -6), maxs = Vector(6, 6, 6), mask = MASK_SHOT_HULL,
@@ -58,7 +58,7 @@ function SWEP:PrimaryAttack()
     local target = self:Receiver()
     if not inst then return end
     if not target then
-        owner:PrintMessage(HUD_PRINTCENTER, "Look at someone close to hand it over")
+        Rhylib.Notify(owner, "Look at someone close to hand it over", "bad", "Inventory")
         return
     end
     Rhylib.Inventory.GiveTo(owner, target, inst.uid, true)

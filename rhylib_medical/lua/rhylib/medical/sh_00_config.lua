@@ -70,6 +70,7 @@ Config.Register("medical", "bleedTime", 120, "Seconds a downed player lasts befo
 Config.Register("medical", "downHealth", 50, "Health while downed; damage while down comes off this")
 Config.Register("medical", "downGrace", 2, "Seconds after going down when the body takes no damage (the fall plays; no instant finishing)")
 Config.Register("medical", "giveUpTime", 3, "Seconds of holding Jump to give up")
+Config.Register("medical", "callMedicCooldown", 30, "Downed players' \"call a medic\" key (reload): seconds between two calls")
 Config.Register("medical", "range", 90, "How close a helper must be (units; ~2.3 m)")
 Config.Register("medical", "reviveKitTime", 5, "Seconds to revive with a revive kit")
 Config.Register("medical", "reviveKitHealth", 1, "Health after a revive kit, as a share of max health")
@@ -321,19 +322,19 @@ end
 -- ply.rhylibDown is the same thing without a NW2 read.)
 -- Example: if Rhylib.Medical and Rhylib.Medical.IsDown(ply) then return end
 function Med.IsDown(ply)
-    return ply:GetNW2Bool("rhylib_down", false)
+    return ply:GetNW2Bool(Rhylib.NW.DOWN, false)
 end
 
 -- Med.StabilisedBy(ply): the player whose action pauses ply's bleed-out
 -- (stabilising, reviving, or a Medevac drag), or nil.
 function Med.StabilisedBy(ply)
-    local e = ply:GetNW2Entity("rhylib_stabBy")
+    local e = ply:GetNW2Entity(Rhylib.NW.STAB_BY)
     return IsValid(e) and e or nil
 end
 
 -- Med.DraggedBy(ply): who is dragging the downed ply, or nil.
 function Med.DraggedBy(ply)
-    local e = ply:GetNW2Entity("rhylib_dragBy")
+    local e = ply:GetNW2Entity(Rhylib.NW.DRAG_BY)
     return IsValid(e) and e or nil
 end
 
@@ -346,8 +347,8 @@ end
 -- Med.TimeLeft(ply): seconds of bleed-out left. While paused (stabilised)
 -- this is the frozen rhylib_downLeft; otherwise rhylib_downEnd - now.
 function Med.TimeLeft(ply)
-    if Med.StabilisedBy(ply) then return ply:GetNW2Float("rhylib_downLeft", 0) end
-    return math.max(0, ply:GetNW2Float("rhylib_downEnd", 0) - CurTime())
+    if Med.StabilisedBy(ply) then return ply:GetNW2Float(Rhylib.NW.DOWN_LEFT, 0) end
+    return math.max(0, ply:GetNW2Float(Rhylib.NW.DOWN_END, 0) - CurTime())
 end
 
 -- Med.Action(ply): what ply is doing as a helper. Returns 0 when nothing,
@@ -436,3 +437,22 @@ function Med.FindStanding(ply)
     local e = tr.Entity
     if IsValid(e) and e:IsPlayer() and e:Alive() and not Med.IsDown(e) then return e end
 end
+
+-- Server settings page: this module's name, sidebar category and sections
+-- (Config.Sections: patterns over the keys, the first match wins; core
+-- applies them to every key of the module, registered before or after).
+local SECTIONS = {
+    { "General", { "^enabled$", "^range$", "^selfMult$", "^noTarget$", "^markerRange$", "^viewRange$" } },
+    { "Simplified system", { "^simpl" } },
+    { "Downed & bleeding out", { "^bleedTime$", "^downHealth$", "^downGrace$", "^giveUpTime$", "^downSequences$", "^callMedic" } },
+    { "Revives", { "^reviveKit", "^firstAidRevive", "^handRevive", "^bloodPack" } },
+    { "Kits & field items", { "^firstAid", "^medkit", "^splint", "^burnGel", "^pillTime$", "^painkiller" } },
+    { "Dragging", { "^drag" } },
+    { "Medic skills", { "^steadyMult$", "^quickReviveMult$", "^deepPockets$", "^efficientCare$", "^triageFlash$", "^regen" } },
+    { "Injuries", { "^injuries$", "Bleed", "^fracture", "^fallFracture", "^recover$", "^burnRecover$", "^legNoSprint", "^armNoAim", "^armSpread$", "^burnSpread$", "^torso" } },
+    { "Med bay, bacta tank & sofa", { "^medBay", "^tank", "^sofa" } },
+    { "Chemistry bench", { "^bench", "^craftTime$", "^chemRecipes$" } },
+    { "Illness", { "^loadRate$", "^illDrain$", "^poisonAfterDown$", "^drawTime$", "^scan", "^dose", "^strip", "^sampleLife$" } },
+}
+Config.Describe("medical", { name = "Medical", category = "Soldiers" })
+Config.Sections("medical", SECTIONS)   -- (core: applies to keys registered before and after)

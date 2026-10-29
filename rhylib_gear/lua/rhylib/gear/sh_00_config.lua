@@ -1,5 +1,5 @@
 --[[
-    Wearable gear (bodygroups), owner's design:
+    Wearable gear (bodygroups):
 
       Parts are items from the gear cabinet, worn in the inventory's gear
       slots (rhylib_inventory Items.WORN): kama, pauldron, binoculars,
@@ -86,7 +86,7 @@ G.ITEMS = {
         w = 1, h = 1, weight = 0.1, model = "models/props_lab/binderblue.mdl" },
     rhylib_holster = { slot = "holster", name = "Holster", desc = "Worn: holsters for two pistols",
         groups = { "holster_left", "holster_right" }, on = { "co_holster_left_reference", "co_holster_right_reference" },
-        w = 1, h = 1, weight = 0.4, model = "models/props_junk/garbage_bag001a.mdl", grid = { 2, 2 }, gridName = "holster", gridCid = "HOLSTER" },   -- (owner: two pistols, one per holster)
+        w = 1, h = 1, weight = 0.4, model = "models/props_junk/garbage_bag001a.mdl", grid = { 2, 2 }, gridName = "holster", gridCid = "HOLSTER" },   -- (two pistols, one per holster)
     rhylib_forearm_arc = { slot = "forearm", name = "ARC forearm guard", desc = "Worn on the right forearm",
         groups = { "forearms" }, on = { "arc2_arc_forearm_right_reference" },
         w = 1, h = 1, weight = 0.5, model = "models/props_junk/garbage_metalcan002a.mdl" },
@@ -147,39 +147,49 @@ G.ON_HELMET = { binos = true, rangefinder = true, light = true, visor = true }
 -- G.HelmetOn(ply): false while the helmet is off (NW2Bool rhylib_helmetOff). Shared.
 function G.HelmetOn(ply) return not ply:GetNW2Bool("rhylib_helmetOff", false) end
 
--- (owner 2026-10-05: no kit by default; players keep what they take from
--- the gear cabinet, since the inventory is saved.)
+-- (No kit by default: players keep what they take from the gear cabinet,
+-- since the inventory is saved.)
 -- Settings (module "gear"). Change in Server settings or a host file, e.g.
 -- Rhylib.Config.Set("gear", "kit", { ["327th"] = { "rhylib_kama", "rhylib_pauldron" } })
+Config.Describe("gear", { name = "Wearable gear", category = "Soldiers", sections = { "Kit & unlocks", "Armour parts", "Helmet lights", "Sun visor", "Night vision" } })
 Config.Register("gear", "kit", {},
-    "Battalion kit given at spawn as job gear: battalion (part of its name, * = everyone) -> item ids, e.g. { [\"*\"] = { \"rhylib_macrobinoculars\" } }. Empty by default")
+    "Battalion kit given at spawn as job gear: battalion (part of its name, * = everyone) -> item ids, e.g. { [\"*\"] = { \"rhylib_macrobinoculars\" } }. Empty by default", { section = "Kit & unlocks" })
 Config.Register("gear", "unlocks", {
     rhylib_kama = { rank = "SGT" }, rhylib_pauldron = { rank = "SGT" }, rhylib_rangefinder = { rank = "LT" },
     rhylib_kama_arc = { rank = "SGT" }, rhylib_pauldron_arc = { rank = "SGT" },
-}, "Gear cabinet parts that need a rank (rank prefix, rhylib_roster) or a qualification (qual id); your battalion kit is always allowed")
-Config.Register("gear", "kamaBlastMult", 0.5, "Kama: blast damage to the legs (body part damage) is multiplied by this")
-Config.Register("gear", "kamaFractureChance", 0.5, "Kama: chance a leg actually breaks when it would")
-Config.Register("gear", "pauldronDrainMult", 0.8, "Pauldron: armour lost per hit is multiplied by this")
-Config.Register("gear", "lightNeeded", true, "The flashlight key only works with helmet lights worn")
-Config.Register("gear", "lightFov", 26, "Helmet lights: width of each beam (degrees); the two point apart with a small gap between")
-Config.Register("gear", "lightGap", -4.7, "Helmet lights: extra degrees each beam turns outwards past touching (positive = a dark gap in the middle, negative = overlap; owner 2026-10-09: the dark slit was headache inducing, -7 overlapped too much, -4.7 = a third less)")
-Config.Register("gear", "lightOverlapDim", 0.6, "Helmet lights: each beam's brightness where the two overlap (1 = no dimming; the middle is then about twice as bright)")
-Config.Register("gear", "lightOverlapFlip", false, "Helmet lights: mirror the dimmed band if it shows on the outer edges instead of the middle")
-Config.Register("gear", "lightRange", 2000, "Helmet lights: how far the beams reach")
-Config.Register("gear", "lightBrightness", 3.5, "Helmet lights: brightness of each beam")
-Config.Register("gear", "lightMaxPlayers", 2, "Helmet lights: other players whose beams light the world for you (nearest first, no shadows; your own always do). Further ones show only the lamp glow")
-Config.Register("gear", "bareHeadshotDowns", true, "With the helmet off, any head hit downs you")
-Config.Register("gear", "visorZoom", 3, "Sun visor: the zoom its zoom toggle gives (the optics mode key, default middle mouse)")
-Config.Register("gear", "nvMode", 1, "Night vision: 1 = amplified (a wide shadowless light from your eyes that turns itself down where it's already bright; default), 2 = the world drawn fully lit (can glare at light sources), 0 = only the green filter")
-Config.Register("gear", "nvGain", 2.5, "Night vision (amplified): strength of the light in the dark")
-Config.Register("gear", "nvLift", 0.04, "Night vision: how much the darkest parts are lifted (the green floor)")
-Config.Register("gear", "nvBoost", 1.5, "Night vision: how much brighter the picture is made in the dark (1 = no boost; eased off in lit places)")
-Config.Register("gear", "nvRange", 0, "Night vision: fade the picture into dark green beyond this distance (units; 0 = off)")
-Config.Register("gear", "nvFadeFrom", 600, "Night vision: where that fade starts (units)")
-Config.Register("gear", "nvLightRange", 4000, "Night vision (amplified): how far its light reaches (units)")
+}, "Gear cabinet parts that need a rank (rank prefix, rhylib_roster) or a qualification (qual id); your battalion kit is always allowed", { section = "Kit & unlocks" })
+Config.Register("gear", "kamaBlastMult", 0.5, "Kama: blast damage to the legs (body part damage) is multiplied by this", { section = "Armour parts" })
+Config.Register("gear", "kamaFractureChance", 0.5, "Kama: chance a leg actually breaks when it would", { section = "Armour parts" })
+Config.Register("gear", "pauldronDrainMult", 0.8, "Pauldron: armour lost per hit is multiplied by this", { section = "Armour parts" })
+Config.Register("gear", "lightNeeded", true, "The flashlight key only works with helmet lights worn", { section = "Helmet lights" })
+Config.Register("gear", "lightFov", 26, "Helmet lights: width of each beam (degrees); the two point apart with a small gap between", { section = "Helmet lights" })
+Config.Register("gear", "lightGap", -4.7, "Helmet lights: extra degrees each beam turns outwards past touching (positive = a dark gap in the middle, negative = overlap; a dark slit is hard on the eyes)", { section = "Helmet lights" })
+Config.Register("gear", "lightOverlapDim", 0.6, "Helmet lights: each beam's brightness where the two overlap (1 = no dimming; the middle is then about twice as bright)", { section = "Helmet lights" })
+Config.Register("gear", "lightOverlapFlip", false, "Helmet lights: mirror the dimmed band if it shows on the outer edges instead of the middle", { section = "Helmet lights" })
+Config.Register("gear", "lightRange", 2000, "Helmet lights: how far the beams reach", { section = "Helmet lights" })
+Config.Register("gear", "lightBrightness", 3.5, "Helmet lights: brightness of each beam", { section = "Helmet lights" })
+Config.Register("gear", "lightMaxPlayers", 2, "Helmet lights: other players whose beams light the world for you (nearest first, no shadows; your own always do). Further ones show only the lamp glow", { section = "Helmet lights" })
+Config.Register("gear", "bareHeadshotDowns", true, "With the helmet off, any head hit downs you", { section = "Armour parts" })
+Config.Register("gear", "visorZoom", 3, "Sun visor: the zoom its zoom toggle gives (the optics mode key, default middle mouse)", { section = "Sun visor" })
+Config.Register("gear", "nvMode", 1, "Night vision: 1 = amplified (a wide shadowless light from your eyes that turns itself down where it's already bright; default), 2 = the world drawn fully lit (can glare at light sources), 0 = only the green filter", { section = "Night vision" })
+Config.Register("gear", "nvGain", 2.5, "Night vision (amplified): strength of the light in the dark", { section = "Night vision" })
+Config.Register("gear", "nvLift", 0.04, "Night vision: how much the darkest parts are lifted (the green floor)", { section = "Night vision" })
+Config.Register("gear", "nvBoost", 1.5, "Night vision: how much brighter the picture is made in the dark (1 = no boost; eased off in lit places)", { section = "Night vision" })
+Config.Register("gear", "nvRange", 0, "Night vision: fade the picture into dark green beyond this distance (units; 0 = off)", { section = "Night vision" })
+Config.Register("gear", "nvFadeFrom", 600, "Night vision: where that fade starts (units)", { section = "Night vision" })
+Config.Register("gear", "nvLightRange", 4000, "Night vision (amplified): how far its light reaches (units)", { section = "Night vision" })
 
--- G.Cfg(key): shortcut for Rhylib.Config.Get("gear", key).
-function G.Cfg(k) return Config.Get("gear", k) end
+-- G.Cfg(key): a "gear" setting.
+G.Cfg = Config.For("gear")
+
+-- G.KeyDown(convar) (client): is the key named in that convar held? The
+-- one helper the gear key handlers share.
+if CLIENT then
+    function G.KeyDown(var)
+        local code = input.GetKeyCode(var:GetString())
+        return code and code > 0 and input.IsButtonDown(code)
+    end
+end
 
 local function norm(s)
     s = string.lower(tostring(s or ""))
@@ -261,7 +271,7 @@ end
 
 -- Worn AND shown by the model (and its helmet on, for helmet parts): only
 -- then does a part do anything. Parts the current model can't show stay
--- worn but inert (owner: joining as a cadet after a map change used to
+-- worn but inert (joining as a cadet after a map change used to
 -- take everything off).
 -- G.Active(ply, slot) -> true / false. Use this before any gear effect.
 -- Example: if Rhylib.Gear.Active(ply, "pauldron") then ... end
@@ -287,7 +297,7 @@ end
 -- whatever the model shows).
 Rhylib.Hook.Add("Rhylib.CanWear", "gear.model", function(ply, def)
     if not (def and def.slot and def.slot ~= "back") then return end
-    -- Helmet lights and optics share the helmet mount (owner: one or the other).
+    -- Helmet lights and optics share the helmet mount: one or the other.
     if def.slot == "light" and (G.Worn(ply, "binos") or G.Worn(ply, "rangefinder")) then
         return false, "Take off the macrobinoculars or rangefinder first: they use the same helmet mount"
     end
@@ -306,7 +316,7 @@ end)
 function G.InBattalion(ply, key)
     if key == "*" then return true end
     key = string.lower(key)
-    local names = { ply:GetNW2String("rhylib_bn", "") }
+    local names = { ply:GetNW2String(Rhylib.NW.BATTALION, "") }
     local job = RPExtraTeams and RPExtraTeams[ply:Team()]
     if job then
         names[#names + 1] = job.battalion or ""
@@ -340,7 +350,7 @@ function G.Unlocked(ply, id)
     local R = Rhylib.Roster
     if rule.rank and R and R.RankIndex then
         local need = R.RankIndex(rule.rank)
-        if need and ply:GetNW2Int("rhylib_rank", 0) < need then
+        if need and ply:GetNW2Int(Rhylib.NW.RANK, 0) < need then
             return false, "Needs the rank " .. (R.RankName and R.RankName(need) or rule.rank)
         end
     end
@@ -361,9 +371,9 @@ local function extraGrids(it)
     return out
 end
 
--- Items go in once the inventory module exists (it loads after this one):
--- Items.Register(id, def) for each G.ITEMS entry, category "gear", shelf
--- group "helmet" / "body" (back items keep their default).
+-- Items go in once the inventory module exists (Rhylib.After: now or
+-- right after it loads): Items.Register(id, def) for each G.ITEMS entry,
+-- category "gear", shelf group "helmet" / "body" (back items keep their default).
 local function registerItems()
     local Items = Rhylib.Items
     if not (Items and Items.Register) then return false end
@@ -377,8 +387,4 @@ local function registerItems()
     end
     return true
 end
-if not registerItems() then
-    hook.Add("Rhylib.ModuleLoaded", "gear.items", function(id)
-        if id == "inventory" then registerItems() end
-    end)
-end
+Rhylib.After("inventory", registerItems)

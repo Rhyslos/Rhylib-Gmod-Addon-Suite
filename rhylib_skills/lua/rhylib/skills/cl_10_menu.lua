@@ -6,13 +6,19 @@
     each specialisation has its own column, end branches sit in framed
     boxes inside it.
 
-    Click a skill to learn it (skills.learn); right-click a learned one to
-    undo it (skills.unlearn: nothing else may need it; any time while
-    reset is allowed, else within undoWindow s); "Reset skills" clears all
-    (skills.reset). Learned = filled accent square, can learn = green
+    Click a skill to select it; the side panel's "Learn (n points)" button
+    learns it (skills.learn). The first skill that would commit you to a
+    category (config onePath) asks to confirm first. Right-click a learned
+    one to undo it (skills.unlearn: nothing else may need it; any time
+    while reset is allowed, else within undoWindow s); "Reset skills"
+    clears all (skills.reset, with a confirm) and is greyed out with the
+    reason and the next free reset when it isn't allowed (K.ResetInfo,
+    NW2Int rhylib_skillReset). The last answer from the server
+    (skills.note) shows in the side panel too, not only in chat (the pause
+    menu covers the chat). Learned = filled accent square, can learn = green
     edge, locked = dim, ruled out by an earlier choice (K.Excluded:
     other path / specialisation / branch / one-of group) = greyed out. The panel on the right explains the skill under
-    the mouse (or the last one clicked).
+    the mouse (or the selected one).
 
     Icons are small vector glyphs drawn here (ICONS / GLYPHS), so there
     are no materials to ship. K.DrawGlyph(name, x, y, size, col, bg) draws
@@ -25,12 +31,64 @@
 
 local K = Rhylib.Skills
 
+-- K.lastNote = { text, bad, at = RealTime() }: the last skills.note, drawn
+-- in the Skills page's side panel for a while.
 Rhylib.Net.Receive("skills.note", function()
     local bad = net.ReadBool()
     local text = net.ReadString()
-    chat.AddText(bad and Color(235, 90, 80) or Color(133, 183, 235), "[Skills] ", Color(225, 225, 225), text)
+    K.lastNote = { text = text, bad = bad, at = RealTime() }
+    -- (shown the suite's one way: core Rhylib.Notify, chat line tagged [Rhy's Skills])
+    if Rhylib.Notify then
+        Rhylib.Notify(nil, text, bad and "bad" or "info", "Skills")
+    else
+        chat.AddText(bad and Color(235, 90, 80) or Color(133, 183, 235), "[Skills] ", Color(225, 225, 225), text)
+    end
     surface.PlaySound(bad and "buttons/button10.wav" or "buttons/button14.wav")
 end)
+
+-- A small modal yes / no box in the Kit style (Esc closes it: Rhylib.UI.prompts).
+local function confirm(title, text, okLabel, onOk)
+    local UI = Rhylib.UI
+    local Kit = UI.Kit
+    local f = vgui.Create("EditablePanel")
+    UI.prompts = UI.prompts or {}
+    UI.prompts[f] = true
+    f.OnRemove = function(self) UI.prompts[self] = nil end
+    f:SetSize(Kit.S(460), Kit.S(190))
+    f:Center()
+    f:MakePopup()
+    f:DoModal()
+    f:DockPadding(Kit.S(14), Kit.S(42), Kit.S(14), Kit.S(14))
+    function f:Paint(w, h)
+        Kit.Plate(0, 0, w, h, { title = title, ticks = "all" })
+    end
+    local l = Kit.Label(f, text, 14, nil, Kit.C.text)
+    l:Dock(TOP)
+    l:DockMargin(0, Kit.S(4), 0, 0)
+    local row = vgui.Create("DPanel", f)
+    row:Dock(BOTTOM)
+    row:SetTall(Kit.S(32))
+    row.Paint = nil
+    local ok = Kit.Button(row, okLabel or "OK", function() f:Remove() onOk() end, { accent = true })
+    ok:Dock(RIGHT)
+    ok:SetWide(Kit.S(140))
+    local cancel = Kit.Button(row, "Cancel", function() f:Remove() end)
+    cancel:Dock(RIGHT)
+    cancel:SetWide(Kit.S(100))
+    cancel:DockMargin(0, 0, Kit.S(8), 0)
+    return f
+end
+
+-- "3 days" / "5 hours" until an os.time.
+local function untilText(at)
+    local secs = math.max(0, at - os.time())
+    if secs >= 86400 then
+        local d = math.ceil(secs / 86400)
+        return d .. " day" .. (d == 1 and "" or "s")
+    end
+    local hrs = math.max(1, math.ceil(secs / 3600))
+    return hrs .. " hour" .. (hrs == 1 and "" or "s")
+end
 
 local function learn(n)
     Rhylib.Net.Start("skills.learn")
@@ -250,7 +308,7 @@ local function wrap(text, font, maxW, maxLines)
         keep[maxLines] = keep[maxLines] .. " " .. table.concat(lines, " ", maxLines + 1)
         lines = keep
     end
-    local Kit = Rhylib.Menus and Rhylib.Menus.Kit
+    local Kit = Rhylib.UI and Rhylib.UI.Kit
     for i, l in ipairs(lines) do
         if surface.GetTextSize(l) > maxW and Kit and Kit.Fit then lines[i] = Kit.Fit(l, font, maxW) end
     end
@@ -307,7 +365,7 @@ end
 
 local function build(page)
     local Menus = Rhylib.Menus
-    local Kit = Menus.Kit
+    local Kit = Rhylib.UI.Kit
     local C, S = Kit.C, Kit.S
     local me = LocalPlayer()
 
@@ -327,12 +385,64 @@ local function build(page)
     side:Dock(RIGHT)
     side:SetWide(S(300))
     side:DockMargin(S(10), 0, 0, 0)
-    local reset = Kit.Button(side, "Reset skills", function()
+    local function sendReset()
         Rhylib.Net.Start("skills.reset")
         net.SendToServer()
-    end, { small = true, danger = true, enabled = function() return not (K.ClassOf and K.ClassOf(me)) end })
+    end
+    local reset = Kit.Button(side, "Reset skills", function()
+        local days = tonumber(K.Cfg("resetCooldownDays")) or 0
+        local text = "Every skill you learned is cleared and you can pick again."
+        if not K.Cfg("freePoints") and days > 0 then
+            text = text .. " Your next free reset will be in " .. days .. " day" .. (days == 1 and "" or "s") .. "."
+        end
+        confirm("Reset skills", text, "Reset", sendReset)
+    end, { small = true, danger = true, enabled = function()
+        if K.ClassOf and K.ClassOf(me) then return false end
+        if next(K.Set(me)) == nil then return false end
+        return (K.ResetInfo(me))
+    end })
     reset:Dock(BOTTOM)
     reset:DockMargin(S(10), 0, S(10), S(10))
+    function reset:Think()
+        local why
+        if K.ClassOf and K.ClassOf(me) then why = "You're playing a class: leave it on the Class page first"
+        else
+            local ok, at = K.ResetInfo(me)
+            if not ok then why = at > 0 and ("Next free reset in " .. untilText(at)) or "Skill resets are off on this server" end
+        end
+        if why ~= self.whyShown then
+            self.whyShown = why
+            self:SetTooltip(why or false)
+        end
+    end
+
+    -- Learn: commits the selected skill (a click only selects).
+    local function doLearn(n)
+        local set = K.Set(me)
+        local ok, why = K.CanLearn(me, set, n.id)
+        if not ok then
+            K.lastNote = { text = why, bad = true, at = RealTime() }
+            surface.PlaySound("buttons/button10.wav")
+            return
+        end
+        -- (the first skill of a category commits you to it while onePath is on)
+        if K.Cfg("onePath") and next(K.Commitments(set)) == nil then
+            local cat = K.catById[n.cat]
+            confirm("Choose " .. (cat and cat.name or n.cat), "Learning " .. n.name .. " commits you to the " .. (cat and cat.name or n.cat)
+                .. " path: the other paths close until you reset your skills.", "Learn it", function() learn(n) end)
+            return
+        end
+        learn(n)
+    end
+    local learnBtn = Kit.Button(side, function()
+        if not picked then return "Select a skill" end
+        if K.Set(me)[picked.id] then return "Learned" end
+        return "Learn (" .. picked.cost .. " point" .. (picked.cost == 1 and "" or "s") .. ")"
+    end, function() if picked then doLearn(picked) end end, { small = true, accent = true, enabled = function()
+        return picked ~= nil and stateOf(me, K.Set(me), picked) == "open"
+    end })
+    learnBtn:Dock(BOTTOM)
+    learnBtn:DockMargin(S(10), 0, S(10), S(6))
 
     local tree = vgui.Create("DPanel", page)
     tree:Dock(FILL)
@@ -353,9 +463,26 @@ local function build(page)
         local pts = (K.ClassOf and K.ClassOf(me)) and ("Class preset: " .. K.ClassOf(me).name)
             or K.Cfg("freePoints") and ("Spent " .. spent .. " points  ·  free while testing")
             or ("Points: " .. (K.Points(me) - spent) .. " left of " .. K.Points(me))
-        draw.SimpleText(pts, Kit.Font(12, 600), w * 0.5, h - S(52), C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText(pts, Kit.Font(12, 600), w * 0.5, h - S(84), C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        -- Why Reset is greyed out, under the points.
+        local rok, rat = K.ResetInfo(me)
+        if not rok and next(set) ~= nil and not (K.ClassOf and K.ClassOf(me)) then
+            draw.SimpleText(rat > 0 and ("Next free reset in " .. untilText(rat)) or "Skill resets are off on this server",
+                Kit.Font(11), w * 0.5, h - S(100), C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
+        -- The server's last answer (learned / refused), for 12 s.
+        local note = K.lastNote
+        local lineY = h - S(112)
+        if note and RealTime() - note.at < 12 then
+            local lines = wrap(note.text, Kit.Font(12, 600), w - pad * 2, 2)
+            local ny0 = lineY - #lines * S(16) - S(4)
+            for i, l in ipairs(lines) do
+                draw.SimpleText(l, Kit.Font(12, 600), w * 0.5, ny0 + (i - 1) * S(16), note.bad and C.warn or C.good, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
+            end
+            lineY = ny0 - S(6)
+        end
         Kit.SetCol(C.edgeLight)
-        surface.DrawRect(pad, h - S(68), w - pad * 2, 1)
+        surface.DrawRect(pad, lineY, w - pad * 2, 1)
 
         local n = hovered or picked
         local y = pad
@@ -369,7 +496,7 @@ local function build(page)
             end
             y = y + S(14)
             local rules = {
-                "Hover a skill to read it, click to learn it.",
+                "Hover a skill to read it; click to select it, then Learn below.",
                 "One path at a time, one specialisation per path, one end branch.",
                 "Lines show what each skill needs first.",
             }
@@ -424,7 +551,7 @@ local function build(page)
         draw.SimpleText(where .. "  ·  " .. n.cost .. " pt" .. (n.cost == 1 and "" or "s"), Kit.Font(12), tx, ny + S(2), C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
         y = y + box + S(14)
 
-        local stateText = state == "learned" and "Learned" or (state == "open" and "Click to learn" or why or "Locked")
+        local stateText = state == "learned" and "Learned" or (state == "open" and (n == picked and "Selected: press Learn below" or "Click to select, then Learn") or why or "Locked")
         if state == "learned" and canUndo(me, set, n) then stateText = "Learned · right-click to undo" end
         if state == "excluded" then stateText = "Ruled out: " .. (why or "") end
         stateText = Kit.Fit(stateText, Kit.Font(13, 700), w - pad * 2)
@@ -471,7 +598,7 @@ local function build(page)
 
     -- What the tree shows: once you've picked a specialisation (or an end
     -- branch), the other ones are hidden and yours gets the whole width
-    -- (owner: tidier than squeezing two paths side by side). Returns a view
+    -- (tidier than squeezing two paths side by side). Returns a view
     -- of the category and a key that changes when the pick does.
     local function viewOf(full)
         local _, specs, branches = K.Commitments(K.Set(me))
@@ -659,17 +786,15 @@ local function build(page)
                 if excluded then surface.SetAlphaMultiplier(1) end
                 return true
             end
+            -- A click selects (the side panel's Learn button commits).
             function b:DoClick()
                 picked = n
-                local set = K.Set(me)
-                if set[n.id] then return end
-                local ok, why = K.CanLearn(me, set, n.id)
-                if not ok then
-                    surface.PlaySound("buttons/button10.wav")
-                    chat.AddText(Color(235, 90, 80), "[Skills] ", Color(225, 225, 225), why)
-                    return
-                end
-                learn(n)
+                surface.PlaySound("ui/buttonclick.wav")
+            end
+            -- (double click: select and learn, same rules and confirm)
+            function b:DoDoubleClick()
+                picked = n
+                if not K.Set(me)[n.id] then doLearn(n) end
             end
             -- Right-click: undo a learned skill (misclicks).
             function b:DoRightClick()
@@ -679,6 +804,7 @@ local function build(page)
                 local ok, why = K.CanUnlearn(me, set, n.id)
                 if not ok then
                     surface.PlaySound("buttons/button10.wav")
+                    K.lastNote = { text = n.name .. ": " .. why, bad = true, at = RealTime() }
                     chat.AddText(Color(235, 90, 80), "[Skills] ", Color(225, 225, 225), n.name .. ": " .. why)
                     return
                 end
@@ -714,7 +840,7 @@ local function build(page)
             end
             -- Top tier first: each skill sits under the skills it needs (in
             -- the same column) where it can, so a one-parent link is one
-            -- straight line (owner: lines that jog a few pixels look wrong).
+            -- straight line (lines that jog a few pixels look wrong).
             table.sort(groups, function(a, b) return a.tier < b.tier end)
             local colOf, itemOf = {}, {}
             for _, g in ipairs(groups) do
@@ -936,7 +1062,7 @@ end
 
 local function addPage()
     local Menus = Rhylib.Menus
-    if not (Menus and Menus.AddPage and Menus.Kit) then return end
+    if not (Menus and Menus.AddPage and Rhylib.UI and Rhylib.UI.Kit) then return end
     Menus.AddPage("skills", {
         title = "Skills",
         order = 22,

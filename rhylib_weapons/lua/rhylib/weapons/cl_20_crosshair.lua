@@ -333,6 +333,8 @@ Rhylib.Hook.Add("InitPostEntity", "weapons.hitsound.setting", function()
             desc = "Ticks around the crosshair when your bolt hits", kind = "toggle", convar = "rhylib_crosshair_hitmarker" })
         Menus.AddSetting("Weapons", { id = "wep.xhthick", order = 20, title = "Crosshair thickness",
             desc = "Line thickness (1 = normal)", kind = "slider", convar = "rhylib_crosshair_thickness", min = 0.5, max = 3, decimals = 1 })
+        Menus.AddSetting("Weapons", { id = "wep.xhsmooth", order = 25, title = "Smooth crosshair lines",
+            desc = "Anti-aliased lines (off: plain polygons, if the crosshair looks wrong)", kind = "toggle", convar = "rhylib_crosshair_smooth" })
         Menus.AddSetting("Weapons", { id = "wep.xhopacity", order = 30, title = "Crosshair opacity",
             desc = "1 = solid", kind = "slider", convar = "rhylib_crosshair_opacity", min = 0.1, max = 1, decimals = 2 })
     end

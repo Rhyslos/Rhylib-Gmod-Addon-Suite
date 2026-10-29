@@ -28,10 +28,12 @@
     floating label. Server files: sv_10 pad + MP tools, sv_20 computers,
     sv_30 search + board, sv_40 stats, sv_50 sync, sv_60 orders/leave/
     applications/sessions, sv_70 personnel, sv_80 calls, sv_90 missions.
-    Client files: cl_10 datapad window, cl_20 computer window, cl_30 calls.
+    Client files: cl_10 datapad window, cl_20 computer window (cl_21-26:
+    one file per tab), cl_30 calls.
 
     Data: "dp_pad"/sid (notes on the pad), "dp_log"/battalion and
-    "dp_log"/"__medical" ({ next, list }), "dp_ban"/same keys,
+    "dp_log"/"__medical" (row books: the index { v = 2, next, ids } there,
+    one "dp_logent"/"<key>|<id>" row per entry), "dp_ban"/same keys,
     "dp_places"/map (computer placements). The other modules are listed
     in the file that owns them.
 ]]
@@ -39,11 +41,20 @@
 Rhylib.Datapad = Rhylib.Datapad or {}
 local D = Rhylib.Datapad
 local Config = Rhylib.Config
+if Config.Describe then   -- (Server settings page)
+    Config.Describe("datapad", { name = "Datapad", category = "Units & roles" })
+    Config.Sections("datapad", {
+        { "Notes & logs", { "^noteLimit$", "^titleMax$", "^bodyMax$", "^logCap$", "^medCap$" } },
+        { "Quick response calls", { "^calls$", "^supplyItems$", "^call" } },
+        { "Unit & personnel", { "^strike", "^arrestRange$", "^useRange$", "^class$", "^giveOnSpawn$" } },
+    })
+end
 
 -- (class: the inventory size is given to that SWEP at Initialize, so a new
 -- class needs a map change. logCap/medCap: the computer sends at most 255
 -- entries. arrestRange is also the datapad's search reach for rhylib_mp.)
 Config.Register("datapad", "class", "sw_datapad", "Datapad weapon class (left click with it out opens the datapad)")
+Config.Register("datapad", "giveOnSpawn", true, "Everyone spawns with a datapad (job gear: it can't be dropped for keeps or stored). Off: it only comes from the specialist armoury")
 Config.Register("datapad", "noteLimit", 5, "Notes a trooper's datapad holds before they must upload (MPs and medics: no limit)")
 Config.Register("datapad", "titleMax", 48, "Longest note title (characters)")
 Config.Register("datapad", "bodyMax", 1500, "Longest note text (characters)")
@@ -192,4 +203,65 @@ if CLIENT then
             draw.SimpleText(sub, UI.Font(22), 0, 18, COL_SUB, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         cam.End3D2D()
     end
+end
+
+--------------------------------------------------------------------------
+-- Stats: ids, names and the wire format (server sv_40/50/60/70 write,
+-- clients cl_10/cl_2x read; one list for both sides)
+--------------------------------------------------------------------------
+
+-- Stat ids in the order every stats message writes them (add new ones at
+-- the end).
+D.STAT_KEYS = { "kd", "kp", "de", "rv", "he", "ar", "mi", "mo", "at", "jd", "ev" }
+D.STAT_NAMES = {
+    kd = "Droid kills", kp = "Player kills", de = "Deaths", rv = "Revives",
+    he = "Heals", ar = "Arrests", mi = "Hours", mo = "Money", at = "Attended", jd = "Arrested", ev = "Events",
+}
+-- The short service record line (personnel files, applications); the
+-- caller adds "ar" or "jd" at the end.
+D.STAT_RECORD = { "mi", "ev", "at", "kd", "kp", "de", "rv", "he" }
+
+-- D.StatKeysShown(isMP): D.STAT_KEYS without "jd" for MP battalions (they
+-- count arrests made) or without "ar" for the rest (times arrested).
+function D.StatKeysShown(isMP)
+    local out = {}
+    for _, key in ipairs(D.STAT_KEYS) do
+        if not ((isMP and key == "jd") or (not isMP and key == "ar")) then out[#out + 1] = key end
+    end
+    return out
+end
+
+-- D.StatText(key, v): how a value is shown (minutes as hours, money with commas).
+function D.StatText(key, v)
+    if key == "mi" then return string.format("%.1f", (v or 0) / 60) end
+    if key == "mo" then return string.Comma and string.Comma(v or 0) or tostring(v or 0) end
+    return tostring(v or 0)
+end
+
+-- D.WriteStat(v) / D.ReadStat(): one count on the wire: a bit, then 15
+-- bits for values under 32768 (nearly all), else 32 bits.
+function D.WriteStat(v)
+    v = math.Clamp(math.floor(tonumber(v) or 0), 0, 4294967295)
+    if v < 32768 then
+        net.WriteBool(false)
+        net.WriteUInt(v, 15)
+    else
+        net.WriteBool(true)
+        net.WriteUInt(v, 32)
+    end
+end
+function D.ReadStat()
+    if net.ReadBool() then return net.ReadUInt(32) end
+    return net.ReadUInt(15)
+end
+
+-- D.WriteStatRow(t) / D.ReadStatRow(): every D.STAT_KEYS value of a row, in order.
+function D.WriteStatRow(t)
+    t = t or {}
+    for _, k in ipairs(D.STAT_KEYS) do D.WriteStat(t[k]) end
+end
+function D.ReadStatRow()
+    local t = {}
+    for _, k in ipairs(D.STAT_KEYS) do t[k] = D.ReadStat() end
+    return t
 end

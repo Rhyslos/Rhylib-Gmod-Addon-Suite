@@ -1,7 +1,7 @@
 --[[
     Droids (server): who can be targeted (one list for every droid,
     rebuilt a few times a second), the active cap, and no droid-on-droid
-    damage. Clone NPCs (rhylib_clone, 2026-10-06az) are the other side:
+    damage. Clone NPCs (rhylib_clone) are the other side:
     D.clones, their own cap, targets and friendly-fire rules here too.
 
     Also: suppression (worse aim for a while), the EOD Signal blackout
@@ -14,6 +14,7 @@
 ]]
 
 local D = Rhylib.Droids
+local State = Rhylib.State
 
 D.active = D.active or {}   -- [droid] = true
 D.clones = D.clones or {}   -- [clone NPC] = true
@@ -38,9 +39,10 @@ function D.Count()
     return n
 end
 
--- D.Targets() -> list of living players droids may shoot: not noclipping,
--- spectating, downed, notarget, knocked down, eliminated in a simulation
--- or just respawned from one. Training droids use only this list.
+-- D.Targets() -> list of living players droids may shoot: not spectating
+-- or notarget, and Rhylib.State.Targetable (alive, not noclipping, downed,
+-- knocked down, cloaked, eliminated in a simulation or just respawned from
+-- one: each owning addon answers). Training droids use only this list.
 local targets, targetsAt = {}, 0
 function D.Targets()
     local now = CurTime()
@@ -48,11 +50,7 @@ function D.Targets()
     targetsAt = now
     targets = {}
     for _, p in ipairs(player.GetAll()) do
-        if p:Alive() and p:GetMoveType() ~= MOVETYPE_NOCLIP and p:GetObserverMode() == OBS_MODE_NONE
-            and not p.rhylibDown and not p:IsFlagSet(FL_NOTARGET)
-            and not p:GetNW2Bool("rhylib_simOut", false)   -- (eliminated in training)
-            and (p.rhylibSimImmune or 0) <= now   -- (training respawn protection)
-            and p:GetNW2Float("rhylib_knockEnd", 0) == 0 then   -- (knocked down: can't be hurt)
+        if p:GetObserverMode() == OBS_MODE_NONE and not p:IsFlagSet(FL_NOTARGET) and State.Targetable(p) then
             targets[#targets + 1] = p
         end
     end
@@ -142,7 +140,7 @@ end
 
 -- D.Boosted(npc) -> bool: near a living commander of its own side other
 -- than itself (checked at most twice a second). Clones are also led by
--- players with the Reinforcements skill (rhylib_skills; owner: the player
+-- players with the Reinforcements skill (rhylib_skills; the player
 -- is the commander). Boosted: cone x cmdSpread, reaction x cmdReaction,
 -- pause between bursts x cmdPause. Never while blacked out.
 function D.Boosted(droid)
@@ -171,7 +169,7 @@ function D.Boosted(droid)
     local K = Rhylib.Skills
     if not boost and clone and K and K.Has then
         for _, p in ipairs(player.GetAll()) do
-            if p:Alive() and not p.rhylibDown and p:GetPos():DistToSqr(pos) < r * r and (K.HasReinforcements and K.HasReinforcements(p) or K.Has(p, "reinforcements")) then
+            if p:Alive() and not State.IsDown(p) and p:GetPos():DistToSqr(pos) < r * r and (K.HasReinforcements and K.HasReinforcements(p) or K.Has(p, "reinforcements")) then
                 boost = true
                 break
             end

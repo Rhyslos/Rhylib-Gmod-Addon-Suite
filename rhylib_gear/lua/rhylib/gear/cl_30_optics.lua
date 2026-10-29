@@ -90,10 +90,7 @@ local function free()
     return not vgui.GetKeyboardFocus() and not gui.IsGameUIVisible() and not gui.IsConsoleVisible()
 end
 
-local function keyDown(var)
-    local code = input.GetKeyCode(var:GetString())
-    return code and code > 0 and input.IsButtonDown(code)
-end
+local keyDown = G.KeyDown   -- (sh_00_config.lua)
 
 -- Helmet gear key: optics up (binoculars first) or down, or the helmet
 -- lights on / off (they can't be worn together). Mode key: looking <-> weapon mode.
@@ -118,9 +115,9 @@ Rhylib.Hook.Add("Think", "gear.optics.key", function()
             Rhylib.Net.Start("gear.lights")
             net.SendToServer()
         elseif not G.HelmetOn(me) then
-            notification.AddLegacy("Put your helmet on first", NOTIFY_HINT, 3)
+            Rhylib.Notify(nil, "Put your helmet on first", "bad", "Gear")
         else
-            notification.AddLegacy("You need macrobinoculars, a rangefinder, a sun visor or helmet lights worn", NOTIFY_HINT, 3)
+            Rhylib.Notify(nil, "You need macrobinoculars, a rangefinder, a sun visor or helmet lights worn", "bad", "Gear")
         end
     end
     wasDown = down
@@ -204,7 +201,7 @@ Rhylib.Hook.Add("CalcView", "gear.visor.zoom", function(ply, pos, angles, fov, z
         G.visorFov = 1
         return
     end
-    local want = visorZoom and math.max(1, tonumber(G.Cfg("visorZoom")) or 3) or 1
+    local want = visorZoom and math.max(1, G.Cfg("visorZoom")) or 1
     visorFov = Lerp(math.min(1, FrameTime() * 12), visorFov, want)
     if math.abs(visorFov - want) < 0.01 then visorFov = want end
     G.visorFov = visorFov   -- (the crosshair scales its spread by it)
@@ -230,7 +227,7 @@ end, -110)
 -- only lifts the dark, so it's fine in daylight too)
 local function nvOn() return (nv and kindUp() ~= 0) or (kindUp() == 0 and visorDown()) end
 local function nvMode()
-    local m = tonumber(G.Cfg("nvMode")) or 1
+    local m = G.Cfg("nvMode")
     return math.Clamp(math.floor(m), 0, 2)
 end
 G.NightVision = nvOn
@@ -261,8 +258,8 @@ local tab = {
     ["$pp_colour_mulr"] = 0, ["$pp_colour_mulg"] = 0, ["$pp_colour_mulb"] = 0,
 }
 local function filter(mode)
-    local lift = tonumber(G.Cfg("nvLift")) or 0.04
-    local boost = math.max(1, tonumber(G.Cfg("nvBoost")) or 1.5)
+    local lift = G.Cfg("nvLift")
+    local boost = math.max(1, G.Cfg("nvBoost"))
     local g = mode == 1 and gain or 1
     if mode == 0 then boost = boost + 0.6 end   -- (filter only: nothing else brightens it)
     -- (the sun visor's night vision is red, the optics' green)
@@ -303,8 +300,8 @@ Rhylib.Hook.Add("PreRender", "gear.optics.nvamp", function()
     local me = LocalPlayer()
     amp:SetPos(me:EyePos())
     amp:SetAngles(me:EyeAngles())
-    amp:SetFarZ(math.max(200, tonumber(G.Cfg("nvLightRange")) or 4000))
-    amp:SetBrightness((tonumber(G.Cfg("nvGain")) or 2.5) * gain)
+    amp:SetFarZ(math.max(200, G.Cfg("nvLightRange")))
+    amp:SetBrightness(G.Cfg("nvGain") * gain)
     amp:Update()
 end)
 
@@ -329,11 +326,11 @@ Rhylib.Hook.Add("PostRender", "gear.optics.nvlit", unlit)
 local function nvFog(scale)
     if not (nvOn() and nvMode() > 0) then return end
     -- (off by default: it hid everything past it, and binoculars look far)
-    local range = tonumber(G.Cfg("nvRange")) or 0
+    local range = G.Cfg("nvRange")
     if range <= 0 then return end
     scale = scale or 1
     range = math.max(200, range)
-    local from = math.Clamp(tonumber(G.Cfg("nvFadeFrom")) or 600, 0, range - 50)
+    local from = math.Clamp(G.Cfg("nvFadeFrom"), 0, range - 50)
     render.FogMode(MATERIAL_FOG_LINEAR)
     render.FogStart(from * scale)
     render.FogEnd(range * scale)
@@ -351,7 +348,7 @@ local function redTint()
     cam.Start2D()
     render.OverrideBlend(true, BLEND_DST_COLOR, BLEND_ZERO, BLENDFUNC_ADD)
     draw.NoTexture()
-    surface.SetDrawColor(255, 110, 95, 255)   -- (owner: a little less red than 70/55)
+    surface.SetDrawColor(255, 110, 95, 255)
     surface.DrawRect(0, 0, ScrW(), ScrH())
     render.OverrideBlend(false)
     cam.End2D()
@@ -556,7 +553,7 @@ local function nvLayer(w, h, x0, y0, x1, y1)
     end
 end
 
--- The sun visor's picture (owner's reference: the clones' red helmet
+-- The sun visor's picture (reference: the clones' red helmet
 -- view): a square grid over the screen, a red scan line climbing up it,
 -- light grain (more with night vision). Drawn under the HUD.
 local function visorLayer(w, h)
@@ -568,7 +565,7 @@ local function visorLayer(w, h)
     for x = (w % step) * 0.5, w, step do surface.DrawRect(math.floor(x), 0, 1, h) end
     for y = (h % step) * 0.5, h, step do surface.DrawRect(0, math.floor(y), w, 1) end
     -- Scan line, bottom to top in 3.5 s with a soft glow under it, then a
-    -- 3.5 s pause off screen (owner: it came back too often).
+    -- 3.5 s pause off screen (so it doesn't come back too often).
     local SWEEP, PAUSE = 3.5, 3.5
     local t = now % (SWEEP + PAUSE)
     if t < SWEEP then
@@ -678,7 +675,7 @@ Rhylib.Hook.Add("HUDPaint", "gear.optics.overlay", function()
 end, 200)
 
 -- Weapon mode, first person: the viewer under the HUD; rhylib_hud drops the
--- visor then, so the third-person HUD shows over it (owner: cleanest).
+-- visor then, so the third-person HUD shows over it.
 Rhylib.Hook.Add("HUDPaint", "gear.optics.under", function()
     local me = LocalPlayer()
     if kindUp() == 0 or looking() then return end

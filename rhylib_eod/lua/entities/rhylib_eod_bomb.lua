@@ -16,6 +16,18 @@
     to "simple", "small", "large", "custom" or "training".
 ]]
 
+-- Colours used while drawing (made once, not every frame).
+local COL_10_10_10_255 = Color(10, 10, 10, 255)
+local COL_110_30_30 = Color(110, 30, 30)
+local COL_160_50_45 = Color(160, 50, 45)
+local COL_20_20_20 = Color(20, 20, 20)
+local COL_235_50_45 = Color(235, 50, 45)
+local COL_245_200_40_255 = Color(245, 200, 40, 255)
+local COL_255_120_120 = Color(255, 120, 120)
+local COL_255_60_50 = Color(255, 60, 50)
+local COL_80_220_120 = Color(80, 220, 120)
+local COL_90_40_40 = Color(90, 40, 40)
+
 AddCSLuaFile()
 
 ENT.Type = "anim"
@@ -95,28 +107,28 @@ if CLIENT then
         cam.Start3D2D(top, ang, 0.08)
             local hasTimer = self:GetNW2Bool("rhylib_eodTimer", false)
             local w, h = 220, 70
-            draw.RoundedBox(4, -w / 2, -h / 2, w, h, Color(10, 10, 10, 255))
+            draw.RoundedBox(4, -w / 2, -h / 2, w, h, COL_10_10_10_255)
             local txt, col
             if safe then
-                txt, col = "SAFE", Color(80, 220, 120)
+                txt, col = "SAFE", COL_80_220_120
             elseif hasTimer then
                 local endT = self:GetNW2Float("rhylib_eodEnd", 0)
                 local left = endT > 0 and math.max(0, endT - now) or self:GetNW2Float("rhylib_eodLeft", 0)
                 txt = string.FormattedTime(left, "%02i:%02i")
                 if self:GetNW2Bool("rhylib_eodStop", false) then
-                    col = Color(90, 40, 40)
+                    col = COL_90_40_40
                 elseif endT > 0 then
-                    col = (left < 10 and now % 0.5 < 0.25) and Color(255, 120, 120) or Color(235, 50, 45)
+                    col = (left < 10 and now % 0.5 < 0.25) and COL_255_120_120 or COL_235_50_45
                 else
-                    col = Color(160, 50, 45)
+                    col = COL_160_50_45
                 end
             else
-                txt, col = "RX", (now % 1.2 < 0.15) and Color(255, 60, 50) or Color(110, 30, 30)
+                txt, col = "RX", (now % 1.2 < 0.15) and COL_255_60_50 or COL_110_30_30
             end
             draw.SimpleText(txt, DIGITS, 0, 0, col, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
             if self.IsTrainingBomb then
-                draw.RoundedBox(4, -w / 2, h / 2 + 4, w, 26, Color(245, 200, 40, 255))
-                draw.SimpleText("TRAINING", SMALL, 0, h / 2 + 17, Color(20, 20, 20), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                draw.RoundedBox(4, -w / 2, h / 2 + 4, w, 26, COL_245_200_40_255)
+                draw.SimpleText("TRAINING", SMALL, 0, h / 2 + 17, COL_20_20_20, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
             end
         cam.End3D2D()
     end

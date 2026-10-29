@@ -436,9 +436,9 @@ function Inv.Deposit(ply, uid, x, y, rot, single)
     end
 
     if storage.kind == "depot" then
-        -- Handing in: anything goes into any depot and is gone (owner
-        -- 2026-10-08: a quick way to get rid of a gun, a part or ammo
-        -- without finding the right cabinet; not just its own issued stock).
+        -- Handing in: anything goes into any depot and is gone (a quick
+        -- way to get rid of a gun, a part or ammo without finding the
+        -- right cabinet; not just its own issued stock).
         if n >= inst.count then I.removeInst(ply, st, uid) else
             inst.count = inst.count - n
             I.update(ply, st, inst)
@@ -468,6 +468,7 @@ function Inv.Deposit(ply, uid, x, y, rot, single)
         storage.items[o.uid] = o
         sendChange(storage, OP_SET, o)
     else
+        I.undoCapture(ply, inst)
         I.sendSet(ply, st, inst)
         return
     end
@@ -657,6 +658,7 @@ local function storeAll(ply, st, storage)
             end
             if left > 0 then left = Inv.StorageAdd(storage, inst.id, left, data) end
             local moved = inst.count - left
+            if moved <= 0 then I.undoCapture(ply, inst) end
             if moved > 0 then
                 stored = stored + 1
                 if moved >= inst.count then I.removeInst(ply, st, inst.uid) else

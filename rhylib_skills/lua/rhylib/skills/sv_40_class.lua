@@ -118,10 +118,15 @@ Rhylib.Net.Receive("skills.classmode", function(ply)
     staffToggle(ply, net.ReadBool())
 end, { rate = 1, burst = 2 })
 
-concommand.Add("rhylib_classmode", function(ply, _, args)
-    local on = args[1] == nil and not K.ClassMode() or args[1] == "1"
-    staffToggle(IsValid(ply) and ply or nil, on)
-end)
+-- rhylib_classmode [0|1] (no argument toggles): staffToggle checks the
+-- permission and answers itself.
+Rhylib.Command.Add({
+    name = "rhylib_classmode", help = "Class mode on (1), off (0) or toggle", args = "[0|1]", tag = "Skills",
+    fn = function(ply, args)
+        local on = args[1] == nil and not K.ClassMode() or args[1] == "1"
+        staffToggle(IsValid(ply) and ply or nil, on)
+    end,
+})
 
 -- Saved state: class mode itself (at load and again once the map is up),
 -- then each joining player's class.

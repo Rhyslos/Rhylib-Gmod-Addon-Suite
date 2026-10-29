@@ -20,6 +20,7 @@
 local HUD = Rhylib.HUD
 local UI = Rhylib.UI
 local Config = Rhylib.Config
+local cfg = Config.For("hud")
 
 -- Head bone id per model, so LookupBone runs once per model, not per frame.
 local headBone = {}
@@ -53,11 +54,11 @@ local nameCol, outlineCol = Color(255, 255, 255), Color(0, 0, 0)
 Rhylib.Hook.Add("HUDPaint", "hud.target", function()
     if HUD.Hidden() then return end
     local me = LocalPlayer()
-    local range = Config.Get("hud", "targetRange")
+    local range = cfg("targetRange")
 
     local ent = me:GetEyeTrace().Entity
     -- (invisible staff, rhylib_admin: no name card)
-    if IsValid(ent) and ent:IsPlayer() and ent:Alive() and not ent:GetNW2Bool("rhylib_cloak") and ent:GetPos():DistToSqr(me:GetPos()) < range * range then
+    if IsValid(ent) and ent:IsPlayer() and ent:Alive() and not ent:GetNW2Bool(Rhylib.NW.CLOAK) and ent:GetPos():DistToSqr(me:GetPos()) < range * range then
         target, seenAt = ent, RealTime()
     end
 
@@ -66,7 +67,7 @@ Rhylib.Hook.Add("HUDPaint", "hud.target", function()
     if fade <= 0 or not IsValid(target) then return end
 
     -- (anchored on the interpolated eye position: the head bone's cached
-    -- matrix trailed behind moving players and the plate lagged, owner 2026-10-07)
+    -- matrix trailed behind moving players and the plate lagged)
     local scr = (target:EyePos() + UP_PLATE):ToScreen()
     if not scr.visible then return end
 
@@ -141,13 +142,13 @@ Rhylib.Hook.Add("PostDrawTranslucentRenderables", "hud.icons", function(depth, s
     if depth or skybox then return end
     local me = LocalPlayer()
     local eye = EyePos()
-    local range = Config.Get("hud", "iconRange")
+    local range = cfg("iconRange")
     local rangeSqr = range * range
     local ang = Angle(0, EyeAngles().y - 90, 90)
     local t = RealTime()
 
     for _, ply in ipairs(player.GetAll()) do
-        if ply:Alive() and not ply:IsDormant() and (ply ~= me or me:ShouldDrawLocalPlayer()) and not ply:GetNW2Bool("rhylib_cloak") then
+        if ply:Alive() and not ply:IsDormant() and (ply ~= me or me:ShouldDrawLocalPlayer()) and not ply:GetNW2Bool(Rhylib.NW.CLOAK) then
             local speaking, typing = ply:IsSpeaking(), ply:IsTyping() or ply:GetNW2Bool("rhylib_typing")  -- (the second: rhylib_chat)
             if (speaking or typing) and ply:GetPos():DistToSqr(eye) < rangeSqr then
                 local pos = headPos(ply) + UP28

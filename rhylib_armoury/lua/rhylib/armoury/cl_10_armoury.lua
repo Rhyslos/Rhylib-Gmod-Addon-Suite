@@ -9,7 +9,7 @@
     1 = unclaim) for the owner's buttons.
 ]]
 
-net.Receive(Rhylib.Net.Name("armoury.prompt"), function()
+Rhylib.Net.Receive("armoury.prompt", function()
     local ent = net.ReadEntity()
     if not IsValid(ent) then return end
     Derma_Query(

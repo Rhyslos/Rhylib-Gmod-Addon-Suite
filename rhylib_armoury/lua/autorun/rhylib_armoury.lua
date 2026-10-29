@@ -8,4 +8,8 @@ end
 
 -- Needs rhylib_inventory too. That loads after this file (alphabetical),
 -- so the armoury code only looks it up when it's used.
-Rhylib.LoadModule("armoury", { name = "Rhy's Armoury", version = "0.1.0" })
+Rhylib.LoadModule("armoury", {
+    name = "Rhy's Armoury",
+    version = "0.1.0",
+    needs = { "inventory" },
+})

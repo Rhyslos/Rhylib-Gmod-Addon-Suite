@@ -37,6 +37,11 @@
 Rhylib.Bounty = Rhylib.Bounty or {}
 local B = Rhylib.Bounty
 local Config = Rhylib.Config
+if Config.Describe then Config.Describe("bounty", { name = "Bounty hunters", category = "Units & roles" }) end   -- (Server settings page)
+
+-- B.After(id, fn): run fn once module `id` is loaded (now if it already
+-- is): rhylib_core's Rhylib.After.
+function B.After(id, fn) return Rhylib.After(id, fn) end
 
 B.CONTRACT = "rhylib_bounty_contract"
 B.PROOF = "rhylib_bounty_proof"
@@ -57,6 +62,10 @@ Config.Register("bounty", "life", 7200, "Seconds (real time) before an unclaimed
 Config.Register("bounty", "maxPerPoster", 3, "Open bounties one player may have posted at once")
 Config.Register("bounty", "aliveBonus", 1.25, "Dead-or-alive office (staff) bounties pay this much more when the target is brought in alive (players' bounties pay what was put up)")
 Config.Register("bounty", "collectTime", 5, "Seconds to collect proof from a body")
+Config.Register("bounty", "bindAutoRelease", 600, "Seconds someone bound with binders and left alone (not escorted, no hunter within bindNearRange) waits before slipping free (0 = never)")
+Config.Register("bounty", "bindNearRange", 1500, "A bounty hunter this close (units) counts as holding a bound prisoner")
+Config.Register("bounty", "notifyTarget", true, "Tell a player in chat when a bounty is posted on them")
+Config.Register("bounty", "notifyAmount", true, "Say the reward in that message (off: only that there is one)")
 Config.Register("bounty", "bodyLife", 150, "Seconds a bounty target's body stays (proof can be taken until then)")
 Config.Register("bounty", "contracts", 1, "Contracts a hunter can hold at once (Guild licence: contractsSkill)")
 Config.Register("bounty", "contractsSkill", 2, "Contracts a hunter with Guild licence can hold")
@@ -97,15 +106,16 @@ function B.MayHunt(ply)
     return not B.Cfg("hunterOnly") or B.IsHunter(ply)
 end
 
--- B.Has(ply, skill): a Bounty hunter skill (false without rhylib_skills).
+-- B.Has(ply, skill): a Bounty hunter skill (false without rhylib_skills),
+-- and only while they may hunt (B.MayHunt): learned skills sleep in other jobs.
 function B.Has(ply, id)
     local K = Rhylib.Skills
-    return K ~= nil and K.Has ~= nil and K.Has(ply, id) or false
+    return K ~= nil and K.Has ~= nil and K.Has(ply, id) and B.MayHunt(ply) or false
 end
 
 -- B.ContractLimit(ply): contracts the player may hold at once.
 function B.ContractLimit(ply)
-    return B.Has(ply, "bh_licence") and (B.Cfg("contractsSkill") or 2) or (B.Cfg("contracts") or 1)
+    return B.Has(ply, "bh_licence") and B.Cfg("contractsSkill") or B.Cfg("contracts")
 end
 
 -- Contract / proof notes start with "#<bounty id> " (contracts) so the
@@ -116,7 +126,7 @@ function B.NoteBid(note)
 end
 
 --------------------------------------------------------------------------
--- Items (rhylib_inventory loads after us: also on Rhylib.ModuleLoaded)
+-- Items (rhylib_inventory loads after us: B.After)
 --------------------------------------------------------------------------
 
 local function registerItems()
@@ -137,8 +147,7 @@ local function registerItems()
         })
     end
 end
-registerItems()
-Rhylib.Hook.Add("Rhylib.ModuleLoaded", "bounty.items", function(id) if id == "inventory" then registerItems() end end)
+B.After("inventory", registerItems)
 
 -- Turn the DarkRP money setting (rhylib_roster) on by default: bounties pay
 -- in DarkRP money. A value saved in Server settings still wins.
@@ -147,9 +156,12 @@ local function moneyDefault()
     local host = Config.values and Config.values.roster
     if host and host.money ~= nil then return end   -- (a host config file chose already)
     Config.Set("roster", "money", true)
+    if SERVER and not Rhylib.Bounty.moneyTold then
+        Rhylib.Bounty.moneyTold = true
+        Rhylib.Print("bounty", "DarkRP money is ON for the whole server (paydays, /give, doors), because Rhy's Bounty Hunters is installed. Set roster money in a host config file to choose yourself.")
+    end
 end
-moneyDefault()
-Rhylib.Hook.Add("Rhylib.ModuleLoaded", "bounty.money", function(id) if id == "roster" then moneyDefault() end end)
+B.After("roster", moneyDefault)
 
 -- Grenades that need a trooper skill (droid popper, flash charge) are
 -- allowed for bounty hunters (they can't learn the trooper trees).
@@ -221,12 +233,12 @@ function B.WrapSkills()
     if draw then
         K.DrawMult = function(ply, wep)
             local m = draw(ply, wep)
-            if IsValid(wep) and wep.BountyPistol and K.Has(ply, "bh_draw") then m = math.min(m, B.Mult("quickDraw")) end
+            if IsValid(wep) and wep.BountyPistol and B.Has(ply, "bh_draw") then m = math.min(m, B.Mult("quickDraw")) end
             return m
         end
     end
     local function scoped(ply, wep)
-        return IsValid(wep) and wep.BountySniper and wep.GetAiming and wep:GetAiming() and K.Has(ply, "bh_scope")
+        return IsValid(wep) and wep.BountySniper and wep.GetAiming and wep:GetAiming() and B.Has(ply, "bh_scope")
     end
     if spread then
         K.SpreadMult = function(ply, wep)
@@ -244,8 +256,7 @@ function B.WrapSkills()
     end
     if SERVER and B.WrapServerSkills then B.WrapServerSkills() end
 end
-addTree()
-Rhylib.Hook.Add("Rhylib.ModuleLoaded", "bounty.skills", function(id) if id == "skills" then addTree() end end)
+B.After("skills", addTree)
 
 -- Quiet steps: no footsteps while walking or crouching (both realms, so
 -- the player's own prediction stays quiet too).
@@ -293,6 +304,10 @@ function B.Gun(SWEP, opts)
             return IsValid(o) and o:IsPlayer() and B.Has(o, "bh_stun") or false
         end
         if name == "dual" and self:CarriedCount() < 2 then return false end
+        if name == "dual" and opts.dual then   -- (hunter skill: only while hunting, B.Has)
+            local o = self:GetOwner()
+            return IsValid(o) and o:IsPlayer() and B.Has(o, opts.dual) or false
+        end
         local K = Rhylib.Skills
         if not (K and K.ModeAllowed) then return true end
         return K.ModeAllowed(self:GetOwner(), self, name)

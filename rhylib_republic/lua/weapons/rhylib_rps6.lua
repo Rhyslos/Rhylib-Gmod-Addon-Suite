@@ -12,7 +12,7 @@
 
     Uses a prop model (models/jajoff/sps/cgiweapons/tc13j/rps.mdl), held in
     first person by the trooper hands on the HL2 launcher (CarrierVM). The model's addon must be
-    installed. Tune with rhylib_vm_editor, then paste its lines below.
+    installed. Tune with rhylib_vm_editor (Rhy's Dev Tools), then paste its lines below.
     All numbers are first guesses for tuning.
 
     Class rhylib_rps6. Shared: one file for server and client (AddCSLuaFile).
@@ -89,7 +89,7 @@ SWEP.StartMags = 3
 SWEP.StartCells = 0
 
 -- Inventory size in cells
-SWEP.InvW = 6   -- (long guns are 6 long, the inventory is 6 wide; owner 2026-10-07)
+SWEP.InvW = 6   -- (long guns are 6 long, the inventory is 6 wide)
 SWEP.InvH = 1
 SWEP.InvLarge = true
 SWEP.InvWeight = 8           -- kg
@@ -143,7 +143,7 @@ function SWEP:LockedTarget()
     local t = self:GetLockTarget()
     local st = self:GetLockStart()
     if not IsValid(t) or st <= 0 then return nil end
-    if CurTime() - st < (Config.Get("weapons", "lockTime") or 1.2) then return nil end
+    if CurTime() - st < (Config.Get("weapons", "lockTime")) then return nil end
     return t
 end
 
@@ -213,8 +213,8 @@ if SERVER then
     function SWEP:FindLockTarget(owner)
         local eye = owner:GetShootPos()
         local aim = owner:GetAimVector()
-        local range = Config.Get("weapons", "lockRange") or 6000
-        local cosCone = math.cos(math.rad(Config.Get("weapons", "lockCone") or 6))
+        local range = Config.Get("weapons", "lockRange")
+        local cosCone = math.cos(math.rad(Config.Get("weapons", "lockCone")))
         local best, bestDot
         local function try(e)
             if not lockable(e) then return end
@@ -300,7 +300,7 @@ if CLIENT then
                 TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, Color(0, 0, 0, 160))
             return
         end
-        local need = Rhylib.Config.Get("weapons", "lockTime") or 1.2
+        local need = Rhylib.Config.Get("weapons", "lockTime")
         local k = math.Clamp((CurTime() - self:GetLockStart()) / need, 0, 1)
         local locked = k >= 1
         -- A box round the target, closing in while it locks.

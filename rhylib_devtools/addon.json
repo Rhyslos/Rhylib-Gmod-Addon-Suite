@@ -1,0 +1,13 @@
+{
+	"title": "Rhy's Dev Tools",
+	"type": "tool",
+	"tags": [
+		"roleplay",
+		"build"
+	],
+	"ignore": [
+		"*.md",
+		"*.psd",
+		"*.bat"
+	]
+}

@@ -4,7 +4,7 @@
     the left arm: bolts from the front stop on it (rhylib_weapons
     sh_60_shield.lua), and so does a breaching charge's blast.
 
-    2026-10-08 (owner): right mouse aims like any gun again; the shield
+    Right mouse aims like any gun again; the shield
     bash has its own key (client convar rhylib_shield_bash_key, default X,
     Settings > Controls), sent to the server (net wep.shieldbash).
     This CG shield is the proficient one (SWEP.ShieldProficiency): Hold
@@ -16,7 +16,7 @@
     the kind's list wins): cs574's shields pack (Workshop dependency):
     models/cs574/weapons/shields/shield2.mdl (CG) and blast_shield.mdl
     (Republic); the old packs as fallbacks. Tune in game:
-    rhylib_extra_editor (shield and arms), rhylib_vm_editor /
+    rhylib_extra_editor (Rhy's Dev Tools) (shield and arms), rhylib_vm_editor /
     rhylib_wm_editor (the gun).
 
     First person: the DC-15S's own viewmodel (left arm folded away), the
@@ -51,7 +51,7 @@ SWEP.ShieldProficiency = true -- (Hold the line, Phalanx, stun bash: CG shield o
 SWEP.BashStun = true          -- (the bash stuns a player: MPs with Shield bash)
 SWEP.BashSkill = "shield_bash"
 SWEP.HoldType = "duel"   -- (third person: left arm up holding the shield, right hand the gun; cs574's shields use it)
--- On safety / sprinting (2026-10-09, owner: no bash; 2026-10-09c: only the
+-- On safety / sprinting (no bash; only the
 -- gun turns, straight up, 90°): first person the gun turns muzzle-up around
 -- the hand (rhylib_base PistolLowerPivot), the shield stays put
 -- (vmIgnoreGunPose); third person it hangs at the side ("normal"; GMod has
@@ -61,12 +61,12 @@ SWEP.PistolLowerTilt = 90
 SWEP.PistolLowerPivot = Vector(14, 5, -8)   -- (forward, right, up: about the gun hand; guess)
 SWEP.PistolLowerPos = Vector(0, 0, -1)
 
--- Aiming (AimPos: right, forward, up). CG shield (2026-10-09g, owner): the
+-- Aiming (AimPos: right, forward, up). CG shield: the
 -- shield stays angled on the left, so the gun comes up slightly. The
 -- Republic shield's own file drops it below the viewport instead.
-SWEP.AimPos = Vector(-2.5, 1, 3.5)   -- (2026-10-09h, owner: further in and up the screen)
+SWEP.AimPos = Vector(-2.5, 1, 3.5)   -- (further in and up the screen)
 
--- First person (2026-10-09b, owner: hold it like a handgun): the DC-15S on
+-- First person (hold it like a handgun): the DC-15S on
 -- the DC-17's pistol hands (bf2017 c_scoutblaster, with its firing kick),
 -- using the values tuned for the DC-15S's sidearm mode (owner-confirmed).
 -- The shield isn't hand-held (it's placed in the view), so the left arm is
@@ -77,11 +77,11 @@ SWEP.CarrierBoneMove = Vector(0, 0, 0)
 SWEP.PropBonePos = Vector(-1.5, 9, 0.5)
 SWEP.PropBoneAng = Angle(-2, 89, 0)
 SWEP.PropBoneScale = 0.8
-SWEP.VMOffset = Vector(0, 0, -2.5)   -- (right, forward, up: lower, owner 2026-10-09c)
+SWEP.VMOffset = Vector(0, 0, -2.5)   -- (right, forward, up: lower)
 SWEP.CarrierHideBones = { "ValveBiped.Bip01_L_UpperArm" }
 SWEP.CarrierBoneMods = nil
 
--- Semi only (2026-10-09, owner: no auto with a shield; stun stays for MPs),
+-- Semi only (no auto with a shield; stun stays for MPs),
 -- no sidearm mode (it's always held like a sidearm now).
 SWEP.FireModes = { "semi", "stun" }
 SWEP.ModeReplaces = {}
@@ -89,7 +89,7 @@ SWEP.ModeProxies = {}
 SWEP.ModeHoldTypes = {}
 SWEP.ModeFireGestures = {}
 
--- More accurate than the plain DC-15S (owner 2026-10-09; its hip 1.4 /
+-- More accurate than the plain DC-15S (its hip 1.4 /
 -- aim 0.7, bloom 0.11 up to 2.0). Its own table, so Server settings "guns"
 -- changes to the DC-15S don't reach it.
 SWEP.Spread = {
@@ -103,7 +103,7 @@ SWEP.Spread = {
     aimOffsetMult = 0.6,
 }
 
--- Firing through the viewport (2026-10-09, owner): only with the Shock
+-- Firing through the viewport: only with the Shock
 -- Trooper "Riot shield" skill; anyone else aiming a shield is in full
 -- cover and can't fire. Without rhylib_skills: the CG shield may, the
 -- Republic shield may not.
@@ -127,21 +127,21 @@ local SHIELDS = {
     -- cs574's models: 36 wide (X), ~5 thick (front face -Y), ~69 tall (Z),
     -- the handle near the origin. Placed in the view (first person) and at
     -- the left forearm turned with the body (third person), turned 90° so
-    -- the face points ahead (owner 2026-10-08: the bone placement lay
+    -- the face points ahead (the bone placement lay
     -- them flat / filled the screen).
-    -- Third person (2026-10-09j, owner): held by the left hand like cs574's
+    -- Third person: held by the left hand like cs574's
     -- own shield weapons (their numbers: the player model's
     -- anim_attachment_LH, forward/right/up offset, turned 90-100°, scale 1)
     -- with the two-handed "duel" hold type raising the left arm, so it
     -- follows every animation. (The chest anchor, Spine2, clipped.)
     -- First person: about 40% of the screen wide on the left, top a quarter
-    -- down the screen (2026-10-08b: the forearm anchor put it inside the
+    -- down the screen (the forearm anchor put it inside the
     -- body, and 0.45 was tiny in the viewmodel's narrower field of view).
-    -- First person has two poses (2026-10-08d, owner): not aiming = out on
+    -- First person has two poses: not aiming = out on
     -- the left, face turned ~45° to the left (blocks only a wedge there,
     -- sh_60_shield); aiming = centre-left, flat to the front, top just under
     -- the crosshair. Blended by the aim (vmPosAim / vmAngAim).
-    -- Aimed (2026-10-09, owner: line the viewport up with the view): the
+    -- Aimed (line the viewport up with the view): the
     -- frame becomes the camera itself (vmAimAnchor "eyes"), so a point at
     -- right 0 / up 0 sits on the crosshair. Read from the models' meshes:
     -- blast_shield's slit is x -8.5..9.0, z 14.9..19.5 (centre x 0.25,
@@ -150,7 +150,7 @@ local SHIELDS = {
     -- the left when turned 90°, so right = +0.9 × x centres it.
     cg = { model = "models/cs574/weapons/shields/shield2.mdl", vmAnchor = "view", vmAimAnchor = "eyes", vmIgnoreGunPose = true, wmAttach = "anim_attachment_LH", wmBone = "ValveBiped.Bip01_L_Hand",
         vmPos = Vector(24, -24, -9), vmAng = Angle(0, 135, 0), vmScale = 0.9,
-        -- (2026-10-09f, owner: the CG shield keeps its angle when aiming and is
+        -- (the CG shield keeps its angle when aiming and is
         -- only pulled in closer, so they see better; it still blocks the front
         -- cone while aimed, weapons cgShieldArc)
         vmPosAim = Vector(17, -16, -8), vmAngAim = Angle(0, 135, 0),
@@ -158,7 +158,7 @@ local SHIELDS = {
     rep = { model = "models/cs574/weapons/shields/blast_shield.mdl", vmAnchor = "view", vmAimAnchor = "eyes", vmIgnoreGunPose = true, wmAttach = "anim_attachment_LH", wmBone = "ValveBiped.Bip01_L_Hand",
         vmPos = Vector(24, -24, -17), vmAng = Angle(0, 135, 0), vmScale = 0.9,
         vmPosAim = Vector(22, 0.2, -15.5), vmAngAim = Angle(0, 90, 0),
-        wmPos = Vector(5, 5, -10), wmAng = Angle(0, 100, 0), wmScale = 1 },   -- (2026-10-09o, owner: like the CG shield: its numbers, 8 lower since this model's middle sits 8 higher above its handle)
+        wmPos = Vector(5, 5, -10), wmAng = Angle(0, 100, 0), wmScale = 1 },   -- (like the CG shield: its numbers, 8 lower since this model's middle sits 8 higher above its handle)
     -- (older packs, used when cs574's isn't installed)
     tf2 = { model = "models/workshop/weapons/c_models/c_batonshield/c_batonshield_shield.mdl",
         vmPos = Vector(30.851, 42.902, -5.067), vmAng = Angle(0.535, 54.853, 5.843), vmScale = 1,
@@ -257,12 +257,12 @@ end
 SWEP.InvW = 3
 SWEP.InvH = 2
 SWEP.InvLarge = true
--- Carried on the back (owner 2026-10-09): only in the back slot, so a shield
+-- Carried on the back: only in the back slot, so a shield
 -- and a backpack / jetpack can't be carried together. Still goes on the
 -- hotbar from there.
 SWEP.InvSlot = "back"
 SWEP.InvSlotOnly = true
--- CG shield vs the Republic shield (owner 2026-10-09: the CG one must be
+-- CG shield vs the Republic shield (the CG one must be
 -- better): lighter (7 vs 9 kg), faster on foot (0.92 vs 0.85), wider cover
 -- (weapons cgShieldArc / cgShieldSideArc), halves blasts it's held up
 -- against (cgShieldBlast), fires through its viewport (Riot shield skill,
@@ -278,7 +278,7 @@ function SWEP:GetMoveMult()
     return math.min(m, self.MoveMult)
 end
 
--- Shield bash (own key, net wep.shieldbash; owner 2026-10-08: right mouse
+-- Shield bash (own key, net wep.shieldbash; right mouse
 -- aims). CG shield: needs the Shield bash skill and stuns a player (MPs);
 -- the Republic shield: anyone, only shoves.
 -- SWEP:CanBash(): off cooldown (BashDelay), not lowered, BashSkill if set.
@@ -303,16 +303,18 @@ function SWEP:Bash()
     self.rhylibNextBash = CurTime() + self.BashDelay
     o:SetAnimation(PLAYER_ATTACK1)
     o:EmitSound("physics/metal/metal_solid_impact_hard" .. math.random(1, 5) .. ".wav", 70, 95)
-    o:LagCompensation(true)
+    -- (runs from net wep.shieldbash, outside a user command, where lag
+    -- compensation does nothing: plain trace against where things are now)
     local tr = util.TraceHull({
         start = o:GetShootPos(), endpos = o:GetShootPos() + o:GetAimVector() * self.BashRange,
         filter = o, mins = Vector(-10, -10, -10), maxs = Vector(10, 10, 10), mask = MASK_SHOT_HULL,
     })
-    o:LagCompensation(false)
     local e = tr.Entity
     local L = Rhylib.Lying
     if L and L.Owner and L.Owner(e) then return end   -- (not on someone already down)
     if not IsValid(e) then return end
+    if e:IsPlayer() and not e:Alive() then return end
+    if (e:IsNPC() or e:IsNextBot()) and e:Health() <= 0 then return end
     local push = o:GetAimVector()
     push.z = 0
     push:Normalize()
@@ -367,7 +369,7 @@ if CLIENT then
     local function addSetting()
         local M = Rhylib.Menus
         if M and M.AddSetting then
-            M.AddSetting("Controls", { id = "weapons.shieldbash", order = 60, title = "Riot shield: shield bash", kind = "key", convar = "rhylib_shield_bash_key" })
+            M.AddSetting("Weapons", { id = "weapons.shieldbash", order = 60, title = "Riot shield: shield bash", kind = "key", convar = "rhylib_shield_bash_key" })
         end
     end
     addSetting()

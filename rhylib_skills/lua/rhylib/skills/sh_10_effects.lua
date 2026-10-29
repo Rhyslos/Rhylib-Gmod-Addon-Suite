@@ -159,7 +159,7 @@ reg("holdLineMult", 0.8, "Hold the line: damage multiplier with the shield up an
 reg("holdLineRange", 200, "Hold the line: how close the other MP must be (units)")
 reg("bashDamage", 30, "Shield bash: damage to droids")
 reg("searchMult", 1.2, "Thorough search: search roll multiplier")
--- EOD (Field technician, 2026-10-10)
+-- EOD (Field technician)
 reg("eodBlastMult", 0.7, "EOD Blast hardened: explosion damage multiplier")
 reg("eodPackWeight", 0.5, "EOD Explosives pack: weight multiplier of grenades, charges, rockets and mines")
 reg("eodPackStack", 1, "EOD Explosives pack: extra per stack of grenades, charges and mines")
@@ -472,7 +472,7 @@ end)
 
 -- K.DemoMults(ply): Demolitions (EOD): damage and radius multipliers for
 -- thermal detonators and HE charges, or nil without the skill.
--- Example: local dm, rm = K.DemoMults(owner)  if dm then dmg = dmg * dm end
+-- Example: local dm, rm = K.DemoMults  if dm then dmg = dmg * dm end
 function K.DemoMults(ply)
     if not (isPly(ply) and K.Has(ply, "eod_demo")) then return nil end
     return cfg("eodDemoDamage"), cfg("eodDemoRadius")
@@ -517,8 +517,8 @@ end
 -- (medical legs -90, MP cuffs -95, stamina 0), which only ever lower it.
 Rhylib.Hook.Add("SetupMove", "skills.move", function(ply, mv)
     if not K.Has(ply, "light_kit") then return end
-    local w = ply:GetNW2Float("rhylib_weight", 0)
-    local cap = ply:GetNW2Float("rhylib_carry", 20)
+    local w = ply:GetNW2Float(Rhylib.NW.WEIGHT, 0)
+    local cap = ply:GetNW2Float(Rhylib.NW.CARRY, 20)
     if cap > 0 and w / cap >= cfg("lightKitLoad") then return end
     local m = cfg("lightKitSpeed")
     mv:SetMaxClientSpeed(mv:GetMaxClientSpeed() * m)
@@ -572,12 +572,45 @@ function K.JetCfg(ply, key, v)
     return v
 end
 
--- Sidestep (Officer): Sprint + left / right / back + Jump (a forward
--- sprint-jump stays a jump), or Alt + any direction, from the ground. A
--- short burst (sidestepTime), then the sideways speed drops to
--- sidestepCarry so the step stays short. Predicted; cooldown in DTFloat
--- 25, end of the burst in DTFloat 24.
-local DT_DODGE, DT_STEP = 25, 24   -- (player DTFloat slots; other addons must not use them)
+-- Sidestep (Officer): Sprint + Jump with left / right / back held and NO
+-- forward input (any sprint-jump with forward held, diagonals included,
+-- stays a jump), from the ground; or the optional dodge key (client convar
+-- rhylib_dodge_key, default "" = off; Settings > Controls, section
+-- "Skills") + any direction. The dodge key reaches the predicted move as
+-- the spare IN_GRENADE2 button (set in CreateMove below). The Alt / +walk
+-- trigger is gone (walking quietly with Alt dashed every time). A short
+-- burst (sidestepTime), then the sideways speed drops to sidestepCarry so
+-- the step stays short. Predicted; cooldown in DTFloat 25, end of the
+-- burst in DTFloat 24.
+-- (player DTFloat slots, claimed in core's Rhylib.DT table)
+local DT = Rhylib.DT
+local DT_DODGE = DT and DT.Claim("Float", "skills.dodge", 25) or 25
+local DT_STEP = DT and DT.Claim("Float", "skills.step", 24) or 24
+local DT_ROPE = DT and DT.Slot("Entity", "grapple.rope") or 31
+local DT_ZIP = DT and DT.Slot("Entity", "grapple.zip") or 30
+local IN_DODGE = IN_GRENADE2   -- (unused by GMod and the suite: the dodge key)
+
+if CLIENT then
+    local dodgeKey = CreateClientConVar("rhylib_dodge_key", "", true, false, "Sidestep skill: a dodge key (dash in the direction you move); empty = off")
+    Rhylib.Hook.Add("CreateMove", "skills.dodgekey", function(cmd)
+        local name = dodgeKey:GetString()
+        if name == "" then return end
+        local code = input.GetKeyCode(name)
+        if not code or code <= 0 or not input.IsButtonDown(code) then return end
+        if gui.IsGameUIVisible() or vgui.CursorVisible() then return end
+        local me = LocalPlayer()
+        if not IsValid(me) or me:IsTyping() or not K.Has(me, "sidestep") then return end
+        cmd:SetButtons(bit.bor(cmd:GetButtons(), IN_DODGE))
+    end)
+    local function addSetting()
+        local M = Rhylib.Menus
+        if M and M.AddSetting then
+            M.AddSetting("Skills", { id = "skills.dodgekey", order = 10, title = "Sidestep: dodge key (dash the way you move; console rhylib_dodge_key \"\" turns it off)", kind = "key", convar = "rhylib_dodge_key" })
+        end
+    end
+    addSetting()
+    Rhylib.Hook.Add("InitPostEntity", "skills.dodgesetting", addSetting)
+end
 Rhylib.Hook.Add("SetupMove", "skills.dodge", function(ply, mv)
     local now = CurTime()
     -- End of the burst: slow down.
@@ -593,16 +626,17 @@ Rhylib.Hook.Add("SetupMove", "skills.dodge", function(ply, mv)
         end
     end
 
-    local alt = mv:KeyPressed(IN_WALK)
-    if not (alt or (mv:KeyPressed(IN_JUMP) and mv:KeyDown(IN_SPEED))) then return end
-    if not alt and mv:GetSideSpeed() == 0 and mv:GetForwardSpeed() >= 0 then return end
+    local key = mv:KeyPressed(IN_DODGE)
+    if not (key or (mv:KeyPressed(IN_JUMP) and mv:KeyDown(IN_SPEED))) then return end
+    -- (sprint-jump: only an explicit side / back dodge; forward held = a jump)
+    if not key and (mv:KeyDown(IN_FORWARD) or mv:GetForwardSpeed() > 0 or (mv:GetSideSpeed() == 0 and mv:GetForwardSpeed() == 0)) then return end
     if not K.Has(ply, "sidestep") or not ply:OnGround() then return end
     if K.OrderIs and K.OrderIs(ply, "hold") then return end   -- (Hold fast: hold the position)
     if not ply:Alive() or ply:GetMoveType() ~= MOVETYPE_WALK or ply:WaterLevel() >= 2 then return end
     local Med = Rhylib.Medical
     if Med and Med.IsDown and (Med.IsDown(ply) or (Med.Dragging and Med.Dragging(ply))) then return end
     if Med and Med.InTank and (Med.InTank(ply) or ply:GetNW2Int("rhylib_medAct", 0) ~= 0) then return end
-    if IsValid(ply:GetDTEntity(31)) then return end   -- (on a grapple rope)
+    if IsValid(ply:GetDTEntity(DT_ROPE)) or IsValid(ply:GetDTEntity(DT_ZIP)) then return end   -- (on a grapple rope or zipline)
     local MP = Rhylib.MP
     if MP and MP.IsCuffed and (MP.IsCuffed(ply) or MP.IsStunned(ply) or MP.EscortedBy(ply)) then return end
     if ply:GetDTFloat(DT_DODGE) > now then return end

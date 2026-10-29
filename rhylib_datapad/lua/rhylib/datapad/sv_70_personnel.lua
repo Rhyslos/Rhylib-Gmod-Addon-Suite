@@ -21,7 +21,7 @@
                  strikes 4, roster note e.g. LOA)
       dp.pget    entity, sid -> dp.pfile: entity, sid, name, rank name,
                  online, seen 32, can commend, can discipline, quals (count
-                 5; id, name, held), all-time stats here (11 x 32),
+                 5; id, name, held), all-time stats here (D.WriteStatRow),
                  commendations (count 8; id 16, time 32, by, battalion,
                  text), can see strikes + strikes (count 8; id 16, time 32,
                  expires 32, by, text), can see notes + notes (text, by, time 32)
@@ -150,7 +150,7 @@ local function sendFile(ply, ent, a, id)
     -- All-time stats in this battalion (D.STAT_KEYS order).
     local st = D.Load("dp_stats", bn, {})
     local row = st.b and st.b.all and st.b.all.p and st.b.all.p["s" .. id] or {}
-    for _, k in ipairs(D.STAT_KEYS) do net.WriteUInt(math.Clamp(row[k] or 0, 0, 2 ^ 31), 32) end
+    D.WriteStatRow(row)
     -- Commendations, newest first.
     local nc = math.min(#f.c, SEND_MAX)
     net.WriteUInt(nc, 8)
@@ -222,7 +222,7 @@ end
 
 local function tell(id, msg)
     local p = online(id)
-    if IsValid(p) then p:ChatPrint(msg) end
+    if IsValid(p) then Rhylib.Notify(p, msg, "info", "Datapad") end
 end
 
 local function done(ply, ent, a, id)
@@ -265,7 +265,7 @@ D.TermRecv("dp.pstrike", {
         if n >= D.Cfg("strikeWarn") then
             for _, p in ipairs(player.GetHumans()) do
                 if D.Battalion(p) == bn and D.IsUnitOfficer(p, bn, false) then
-                    p:ChatPrint(name .. " now has " .. n .. " active strikes")
+                    Rhylib.Notify(p, name .. " now has " .. n .. " active strikes", "info", "Datapad")
                 end
             end
         end

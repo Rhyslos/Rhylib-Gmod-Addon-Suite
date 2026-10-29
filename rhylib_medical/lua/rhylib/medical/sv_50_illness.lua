@@ -12,7 +12,7 @@
       ill.strip   (uid)               put a sample on a test strip
       ill.look    (uid)               show a used strip's result again
       ill.discard (uid)               throw away a sample or used strip
-      ill.dose    (target, med 2 bits, units 6 bits)   give medicine (timed)
+      ill.dose    (target, med 2 bits, units 6 bits)   give medicine (timed; patient on a med sofa, downed, cuffed or a test dummy)
       ill.open    server -> client: the analyser window for that entity
       ill.cass    server -> client: the used strip window (uid, name,
                   elapsed s 16 bits, develop time 10, kind 2, load 7)
@@ -58,7 +58,7 @@ local function publish(ply)
     local s = Med.ill[ply]
     if s then
         local st = stageOf(s.load)
-        if st > (s.told or 0) and FEEL[st] then ply:ChatPrint(FEEL[st]) end
+        if st > (s.told or 0) and FEEL[st] then Med.Note(ply, FEEL[st], "bad") end
         s.told = st
     end
     local v = s and (s.kind + stageOf(s.load) * 4) or 0
@@ -142,7 +142,7 @@ timer.Create("Rhylib.Medical.Illness", 30, 0, function()
             elseif s.kind == Med.ILL_POISON and s.load >= 100 then
                 s.load = cfg("poisonAfterDown")
                 if not Med.IsDown(ply) and Med.Down then
-                    ply:ChatPrint("The poison takes you down")
+                    Med.Note(ply, "The poison takes you down", "bad")
                     Med.Down(ply, ply, ply)
                 end
             elseif not Med.IsDown(ply) then
@@ -508,9 +508,17 @@ Rhylib.Net.Receive("ill.dose", function(ply)
     if not m or units < 1 then return end
     local medId = m[1]
     if not near(ply, t, 150) then return stop(ply) end
+    -- (not on anyone walking about: on a med sofa, downed, cuffed, or a
+    -- test dummy; checked through the whole dose)
+    local MP = Rhylib.MP
+    local function still()
+        return Med.OnSofa(t) or Med.IsDown(t) or t.rhylibDummy or (MP and MP.IsCuffed and MP.IsCuffed(t))
+    end
+    if not still() then return stop(ply, "They need to lie on a med sofa") end
     if (Inv().Count(ply, medId) or 0) < units then return stop(ply, "You don't carry that much") end
     timed(ply, "dose", cfg("doseTime"), function()
         if not (able(ply) and IsValid(t) and t:Alive() and near(ply, t, 170)) then return false, "Cancelled" end
+        if not still() then return false, "They got up" end
         return true
     end, function()
         local I = Inv()
@@ -529,11 +537,11 @@ Rhylib.Net.Receive("ill.dose", function(ply)
         -- The medic only learns what the patient shows.
         Med.Note(ply, units .. " units of " .. m[2] .. " given to " .. t:Nick())
         if result == "too much" or result == "no effect" then
-            t:ChatPrint("You feel sick and dizzy")
+            Med.Note(t, "You feel sick and dizzy", "bad")
         elseif result == "cured" then
-            t:ChatPrint("You start to feel better")
+            Med.Note(t, "You start to feel better", "good")
         else
-            t:ChatPrint("You feel a little better")
+            Med.Note(t, "You feel a little better", "good")
         end
     end)
 end, { rate = 3, burst = 3 })

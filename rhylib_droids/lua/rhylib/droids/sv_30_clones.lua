@@ -1,5 +1,5 @@
 --[[
-    Clone NPCs (server, 2026-10-06az): squads called by an officer
+    Clone NPCs (server): squads called by an officer
     (rhylib_skills Reinforcements), medic healing, pulling squads out.
 
       D.SpawnClone(kind, pos, yaw)         one clone, nil over cloneMax
@@ -26,6 +26,7 @@
 ]]
 
 local D = Rhylib.Droids
+local State = Rhylib.State
 
 -- D.SpawnClone(kindName, pos, yaw) -> the clone, or nil (not a clone kind,
 -- over cloneMax, or failed to spawn). Server.
@@ -92,7 +93,7 @@ local function nearestDroid(pos, reach)
 end
 
 -- Where the slots sit around the officer (forward, right): out to the
--- sides and level with them, not behind (owner: they shot past him from
+-- sides and level with them, not behind (they shot past him from
 -- behind), so their line of fire to the front is clear.
 local SLOTS = { Vector(20, -130, 0), Vector(20, 130, 0), Vector(-40, -210, 0), Vector(-40, 210, 0),
     Vector(60, -260, 0), Vector(60, 260, 0), Vector(-100, -150, 0), Vector(-100, 150, 0) }
@@ -122,7 +123,7 @@ function D.CallSquad(leader, kinds, life)
                 c.mode = "follow"
                 c:SetNW2String("rhylib_dmode", "follow")
                 c.recallAt = (life and life > 0) and CurTime() + life or nil
-                -- (owner: at least three steps toward the enemy, to draw fire)
+                -- (at least three steps toward the enemy, to draw fire)
                 local dir = target and (target:GetPos() - p) or leader:EyeAngles():Forward()
                 dir.z = 0
                 if dir:LengthSqr() > 1 then
@@ -144,10 +145,10 @@ end
 
 --------------------------------------------------------------------------
 -- Medics: patients (downed and bleeding out), afflictions, revives
--- (2026-10-07, owner: medics never bring back the dead, only the downed)
+-- (medics never bring back the dead, only the downed)
 --------------------------------------------------------------------------
 
--- Debug (owner: medics seemed to skip other players): rhylib_medic_debug 1
+-- Debug (medics seemed to skip other players): rhylib_medic_debug 1
 -- prints each step to the server console.
 local medicDebug = CreateConVar("rhylib_medic_debug", "0", FCVAR_ARCHIVE, "Print clone medic revive steps to the server console")
 -- D.MedicLog(fmt, ...): prints a line when rhylib_medic_debug is 1.
@@ -156,9 +157,9 @@ function D.MedicLog(fmt, ...)
 end
 
 -- D.PatientPending(p) -> bool: can a medic NPC still get this player up?
--- Downed (rhylib_medical rhylibDown) and alive only.
+-- Downed (Rhylib.State.IsDown) and alive only.
 function D.PatientPending(p)
-    return IsValid(p) and p:IsPlayer() and p:Alive() and p.rhylibDown == true
+    return IsValid(p) and p:IsPlayer() and p:Alive() and State.IsDown(p)
 end
 
 -- D.BodyPos(p) -> where the player's body is (rhylib_core Lying.BodyPos,
@@ -173,7 +174,7 @@ end
 -- revive shield. Server.
 function D.NpcRevive(p)
     local Med = Rhylib.Medical
-    if not (Med and Med.Revive and p:Alive() and p.rhylibDown) then
+    if not (Med and Med.Revive and p:Alive() and State.IsDown(p)) then
         D.MedicLog("%s: revive skipped (not downed any more)", p:Nick())
         return
     end
@@ -182,7 +183,7 @@ function D.NpcRevive(p)
     D.ReviveShield(p)
 end
 
--- Just got up by a medic NPC (owner: they were killed again at once):
+-- Just got up by a medic NPC (they were killed again at once):
 -- reviveShield less damage for reviveShieldTime, to get away. It ends
 -- the moment they fire: an escape tool, not a combat bonus.
 -- D.ReviveShield(p): starts it (p.rhylibReviveShield = end time). Off when
@@ -191,8 +192,8 @@ function D.ReviveShield(p)
     local secs = D.Cfg("reviveShieldTime")
     if secs <= 0 or D.Cfg("reviveShield") <= 0 then return end
     p.rhylibReviveShield = CurTime() + secs
-    p:ChatPrint(string.format("A clone medic got you up: %d%% less damage for %d s to get to safety (firing ends it).",
-        math.Round(D.Cfg("reviveShield") * 100), secs))
+    Rhylib.Notify(p, string.format("A clone medic got you up: %d%% less damage for %d s to get to safety (firing ends it).",
+        math.Round(D.Cfg("reviveShield") * 100), secs), "good", "Clones")
 end
 
 Rhylib.Hook.Add("KeyPress", "droids.reviveshield", function(p, key)
@@ -292,7 +293,7 @@ local function heal(e, amount)
     if max > 0 and e:Health() < max then e:SetHealth(math.min(max, e:Health() + amount)) end
 end
 
--- Downed players get clone guards (owner: friendly AIs stand over downed
+-- Downed players get clone guards (friendly AIs stand over downed
 -- friends until a medic gets there): up to ctDownGuards of the nearest
 -- free clones within ctDownRadius (not ones on an attack order).
 local function assignGuards(players)
@@ -300,7 +301,7 @@ local function assignGuards(players)
     if want <= 0 then return end
     local r2 = D.Cfg("ctDownRadius") ^ 2
     for _, p in ipairs(players) do
-        if p:Alive() and p.rhylibDown then
+        if p:Alive() and State.IsDown(p) then
             local have = 0
             for c in pairs(D.clones) do
                 if IsValid(c) and c.guardDowned == p then have = have + 1 end
@@ -354,7 +355,7 @@ timer.Create("Rhylib.Droids.Clones", 1, 0, function()
     for _, m in ipairs(medics) do
         local pos = m:GetPos()
         for _, p in ipairs(all) do
-            if p:Alive() and not p.rhylibDown and p:GetPos():DistToSqr(pos) <= r2 then
+            if p:Alive() and not State.IsDown(p) and p:GetPos():DistToSqr(pos) <= r2 then
                 if amount > 0 then heal(p, amount) end
                 if repair > 0 then treat(p, repair) end
             end
@@ -376,7 +377,7 @@ Rhylib.Hook.Add("PlayerDisconnected", "droids.clones", function(ply)
 end)
 
 --------------------------------------------------------------------------
--- Spread out, calls for help, odds, presets, follow picks (2026-10-06bd)
+-- Spread out, calls for help, odds, presets, follow picks
 --------------------------------------------------------------------------
 
 D.GroundAt = ground
@@ -465,7 +466,7 @@ function D.CloneOdds(c)
         if o ~= c and IsValid(o) and o:Health() > 0 and o:GetPos():DistToSqr(pos) < fr2 then f = f + 1 end
     end
     for _, p in ipairs(player.GetAll()) do
-        if p:Alive() and not p.rhylibDown and p:GetPos():DistToSqr(pos) < fr2 then f = f + 1 end
+        if p:Alive() and not State.IsDown(p) and p:GetPos():DistToSqr(pos) < fr2 then f = f + 1 end
     end
     for _, d in ipairs(D.CloneTargets()) do
         if IsValid(d) then
@@ -550,7 +551,7 @@ function D.SpawnPreset(name, origin, yaw, mode)
         end
     end
     -- Mortar squad: the mortars are artillery (long range, mostly rockets),
-    -- the rest stay with them (owner: defend them).
+    -- the rest stay with them (defend them).
     for _, m in ipairs(wards) do
         m.artillery = true
         -- (they stay where they're set up, whatever marker or tool mode)
@@ -639,7 +640,7 @@ function D.SpottedTarget(mortar, range)
     for d in pairs(D.active) do
         if IsValid(d) and not d.Training and d:Health() > 0 then
             local t = d.target
-            if IsValid(t) and ok[t] and now - (d.lastSeenAt or 0) < 3 and not t.rhylibDown and (t:IsPlayer() and t:Alive() or not t:IsPlayer() and t:Health() > 0)
+            if IsValid(t) and ok[t] and now - (d.lastSeenAt or 0) < 3 and not State.IsDown(t) and (t:IsPlayer() and t:Alive() or not t:IsPlayer() and t:Health() > 0)
                 and not D.Blackout(t:GetPos()) then   -- (EOD Signal blackout: nobody can call it in)
                 local dist = t:GetPos():DistToSqr(pos)
                 if dist < r2 and dist > min2 and (not bestD or dist < bestD) then best, bestD = t, dist end
@@ -650,7 +651,7 @@ function D.SpottedTarget(mortar, range)
 end
 
 --------------------------------------------------------------------------
--- Command wheel (2026-10-06be, owner): a commander's own squad of clones
+-- Command wheel : a commander's own squad of clones
 --------------------------------------------------------------------------
 
 -- Order names (rhylib_skills keeps its own copy and passes the name to

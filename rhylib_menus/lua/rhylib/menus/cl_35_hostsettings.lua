@@ -25,13 +25,15 @@
       o override set in game (nil = none), s description, x meta
       ({ name, group } for model settings), p true = a model change that
       needs a map change.
-    To give a new module its own place: add it to a category in
-    CATEGORIES, a name in NAMES and, if it has many keys, SECTIONS.
-    Modules in no category go under "Other".
+    Where a module goes: Rhylib.Config.Describe(module, { name, category })
+    in the owning addon; Config.Sections(module, list) or meta.section on a
+    setting (Config.Register) picks its section, in Describe's order.
+    Modules in no category go under "Other"; a module without sections
+    shows one "General" block.
 ]]
 
 local Menus = Rhylib.Menus
-local K = Menus.Kit
+local K = Rhylib.UI.Kit
 local C = K.C
 
 -- Kept across rebuilds of the page.
@@ -44,124 +46,16 @@ local folded = {}                       -- [category id] = true when closed
 -- How the page is organised
 --------------------------------------------------------------------------
 
+-- Side-bar categories, in order. Each module names its own category and
+-- sections (Rhylib.Config.Describe / Config.Sections in its own addon); a
+-- category not listed here is added after these; modules that name none
+-- go under "Other".
 local CATEGORIES = {
-    { id = "combat", title = "Combat", mods = { "weapons", "guns", "armor", "grapple", "eod" } },
-    { id = "soldiers", title = "Soldiers", mods = { "stamina", "inventory", "gear", "jetpack", "medical", "skills" } },
-    { id = "units", title = "Units & roles", mods = { "roster", "mp", "datapad", "radio", "chat", "training", "spawns" } },
-    { id = "npcs", title = "NPCs", mods = { "droids" } },
-    { id = "server", title = "Server & interface", mods = { "core", "hud", "menus", "thirdperson", "armoury", "toolgun", "admin" } },
-}
-
-local NAMES = {
-    weapons = "Weapons", guns = "Gun stats", armor = "Armour", grapple = "Grapple hook", eod = "Bombs & mines (EOD)",
-    stamina = "Stamina & weight", inventory = "Inventory", gear = "Wearable gear", jetpack = "Jetpack", medical = "Medical",
-    skills = "Skills", roster = "Roster & ranks", mp = "Military police", datapad = "Datapad", radio = "Radio & squads",
-    chat = "Chat", training = "Training", spawns = "Spawn points", droids = "Droids & clones", core = "Core", hud = "HUD",
-    menus = "Menus", thirdperson = "Third person", armoury = "Armoury", toolgun = "Toolgun", admin = "Admin",
-    models = "Model overrides",
-}
-
--- Sections per module: { title, { Lua patterns matched against the key } };
--- the first section that matches wins. Model settings always go to
--- "Models"; anything unmatched to "Other".
-local SECTIONS = {
-    droids = {
-        { "General", { "^maxActive$", "^aggression$", "^pathPerTick$", "^walkMult$", "^runSpread$", "^walkSpread$", "^moveSpread$", "^marchGroup$" } },
-        { "Orders & areas", { "^guardRadius$", "^patrolRadius$", "^markerRadius$", "^brushRadius$", "^roamRadius$" } },
-        { "B1 grenades", { "^b1Nade" } },
-        { "B1 battle droids", { "^b1", "^e5" } },
-        { "B2 rockets & mortars", { "^b2Rocket", "^b2Direct", "^b2Slow", "^b2Dive", "^arty" } },
-        { "B2 super battle droids", { "^b2" } },
-        { "Heavy & commander droids", { "^heavy", "^cmdHealth$", "^cmdRadius$", "^cmdSpread$", "^cmdReaction$", "^cmdPause$", "^cmdDeath" } },
-        { "Cover & accuracy", { "^cover", "^blindSpread$", "^retreatFrac$", "^flash", "^settle", "^crowd" } },
-        { "Retreat", { "^retreat", "^lastStand" } },
-        { "Clone medics", { "^ctMedic", "^ctDown", "^reviveShield" } },
-        { "Clone tactics", { "^ctCall", "^ctOdds", "^ctFallBackOdds$", "^ctChargeOdds$", "^ctCrouch", "^ctPopper" } },
-        { "Clone troopers", { "^clone", "^ct", "^cmdFollowRadius$", "^cmdMaxFollowers$" } },
-    },
-    medical = {
-        { "General", { "^enabled$", "^range$", "^selfMult$", "^noTarget$", "^markerRange$", "^viewRange$" } },
-        { "Simplified system", { "^simpl" } },
-        { "Downed & bleeding out", { "^bleedTime$", "^downHealth$", "^downGrace$", "^giveUpTime$", "^downSequences$" } },
-        { "Revives", { "^reviveKit", "^firstAidRevive", "^handRevive", "^bloodPack" } },
-        { "Kits & field items", { "^firstAid", "^medkit", "^splint", "^burnGel", "^pillTime$", "^painkiller" } },
-        { "Dragging", { "^drag" } },
-        { "Medic skills", { "^steadyMult$", "^quickReviveMult$", "^deepPockets$", "^efficientCare$", "^triageFlash$", "^regen" } },
-        { "Injuries", { "^injuries$", "Bleed", "^fracture", "^fallFracture", "^recover$", "^burnRecover$", "^legNoSprint", "^armNoAim", "^armSpread$", "^burnSpread$", "^torso" } },
-        { "Med bay, bacta tank & sofa", { "^medBay", "^tank", "^sofa" } },
-        { "Chemistry bench", { "^bench", "^craftTime$", "^chemRecipes$" } },
-        { "Illness", { "^loadRate$", "^illDrain$", "^poisonAfterDown$", "^drawTime$", "^scan", "^dose", "^strip", "^sampleLife$" } },
-    },
-    skills = {
-        { "Points & rules", { "^freePoints$", "^startPoints$", "^commandRank$", "^onePath$", "^undoWindow$" } },
-        { "Trooper", { "^quickHands", "^runGun", "^pointBlank", "^lightKit", "^momentum", "^extMag", "^effCells", "^loadBearer", "^cellRack$", "^gunRunner", "^steadySpread$", "^steadyRecoil$", "^rapidFire", "^overcharge", "^sustain" } },
-        { "Marksman", { "^stanceSpread$", "^steadyAimSpread$", "^headhunter", "^boltDrills", "^longGun", "^carbine", "^calledShot", "^priority", "^rhythm", "^firstShot" } },
-        { "Heavy", { "^reinforcedHealth$", "^planted", "^ammoBelt$", "^shotgun", "^juggernaut", "^suppress" } },
-        { "Officer: pistol", { "^pistolSpread$", "^steadyGrip", "^dualRate$", "^crit", "^lightRounds", "^quickDraw", "^speedLoader", "^sidearm", "^sidestep", "^lightMagBonus$" } },
-        { "Officer: marks & commander", { "^mark", "^visorSpot", "^squadSkillRange$", "^logiReload$", "^line", "^rifleDrill", "^vet" } },
-        { "Command orders", { "^command", "^windRegen$", "^triage", "^focus", "^pressSprint$", "^presenceMult$", "^seasoned", "^standingTime$" } },
-        { "Reinforcements & squad wheel", { "^reinf", "^squadSignal" } },
-        { "Airborne", { "^rush", "^grenade", "^airborne", "^fallMult$", "^tankMult$", "^springJump$", "^hover", "^afterburner", "^combatDrop", "^blastMult$", "^airMult$", "^slam" } },
-        { "Medic", { "^underFire" } },
-        { "Shock Trooper", { "^holdLine", "^bash", "^searchMult$" } },
-    },
-    weapons = {
-        { "Bolts & damage", { "^lagCompMax$", "^boltSpeedMult$", "^shotRange$", "^boltRange$", "^boltLife$", "^headMult$", "^limbMult$" } },
-        { "Accuracy & recoil", { "^recoilMult$", "^crouchSpread$", "^firstShotMult$" } },
-        { "Ammo & reloading", { "^reloadHoldTime$", "^maxMags$", "^maxCells$", "^lowCell" } },
-        { "Explosion knockdown", { "^knock" } },
-        { "Shields", { "^shield", "^cgShield", "^phalanx" } },
-        { "Grenades & charges", { "^he", "^emp", "^breach", "^flash" } },
-    },
-    radio = {
-        { "Radio", { "^localRange$", "^maxChannels$", "^hailTime$", "^squadNames$" } },
-        { "Radio effects", { "^fx" } },
-        { "Comms jammers", { "^jam" } },
-        { "Squad pings", { "^ping" } },
-    },
-    gear = {
-        { "Kit & unlocks", { "^kit$", "^unlocks$" } },
-        { "Armour parts", { "^kama", "^pauldron", "^bareHeadshot" } },
-        { "Helmet lights", { "^light" } },
-        { "Sun visor", { "^visor" } },
-        { "Night vision", { "^nv" } },
-    },
-    eod = {
-        { "Explosions", { "^small", "^large", "^gas" } },
-        { "Defusal rules", { "^sensorRange$", "^timerWake$", "^capDrain$", "^jumpers$", "^xray", "^inspectTime$", "^reach$", "^heat", "^torchTime$", "^leakTime$", "^hopEvery$", "^popperChance$" } },
-        { "Interference device", { "^device" } },
-        { "Mines", { "^ap", "^lap", "^mine" } },
-    },
-    mp = {
-        { "Stun & baton", { "^stun", "^baton" } },
-        { "Cuffs & escort", { "^cuff", "^escort" } },
-        { "Searching", { "^search" } },
-        { "Jail", { "^process", "^maxSentence$", "^jail", "^terminal", "^poses$" } },
-        { "Property locker", { "^property" } },
-    },
-    inventory = {
-        { "Size & weight", { "^width$", "^height$", "^baseCarry$", "^backpackWeightMult$", "^beltCells$" } },
-        { "Dropped items", { "^worldItem", "^issuedDropLife$" } },
-        { "Rules", { "^contraband$", "^giveRange$", "^autoHotbar$", "^combine", "^saveInterval$" } },
-    },
-    stamina = {
-        { "Stamina", { "^max$", "^sprintDrain$", "^jumpCost$", "^regen", "^exhausted", "^lowAim" } },
-        { "Carry weight", { "^maxPenalty", "^penaltyCurve$", "^heavy", "^overload" } },
-    },
-    jetpack = {
-        { "Fuel", { "^fuel", "^recharge", "^unlockAt$", "^loadFuelMult$", "^hoverFuel$" } },
-        { "Flight", { "." } },
-    },
-    datapad = {
-        { "Notes & logs", { "^noteLimit$", "^titleMax$", "^bodyMax$", "^logCap$", "^medCap$" } },
-        { "Quick response calls", { "^calls$", "^supplyItems$", "^call" } },
-        { "Unit & personnel", { "^strike", "^arrestRange$", "^useRange$", "^class$" } },
-    },
-    armoury = {
-        { "Stock", { "^weapons$", "^trainingWeapons$", "^gearStock$", "^medCrate$", "^roles$" } },
-        { "Storage sizes", { "^locker", "^crate" } },
-        { "Training deposit", { "^deposit" } },
-    },
+    { id = "combat", title = "Combat" },
+    { id = "soldiers", title = "Soldiers" },
+    { id = "units", title = "Units & roles" },
+    { id = "npcs", title = "NPCs" },
+    { id = "server", title = "Server & interface" },
 }
 
 local function prettyKey(k)
@@ -171,8 +65,14 @@ local function prettyKey(k)
     return string.upper(string.sub(s, 1, 1)) .. string.lower(string.sub(s, 2))
 end
 
+local function described(m)
+    local d = Rhylib.Config.modules and Rhylib.Config.modules[m]
+    return istable(d) and d or nil
+end
+
 local function prettyModule(m)
-    return NAMES[m] or (string.upper(string.sub(m, 1, 1)) .. string.sub(m, 2))
+    local d = described(m)
+    return (d and d.name) or (string.upper(string.sub(m, 1, 1)) .. string.sub(m, 2))
 end
 
 local function isModelEntry(e)
@@ -193,10 +93,12 @@ local function sectionOf(e)
     if e.m == "models" then return (e.x and e.x.group) or "Other" end
     if isModelEntry(e) then return "Models" end
     if e.m == "guns" then return gunSection(e.k) end
-    local list = SECTIONS[e.m]
-    if not list then return "General" end
+    if istable(e.x) and isstring(e.x.section) and e.x.section ~= "" then return e.x.section end   -- (Config.Register meta / Config.Sections)
+    local d = described(e.m)
+    local list = d and d.sections   -- (patterns: also checked here, for keys the server alone registers)
+    if not list then return d and d.order and "Other" or "General" end
     for _, s in ipairs(list) do
-        for _, pat in ipairs(s[2]) do
+        for _, pat in ipairs(s[2] or {}) do
             if string.find(e.k, pat) then return s[1] end
         end
     end
@@ -726,12 +628,36 @@ local function build(page)
 
         local placed = {}
         local cats = {}
+        -- (Config.Describe categories first: a module that names one goes
+        -- there, a category the page doesn't know is added after the rest)
+        local byTitle, extra = {}, {}
+        for _, c in ipairs(CATEGORIES) do byTitle[string.lower(c.title)] = c.id byTitle[c.id] = c.id end
+        local wantCat = {}
+        for m in pairs(has) do
+            local d = described(m)
+            if d and isstring(d.category) and d.category ~= "" then
+                local id = byTitle[string.lower(d.category)]
+                if not id then
+                    id = "x_" .. string.lower(d.category)
+                    if not extra[id] then extra[id] = { id = id, title = d.category, mods = {} } extra[#extra + 1] = extra[id] end
+                    table.insert(extra[id].mods, m)
+                end
+                wantCat[m] = id
+            end
+        end
+        local byName = function(a, b2) return prettyModule(a) < prettyModule(b2) end
         for _, c in ipairs(CATEGORIES) do
             local mods = {}
-            for _, m in ipairs(c.mods) do
-                if has[m] then mods[#mods + 1] = m placed[m] = true end
+            for m, id in pairs(wantCat) do
+                if id == c.id and not placed[m] then mods[#mods + 1] = m placed[m] = true end
             end
+            table.sort(mods, byName)
             if #mods > 0 then cats[#cats + 1] = { id = c.id, title = c.title, mods = mods } end
+        end
+        for _, c in ipairs(extra) do
+            table.sort(c.mods, byName)
+            for _, m in ipairs(c.mods) do placed[m] = true end
+            cats[#cats + 1] = c
         end
         local other = {}
         for m in pairs(has) do if not placed[m] then other[#other + 1] = m end end
@@ -981,11 +907,8 @@ local function build(page)
             view = { kind = "models" }
             return fill()
         end
-        local wanted
-        if SECTIONS[m] then
-            wanted = {}
-            for _, s in ipairs(SECTIONS[m]) do wanted[#wanted + 1] = s[1] end
-        end
+        local d = described(m)
+        local wanted = d and d.order   -- (Config.Sections / Describe sections order)
         local by, order = grouped(list, wanted)
         local n = 0
         for _ in pairs(by) do n = n + 1 end

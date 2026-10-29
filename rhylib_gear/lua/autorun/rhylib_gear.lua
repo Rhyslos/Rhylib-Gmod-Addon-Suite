@@ -7,4 +7,8 @@ if not Rhylib then
     return
 end
 
-Rhylib.LoadModule("gear", { name = "Rhy's Wearable Gear", version = "0.1.0" })
+Rhylib.LoadModule("gear", {
+    name = "Rhy's Wearable Gear",
+    version = "0.1.0",
+    needs = { "inventory" },
+})

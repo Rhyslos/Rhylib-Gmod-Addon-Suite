@@ -3,7 +3,7 @@
 
     Uses a prop model (models/jajoff/sps/cgiweapons/tc13j/dc17.mdl), held in first person by
     the trooper hands (CarrierVM). The model's addon must be installed.
-    Tune with rhylib_vm_editor, then paste its lines below.
+    Tune with rhylib_vm_editor (Rhy's Dev Tools), then paste its lines below.
     All numbers are first guesses for tuning.
 
     Class rhylib_dc17. Shared: one file for server and client (AddCSLuaFile).
@@ -31,7 +31,7 @@ SWEP.UseHands = false
 SWEP.CarrierVM = "models/bf2017/c_scoutblaster.mdl"
 SWEP.CarrierBone = "v_scoutblaster_reference001"
 SWEP.CarrierBoneMove = Vector(0, -0.3, 0)
-SWEP.PropBonePos = Vector(-1.5, 13.2, 0.5)   -- (owner-tuned 2026-10-05, in dual)
+SWEP.PropBonePos = Vector(-1.5, 13.2, 0.5)   -- (owner-tuned, in dual)
 SWEP.PropBoneAng = Angle(-2, 89, 0)
 SWEP.PropBoneScale = 1
 SWEP.VMOffset = Vector(0, 0, 0)

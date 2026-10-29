@@ -19,7 +19,7 @@ local R = Rhylib.Radio
 
 local MODE_TEXT = { [0] = "open", [1] = "password", [2] = "battalion" }
 
-local function K() return Rhylib.Menus.Kit end
+local function K() return Rhylib.UI.Kit end
 
 -- A plain painted row: colour chip, title, sub line; buttons docked right.
 local function row(parent, col, title, sub, h)

@@ -32,7 +32,7 @@ Rhylib.Hook.Add("PlayerInitialSpawn", "skills.ordercd", function(ply)
 end)
 
 local function canReceive(p)
-    if not (IsValid(p) and p:Alive()) or p.rhylibDown then return false end
+    if not (IsValid(p) and p:Alive()) or Rhylib.State.IsDown(p) then return false end
     local Med = Rhylib.Medical
     if Med and Med.IsDown and Med.IsDown(p) then return false end
     return true
@@ -106,7 +106,7 @@ function K.IssueOrder(ply)
     return true
 end
 
--- Reinforcements (Commander capstone, 2026-10-06az): a clone squad
+-- Reinforcements (Commander capstone): a clone squad
 -- (rhylib_droids D.CallSquad) around the officer. Returns true and the
 -- number of clones that came, or false and the reason. The cooldown is
 -- only spent if at least one clone came. Server only.
@@ -137,11 +137,11 @@ function K.CallReinforcements(ply)
     return true, made
 end
 
--- Squad orders (comlink R wheel, 2026-10-06be): Commander officers order
+-- Squad orders (comlink R wheel): Commander officers order
 -- the clones following them (rhylib_droids D.SquadOrder). Each order also
--- runs its hand-signal chat command (config squadSignals, 2026-10-06bf).
+-- runs its hand-signal chat command (config squadSignals).
 -- Default mode "hooks" calls the PlayerSay hooks but not the gamemode's own
--- PlayerSay (DarkRP's prints the line in local chat: owner, 2026-10-06bh).
+-- PlayerSay (DarkRP's prints the line in local chat: owner).
 local function signal(ply, op)
     local map = cfg("squadSignals")
     local cmd = istable(map) and map[op]

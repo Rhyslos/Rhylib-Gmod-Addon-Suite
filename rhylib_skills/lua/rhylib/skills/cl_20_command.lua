@@ -99,7 +99,7 @@ Rhylib.Hook.Add("HUDPaint", "skills.orderhud", function()
 end, 10000)
 
 --------------------------------------------------------------------------
--- Squad orders (2026-10-06be): hold R with the comlink for a wheel of
+-- Squad orders: hold R with the comlink for a wheel of
 -- orders to the clones following you. Commander officers only; Follow me
 -- (top) takes in free clones nearby, everything else needs followers.
 --------------------------------------------------------------------------
@@ -108,7 +108,7 @@ end, 10000)
 local OP = {}
 for i, op in ipairs(K.SQUAD_OPS) do OP[op] = i end
 
--- Colour strip on each option's left edge (owner: follow yellow, attack red).
+-- Colour strip on each option's left edge (follow yellow, attack red).
 local SQ_COL = {
     follow = Color(242, 209, 75),     -- yellow
     regroup = Color(250, 235, 150),   -- pale yellow

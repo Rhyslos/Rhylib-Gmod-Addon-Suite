@@ -28,21 +28,17 @@ local function tex()
     return texture
 end
 
-local function cfg(k, d)
-    local v = G.Cfg and G.Cfg(k)
-    return v == nil and d or v
-end
+local cfg = G.Cfg   -- (sh_00_config.lua)
 
--- Each beam's own texture (2026-10-09n, owner: less light where the two
--- overlap): the flashlight texture copied into a render target with the
+-- Each beam's own texture (less light where the two overlap): the flashlight texture copied into a render target with the
 -- inner band (the part that overlaps the other beam, from lightGap and
 -- lightFov) darkened to lightOverlapDim, so the middle isn't twice as
 -- bright. Rebuilt when those settings change. lightOverlapFlip mirrors it
 -- in case the darkening lands on the outer side.
 local beamTex = { key = nil }
 local function buildBeams()
-    local fov, gap = cfg("lightFov", 26), cfg("lightGap", -4.7)
-    local dim, flip = cfg("lightOverlapDim", 0.6), cfg("lightOverlapFlip", false)
+    local fov, gap = cfg("lightFov"), cfg("lightGap")
+    local dim, flip = cfg("lightOverlapDim"), cfg("lightOverlapFlip")
     local key = table.concat({ tex(), fov, gap, dim, tostring(flip) }, "|")
     if beamTex.key == key and beamTex[1] then return end
     local frac = math.Clamp(-2 * gap / fov, 0, 0.9)   -- (share of each beam's width that overlaps)
@@ -100,10 +96,10 @@ end
 
 -- side -1 = left, 1 = right: position and angles of that lamp's beam.
 local function lampPose(pos, ang, side)
-    local fov = cfg("lightFov", 26)
-    local p = pos + ang:Right() * (4.5 * side) + ang:Forward() * -3 + ang:Up() * 1   -- (owner: 5 back, inside the helmet)
+    local fov = cfg("lightFov")
+    local p = pos + ang:Right() * (4.5 * side) + ang:Forward() * -3 + ang:Up() * 1   -- (5 back, inside the helmet)
     local a = Angle(ang.p, ang.y, 0)
-    a:RotateAroundAxis(ang:Up(), -side * (fov * 0.5 + cfg("lightGap", -4.7)))
+    a:RotateAroundAxis(ang:Up(), -side * (fov * 0.5 + cfg("lightGap")))
     return p, a
 end
 
@@ -129,7 +125,7 @@ local function make(ply)
 end
 
 local function lit(ply)
-    return IsValid(ply) and ply:Alive() and ply:GetNW2Bool("rhylib_lights", false) and not ply:IsDormant() and not ply:GetNW2Bool("rhylib_cloak")
+    return IsValid(ply) and ply:Alive() and ply:GetNW2Bool("rhylib_lights", false) and not ply:IsDormant() and not ply:GetNW2Bool(Rhylib.NW.CLOAK)
 end
 
 -- Who gets real beams is worked out 4 times a second: you always, plus
@@ -138,7 +134,7 @@ end
 local keep, glowing, nextPick = {}, {}, 0
 local function pick(me)
     local eye = EyePos()
-    local range2 = (cfg("lightRange", 2000) * 2.5) ^ 2
+    local range2 = (cfg("lightRange") * 2.5) ^ 2
     local list = {}
     glowing = {}
     for _, p in ipairs(player.GetAll()) do
@@ -157,7 +153,7 @@ local function pick(me)
     end
     table.sort(list, function(a, b) return a[2] < b[2] end)
     keep = {}
-    local others = cfg("lightMaxPlayers", 2)
+    local others = cfg("lightMaxPlayers")
     for _, e in ipairs(list) do
         if e[1] == me then
             keep[me] = true
@@ -178,8 +174,8 @@ Rhylib.Hook.Add("Think", "gear.lights", function()
     for ply in pairs(lamps) do
         if not (keep[ply] and lit(ply)) then remove(ply) end
     end
-    local range = cfg("lightRange", 2000)
-    local fov, bright = cfg("lightFov", 26), cfg("lightBrightness", 3.5)
+    local range = cfg("lightRange")
+    local fov, bright = cfg("lightFov"), cfg("lightBrightness")
     beamTex.want = next(keep) ~= nil   -- (built in PreRender, which can draw into render targets)
     local retex = beamTex.key ~= beamTex.applied
     if retex then beamTex.applied = beamTex.key end

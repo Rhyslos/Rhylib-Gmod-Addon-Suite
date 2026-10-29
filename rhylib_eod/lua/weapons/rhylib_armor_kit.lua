@@ -8,11 +8,21 @@
 
     Shared SWEP. Also adds the interaction wheel option "Repair armour"
     (rhylib_menus Rhylib.WheelOptions) and its net wheel.armor (client ->
-    server: the target player; rate 2/s). Downed players (rhylibDown)
+    server: the target player; rate 2/s). Downed players (Rhylib.State.IsDown)
     can't be repaired. Stocked in the ammo cabinet (sh_00_config).
 ]]
 
+-- Colours used while drawing (made once, not every frame).
+local COL_0_0_0_160 = Color(0, 0, 0, 160)
+local COL_225_225_225_220 = Color(225, 225, 225, 220)
+
 AddCSLuaFile()
+
+-- A notice for a player (server only: the client half of a predicted
+-- click would show it twice).
+local function note(p, text)
+    if SERVER and IsValid(p) then Rhylib.Notify(p, text, "info", "EOD") end
+end
 
 SWEP.Base = "weapon_base"
 SWEP.PrintName = "Armour repair kit"
@@ -65,7 +75,7 @@ function SWEP:PrimaryAttack()
     local L = Rhylib.Lying
     if L and L.Owner and L.Owner(t) then t = L.Owner(t) end
     if not (IsValid(t) and t:IsPlayer() and t:Alive()) then
-        o:ChatPrint("Look at a clone (right click: yourself)")
+        note(o, "Look at a clone (right click: yourself)")
         return
     end
     self:Repair(t)
@@ -107,11 +117,11 @@ if SERVER then
         if not IsValid(o) then return end
         self:SetNextPrimaryFire(CurTime() + self.Cooldown)
         self:SetNextSecondaryFire(CurTime() + self.Cooldown)
-        if not self:SkillOK() then return o:ChatPrint("You need the Armour repair skill to use this") end
+        if not self:SkillOK() then return note(o, "You need the Armour repair skill to use this") end
         local Inv = Rhylib.Inventory
-        if not (Inv and Inv.Get) then return o:ChatPrint("The armour kit needs rhylib_inventory") end
-        if Inv.Locked and (Inv.Locked(t) or Inv.Locked(o)) then return o:ChatPrint("Can't repair right now") end
-        if t.rhylibDown then return o:ChatPrint("They need a medic first") end
+        if not (Inv and Inv.Get) then return note(o, "The armour kit needs rhylib_inventory") end
+        if Inv.Locked and (Inv.Locked(t) or Inv.Locked(o)) then return note(o, "Can't repair right now") end
+        if Rhylib.State.IsDown(t) then return note(o, "They need a medic first") end
         local kit = kitItem(Inv, o, self:GetClass())
         if not kit then return end
 
@@ -124,7 +134,7 @@ if SERVER then
         if step > 0 then want = math.min(want, step) end
         local give = math.floor(math.min(want, pool))
         if give < 1 then
-            return o:ChatPrint(want < 1 and ((t == o and "Your" or t:Nick() .. "'s") .. " armour is full") or "The kit is empty")
+            return note(o, want < 1 and ((t == o and "Your" or t:Nick() .. "'s") .. " armour is full") or "The kit is empty")
         end
         t:SetArmor(have + give)
 
@@ -139,9 +149,9 @@ if SERVER then
         o:EmitSound("items/battery_pickup.wav", 65)
         if t ~= o then
             t:EmitSound("items/battery_pickup.wav", 60)
-            t:ChatPrint(o:Nick() .. " repaired your armour")
+            note(t, o:Nick() .. " repaired your armour")
         end
-        o:ChatPrint(string.format("Gave %d armour · %d left in the kit", give, math.floor(rest)))
+        note(o, string.format("Gave %d armour · %d left in the kit", give, math.floor(rest)))
     end
 end
 
@@ -149,8 +159,8 @@ if CLIENT then
     function SWEP:DrawHUD()
         local text = self:SkillOK() and "LMB: repair a clone's armour  ·  RMB: yours" or "Needs the Armour repair skill"
         local font = Rhylib.UI and Rhylib.UI.Font and Rhylib.UI.Font(13, 700) or "DermaDefaultBold"
-        draw.SimpleTextOutlined(text, font, ScrW() * 0.5, ScrH() * 0.55, Color(225, 225, 225, 220),
-            TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, Color(0, 0, 0, 160))
+        draw.SimpleTextOutlined(text, font, ScrW() * 0.5, ScrH() * 0.55, COL_225_225_225_220,
+            TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, COL_0_0_0_160)
     end
 end
 
@@ -159,7 +169,7 @@ if SERVER then
     Rhylib.Net.Receive("wheel.armor", function(ply)
         local t = net.ReadEntity()
         local wep = ply:GetWeapon("rhylib_armor_kit")
-        if not (IsValid(wep) and IsValid(t) and t:IsPlayer() and t:Alive() and ply:Alive()) or ply.rhylibDown then return end
+        if not (IsValid(wep) and IsValid(t) and t:IsPlayer() and t:Alive() and ply:Alive()) or Rhylib.State.IsDown(ply) then return end
         if util.TraceLine({ start = ply:EyePos(), endpos = t:WorldSpaceCenter(), mask = MASK_SOLID_BRUSHONLY }).Hit then return end
         if CurTime() < wep:GetNextPrimaryFire() then return end
         local r = wep.Range + 40

@@ -11,7 +11,8 @@
                everything that matches an open bounty.
       Gear     hunter gear for money (config bounty shop).
     Also keeps the client's copy of the board: Rhylib.Bounty.board (list
-    from bounty.list), used by posters, the datapad tab and the puck HUD.
+    from bounty.diff, B.boardById), used by posters, the datapad tab and
+    the puck HUD.
     Needs rhylib_menus (Kit). Esc closes the window.
 ]]
 
@@ -22,7 +23,7 @@ B.board = B.board or {}
 local win, office, tab, status = nil, nil, "board", nil
 local post = { sid = nil, reward = "", mode = 3, std = false, free = false }
 
-local function K() return Rhylib.Menus and Rhylib.Menus.Kit end
+local function K() return Rhylib.UI and Rhylib.UI.Kit end
 
 -- B.FormatMoney(n): DarkRP's money format.
 function B.FormatMoney(n)
@@ -52,14 +53,42 @@ end
 -- Messages
 --------------------------------------------------------------------------
 
-Net.Receive("bounty.list", function()
-    local len = net.ReadUInt(32)
-    local raw = util.Decompress(net.ReadData(len), 262144)
-    local t = raw and util.JSONToTable(raw)
-    if not istable(t) then return end
+-- bounty.diff (see sv_10_bounty.lua): a snapshot (reset) or changes.
+-- B.boardById[id] = row; B.board = the rows sorted by reward (rebuilt).
+B.boardById = B.boardById or {}
+local MODE_NAMES = { "dead", "alive", "either" }
+
+Net.Receive("bounty.diff", function()
+    if net.ReadBool() then B.boardById = {} end
     local now = RealTime()
-    for _, b in ipairs(t) do b.endsAt = now + (tonumber(b.left) or 0) end
-    B.board = t
+    while net.ReadBool() do
+        if net.ReadBool() then
+            B.boardById[net.ReadUInt(24)] = nil
+        else
+            local r = { id = net.ReadUInt(24) }
+            r.kind = net.ReadBool() and "npc" or "player"
+            r.name = net.ReadString()
+            r.model = net.ReadString()
+            r.reward = net.ReadUInt(32)
+            r.mode = MODE_NAMES[net.ReadUInt(2)] or "dead"
+            r.free = net.ReadBool() or nil
+            r.std = net.ReadBool() or nil
+            r.by = net.ReadString()
+            r.byName = net.ReadString()
+            r.left = net.ReadUInt(24)
+            r.endsAt = now + r.left
+            r.tsid = net.ReadString()
+            r.tidx = net.ReadUInt(16)
+            B.boardById[r.id] = r
+        end
+    end
+    local list = {}
+    for _, r in pairs(B.boardById) do list[#list + 1] = r end
+    table.sort(list, function(a, c)
+        if a.reward ~= c.reward then return a.reward > c.reward end
+        return a.id < c.id
+    end)
+    B.board = list
     if IsValid(win) and win.Refresh then win:Refresh() end
 end)
 
@@ -71,7 +100,7 @@ end)
 Net.Receive("bounty.msg", function()
     local ok, text = net.ReadBool(), net.ReadString()
     status = { ok = ok, text = text }
-    chat.AddText(ok and Color(230, 190, 90) or Color(230, 110, 90), "[Bounty] ", Color(230, 230, 230), text)
+    Rhylib.Notify(nil, text, ok and "good" or "bad", "Bounty")
     if IsValid(win) and win.Refresh then win:Refresh() end
 end)
 
@@ -79,7 +108,7 @@ Net.Receive("bounty.collectx", function()
     local why = net.ReadString()
     local M = Rhylib.Menus
     if M and M.WheelProgressStop then M.WheelProgressStop() end
-    if why ~= "" then chat.AddText(Color(230, 110, 90), "[Bounty] ", Color(230, 230, 230), why) end
+    if why ~= "" then Rhylib.Notify(nil, why, "bad", "Bounty") end
 end)
 
 --------------------------------------------------------------------------
@@ -345,4 +374,4 @@ Rhylib.Hook.Add("InitPostEntity", "bounty.closer", function()
     local M = Rhylib.Menus
     if M and M.RegisterCloser then M.RegisterCloser("bounty", closer) end
 end)
-if Rhylib.Menus and Rhylib.Menus.RegisterCloser then Rhylib.Menus.RegisterCloser("bounty", closer) end
+if Rhylib.UI and Rhylib.UI.RegisterCloser then Rhylib.UI.RegisterCloser("bounty", closer) end

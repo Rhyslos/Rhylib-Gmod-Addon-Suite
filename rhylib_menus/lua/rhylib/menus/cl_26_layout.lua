@@ -253,7 +253,7 @@ local function build(page)
     local sp = K.Scroll(page)
     sp:Dock(FILL)
 
-    local head = K.Label(sp, "Every key Rhylib uses on your keyboard and mouse. Hover a key to see everything it does; hover a section to light up its keys. Change keys on the Controls page.", 13, nil, C.textDim)
+    local head = K.Label(sp, "Every key Rhy's uses on your keyboard and mouse. Hover a key to see everything it does; hover a section to light up its keys. Change keys on the Controls page.", 13, nil, C.textDim)
     head:Dock(TOP)
     head:DockMargin(0, 0, S(10), S(8))
     head:SetWrap(true)
@@ -482,7 +482,7 @@ local function build(page)
         draw.SimpleText(title, K.Font(16, 700), S(12), y + S(10), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
         y = y + S(38)
         if not cp.list then
-            draw.SimpleText("Rhylib doesn't use this key.", K.Font(13), S(12), y, C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+            draw.SimpleText("Rhy's doesn't use this key.", K.Font(13), S(12), y, C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
             return
         end
         local keysW = S(230)

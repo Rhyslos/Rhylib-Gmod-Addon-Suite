@@ -27,6 +27,7 @@
       Damage / Radius / EmpRadius / FlashRadius   per-grenade overrides
     Also spawned by rhylib_grenade_launcher and by rhylib_droids (B1
     grenades, clone poppers).
+    Frag and breach blasts go through rhylib_weapons W.Explode.
     Fires hook Rhylib.Explosion(pos, reach, strength, attacker, inflictor,
     kind) for player grenades (comms jammers, rhylib_radio) and
     Rhylib.EMP(pos, radius, attacker, inflictor) for real EMPs (rhylib_eod).
@@ -36,7 +37,7 @@ AddCSLuaFile()
 
 -- Setting (module "weapons"; registered here, so only with rhylib_republic).
 local Config = Rhylib.Config
--- (2026-10-07, owner: halved from 380, it was too strong)
+-- (halved from 380, it was too strong)
 Config.Register("weapons", "empRadius", 190, "Droid popper (EMP): radius it kills droids and stuns players in (units)")
 
 ENT.Type = "anim"
@@ -59,7 +60,7 @@ ENT.EmpRadius = nil     -- EMP: droids within this (nil = weapons empRadius)
 -- ENT:EmpR() -> EMP radius: set on this grenade (Grenadier skill), else
 -- the config. Server.
 function ENT:EmpR()
-    return self.EmpRadius or Config.Get("weapons", "empRadius") or 190
+    return self.EmpRadius or Config.Get("weapons", "empRadius")
 end
 
 -- ENT:Centre() -> where the grenade really is: the ball's centre (the
@@ -158,7 +159,7 @@ if SERVER then
         if self:GetKind() == 5 and CurTime() >= self.nextBeep then
             local left = boom - CurTime()
             if self.nextBeep == 0 or left <= 3 then
-                sound.Play("buttons/blip1.wav", self:GetPos(), 80, left <= 1 and 135 or 120, 1)   -- (world sound at the charge: owner 2026-10-09l, the beeps went missing)
+                sound.Play("buttons/blip1.wav", self:GetPos(), 80, left <= 1 and 135 or 120, 1)   -- (world sound at the charge: the beeps went missing)
             end
             self.nextBeep = left > 3 and (boom - 3) or (CurTime() + math.max(0.07, 0.5 * left / 3))
         end
@@ -181,19 +182,16 @@ if SERVER then
         elseif k == 6 then
             self:Flash(pos, attacker)
         else
-            local ed = EffectData()
-            ed:SetOrigin(pos)
-            util.Effect("Explosion", ed, true, true)
-            sound.Play("weapons/explosives_cannons_superlazers/sw_detonator_explosion.ogg", pos, 110, math.random(95, 105))   -- (thermal detonator blast, shared resources pack)
-            -- (training grenades, e.g. from training droids: sim health only)
-            local W = Rhylib.Weapons
-            if self.training and W and W.TrainingBlast then
-                W.TrainingBlast(pos, self.Radius, self.Damage, attacker, self)
-            else
-                util.BlastDamage(self, attacker, pos, self.Radius, self.Damage)
-            end
-            util.ScreenShake(pos, 6, 120, 0.8, self.Radius * 2)
-            util.Decal("Scorch", pos + Vector(0, 0, 8), pos - Vector(0, 0, 40), self)
+            -- (thermal detonator blast sound from the shared resources pack;
+            -- training grenades, e.g. from training droids: sim health only;
+            -- the jammer hook is below, for player-thrown grenades only)
+            Rhylib.Weapons.Explode({
+                pos = pos, radius = self.Radius, damage = self.Damage,
+                attacker = attacker, inflictor = self, training = self.training,
+                sound = { "weapons/explosives_cannons_superlazers/sw_detonator_explosion.ogg", 110, math.random(95, 105) },
+                shake = { 6, 120, 0.8, self.Radius * 2 },
+                decal = true, decalFilter = self,
+            })
         end
         -- Comms jammers (rhylib_radio): any grenade a player sets off is
         -- strength 1, a breaching charge 2. (training ones never count)
@@ -249,19 +247,13 @@ if SERVER then
     -- within breachDoors (and the one it's stuck to) is unlocked, opened and
     -- held open for breachHold seconds. Its old wait / lock comes back after.
     function ENT:Breach(pos, attacker)
-        local ed = EffectData()
-        ed:SetOrigin(pos)
-        ed:SetMagnitude(1)
-        ed:SetScale(1)
-        util.Effect("Explosion", ed, true, true)
         local r = Config.Get("weapons", "breachRadius")
-        local W = Rhylib.Weapons
-        if self.training and W and W.TrainingBlast then
-            W.TrainingBlast(pos, r, Config.Get("weapons", "breachDamage"), attacker, self)
-        else
-            util.BlastDamage(self, attacker, pos, r, Config.Get("weapons", "breachDamage"))
-        end
-        util.ScreenShake(pos, 8, 120, 0.6, r * 3)
+        Rhylib.Weapons.Explode({
+            pos = pos, radius = r, damage = Config.Get("weapons", "breachDamage"),
+            attacker = attacker, inflictor = self, training = self.training,
+            effectData = { magnitude = 1, scale = 1 },
+            shake = { 8, 120, 0.6, r * 3 },
+        })
         local hold = Config.Get("weapons", "breachHold")
         local doors = {}
         local stuck = self:GetParent()

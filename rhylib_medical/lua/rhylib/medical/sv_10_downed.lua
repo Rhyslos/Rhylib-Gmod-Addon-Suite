@@ -14,11 +14,13 @@
     Public: Med.Down, Med.Revive, Med.GiveUp, Med.StartDrag, Med.StopDrag,
     Med.Note, Med.CanSee, Med.InRange.
     Hooks fired: Rhylib.PlayerDowned(ply, attacker), Rhylib.PlayerRevived(ply, by).
-    Net: med.note (server -> one player) string: a short message under
-    the crosshair (cl_10_hud.lua).
+    Notices go through Rhylib.Notify (Med.Note). Net: med.callmedic (downed player's "call a
+    medic" key, R) -> med.called (when they may call again).
 ]]
 
 local Med = Rhylib.Medical
+
+local DRAG_REACH = 80   -- (units: a dragger further than this from the body lets go)
 
 Med.down = Med.down or {}           -- [ply] = { attacker, inflictor }
 Med.acts = Med.acts or {}           -- [helper] = action (sv_20_actions.lua)
@@ -32,15 +34,42 @@ local function rebuildList()
     Med.downList = list
 end
 
-Rhylib.Net.Register("med.note")
+Rhylib.Net.Register("med.called")
 
--- Med.Note(ply, text): shows a short message under ply's crosshair for
--- 2.5 s (net med.note). Server only.
--- Example: Rhylib.Medical.Note(ply, "Too far away")
-function Med.Note(ply, text)
-    Rhylib.Net.Start("med.note")
-    net.WriteString(text)
+-- Net med.callmedic (client -> server, empty): a downed player's "call a
+-- medic" key. With rhylib_datapad it's the datapad's medic call (no pad in
+-- hand needed: D.StartCall), else a chat line to every living medic.
+-- Once per config medical callMedicCooldown (30 s). The caller gets
+-- med.called (Float: when they may call again) for the downed panel.
+Rhylib.Net.Receive("med.callmedic", function(ply)
+    if not (Med.IsDown(ply) and ply:Alive()) then return end
+    local now = CurTime()
+    if now < (ply.rhylibMedicCallAt or 0) then return end
+    ply.rhylibMedicCallAt = now + Med.Cfg("callMedicCooldown")
+    local D = Rhylib.Datapad
+    local kind = D and D.CallKindFor and D.CallKindFor("medic")
+    local sent = kind and D.StartCall(ply, kind, 0)
+    if kind and not sent then return end   -- (the datapad refused it, e.g. its own cooldown: it said why)
+    if not sent then
+        local n = 0
+        for _, p in ipairs(player.GetHumans()) do
+            if p ~= ply and p:Alive() and Med.IsMedic(p) then
+                Med.Note(p, ply:Nick() .. " is down and needs a medic", "bad")
+                n = n + 1
+            end
+        end
+        Med.Note(ply, n > 0 and ("Medic call sent to " .. n .. " medic" .. (n == 1 and "" or "s")) or "No medics are on right now")
+    end
+    Rhylib.Net.Start("med.called")
+    net.WriteFloat(ply.rhylibMedicCallAt)
     net.Send(ply)
+end, { rate = 1, burst = 2 })
+
+-- Med.Note(ply, text, kind): a short notice to ply (Rhylib.Notify, tag
+-- "Medical"; kind "info" / "good" / "bad"). Server only.
+-- Example: Rhylib.Medical.Note(ply, "Too far away")
+function Med.Note(ply, text, kind)
+    Rhylib.Notify(ply, text, kind or "info", "Medical")
 end
 
 -- Within reach of a body or a standing player.
@@ -96,13 +125,12 @@ function Med.Down(ply, attacker, inflictor)
     Med.down[ply] = { attacker = attacker, inflictor = inflictor }
     rebuildList()
     ply.rhylibDown = true
+    ply:SetNW2Bool(Rhylib.NW.DOWN, true)   -- (at once, so Med.IsDown agrees with rhylibDown for anything this runs)
 
     if ply:InVehicle() then ply:ExitVehicle() end
-    -- Off a grapple rope, jetpack flames off (rhylib_weapons, rhylib_jetpack).
-    local G = Rhylib.Weapons and Rhylib.Weapons.Grapple
-    if G and G.Detach and G.Attached and G.Attached(ply) then G.Detach(ply) end
-    local J = Rhylib.Jetpack
-    if J and J.DT_THRUST and ply:GetDTBool(J.DT_THRUST) then ply:SetDTBool(J.DT_THRUST, false) end
+    -- Off a grapple rope, jetpack flames off: anything holding the player
+    -- up lets go (rhylib_weapons' grapple, rhylib_jetpack listen).
+    hook.Run("Rhylib.ForceRelease", ply, "down")
     Med.Cancel(ply)
     Med.StopDrag(ply)
     if Med.TankExit and ply.rhylibTank then Med.TankExit(ply) end   -- (out of the bacta tank first)
@@ -113,11 +141,10 @@ function Med.Down(ply, attacker, inflictor)
     if Med.Simple() then pool = math.max(1, math.ceil(ply:GetMaxHealth() * pool / 100)) end
     ply:SetHealth(pool)
     ply:SetNW2Float("rhylib_downYaw", ply:EyeAngles().y)
-    ply:SetNW2Float("rhylib_downEnd", CurTime() + Med.Cfg("bleedTime"))
-    ply:SetNW2Float("rhylib_downLeft", 0)
-    ply:SetNW2Entity("rhylib_stabBy", NULL)
-    ply:SetNW2Entity("rhylib_dragBy", NULL)
-    ply:SetNW2Bool("rhylib_down", true)
+    ply:SetNW2Float(Rhylib.NW.DOWN_END, CurTime() + Med.Cfg("bleedTime"))
+    ply:SetNW2Float(Rhylib.NW.DOWN_LEFT, 0)
+    ply:SetNW2Entity(Rhylib.NW.STAB_BY, NULL)
+    ply:SetNW2Entity(Rhylib.NW.DRAG_BY, NULL)
 
     -- Lying body: low camera, small hull, hit bounds wide enough for the
     -- whole body (it reaches past the hull).
@@ -159,9 +186,9 @@ local function clear(ply)
         if a.target == ply then Med.Cancel(helper) end
     end
 
-    ply:SetNW2Bool("rhylib_down", false)
-    ply:SetNW2Entity("rhylib_stabBy", NULL)
-    ply:SetNW2Entity("rhylib_dragBy", NULL)
+    ply:SetNW2Bool(Rhylib.NW.DOWN, false)
+    ply:SetNW2Entity(Rhylib.NW.STAB_BY, NULL)
+    ply:SetNW2Entity(Rhylib.NW.DRAG_BY, NULL)
 
     local vo = ply.rhylibViewOff
     if vo then
@@ -334,12 +361,12 @@ function Med.StartDrag(ply, target)
     -- Can't stabilise or treat what you're pulling away.
     local stab = Med.StabilisedBy(target)
     if stab then Med.Cancel(stab) end
-    target:SetNW2Entity("rhylib_dragBy", ply)
+    target:SetNW2Entity(Rhylib.NW.DRAG_BY, ply)
     ply:SetNW2Entity("rhylib_dragging", target)
     -- Medevac (Combat medic): the bleed-out waits while you drag them.
     if Med.Skill(ply, "medevac") and not Med.StabilisedBy(target) then
-        target:SetNW2Float("rhylib_downLeft", Med.TimeLeft(target))
-        target:SetNW2Entity("rhylib_stabBy", ply)
+        target:SetNW2Float(Rhylib.NW.DOWN_LEFT, Med.TimeLeft(target))
+        target:SetNW2Entity(Rhylib.NW.STAB_BY, ply)
         target.rhylibDragPause = ply
     end
 end
@@ -355,23 +382,23 @@ function Med.StopDrag(ply)
         if Med.Note then Med.Note(ply, "Revive stopped: the drag ended") end
     end
     local target = ply:GetNW2Entity("rhylib_dragging")
-    if IsValid(target) and target:GetNW2Entity("rhylib_dragBy") == ply then
-        target:SetNW2Entity("rhylib_dragBy", NULL)
+    if IsValid(target) and target:GetNW2Entity(Rhylib.NW.DRAG_BY) == ply then
+        target:SetNW2Entity(Rhylib.NW.DRAG_BY, NULL)
     end
     -- (Medevac pause ends with the drag)
     if IsValid(target) and target.rhylibDragPause == ply then
         target.rhylibDragPause = nil
-        if target.rhylibDown and target:GetNW2Entity("rhylib_stabBy") == ply then
+        if target.rhylibDown and target:GetNW2Entity(Rhylib.NW.STAB_BY) == ply then
             -- Someone reviving or stabilising them meanwhile takes the pause over.
             for h, a in pairs(Med.acts or {}) do
                 if h ~= ply and a.target == target and (Med.REVIVES[a.kind] or a.kind == Med.A_STAB) then
-                    target:SetNW2Entity("rhylib_stabBy", h)
+                    target:SetNW2Entity(Rhylib.NW.STAB_BY, h)
                     a.paused = true
                     return
                 end
             end
-            target:SetNW2Float("rhylib_downEnd", CurTime() + target:GetNW2Float("rhylib_downLeft", 0))
-            target:SetNW2Entity("rhylib_stabBy", NULL)
+            target:SetNW2Float(Rhylib.NW.DOWN_END, CurTime() + target:GetNW2Float(Rhylib.NW.DOWN_LEFT, 0))
+            target:SetNW2Entity(Rhylib.NW.STAB_BY, NULL)
         end
     end
     if ply:GetNW2Entity("rhylib_dragging") ~= NULL then ply:SetNW2Entity("rhylib_dragging", NULL) end
@@ -393,11 +420,11 @@ timer.Create("Rhylib.Medical", 0.1, 0, function()
         if not IsValid(ply) then
             Med.down[ply] = nil
             rebuildList()
-        elseif not Med.StabilisedBy(ply) and now >= ply:GetNW2Float("rhylib_downEnd", 0) then
+        elseif not Med.StabilisedBy(ply) and now >= ply:GetNW2Float(Rhylib.NW.DOWN_END, 0) then
             finish(ply)
         else
             local drag = Med.DraggedBy(ply)
-            if drag and (not drag:Alive() or drag.rhylibDown or not Med.InRange(drag, ply, 80) or not Med.CanSee(drag, ply)) then
+            if drag and (not drag:Alive() or drag.rhylibDown or not Med.InRange(drag, ply, DRAG_REACH) or not Med.CanSee(drag, ply)) then
                 Med.StopDrag(drag)
             end
         end

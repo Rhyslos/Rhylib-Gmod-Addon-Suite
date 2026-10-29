@@ -5,7 +5,7 @@
     Uses a prop model (models/jajoff/sps/cgiweapons/tc13j/dp23.mdl), held in
     first person by the trooper hands with the DC-15A's values (CarrierVM,
     safety pose included). The model's addon must be installed. Tune with
-    rhylib_vm_editor / rhylib_wm_editor, then paste the lines below.
+    rhylib_vm_editor (Rhy's Dev Tools) / rhylib_wm_editor, then paste the lines below.
 
     Class rhylib_dp23. Shared: one file for server and client (AddCSLuaFile).
     Base rhylib_base (rhylib_weapons), where every SWEP field is explained;

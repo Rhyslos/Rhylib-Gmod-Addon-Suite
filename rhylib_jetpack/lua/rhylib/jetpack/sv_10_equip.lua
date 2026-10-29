@@ -9,7 +9,7 @@
 
 local J = Rhylib.Jetpack
 
--- J.Set(ply, has): turn the jetpack on/off for a player (DTBool 31). On =
+-- J.Set(ply, has): turn the jetpack on/off for a player (J.DT_HAS). On =
 -- full tank, unlocked. Normally set by J.Refresh from the inventory.
 -- Example (a jetpack without rhylib_inventory): Rhylib.Jetpack.Set(ply, true)
 function J.Set(ply, has)
@@ -55,15 +55,17 @@ end)
 -- Admin test command, also works without the inventory addon: with it,
 -- gives a jetpack item (worn if the Back slot is free, else in the
 -- inventory or on the ground); without it, toggles the jetpack on/off.
-Rhylib.Perms.Register("rhylib.jetpack.give", "admin", "Give yourself a jetpack with rhylib_jetpack_give")
-concommand.Add("rhylib_jetpack_give", function(ply)
-    if not IsValid(ply) then return end
-    Rhylib.Perms.Check(ply, "rhylib.jetpack.give", function(ok)
-        if not ok or not IsValid(ply) then return end
+Rhylib.Command.Add({
+    name = "rhylib_jetpack_give",
+    perm = "rhylib.jetpack.give", minAccess = "admin",
+    help = "Give yourself a jetpack (without rhylib_inventory: toggle it)",
+    tag = "Jetpack",
+    fn = function(ply)
+        if not IsValid(ply) then return "Run it in game" end
         if Rhylib.Inventory and Rhylib.Inventory.AddItem then
             Rhylib.Inventory.AddOrDrop(ply, "jetpack", 1, {})
         else
             J.Set(ply, not J.Has(ply))
         end
-    end)
-end)
+    end,
+})

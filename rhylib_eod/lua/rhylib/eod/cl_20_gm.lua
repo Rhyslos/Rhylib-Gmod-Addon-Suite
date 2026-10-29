@@ -19,7 +19,7 @@
 local E = Rhylib.EOD
 local Net = Rhylib.Net
 
-local function K() return Rhylib.Menus and Rhylib.Menus.Kit end
+local function K() return Rhylib.UI and Rhylib.UI.Kit end
 local OPAQUE = Color(14, 16, 15, 255)
 
 -- Wire kind -> the name shown in the answers list (add new wire kinds here).
@@ -201,7 +201,7 @@ local function build()
             draw.SimpleText("Timer", k.Font(13), s(8), h / 2, C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
             local txt
             if t.ends and t.ends > 0 then txt = string.FormattedTime(math.max(0, t.ends - CurTime()), "%02i:%02i") .. " running"
-            else txt = string.FormattedTime(t.left or t.secs, "%02i:%02i") .. (t.stopped and " stopped (no power)" or t.held and " paused" or " waiting for someone within " .. math.floor((E.Cfg("timerWake") or 900) / E.UNITS_PER_M) .. " m") end
+            else txt = string.FormattedTime(t.left or t.secs, "%02i:%02i") .. (t.stopped and " stopped (no power)" or t.held and " paused" or " waiting for someone within " .. math.floor((E.Cfg("timerWake")) / E.UNITS_PER_M) .. " m") end
             draw.SimpleText(txt, k.Font(13, 700), w - s(8), h / 2, C.text, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
         end
         buttons({
@@ -295,7 +295,7 @@ Net.Receive("eod.gmopen", function()
 end)
 
 Rhylib.Hook.Add("InitPostEntity", "eod.gmcloser", function()
-    if Rhylib.Menus and Rhylib.Menus.RegisterCloser then
-        Rhylib.Menus.RegisterCloser("eodgm", function() if IsValid(gm.frame) then close() return true end end)
+    if Rhylib.UI and Rhylib.UI.RegisterCloser then
+        Rhylib.UI.RegisterCloser("eodgm", function() if IsValid(gm.frame) then close() return true end end)
     end
 end)

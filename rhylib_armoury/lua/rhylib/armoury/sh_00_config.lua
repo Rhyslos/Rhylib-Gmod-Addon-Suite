@@ -78,7 +78,7 @@ Rhylib.Hook.Add("Rhylib.ModelCatalogue", "armoury.models", function(add)
 end)
 
 -- Every armoury entity class, for saving and loading placements
--- (A.SavePlacements and the toolgun's Permanent tool).
+-- (A.places in sv_10_armoury.lua and the toolgun's Permanent tool).
 A.CLASSES = {
     rhylib_armoury = true,
     rhylib_ammo_cabinet = true,
@@ -107,14 +107,15 @@ A.AMMO_STOCK = { "mag_small", "mag_medium", "mag_large", "cell", "rocket", "grap
 -- Settings (module "armoury"). Lists are read when a storage is first
 -- opened after a map start, so changes show after a map change.
 local Config = Rhylib.Config
-Config.Register("armoury", "weapons", {}, "Weapon classes in the armoury, in order. Empty = every Rhylib weapon")
-Config.Register("armoury", "trainingWeapons", {}, "Weapon classes in the training armoury, in order. Empty = every training weapon")
-Config.Register("armoury", "gearStock", { "backpack", "jetpack" }, "Gear cabinet: equipment it hands out (endless, issued)")
-Config.Register("armoury", "lockerW", 6, "Personal locker width in cells")
-Config.Register("armoury", "depositTime", 7200, "Training deposit: seconds of online time before what's left in it is deleted")
-Config.Register("armoury", "lockerH", 6, "Personal locker height in cells")
-Config.Register("armoury", "crateW", 5, "Supply crate width in cells")
-Config.Register("armoury", "crateH", 4, "Supply crate height in cells")
+Config.Describe("armoury", { name = "Armoury", category = "Server & interface", sections = { "Stock", "Storage sizes", "Training deposit" } })
+Config.Register("armoury", "weapons", {}, "Weapon classes in the armoury, in order. Empty = every Rhylib weapon", { section = "Stock" })
+Config.Register("armoury", "trainingWeapons", {}, "Weapon classes in the training armoury, in order. Empty = every training weapon", { section = "Stock" })
+Config.Register("armoury", "gearStock", { "backpack", "jetpack" }, "Gear cabinet: equipment it hands out (endless, issued)", { section = "Stock" })
+Config.Register("armoury", "lockerW", 6, "Personal locker width in cells", { section = "Storage sizes" })
+Config.Register("armoury", "depositTime", 7200, "Training deposit: seconds of online time before what's left in it is deleted", { section = "Training deposit" })
+Config.Register("armoury", "lockerH", 6, "Personal locker height in cells", { section = "Storage sizes" })
+Config.Register("armoury", "crateW", 5, "Supply crate width in cells", { section = "Storage sizes" })
+Config.Register("armoury", "crateH", 4, "Supply crate height in cells", { section = "Storage sizes" })
 
 Config.Register("armoury", "medCrate", {
     { "rhylib_medkit", 10 }, { "rhylib_firstaid", 2 }, { "rhylib_revivekit", 3 },
@@ -122,7 +123,7 @@ Config.Register("armoury", "medCrate", {
     { "rhylib_splint", 4 }, { "rhylib_burngel", 3 }, { "rhylib_painkiller", 4 },
     { "rhylib_bloodpack", 2 }, { "rhylib_med_supplies", 10 },
     { "rhylib_blood_kit", 3 }, { "rhylib_test_strip", 5 },
-}, "What a medical crate is filled with: { item, count }")
+}, "What a medical crate is filled with: { item, count }", { section = "Stock" })
 
 -- Everyone has the "trooper" role; mp / medic come from the DarkRP job
 -- (mp = true, medic = true), others from a job's role = "name" (or a list).
@@ -132,7 +133,7 @@ Config.Register("armoury", "roles", {
     mp = { weapons = { "rhylib_riotshield" }, gear = { "rhylib_stunbaton", "rhylib_handcuffs", "rhylib_flashcharge" } },   -- (stun is a fire mode for MPs)
     medic = { weapons = {}, gear = { "rhylib_medkit", "rhylib_firstaid", "rhylib_revivekit", "rhylib_antiviral", "rhylib_antidote", "rhylib_antibiotics",
         "rhylib_med_supplies", "rhylib_blood_kit", "rhylib_test_strip" } },
-}, "Specialist armoury stock per role: { weapons = {...}, gear = {...} }")
+}, "Specialist armoury stock per role: { weapons = {...}, gear = {...} }", { section = "Stock" })
 
 -- A.Roles(ply) -> sorted list of role names: always "trooper", "mp" (rhylib_mp
 -- MP.IsMP), "medic" (rhylib_medical Med.IsMedic), the DarkRP job's `role`

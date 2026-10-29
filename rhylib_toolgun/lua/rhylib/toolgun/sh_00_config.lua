@@ -50,7 +50,7 @@ local SPAWNS = "rhylib_spawns_save"
 local RADIO = "rhylib_radio_save"
 
 local ALL = {
-    -- Staff tool (2026-10-09u, owner): placing no longer saves anything; this
+    -- Staff tool : placing no longer saves anything; this
     -- makes the aimed thing permanent (rhylib_core Rhylib.Perma). Works on
     -- anything not part of the map: fixtures, props, other addons' entities.
     { id = "perma", name = "Permanent (LMB: keep it on the map / save its new spot, RMB: stop keeping it)", cat = "Staff tools", perma = true },
@@ -67,13 +67,13 @@ local ALL = {
     { id = "b1_snow", name = "B1 snow droid", cat = "Droid NPCs", class = "rhylib_b1_snow", count = true },
     { id = "b1t", name = "B1 training droid", cat = "Droid NPCs", class = "rhylib_b1_training", count = true },
     { id = "b2t", name = "B2 training droid", cat = "Droid NPCs", class = "rhylib_b2_training", count = true },
-    -- Clone troopers (friendly NPCs, 2026-10-06az)
+    -- Clone troopers (friendly NPCs)
     { id = "ct_trooper", name = "Clone trooper", cat = "Clone NPCs", class = "rhylib_ct_trooper", count = true },
     { id = "ct_rifleman", name = "Clone rifleman", cat = "Clone NPCs", class = "rhylib_ct_rifleman", count = true },
     { id = "ct_heavy", name = "Clone heavy", cat = "Clone NPCs", class = "rhylib_ct_heavy", count = true },
     { id = "ct_medic", name = "Clone medic", cat = "Clone NPCs", class = "rhylib_ct_medic", count = true },
     { id = "ct_commander", name = "Clone commander", cat = "Clone NPCs", class = "rhylib_ct_commander", count = true },
-    -- Preset squads (2026-10-06bd): placed in a grid facing you.
+    -- Preset squads: placed in a grid facing you.
     { id = "ps_clone_squad", name = "Clone squad (8)", cat = "Clone NPCs", preset = "clone_squad" },
     { id = "ps_clone_company", name = "Clone company (22)", cat = "Clone NPCs", preset = "clone_company" },
     { id = "ps_droid_small", name = "Droid squad, small (10)", cat = "Droid NPCs", preset = "droid_small" },
@@ -91,7 +91,7 @@ local ALL = {
     { id = "mk_attack", name = "Marker: attack here", cat = "Droid orders", class = "rhylib_droid_marker", marker = 1 },
     { id = "mk_defend", name = "Marker: defend this", cat = "Droid orders", class = "rhylib_droid_marker", marker = 2 },
     { id = "mk_fallback", name = "Marker: fall back here", cat = "Droid orders", class = "rhylib_droid_marker", marker = 3 },
-    -- Clone orders (2026-10-06bb): same brush and markers for clone NPCs.
+    -- Clone orders: same brush and markers for clone NPCs.
     { id = "cord_guard", name = "Clones: guard here", cat = "Clone orders", order = "guard", side = 1 },
     { id = "cord_patrol", name = "Clones: patrol here", cat = "Clone orders", order = "patrol", side = 1 },
     { id = "cord_attack", name = "Clones: attack", cat = "Clone orders", order = "attack", side = 1 },
@@ -132,7 +132,7 @@ local ALL = {
     { id = "dummyt", name = "Test dummy (tough)", cat = "Testing", class = "rhylib_test_dummy_tough" },
 }
 
--- The Rhy's tab's categories, top to bottom (owner: NPCs on their own,
+-- The Rhy's tab's categories, top to bottom (NPCs on their own,
 -- not alphabetical); others follow alphabetically.
 Tool.CAT_ORDER = { "Staff tools", "Clone NPCs", "Clone orders", "Droid NPCs", "Droid orders", "EOD", "Spawns", "Armoury", "Medical", "Base", "Training", "Testing" }
 
@@ -153,7 +153,7 @@ function Tool.Entries()
 end
 
 -- The model a toolgun entry places, for the spawn window's tile picture
--- and hover preview (owner 2026-10-08). Mirrors how each entity picks its
+-- and hover preview. Mirrors how each entity picks its
 -- model in Initialize (module config, then that entity's fallback).
 -- Orders have none; presets show their main unit.
 local PRESET_CLASS = { clone_squad = "rhylib_ct_trooper", clone_company = "rhylib_ct_trooper", droid_small = "rhylib_b1",
@@ -164,13 +164,35 @@ local function modelExists(m)
     return isstring(m) and m ~= "" and (util.IsValidModel(m) or file.Exists(m, "GAME"))
 end
 local function ok(m) return modelExists(m) and m or nil end
-local function cfg(module, key, fallback) return ok(Rhylib.Config.Get(module, key)) or fallback end
+
+-- Entities whose model comes from another addon's setting: { module, key }.
+-- Only the setting is named here, never a path: the value (or, when that
+-- model isn't installed, nothing) is what the tile shows.
+local CONFIG_MODEL = {
+    rhylib_bacta_tank = { "medical", "tankModel" },
+    rhylib_chem_bench = { "medical", "benchModel" },
+    rhylib_med_sofa = { "medical", "sofaModel" },
+    rhylib_jail_terminal = { "mp", "terminalModel" },
+    rhylib_property_locker = { "mp", "propertyModel" },
+    rhylib_spawn_point = { "spawns", "model" },
+    rhylib_event_spawn = { "spawns", "model" },
+    rhylib_training_beacon = { "training", "beaconModel" },
+}
 
 -- Tool.ClassModel(class): the model placing that class gives, or nil.
 -- Tool.EntryModel(entry): the same for an entry (presets: their main unit).
-function Tool.ClassModel(class)
+-- Order: the entity's own ENT.PreviewModel (string or function(classTable)),
+-- droid / clone kinds (rhylib_droids), armoury and datapad model tables,
+-- comms jammers (rhylib_radio settings), the CONFIG_MODEL settings above,
+-- then ENT.Model / ENT.WorldModel. Answers are cached per class and
+-- forgotten when a setting or model override changes.
+local cache = {}
+local function classModel(class)
     local t = class and scripted_ents.Get(class)
     if not t then return nil end
+    local pm = t.PreviewModel
+    if isfunction(pm) then pm = pm(t) end
+    if ok(pm) then return pm end
     -- droids and clones (rhylib_droids kinds)
     local D = Rhylib.Droids
     if t.DroidKind and D and D.KINDS then
@@ -189,26 +211,31 @@ function Tool.ClassModel(class)
     local R = Rhylib.Radio
     if R and R.JAMMER_SIZES and R.JAMMER_SIZES[class] then
         local key = R.JAMMER_SIZES[class].key or ""
-        return ok(R.Cfg("jammerModel" .. key)) or ok(R.Cfg("jammerFallbackModel")) or "models/props_lab/reciever01a.mdl"
+        return ok(R.Cfg("jammerModel" .. key)) or ok(R.Cfg("jammerFallbackModel"))
     end
-    local byClass = {
-        rhylib_bacta_tank = function() return cfg("medical", "tankModel", "models/props_c17/FurnitureFridge001a.mdl") end,
-        rhylib_chem_bench = function() return cfg("medical", "benchModel", "models/props_c17/FurnitureTable001a.mdl") end,
-        rhylib_med_sofa = function() return cfg("medical", "sofaModel", "models/props_c17/FurnitureCouch001a.mdl") end,
-        rhylib_jail_terminal = function() return cfg("mp", "terminalModel", "models/props_combine/combine_interface001.mdl") end,
-        rhylib_property_locker = function() return cfg("mp", "propertyModel", "models/props_c17/lockers001a.mdl") end,
-        rhylib_jail_cell = function() return "models/hunter/plates/plate1x1.mdl" end,
-        rhylib_spawn_point = function() return cfg("spawns", "model", "models/props_combine/combine_mine01.mdl") end,
-        rhylib_event_spawn = function() return cfg("spawns", "model", "models/props_combine/combine_mine01.mdl") end,
-        rhylib_training_beacon = function() return cfg("training", "beaconModel", "models/props_combine/combine_mine01.mdl") end,
-        rhylib_test_dummy = function() return ok("models/ct_trp/pm_ct_trp.mdl") or "models/aussiwozzi/cgi/base/unassigned_cpt.mdl" end,
-        rhylib_test_dummy_tough = function() return ok("models/ct_trp/pm_ct_trp.mdl") or "models/aussiwozzi/cgi/base/unassigned_cpt.mdl" end,
-        rhylib_droid_marker = function() return "models/hunter/blocks/cube025x025x025.mdl" end,
-    }
-    local f = byClass[class]
-    if f then return ok(f()) end
+    local c = CONFIG_MODEL[class]
+    if c then return ok(Rhylib.Config.Get(c[1], c[2])) end
+    if class == "rhylib_jail_cell" then return "models/hunter/plates/plate1x1.mdl" end   -- (its fixed plate)
     return ok(t.Model) or ok(t.WorldModel)
 end
+
+local missAt = {}   -- [class] = when a lookup found nothing (tried again after 10 s:
+                    -- a client may not have loaded the model yet)
+function Tool.ClassModel(class)
+    if not class then return nil end
+    local v = cache[class]
+    if v == false and CurTime() - (missAt[class] or 0) > 10 then v = nil end
+    if v == nil then
+        v = classModel(class) or false
+        cache[class] = v
+        if v == false then missAt[class] = CurTime() end
+    end
+    return v or nil
+end
+local function forget() cache = {} end
+Rhylib.Hook.Add("Rhylib.ConfigChanged", "toolgun.classmodel", forget)
+Rhylib.Hook.Add("Rhylib.ModelsChanged", "toolgun.classmodel", forget)
+Rhylib.Hook.Add("InitPostEntity", "toolgun.classmodel", forget)
 
 function Tool.EntryModel(e)
     if e.preset then return Tool.ClassModel(PRESET_CLASS[e.preset]) end
@@ -254,9 +281,9 @@ function Tool.ByClass(class)
     end
 end
 
-Rhylib.Perms.Register("rhylib.toolgun", "admin", "Use the Rhylib toolgun (place droids, armouries, beacons and other fixtures)")
+Rhylib.Perms.Register("rhylib.toolgun", "admin", "Use Rhy's toolgun (place droids, armouries, beacons and other fixtures)")
 
--- Limited toolgun access (2026-10-09y, owner: gamemasters place bombs).
+-- Limited toolgun access (gamemasters place bombs).
 -- An entry may set perm = "<permission>": staff without rhylib.toolgun but
 -- with that permission may hold the toolgun and use only those entries
 -- (rhylib_eod: rhylib.eod.gm for bombs and mines). These checks are
@@ -284,3 +311,6 @@ function Tool.EntryPerms()
     end
     return out
 end
+
+-- Server settings page: this module's name and side-bar category.
+if Rhylib.Config.Describe then Rhylib.Config.Describe("toolgun", { name = "Toolgun", category = "Server & interface" }) end

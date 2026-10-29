@@ -20,7 +20,7 @@
     draw / idle / throw; the c_grenade model itself is drawn see-through
     (render blend 0) and the prop is drawn on its grenade bone, so it
     follows the throw. Third person: the prop in the right hand
-    (PropWMPos/Ang, tune with rhylib_wm_editor).
+    (PropWMPos/Ang, tune with rhylib_wm_editor (Rhy's Dev Tools)).
     Prop offsets are from the model's centre (the thermal's origin is off
     to one side).
 
@@ -172,7 +172,7 @@ function SWEP:Think()
             msg = ": timed (" .. self.FuseTime .. " s)"
         end
         o:EmitSound("weapons/smg1/switch_single.wav", 60)
-        o:ChatPrint(self.PrintName .. msg)
+        Rhylib.Notify(o, self.PrintName .. msg, "info", "Weapons")
     end
     if self:GetNeedDraw() and CurTime() >= self:GetLastThrow() + self.RedrawTime then
         self:SetNeedDraw(false)
@@ -211,7 +211,7 @@ function SWEP:PlaceBreach()
     local e = tr.Entity
     local ok = tr.Hit and not tr.HitSky and (tr.HitWorld or (IsValid(e) and not e:IsPlayer() and not e:IsNPC() and not e:IsNextBot()))
     if not ok then
-        if SERVER then o:ChatPrint("Look at a door or a wall close by to place the charge") end
+        if SERVER then Rhylib.Notify(o, "Look at a door or a wall close by to place the charge", "bad", "Weapons") end
         return
     end
     self:SetNextPrimaryFire(CurTime() + self.ThrowDelay)
@@ -248,7 +248,7 @@ function SWEP:Throw(force, lift)
     if not self:SkillOK() then
         self:SetNextPrimaryFire(CurTime() + 1)
         self:SetNextSecondaryFire(CurTime() + 1)
-        if SERVER then o:ChatPrint("You need the " .. (self.SkillName or "right") .. " skill to throw this") end
+        if SERVER then Rhylib.Notify(o, "You need the " .. (self.SkillName or "right") .. " skill to throw this", "bad", "Weapons") end
         return
     end
     self:SetNextPrimaryFire(CurTime() + self.ThrowDelay)
@@ -285,7 +285,7 @@ function SWEP:Throw(force, lift)
         force = force * math.sqrt(range)
         g.Damage = g.Damage * dmg
         g.Radius = g.Radius * rad
-        g.EmpRadius = (g.EmpRadius or Config.Get("weapons", "empRadius") or 190) * rad
+        g.EmpRadius = (g.EmpRadius or Config.Get("weapons", "empRadius")) * rad
         g.FlashRadius = g.FlashRadius * rad
     end
     -- Demolitions (EOD): thermal detonators harder and wider.
@@ -444,7 +444,7 @@ if CLIENT then
     function SWEP:DrawWorldModel(flags)
         local o = self:GetOwner()
         if not IsValid(o) then self:DrawModel(flags) return end
-        if o ~= LocalPlayer() and o:GetNW2Bool("rhylib_cloak") then return end   -- (admin cloak)
+        if o ~= LocalPlayer() and o:GetNW2Bool(Rhylib.NW.CLOAK, false) then return end   -- (admin cloak)
         if self:GetNeedDraw() then return end   -- just thrown
         local b = o:LookupBone("ValveBiped.Bip01_R_Hand")
         local m = b and o:GetBoneMatrix(b)

@@ -31,7 +31,7 @@ local Config = Rhylib.Config
 Config.Register("weapons", "shieldArc", 60, "Riot shield: blocks bolts within this many degrees of straight ahead")
 Config.Register("weapons", "shieldSideCenter", 55, "Riot shield not aimed: middle of the covered wedge, degrees to the left of where you look")
 Config.Register("weapons", "shieldSideArc", 30, "Riot shield not aimed: width of the covered wedge on the left (degrees)")
--- CG riot shield (SWEP.ShieldProficiency, owner 2026-10-09: "it needs to be better").
+-- CG riot shield (SWEP.ShieldProficiency): wider cover than the Republic shield.
 Config.Register("weapons", "cgShieldArc", 75, "CG riot shield aimed: blocks bolts within this many degrees of straight ahead")
 Config.Register("weapons", "cgShieldSideArc", 50, "CG riot shield not aimed: width of the covered wedge on the left (degrees)")
 Config.Register("weapons", "cgShieldBlast", 0.5, "CG riot shield aimed at an explosion: damage multiplier (breaching charges are stopped by either shield)")

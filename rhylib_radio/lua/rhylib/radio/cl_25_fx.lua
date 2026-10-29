@@ -1,5 +1,5 @@
 --[[
-    Radio sound (client; 2026-10-07, owner: radio should sound like radio, break up
+    Radio sound (client; radio should sound like radio, break up
     for the tiniest moment now and then, and have the odd interference).
 
     GMod gives Lua no way to filter voice audio itself, so the radio feel

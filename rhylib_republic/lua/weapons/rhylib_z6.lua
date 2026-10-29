@@ -5,7 +5,7 @@
 
     Uses a prop model (models/jajoff/sps/cgiweapons/tc13j/z6.mdl), held in first person by
     the trooper hands (CarrierVM). The model's addon must be installed.
-    Tune with rhylib_vm_editor, then paste its lines below.
+    Tune with rhylib_vm_editor (Rhy's Dev Tools), then paste its lines below.
     All numbers are first guesses for tuning.
 
     Class rhylib_z6. Shared: one file for server and client (AddCSLuaFile).
@@ -68,7 +68,7 @@ SWEP.Recoil = { up = 0.32, side = 0.4, bias = 0.25, recover = 0.4, aimMult = 0.7
 SWEP.Damage = 18
 SWEP.BoltSpeed = 7500
 SWEP.BoltColor = 1
-SWEP.FireSound = "weapons/airboat/airboat_gun_energy2.wav"   -- (owner 2026-10-09l: the pack sound reverted)
+SWEP.FireSound = "weapons/airboat/airboat_gun_energy2.wav"   -- (the pack sound reverted)
 SWEP.FireSoundLevel = 145
 
 SWEP.Mags = { "mag_large", "mag_medium", "mag_small" }
@@ -92,7 +92,7 @@ SWEP.StartMags = 3
 SWEP.StartCells = 1
 
 -- Inventory size in cells
-SWEP.InvW = 6   -- (long guns are 6 long, the inventory is 6 wide; owner 2026-10-07)
+SWEP.InvW = 6   -- (long guns are 6 long, the inventory is 6 wide)
 SWEP.InvH = 1
 SWEP.InvLarge = true
 SWEP.InvWeight = 12          -- kg

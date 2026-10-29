@@ -18,16 +18,19 @@
       - "inv.note"  a short message for the inventory window (string)
       - "inv.busy"  combining munitions ends at this CurTime (float; 0 = stopped)
     Client requests (rate limited): inv.req, inv.move, inv.hotbar, inv.drop,
-    inv.use, inv.split, inv.combine, inv.hide. Giving and holding are in
-    sv_40_give.lua; outside containers (lockers, armouries, crates) in
-    sv_30_storage.lua.
+    inv.use, inv.split, inv.combine, inv.hide are read in sv_14_requests.lua.
+    Weapons (an item's weapon given / stripped / captured, pickups) are in
+    sv_12_weapons.lua. Giving and holding are in sv_40_give.lua; outside
+    containers (lockers, armouries, crates) in sv_30_storage.lua. The
+    files share helpers through Inv.Internal.
 
     Issued gear (data.issued, from an armoury or ammo cabinet) drops like
     anything else, but the world item despawns sooner (config
     issuedDropLife). Job loadout gear (data.loadout) just vanishes.
 
-    Saving: changed inventories are marked dirty and written to SQLite
-    every few seconds (Rhylib.Data batches the writes further).
+    Saving: changed inventories are marked dirty and serialised every
+    saveInterval seconds (read live); Rhylib.Data batches the SQLite
+    writes further.
     Data module "inventory", key = SteamID64, value = a list of rows
     { id, x, y, rot (0/1), count, data, container id, hotbar slot }.
 
@@ -46,23 +49,28 @@
 
 Rhylib.Inventory = Rhylib.Inventory or {}
 local Inv = Rhylib.Inventory
+-- Helpers shared by the server files (sv_12_weapons, sv_14_requests,
+-- sv_30_storage, sv_40_give) and, for update(), by other addons. Filled
+-- at the bottom of each file that defines them.
+Inv.Internal = Inv.Internal or {}
+local I = Inv.Internal
 local Items = Rhylib.Items
 local Config = Rhylib.Config
 
 local MAIN, BACK, SLOT_BACK, RACK, BELT, HOLSTER = Items.MAIN, Items.BACK, Items.SLOT_BACK, Items.RACK, Items.BELT, Items.HOLSTER
 local IsWorn = Items.IsWorn
 
-Config.Register("inventory", "beltCells", 2, "Power cells every clone's belt cell pouch holds (under Combine munitions; 0-2, 0 = none). Takes effect for players who join after a change")
-Config.Register("inventory", "width", 6, "Personal inventory width in cells (owner 2026-10-07: 6, and the long guns are 6 long)")
-Config.Register("inventory", "height", 3, "Personal inventory height in cells")
-Config.Register("inventory", "saveInterval", 2, "Seconds between saves of changed inventories")
-Config.Register("inventory", "worldItemLife", 600, "Seconds before a dropped item on the ground is removed (0 = never)")
-Config.Register("inventory", "issuedDropLife", 300, "Seconds before dropped issued (armoury) gear is removed")
-Config.Register("inventory", "worldItemMax", 300, "Most dropped items on the ground at once; the oldest goes first")
-Config.Register("inventory", "worldItemPerPlayer", 15, "Most dropped items one player can have on the ground; their oldest goes first")
-Config.Register("inventory", "autoHotbar", true, "New weapons go into the first free hotbar slot")
-Config.Register("inventory", "combineTime", 1.5, "Combining munitions: seconds per partly used magazine or cell (total at least 3 s, at most combineMax)")
-Config.Register("inventory", "combineMax", 30, "Combining munitions: longest it takes (seconds)")
+Config.Register("inventory", "beltCells", 2, "Power cells every clone's belt cell pouch holds (under Combine munitions; 0-2, 0 = none). Takes effect for players who join after a change", { section = "Size & weight" })
+Config.Register("inventory", "width", 6, "Personal inventory width in cells (the long guns are 6 long)", { section = "Size & weight" })
+Config.Register("inventory", "height", 3, "Personal inventory height in cells", { section = "Size & weight" })
+Config.Register("inventory", "saveInterval", 2, "Seconds between saves of changed inventories", { section = "Rules" })
+Config.Register("inventory", "worldItemLife", 600, "Seconds before a dropped item on the ground is removed (0 = never)", { section = "Dropped items" })
+Config.Register("inventory", "issuedDropLife", 300, "Seconds before dropped issued (armoury) gear is removed", { section = "Dropped items" })
+Config.Register("inventory", "worldItemMax", 300, "Most dropped items on the ground at once; the oldest goes first", { section = "Dropped items" })
+Config.Register("inventory", "worldItemPerPlayer", 15, "Most dropped items one player can have on the ground; their oldest goes first", { section = "Dropped items" })
+Config.Register("inventory", "autoHotbar", true, "New weapons go into the first free hotbar slot", { section = "Rules" })
+Config.Register("inventory", "combineTime", 1.5, "Combining munitions: seconds per partly used magazine or cell (total at least 3 s, at most combineMax)", { section = "Rules" })
+Config.Register("inventory", "combineMax", 30, "Combining munitions: longest it takes (seconds)", { section = "Rules" })
 
 Inv.states = Inv.states or {}  -- [ply] = state
 Inv.dirty = Inv.dirty or {}    -- [ply] = true
@@ -87,119 +95,6 @@ local updBatch = Rhylib.Net.CreateBatch("inv.upd", function(ch)
         net.WriteUInt(ch.h, 5)
     end
 end)
-
---------------------------------------------------------------------------
--- Weapons
---------------------------------------------------------------------------
-
--- Another item of the same gun still carried (an officer's two DC-17s
--- share one weapon entity), or nil.
-local function twinOf(ply, inst)
-    local st = Inv.states[ply]
-    if not st then return nil end
-    for uid, o in pairs(st.byUid) do
-        if uid ~= inst.uid and o.id == inst.id then return o end
-    end
-end
-
--- Data for a second copy that isn't the gun in your hands: empty, or in
--- dual mode the second magazine, taken out of the live gun (take = true).
-local function spareData(wep, take)
-    local live = wep:GetInventoryData() or {}
-    local data = { mag = live.mag, clip = 0, mode = 1, magIssued = live.magIssued }
-    if take and wep.GetFireModeName and wep:GetFireModeName() == "dual" then
-        local single = math.floor(wep:GetMagSize() / (wep.DualMags or 2))
-        local extra = math.min(wep:Clip1() - single, single)
-        if extra > 0 then
-            wep:SetClip1(wep:Clip1() - extra)
-            data.clip = extra
-        end
-    end
-    return data
-end
-
--- The weapon's state (clip, mode...) into its item. staying: the item stays
--- with the player (saving); otherwise it's about to leave. With two copies
--- the one leaving only takes a spare's share (no ammo copied).
-local function captureWeapon(ply, inst, staying, primary)
-    local def = Items.defs[inst.id]
-    if not def or not def.weapon then return end
-    local wep = ply:GetWeapon(def.weapon)
-    if IsValid(wep) and wep.GetInventoryData then
-        local issued, loadout = inst.data and inst.data.issued, inst.data and inst.data.loadout
-        local twin = twinOf(ply, inst)
-        if twin and not staying then
-            inst.data = spareData(wep, true)
-        elseif twin and primary == false then
-            inst.data = spareData(wep, false)
-        else
-            inst.data = wep:GetInventoryData() or inst.data
-        end
-        inst.data.issued, inst.data.loadout = issued, loadout  -- keep the armoury / job marks
-    end
-end
-
-local function giveWeapon(ply, inst)
-    local def = Items.defs[inst.id]
-    if not def or not def.weapon or not ply:Alive() or ply:HasWeapon(def.weapon) then return end
-    ply.rhylibGiving = true
-    local wep = ply:Give(def.weapon, true)
-    ply.rhylibGiving = false
-    if IsValid(wep) and wep.SetInventoryData then
-        wep:SetInventoryData(inst.data)
-    end
-end
-
-Inv.STOWED = "rhylib_stowed"  -- the empty weapon (lua/weapons/rhylib_stowed.lua)
-
--- Inv.Stow(ply): put the gun away: hold the empty Stowed weapon (given if missing).
-function Inv.Stow(ply)
-    if not ply:HasWeapon(Inv.STOWED) then ply:Give(Inv.STOWED) end
-    ply:SelectWeapon(Inv.STOWED)
-end
-
-local function stripWeapon(ply, inst)
-    local def = Items.defs[inst.id]
-    if not def or not def.weapon then return end
-    -- Another stack of the same kit is still carried: keep the weapon.
-    local st = Inv.states[ply]
-    if st then
-        for uid, o in pairs(st.byUid) do
-            if uid ~= inst.uid and o.id == inst.id then return end
-        end
-    end
-    captureWeapon(ply, inst)
-    if ply:HasWeapon(def.weapon) then
-        local active = ply:GetActiveWeapon()
-        local wasActive = IsValid(active) and active:GetClass() == def.weapon
-        ply:StripWeapon(def.weapon)
-        if wasActive then Inv.Stow(ply) end
-    end
-end
-
--- Inv.CaptureWeapons(ply): writes every carried weapon's live state
--- (clip, magazine, cell, fire mode) into its item. Runs before saving and
--- on death.
-function Inv.CaptureWeapons(ply)
-    local st = Inv.states[ply]
-    if not st then return end
-    -- (two copies of one gun: the lowest uid holds the live state)
-    local first = {}
-    for uid, inst in pairs(st.byUid) do
-        if not first[inst.id] or uid < first[inst.id] then first[inst.id] = uid end
-    end
-    for uid, inst in pairs(st.byUid) do captureWeapon(ply, inst, true, first[inst.id] == uid) end
-end
-
--- Inv.GiveAllWeapons(ply): gives the weapon of every weapon item carried
--- (on spawn), each loaded from its item's data.
-function Inv.GiveAllWeapons(ply)
-    -- Lowest uid first: of two copies, that one's state is the live gun's.
-    local list = {}
-    for _, inst in pairs(Inv.Get(ply).byUid) do list[#list + 1] = inst end
-    table.sort(list, function(a, b) return a.uid < b.uid end)
-    for _, inst in ipairs(list) do giveWeapon(ply, inst) end
-end
 
 --------------------------------------------------------------------------
 -- State and low-level changes
@@ -237,8 +132,8 @@ Rhylib.Hook.Add("Tick", "inventory.changed", function()
                 local weight, cap = Items.Weight(st)
                 local K = Rhylib.Skills
                 if K and K.AdjustWeight then weight, cap = K.AdjustWeight(ply, st, weight, cap) end
-                ply:SetNW2Float("rhylib_weight", math.Round(weight, 2))
-                ply:SetNW2Float("rhylib_carry", cap)
+                ply:SetNW2Float(Rhylib.NW.WEIGHT, math.Round(weight, 2))
+                ply:SetNW2Float(Rhylib.NW.CARRY, cap)
             end
             hook.Run("Rhylib.InventoryChanged", ply)
         end
@@ -314,13 +209,13 @@ local function removeInst(ply, st, uid)
     if not inst then return end
     -- (one of two copies of a gun leaves: the other takes its hotbar slot)
     if inst.hb then
-        local twin = twinOf(ply, inst)
+        local twin = I.twinOf(ply, inst)
         if twin and not twin.hb then
             twin.hb = inst.hb
             update(ply, st, twin)
         end
     end
-    stripWeapon(ply, inst)
+    I.stripWeapon(ply, inst)
     st.cont[inst.c].items[uid] = nil
     st.byUid[uid] = nil
     if st.ready then updBatch:Send(ply, { op = OP_REMOVE, uid = uid }) end
@@ -425,8 +320,8 @@ function Inv.Get(ply)
     for _, cid in ipairs(Items.GEAR_SLOTS) do
         if Items.SlotUsed(Items.WORN[cid].slot) then st.cont[cid] = { w = 1, h = 1, items = {} } end
     end
-    -- The belt cell pouch (owner 2026-10-09t: every clone carries one).
-    local bc = math.floor(tonumber(Config.Get("inventory", "beltCells")) or 0)
+    -- The belt cell pouch: every clone carries one.
+    local bc = math.floor(Config.Get("inventory", "beltCells"))
     -- (cells are 1x2, so the pouch is 2 rows tall; at most 2 wide to fit under the button)
     if bc > 0 then st.cont[Items.CELLBELT] = { w = math.min(bc, 2), h = 2, items = {} } end
     -- Grids from skills (the cell rack), before the saved items go in.
@@ -566,7 +461,7 @@ function Inv.AddItem(ply, id, count, data)
         Inv.AutoHotbar(st, inst)
         place(ply, st, inst, cid, x, y, rot)
         count = count - n
-        giveWeapon(ply, inst)
+        I.giveWeapon(ply, inst)
     end
     return count + over
 end
@@ -698,8 +593,8 @@ function Inv.Drop(ply, uid, single)
         return
     end
     -- Issued gear drops too (someone may need it), but despawns after a while.
-    captureWeapon(ply, inst)
-    if not IsValid(Inv.SpawnWorldItem(ply, inst.id, n, inst.data)) then return end
+    I.captureWeapon(ply, inst)
+    if not IsValid(Inv.SpawnWorldItem(ply, inst.id, n, inst.data)) then I.undoCapture(ply, inst) return end
     if n < inst.count then
         inst.count = inst.count - n
         update(ply, st, inst)
@@ -1015,213 +910,8 @@ function Inv.Save(ply)
     Rhylib.Data.Set("inventory", ply:SteamID64(), serialize(st))
 end
 
---------------------------------------------------------------------------
--- Client requests
---------------------------------------------------------------------------
-
--- Inv.Locked(ply): cuffed, stunned or jailed players (rhylib_mp) can't
--- drop, use or hand over items. Other addons answer the
--- Rhylib.InventoryLocked hook (return true to lock).
--- Example:
---   Rhylib.Hook.Add("Rhylib.InventoryLocked", "myaddon.lock", function(ply)
---       if ply.myFrozen then return true end
---   end)
-function Inv.Locked(ply)
-    return hook.Run("Rhylib.InventoryLocked", ply) == true
-end
-
--- Client requests. Each reads exactly what cl_10_inventory writes:
---   inv.req      nothing: send me everything
---   inv.move     uid 16, container 5, x 5, y 5, rot 1, single 1
---   inv.hotbar   uid 16, slot 3
---   inv.split / inv.hide / inv.use   uid 16
---   inv.combine  nothing
---   inv.drop     uid 16, single 1
-Rhylib.Net.Receive("inv.req", function(ply)
-    Inv.SendFull(ply)
-end, { rate = 1, burst = 2 })
-
-Rhylib.Net.Receive("inv.move", function(ply)
-    local uid = net.ReadUInt(Items.UID_BITS)
-    local cid = net.ReadUInt(Items.CONT_BITS)
-    local x = net.ReadUInt(Items.POS_BITS)
-    local y = net.ReadUInt(Items.POS_BITS)
-    local rot = net.ReadBool()
-    local single = net.ReadBool()
-    Inv.Move(ply, uid, cid, x, y, rot, single)
-end, { rate = 20, burst = 10 })
-
-Rhylib.Net.Receive("inv.hotbar", function(ply)
-    local uid = net.ReadUInt(Items.UID_BITS)
-    Inv.SetHotbar(ply, uid, net.ReadUInt(3))
-end, { rate = 10, burst = 10 })
-
-Rhylib.Net.Receive("inv.split", function(ply)
-    Inv.Split(ply, net.ReadUInt(Items.UID_BITS))
-end, { rate = 5, burst = 5 })
-
-Rhylib.Net.Receive("inv.combine", function(ply)
-    Inv.StartCombine(ply)
-end, { rate = 2, burst = 2 })
-
-Rhylib.Net.Receive("inv.drop", function(ply)
-    local uid = net.ReadUInt(Items.UID_BITS)
-    local single = net.ReadBool()
-    if Inv.Locked(ply) then return end
-    Inv.Drop(ply, uid, single)
-end, { rate = 8, burst = 8 })
-
--- Hide / unhide contraband from searches (rhylib_mp rolls for each hidden
--- item). data.hidden is the hider's SteamID64, so it lapses when the item
--- changes hands.
-Rhylib.Net.Receive("inv.hide", function(ply)
-    if Inv.Locked(ply) then return end
-    local st = Inv.Get(ply)
-    local inst = st.byUid[net.ReadUInt(Items.UID_BITS)]
-    if not inst or IsWorn(inst.c) then return end
-    inst.data = inst.data or {}
-    if inst.data.hidden then
-        inst.data.hidden = nil
-    else
-        if not Items.IsContraband(inst.id) then return end
-        local sid, n = ply:SteamID64() or "0", 0
-        for _, o in pairs(st.byUid) do
-            if o.data and o.data.hidden == sid then n = n + 1 end
-        end
-        if n >= Items.HIDE_MAX then
-            Inv.Note(ply, "You can hide " .. Items.HIDE_MAX .. " items at most")
-            sendSet(ply, st, inst)
-            return
-        end
-        inst.data.hidden = sid
-    end
-    update(ply, st, inst)
-end, { rate = 5, burst = 5 })
-
-Rhylib.Net.Receive("inv.use", function(ply)
-    if Inv.Locked(ply) then return end
-    local inst = Inv.Get(ply).byUid[net.ReadUInt(Items.UID_BITS)]
-    local def = inst and Items.defs[inst.id]
-    if def and def.weapon and ply:HasWeapon(def.weapon) then
-        ply:SelectWeapon(def.weapon)
-    end
-end, { rate = 5, burst = 5 })
-
---------------------------------------------------------------------------
--- Game hooks
---------------------------------------------------------------------------
-
--- Weapons from the spawn menu, the map or other addons go into the
--- inventory instead of straight into the hands.
-Rhylib.Hook.Add("PlayerCanPickupWeapon", "inventory.pickup", function(ply, wep)
-    if ply.rhylibGiving then return end
-    local class = wep:GetClass()
-    local def = Items.defs[class]
-    if not def then return end  -- not an inventory weapon: normal behaviour
-
-    if wep.rhylibClaimed then return false end
-    -- This hook runs every tick while touching a weapon: remember a "no"
-    -- for half a second instead of scanning the grid each time.
-    if ply.rhylibPickupNoWep == wep and (ply.rhylibPickupNoUntil or 0) > CurTime() then return false end
-
-    -- Stacking kits from a job loadout only top up to one stack, so
-    -- respawning (the inventory survives death) doesn't pile them up.
-    if not Items.Unique(def) and ply.rhylibSpawnTick and engine.TickCount() - ply.rhylibSpawnTick <= 2
-        and Inv.Count(ply, class) >= Items.StackFor(def, ply) then
-        wep.rhylibClaimed = true
-        timer.Simple(0, function() if IsValid(wep) then wep:Remove() end end)
-        return false
-    end
-    if not Inv.MayHold(ply, class) then
-        ply.rhylibPickupNoWep, ply.rhylibPickupNoUntil = wep, CurTime() + 0.5
-        if (ply.rhylibFullNotice or 0) < CurTime() then
-            ply.rhylibFullNotice = CurTime() + 2
-            ply:PrintMessage(HUD_PRINTCENTER, Inv.HoldReason(class))
-        end
-        return false
-    end
-    if not Inv.CanAdd(ply, class) then
-        ply.rhylibPickupNoWep, ply.rhylibPickupNoUntil = wep, CurTime() + 0.5
-        if (ply.rhylibFullNotice or 0) < CurTime() then
-            ply.rhylibFullNotice = CurTime() + 2
-            ply:PrintMessage(HUD_PRINTCENTER, Inv.AtLimit(ply, class) and Inv.LimitText(ply, class)
-                or Items.SlotTakenText(Inv.Get(ply), class) or "No room in your inventory")
-        end
-        return false
-    end
-
-    -- Given by the job loadout at spawn: marked loadout, so it vanishes
-    -- when dropped and can't be given or stored (no "drop kits, die,
-    -- respawn" farming).
-    local loadout = ply.rhylibSpawnTick and engine.TickCount() - ply.rhylibSpawnTick <= 2
-    wep.rhylibClaimed = true
-    timer.Simple(0, function()
-        if not IsValid(ply) then return end
-        -- ply:Give (spawn menu, admin mods) removes a weapon whose pickup
-        -- was refused, so it may be gone already; nobody else could take
-        -- it (claimed), so it still goes into the inventory.
-        local gone = not IsValid(wep)
-        -- Add first; the weapon only leaves the ground if it really went in
-        -- (the inventory may have filled up during this tick).
-        if Inv.AddItem(ply, class, 1, loadout and { issued = true, loadout = true } or {}) == 0 then
-            if not gone then wep:Remove() end
-            hook.Run("Rhylib.InventoryWeaponPickup", ply, class)
-        elseif not gone then
-            wep.rhylibClaimed = nil
-        end
-    end)
-    return false
-end)
-
 Rhylib.Hook.Add("PlayerInitialSpawn", "inventory.load", function(ply)
     Inv.Get(ply)
-end)
-
-Rhylib.Hook.Add("PlayerSpawn", "inventory.weapons", function(ply)
-    ply.rhylibSpawnTick = engine.TickCount()
-    timer.Simple(0, function()
-        if not (IsValid(ply) and ply:Alive()) then return end
-        Inv.GiveAllWeapons(ply)
-        Inv.Stow(ply)  -- everyone spawns with their guns stowed
-    end)
-end)
-
--- Inventory weapons can't be dropped as plain weapons (DarkRP /drop, drop
--- on death): the item stays in the inventory, so that would duplicate it.
--- Drop from the inventory window instead.
-Rhylib.Hook.Add("canDropWeapon", "inventory.nodrop", function(ply, wep)
-    if IsValid(wep) and (Items.defs[wep:GetClass()] or wep:GetClass() == Inv.HAND or wep:GetClass() == Inv.STOWED) then return false end
-end)
-
-Rhylib.Hook.Add("PlayerDroppedWeapon", "inventory.nodrop", function(ply, wep)
-    if not IsValid(wep) or not Items.defs[wep:GetClass()] then return end
-    local class = wep:GetClass()
-    -- Keep the dropped weapon's clip and cell in the item before it's
-    -- given back, or the ammo would roll back to the old values.
-    if wep.GetInventoryData then
-        for _, inst in pairs(Inv.Get(ply).byUid) do
-            if inst.id == class then
-                local issued, loadout = inst.data and inst.data.issued, inst.data and inst.data.loadout
-                inst.data = wep:GetInventoryData() or inst.data
-                inst.data.issued, inst.data.loadout = issued, loadout
-                break
-            end
-        end
-    end
-    wep.rhylibClaimed = true
-    timer.Simple(0, function()
-        if IsValid(wep) then wep:Remove() end
-        if not (IsValid(ply) and ply:Alive()) then return end
-        for _, inst in pairs(Inv.Get(ply).byUid) do
-            if inst.id == class then giveWeapon(ply, inst) break end
-        end
-    end)
-end)
-
--- Keep clip and cell state before the weapons are removed on death.
-Rhylib.Hook.Add("DoPlayerDeath", "inventory.capture", function(ply)
-    Inv.CaptureWeapons(ply)
-    Inv.CancelCombine(ply)
 end)
 
 Rhylib.Hook.Add("PlayerDisconnected", "inventory.save", function(ply)
@@ -1231,11 +921,23 @@ Rhylib.Hook.Add("PlayerDisconnected", "inventory.save", function(ply)
     Inv.pending[ply] = nil
 end)
 
-timer.Create("Rhylib.Inventory.Save", Config.Get("inventory", "saveInterval"), 0, function()
-    for ply in pairs(Inv.dirty) do
-        if IsValid(ply) then Inv.Save(ply) end
-    end
-    Inv.dirty = {}
+-- Saving changed inventories every saveInterval seconds (read live: the
+-- timer is made again when the setting changes). This batching is on top
+-- of Rhylib.Data's own (which writes to SQLite every few seconds) on
+-- purpose: Inv.Save serialises a whole inventory, so a burst of moves
+-- (dragging items around, a bulk take) serialises it once per interval,
+-- not once per change.
+local function startSaveTimer()
+    timer.Create("Rhylib.Inventory.Save", math.max(0.5, Config.Get("inventory", "saveInterval")), 0, function()
+        for ply in pairs(Inv.dirty) do
+            if IsValid(ply) then Inv.Save(ply) end
+        end
+        Inv.dirty = {}
+    end)
+end
+startSaveTimer()
+Rhylib.Hook.Add("Rhylib.ConfigChanged", "inventory.saveinterval", function(m, k)
+    if m == "inventory" and k == "saveInterval" then startSaveTimer() end
 end)
 
 Rhylib.Hook.Add("ShutDown", "inventory.save", function()
@@ -1273,7 +975,7 @@ function Inv.SetGrid(ply, cid, w, h)
         else
             -- No room: off the player (weapon stripped), onto the ground;
             -- job loadout gear just goes.
-            captureWeapon(ply, inst)
+            I.captureWeapon(ply, inst)
             st.cont[cid] = { w = 0, h = 0, items = { [inst.uid] = inst } }
             removeInst(ply, st, inst.uid)
             st.cont[cid] = nil
@@ -1307,7 +1009,7 @@ function Inv.TakeOff(ply, uid)
             end
         end
     end
-    captureWeapon(ply, inst)
+    I.captureWeapon(ply, inst)
     removeInst(ply, st, uid)
     if not (inst.data and inst.data.loadout) then Inv.SpawnWorldItem(ply, inst.id, inst.count, inst.data) end
     return false
@@ -1323,12 +1025,12 @@ end
 -- weapons and the save in step. Other addons use Inv.Internal.update(ply,
 -- st, inst) after changing an item's count or data in place (ammo pack,
 -- armour kit, medical kits); prefer the public functions otherwise.
-Inv.Internal = {
-    place = place,
-    update = update,
-    removeInst = removeInst,
-    nextUid = nextUid,
-    giveWeapon = giveWeapon,
-    captureWeapon = captureWeapon,
-    sendSet = sendSet,
-}
+-- (giveWeapon, captureWeapon, undoCapture, stripWeapon, twinOf come
+-- from sv_12_weapons.lua.)
+I.place = place
+I.update = update
+I.removeInst = removeInst
+I.nextUid = nextUid
+I.sendSet = sendSet
+I.sendDims = sendDims
+I.changed = changed

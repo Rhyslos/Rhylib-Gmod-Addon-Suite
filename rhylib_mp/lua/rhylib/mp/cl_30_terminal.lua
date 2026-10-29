@@ -3,7 +3,7 @@
     with sentence minutes and a reason. Right: who is in jail now, time
     left (or awaiting processing), Release / Process, and their evidence:
     Withhold keeps an item from being returned; contraband never is.
-    Client only. Needs rhylib_menus (Menus.Kit). Opened by net mp.term
+    Client only. Needs the UI kit (Rhylib.UI.Kit, rhylib_core). Opened by net mp.term
     (sv_30_jail has the layout); buttons send mp.jail, mp.release and
     mp.destroy. Closes when you walk more than MP.TERM_USE away.
 ]]
@@ -45,7 +45,7 @@ end)
 -- fallback 10 bits. Items.NET_BITS is 10 today, so it matches.
 function MP.ShowTerminal(term, cand, jailed)
 
-    local K = Rhylib.Menus and Rhylib.Menus.Kit
+    local K = Rhylib.UI and Rhylib.UI.Kit
     if not K then return end
     local s = K.S
     if IsValid(MP.termPanel) then MP.termPanel:Remove() end

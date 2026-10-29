@@ -2,7 +2,7 @@
     Datapad (server): the cached storage every datapad file uses, notes on
     the pad, and the MP tools. Also registers the admin permission.
 
-    Messages (client -> server need the datapad in hand, see recv below):
+    Messages (client -> server need the datapad in hand: D.PadRecv):
       dp.open    open: server answers dp.state
       dp.state   bn, mp, medic, banned, limit (8), version (32),
                  notes (count 8; id 16, kind 1, title, patient, time 32),
@@ -21,6 +21,10 @@
 
     Data "dp_pad"/sid = list of notes { id, k kind, ti, b, t, p patient
     sid, pn patient name }. Uploading moves them to a book (sv_20).
+    Storage helpers: D.Load / D.Store / D.StoreQuiet (one value per key)
+    and the row books D.RowBook / D.SaveBook (D.ROW_BOOKS: log books,
+    boards and mission archives, one Data row per entry plus an index;
+    old whole-book values are moved over the first time they're read).
 ]]
 
 local D = Rhylib.Datapad
@@ -54,24 +58,159 @@ end
 
 -- D.ClearCache(): forget every cached copy (after saved data was changed
 -- behind it, e.g. rhylib_purge_battalion or a core purge: hook Rhylib.DataPurged).
-function D.ClearCache() cache = {} end
+-- Row books (below) are forgotten too.
+function D.ClearCache()
+    cache = {}
+    D.ForgetBooks()
+end
 Rhylib.Hook.Add("Rhylib.DataPurged", "datapad.cache", function() D.ClearCache() end)
 
--- D.Store(ns, key, v): save v (cache + Rhylib.Data). sv_50_sync wraps this:
--- a save of "dp_log"/"dp_board" also bumps that battalion's version.
--- D.StoreQuiet (sv_50) saves without the bump.
+-- D.Store(ns, key, v): save v (cache + Rhylib.Data). Plain values only: a
+-- row book (D.ROW_BOOKS) saved this way goes through D.SaveBook with every
+-- entry rewritten, so other code that still stores whole books keeps working.
+-- D.StoreQuiet is the same; neither bumps a version (row books bump in
+-- D.SaveBook; everything else calls D.Touch itself).
 function D.Store(ns, key, v)
+    if D.ROW_BOOKS[ns] and key ~= "__index" and istable(v) and istable(v.list) then
+        return D.SaveBook(ns, key, v, true)
+    end
     cache[ns .. "/" .. key] = v
     Data.Set(ns, key, v)
+end
+function D.StoreQuiet(ns, key, v)
+    if D.ROW_BOOKS[ns] and key ~= "__index" and istable(v) and istable(v.list) then
+        return D.SaveBook(ns, key, v, true, true)
+    end
+    D.Store(ns, key, v)
+end
+
+--------------------------------------------------------------------------
+-- Row books: append-mostly lists kept one Data row per entry
+--------------------------------------------------------------------------
+-- A book is { next, list (newest first) } in memory, as before. Saved as:
+--   Data <ns>/<key>            = { v = 2, next, ids = { id, ... newest first } }
+--   Data <rows ns>/<key>|<id>  = the entry
+-- so a new log or post writes one small row and the index, not the whole
+-- book. Books in the old whole-book shape ({ next, list }) are moved to
+-- rows the first time they're read (logged once per book).
+-- D.ROW_BOOKS[ns] = rows ns. dp_log: battalion log books and "__medical";
+-- dp_board: battalion boards; dp_misarc: mission archives.
+-- (dp_log "__index" stays a plain list of battalion names.)
+D.ROW_BOOKS = { dp_log = "dp_logent", dp_board = "dp_boardent", dp_misarc = "dp_misent" }
+local BUMP = { dp_log = true, dp_board = true }   -- (changes show as "new data" on members' pads)
+
+local books, savedIds = {}, {}   -- ["ns/key"] = live book / { [id] = the entry table saved as that row }
+
+function D.ForgetBooks() books, savedIds = {}, {} end
+
+local function rowKey(key, id) return key .. "|" .. tostring(id) end
+
+local function indexOf(book)
+    local ids = {}
+    for _, e in ipairs(book.list) do
+        if e.id ~= nil then ids[#ids + 1] = e.id end
+    end
+    return { v = 2, next = book.next, ids = ids }
+end
+
+-- Every row of one book in one query (queued writes are flushed first so
+-- the query sees them).
+local function loadRows(rowNs, key, ids)
+    if Data.Flush then Data.Flush() end
+    local prefix = key .. "|"
+    local like = string.gsub(prefix, "[\\%%_]", "\\%0") .. "%"
+    local tbl = Data.TABLE or "rhylib_kv"
+    local found = {}
+    local rows = sql.Query("SELECT key, value FROM " .. tbl .. " WHERE module = " .. sql.SQLStr(rowNs)
+        .. " AND key LIKE " .. sql.SQLStr(like) .. " ESCAPE '\\'")
+    for _, r in ipairs(istable(rows) and rows or {}) do
+        if string.sub(r.key or "", 1, #prefix) == prefix then   -- (LIKE ignores ASCII case)
+            local t = util.JSONToTable(r.value or "")
+            found[r.key] = t and t.v
+        end
+    end
+    local out = {}
+    for _, id in ipairs(ids) do
+        local e = found[rowKey(key, id)]
+        if not istable(e) then e = Data.Get(rowNs, rowKey(key, id)) end
+        if istable(e) then out[#out + 1] = e end
+    end
+    return out
+end
+
+-- D.RowBook(ns, key): the live book { next, list } (cached). Change it and
+-- call D.SaveBook.
+function D.RowBook(ns, key)
+    local ck = ns .. "/" .. key
+    local b = books[ck]
+    if b then return b end
+    local rowNs = D.ROW_BOOKS[ns]
+    local raw = Data.Get(ns, key)
+    b = { next = 1, list = {} }
+    local saved = {}
+    if istable(raw) and raw.v == 2 and istable(raw.ids) then
+        b.next = tonumber(raw.next) or 1
+        b.list = loadRows(rowNs, key, raw.ids)
+        for _, e in ipairs(b.list) do saved[e.id] = e end
+    elseif istable(raw) and istable(raw.list) then
+        -- Old whole-book shape: write every entry as its own row, then the
+        -- index over the old value (idempotent: a second read finds v = 2).
+        b.list = raw.list
+        local top = tonumber(raw.next) and (tonumber(raw.next) - 1) or 0
+        for _, e in ipairs(b.list) do top = math.max(top, tonumber(e.id) or 0) end
+        for _, e in ipairs(b.list) do
+            -- (an entry without an id, or sharing one with an earlier entry,
+            -- gets a fresh id so no row overwrites another)
+            if e.id == nil or saved[e.id] then
+                top = top + 1
+                e.id = top
+            end
+            Data.Set(rowNs, rowKey(key, e.id), e)
+            saved[e.id] = e
+        end
+        b.next = top + 1
+        Data.Set(ns, key, indexOf(b))
+        Rhylib.Print("datapad", "Moved %s \"%s\" to one row per entry (%d entries)", ns, key, #b.list)
+    end
+    books[ck], savedIds[ck] = b, saved
+    return b
+end
+
+-- D.SaveBook(ns, key, book, changed, quiet): save a row book. New entries
+-- (not saved yet) and removed ones are found by themselves; pass the
+-- entries you edited as `changed` (one entry, a list of them, or true for
+-- every entry). Writes the index too. dp_log / dp_board bump the
+-- battalion's version (D.Touch) unless quiet or the key starts with "__".
+function D.SaveBook(ns, key, book, changed, quiet)
+    local rowNs = D.ROW_BOOKS[ns]
+    local ck = ns .. "/" .. key
+    local saved = savedIds[ck] or {}
+    local now = {}
+    for _, e in ipairs(book.list) do
+        now[e.id] = e
+        -- (new, or a different table under a reused id, or everything)
+        if saved[e.id] ~= e or changed == true then Data.Set(rowNs, rowKey(key, e.id), e) end
+    end
+    if istable(changed) then
+        local list = changed.id ~= nil and { changed } or changed
+        for _, e in ipairs(list) do
+            if istable(e) and now[e.id] == e and saved[e.id] == e then Data.Set(rowNs, rowKey(key, e.id), e) end
+        end
+    end
+    for id in pairs(saved) do
+        if not now[id] then Data.Delete(rowNs, rowKey(key, id)) end
+    end
+    books[ck], savedIds[ck] = book, now
+    Data.Set(ns, key, indexOf(book))
+    if BUMP[ns] and not quiet and string.sub(key, 1, 2) ~= "__" and D.Touch then D.Touch(key) end
 end
 
 -- D.Book(key): a computer's log book (key = battalion, or D.MED_KEY):
 -- { next = id, list = { newest first } }. Entries: { id, s author sid,
 -- a author name, ti, b, t, mp (written by an MP), p/pn patient }.
+-- Save with D.SaveBook("dp_log", key, book[, edited entries]).
 function D.Book(key)
-    local b = D.Load("dp_log", key, nil)
-    if not b.list then b.next, b.list = 1, {} end
-    return b
+    return D.RowBook("dp_log", key)
 end
 
 -- D.Battalions(): every battalion that has logs (for MP lookups): a list
@@ -161,9 +300,11 @@ function D.SendState(ply)
     net.Send(ply)
 end
 
--- Every datapad message needs the pad in hand (and a living sender).
--- mpOnly: MPs only. limits: Rhylib.Net rate limit (default 4/s, burst 6).
-local function recv(name, fn, limits, mpOnly)
+-- D.PadRecv(name, fn(ply, len), limits, mpOnly): receive a datapad
+-- message: the pad must be in hand and the sender alive. mpOnly: MPs only.
+-- limits: Rhylib.Net rate limit (default 4/s, burst 6). Used here and by
+-- sv_50/60/80/90.
+function D.PadRecv(name, fn, limits, mpOnly)
     Rhylib.Net.Receive(name, function(ply, len)
         if not ply:Alive() or not D.Holding(ply) then return end
         if mpOnly and not D.IsMP(ply) then return end
@@ -171,13 +312,9 @@ local function recv(name, fn, limits, mpOnly)
     end, limits or { rate = 4, burst = 6 })
 end
 
--- D.PadRecv(name, fn(ply, len), limits, mpOnly): receive a datapad message
--- with those checks. Used by sv_50/60/80/90.
-D.PadRecv = recv   -- (sv_50_sync.lua)
+D.PadRecv("dp.open", function(ply) D.SendState(ply) end, { rate = 2, burst = 3 })
 
-recv("dp.open", function(ply) D.SendState(ply) end, { rate = 2, burst = 3 })
-
-recv("dp.get", function(ply)
+D.PadRecv("dp.get", function(ply)
     local id = net.ReadUInt(16)
     local n = D.Note(D.Pad(ply), id)
     if not n then return end
@@ -187,7 +324,7 @@ recv("dp.get", function(ply)
     net.Send(ply)
 end)
 
-recv("dp.save", function(ply)
+D.PadRecv("dp.save", function(ply)
     local id = net.ReadUInt(16)
     local kind = net.ReadUInt(1)
     local title = D.Clip(net.ReadString(), D.Cfg("titleMax"))
@@ -200,12 +337,12 @@ recv("dp.save", function(ply)
     if id == 0 then
         if kind == D.KIND_MED and not D.IsMedic(ply) then return end
         if kind == D.KIND_LOG and bn ~= "" and D.Banned(bn, sid(ply)) then
-            ply:ChatPrint("You're banned from your battalion's logs")
+            Rhylib.Notify(ply, "You're banned from your battalion's logs", "bad", "Datapad")
             return
         end
         local limit = D.Limit(ply)
         if #pad >= (limit > 0 and limit or D.HARD_CAP) then
-            ply:ChatPrint("Your datapad is full. Upload your notes at your battalion computer")
+            Rhylib.Notify(ply, "Your datapad is full. Upload your notes at your battalion computer", "bad", "Datapad")
             return
         end
         local top = 0
@@ -225,7 +362,7 @@ recv("dp.save", function(ply)
     D.SendState(ply)
 end)
 
-recv("dp.del", function(ply)
+D.PadRecv("dp.del", function(ply)
     local pad = D.Pad(ply)
     local _, i = D.Note(pad, net.ReadUInt(16))
     if not i then return end
@@ -247,7 +384,7 @@ end)
 
 -- Online players by name, plus everyone rhylib_mp has on file (Data
 -- "mp_idx"/"all" = { ["s"..sid] = name }); at most 20.
-recv("dp.find", function(ply)
+D.PadRecv("dp.find", function(ply)
     local q = string.lower(D.Clip(net.ReadString(), 32))
     if q == "" then return end
     local MP = Rhylib.MP
@@ -300,7 +437,7 @@ local function writeLogs(list)
     end
 end
 
-recv("dp.rec", function(ply)
+D.PadRecv("dp.rec", function(ply)
     local id = net.ReadString()
     if not string.match(id, "^%d+$") then return end
     local MP = Rhylib.MP
@@ -325,13 +462,13 @@ recv("dp.rec", function(ply)
     net.Send(ply)
 end, { rate = 3, burst = 4 }, true)
 
-recv("dp.olog", function(ply)
+D.PadRecv("dp.olog", function(ply)
     Rhylib.Net.Start("dp.ologs")
     writeLogs(findLogs(function(e) return e.mp end, 80))
     net.Send(ply)
 end, { rate = 2, burst = 3 }, true)
 
-recv("dp.lread", function(ply)
+D.PadRecv("dp.lread", function(ply)
     local bn = net.ReadString()
     local id = net.ReadUInt(20)
     if not D.HasBattalion(bn) then return end
@@ -350,7 +487,7 @@ end, { rate = 4, burst = 6 }, true)
 
 -- Jail from the datapad: the prisoner must still be in cuffedNear;
 -- rhylib_mp's MP.Jail does the rest (and refuses with a reason).
-recv("dp.jail", function(ply)
+D.PadRecv("dp.jail", function(ply)
     local p = net.ReadEntity()
     local minutes = net.ReadUInt(7)
     local why = D.Clip(net.ReadString(), 80)
@@ -361,10 +498,25 @@ recv("dp.jail", function(ply)
         if c == p then ok = true break end
     end
     if not ok then
-        ply:ChatPrint("They need to be cuffed and close to you")
+        Rhylib.Notify(ply, "They need to be cuffed and close to you", "bad", "Datapad")
         return
     end
     local done, err = MP.Jail(p, ply, minutes, why)
-    if not done and err then ply:ChatPrint(err) end
+    if not done and err then Rhylib.Notify(ply, err, "bad", "Datapad") end
     D.SendState(ply)
 end, { rate = 2, burst = 3 }, true)
+
+-- Config datapad giveOnSpawn (default on): a datapad for everyone on
+-- spawn, so quick response calls are always to hand. Given the tick after
+-- spawning, so rhylib_inventory takes it in as job gear (loadout).
+Rhylib.Hook.Add("PlayerSpawn", "datapad.give", function(ply)
+    if not D.Cfg("giveOnSpawn") or ply:IsBot() then return end
+    timer.Simple(0, function()
+        if not IsValid(ply) or not ply:Alive() then return end
+        local class = D.Cfg("class")
+        if not weapons.GetStored(class) or ply:HasWeapon(class) then return end
+        local Inv = Rhylib.Inventory
+        if Inv and Inv.Has and Inv.Has(ply, class) then return end
+        ply:Give(class)
+    end)
+end)

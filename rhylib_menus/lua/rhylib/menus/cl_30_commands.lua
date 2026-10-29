@@ -158,7 +158,7 @@ Menus.AddCommand("Server", {
 })
 Menus.AddCommand("Server", {
     id = "status", order = 70,
-    title = "Rhylib status / profiler report", desc = "Superadmin; the report prints in the console",
+    title = "Rhy's status / profiler report", desc = "Superadmin; the report prints in the console",
     choices = { { "status", "Status" }, { "report", "Report" }, { "reset", "Reset" } },
     run = function(arg)
         if arg == "status" then RunConsoleCommand("rhylib_status")
@@ -236,7 +236,7 @@ local function buildPlayers(parent)
     grid:Dock(FILL)
     grid:SetVisible(false)
 
-    -- Colour per section (owner 2026-10-07: all-blue buttons made it hard to
+    -- Colour per section (all-blue buttons made it hard to
     -- see what belongs together).
     local SECTION_COL = {
         ["Info & messages"] = Color(120, 170, 235), ["Move"] = Color(80, 200, 200), ["Health"] = Color(91, 201, 122),

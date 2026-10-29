@@ -11,8 +11,9 @@
 
     Data "dp_mis"/bn = current mission ({} = none):
         { ti, date, obj, sub, info, by, t, active, started, people = { ["s"..sid] = name } }
-    Data "dp_misarc"/bn = { next, list { id, ti, date, obj, sub, info, by, t,
-        started, ended, endedBy, people } } (newest first, 100 kept)
+    Data "dp_misarc"/bn: a row book (sv_10_pad.lua; rows "dp_misent"/"<bn>|<id>")
+        of { id, ti, date, obj, sub, info, by, t, started, ended, endedBy,
+        people } (newest first, 100 kept)
 
       datapad:   dp.mget -> dp.mcur (can edit, mission)
                  dp.msave (title, date, objectives, sub objectives, info)
@@ -35,11 +36,7 @@ local ARC_KEEP = 100
 
 local function current(bn) return D.Load("dp_mis", bn, {}) end
 local function exists(m) return m.ti ~= nil end
-local function archive(bn)
-    local t = D.Load("dp_misarc", bn, nil)
-    if not t.list then t.next, t.list = 1, {} end
-    return t
-end
+local function archive(bn) return D.RowBook("dp_misarc", bn) end   -- (row book, sv_10_pad.lua)
 
 local function names(people)
     local out = {}
@@ -74,7 +71,7 @@ end
 
 local function tellBattalion(bn, msg)
     for _, p in ipairs(player.GetHumans()) do
-        if D.Battalion(p) == bn then p:ChatPrint(msg) end
+        if D.Battalion(p) == bn then Rhylib.Notify(p, msg, "info", "Datapad") end
     end
 end
 
@@ -174,7 +171,7 @@ D.PadRecv("dp.mend", function(ply)
     })
     arc.next = arc.next % 65535 + 1
     while #arc.list > ARC_KEEP do table.remove(arc.list) end
-    D.Store("dp_misarc", bn, arc)
+    D.SaveBook("dp_misarc", bn, arc)
     D.Store("dp_mis", bn, {})
     D.Touch(bn)
     tellBattalion(bn, "Mission ended: " .. (m.ti or "") .. ". It's in the battalion computer's Missions archive.")
@@ -248,7 +245,7 @@ D.TermRecv("dp.mdel", {
         for i, x in ipairs(arc.list) do
             if x.id == id then
                 table.remove(arc.list, i)
-                D.Store("dp_misarc", bn, arc)
+                D.SaveBook("dp_misarc", bn, arc)
                 break
             end
         end

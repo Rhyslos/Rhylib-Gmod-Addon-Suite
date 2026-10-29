@@ -19,13 +19,61 @@
     Also here: the fail / done overlay (eod.boom, eod.done), gas cloud
     smoke (eod.gas), the far rumble of a large bomb (eod.far), and the
     "E: work on it" hint when aiming at a bomb or device.
-    Needs rhylib_menus (Rhylib.Menus.Kit) for the window.
+    Needs Rhy's Core's UI kit (Rhylib.UI.Kit) for the window.
 ]]
+
+-- Colours used while drawing (made once, not every frame).
+local COL_0_0_0_220 = Color(0, 0, 0, 220)
+local COL_0_0_0_230 = Color(0, 0, 0, 230)
+local COL_0_0_0_255 = Color(0, 0, 0, 255)
+local COL_110_190_255 = Color(110, 190, 255)
+local COL_120_126_132 = Color(120, 126, 132)
+local COL_130_255_160 = Color(130, 255, 160)
+local COL_138_147_156 = Color(138, 147, 156)
+local COL_140_140_140 = Color(140, 140, 140)
+local COL_140_165_150 = Color(140, 165, 150)
+local COL_143_154_164 = Color(143, 154, 164)
+local COL_150_160_168 = Color(150, 160, 168)
+local COL_150_190_90 = Color(150, 190, 90)
+local COL_15_26_20 = Color(15, 26, 20)
+local COL_160_110_210 = Color(160, 110, 210)
+local COL_170_178_186 = Color(170, 178, 186)
+local COL_17_17_17 = Color(17, 17, 17)
+local COL_200_120_60 = Color(200, 120, 60)
+local COL_200_206_210 = Color(200, 206, 210)
+local COL_207_214_220 = Color(207, 214, 220)
+local COL_207_227_212 = Color(207, 227, 212)
+local COL_220_226_230 = Color(220, 226, 230)
+local COL_220_232_224 = Color(220, 232, 224)
+local COL_220_235_225 = Color(220, 235, 225)
+local COL_235_70_60 = Color(235, 70, 60)
+local COL_255_110_80 = Color(255, 110, 80)
+local COL_255_120_110 = Color(255, 120, 110)
+local COL_255_170_60 = Color(255, 170, 60)
+local COL_255_200_90 = Color(255, 200, 90)
+local COL_255_209_102 = Color(255, 209, 102)
+local COL_255_255_255 = Color(255, 255, 255)
+local COL_255_255_255_120 = Color(255, 255, 255, 120)
+local COL_255_60_50 = Color(255, 60, 50)
+local COL_255_90_80 = Color(255, 90, 80)
+local COL_40_46_52 = Color(40, 46, 52)
+local COL_43_49_56_115 = Color(43, 49, 56, 115)
+local COL_43_49_56_255 = Color(43, 49, 56, 255)
+local COL_58_64_72 = Color(58, 64, 72)
+local COL_60_64_70 = Color(60, 64, 70)
+local COL_61_90_71 = Color(61, 90, 71)
+local COL_70_167_88_160 = Color(70, 167, 88, 160)
+local COL_70_20_20 = Color(70, 20, 20)
+local COL_70_220_110 = Color(70, 220, 110)
+local COL_80_220_120 = Color(80, 220, 120)
+local COL_89_99_109 = Color(89, 99, 109)
+local COL_8_8_8_255 = Color(8, 8, 8, 255)
+local COL_90_100_110 = Color(90, 100, 110)
 
 local E = Rhylib.EOD
 local Net = Rhylib.Net
 
-local function K() return Rhylib.Menus and Rhylib.Menus.Kit end
+local function K() return Rhylib.UI and Rhylib.UI.Kit end
 local OPAQUE = Color(14, 16, 15, 255)
 local BOARD_BG = Color(14, 27, 20, 255)
 local PART_BG = Color(22, 38, 29, 255)
@@ -55,8 +103,8 @@ local function nameOf(i) return (E.COLOURS[i] or E.COLOURS[1])[1] end
 
 local function addLog(text, bad)
     local w = W()
-    if not w then
-        chat.AddText(Color(255, 170, 60), "[EOD] ", bad and Color(255, 120, 110) or color_white, text)
+    if not w then   -- (no window open: a normal notice)
+        Rhylib.Notify(nil, text, bad and "bad" or "info", "EOD")
         return
     end
     table.insert(w.log, 1, { text, bad, CurTime() })
@@ -200,9 +248,9 @@ local function heatNow(w)
     local h = (v.heat or 0)
     local dt = CurTime() - (v.now or CurTime())
     if v.torching then
-        h = h + dt * ((E.Cfg("heatTorch") or 26) - (E.Cfg("heatCool") or 9))
+        h = h + dt * ((E.Cfg("heatTorch")) - (E.Cfg("heatCool")))
     else
-        h = h - dt * (E.Cfg("heatCool") or 9)
+        h = h - dt * (E.Cfg("heatCool"))
     end
     return math.Clamp(h, 0, 100)
 end
@@ -210,20 +258,20 @@ end
 local function sealedNow(w)
     local v = w.v
     local p = v.sealedP or 0
-    if v.torching then p = p + (CurTime() - (v.now or CurTime())) / math.max(0.5, E.Cfg("torchTime") or 5) end
+    if v.torching then p = p + (CurTime() - (v.now or CurTime())) / math.max(0.5, E.Cfg("torchTime")) end
     return math.Clamp(p, 0, 1)
 end
 
 local function timerText(v)
     local t = v.timer
     if not t then return nil end
-    if v.safe or v.done then return "SAFE", Color(80, 220, 120) end
+    if v.safe or v.done then return "SAFE", COL_80_220_120 end
     if t.ends and t.ends > 0 then
         local left = math.max(0, t.ends - CurTime())
-        return string.FormattedTime(left, "%02i:%02i"), left < 15 and Color(255, 90, 80) or Color(235, 70, 60)
+        return string.FormattedTime(left, "%02i:%02i"), left < 15 and COL_255_90_80 or COL_235_70_60
     end
-    if t.stopped then return string.FormattedTime(t.left or 0, "%02i:%02i") .. "  STOPPED", Color(140, 140, 140) end
-    return string.FormattedTime(t.left or t.secs or 0, "%02i:%02i") .. "  WAITING", Color(200, 120, 60)
+    if t.stopped then return string.FormattedTime(t.left or 0, "%02i:%02i") .. "  STOPPED", COL_140_140_140 end
+    return string.FormattedTime(t.left or t.secs or 0, "%02i:%02i") .. "  WAITING", COL_200_120_60
 end
 
 --------------------------------------------------------------------------
@@ -332,13 +380,13 @@ local function boardPanel(parent, k)
 
         if not v.open then
             -- casing still on
-            k.SetCol(Color(40, 46, 52))
+            k.SetCol(COL_40_46_52)
             surface.DrawRect(ox + 10 * sc, oy + 10 * sc, (BW - 20) * sc, (BH - 20) * sc)
-            k.SetCol(Color(90, 100, 110))
+            k.SetCol(COL_90_100_110)
             surface.DrawOutlinedRect(ox + 10 * sc, oy + 10 * sc, (BW - 20) * sc, (BH - 20) * sc, 2)
-            draw.SimpleText("CASING CLOSED", k.Font(22, 800), w / 2, h / 2 - s(14), Color(200, 206, 210), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            draw.SimpleText("CASING CLOSED", k.Font(22, 800), w / 2, h / 2 - s(14), COL_200_206_210, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
             draw.SimpleText(v.lid and "Lid-switch tab released" or "Inspect first. Release the lid-switch tab (if it has one), then lift the lid.",
-                k.Font(13), w / 2, h / 2 + s(14), Color(150, 160, 168), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                k.Font(13), w / 2, h / 2 + s(14), COL_150_160_168, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
             return
         end
 
@@ -351,23 +399,23 @@ local function boardPanel(parent, k)
             if wd then
                 local col = colOf(wd.c)
                 local hot = hov and hov.kind == "wire" and hov.i == i
-                if wd.arm then thick(g.pts, 10 * sc, Color(60, 64, 70), sc, ox, oy) end
+                if wd.arm then thick(g.pts, 10 * sc, COL_60_64_70, sc, ox, oy) end
                 if wd.cut then
                     thick(g.pts, 6 * sc, Color(col.r * 0.45, col.g * 0.45, col.b * 0.45), sc, ox, oy, 12, 16)
                 else
-                    if hot then thick(g.pts, 11 * sc, Color(255, 255, 255, 120), sc, ox, oy) end
+                    if hot then thick(g.pts, 11 * sc, COL_255_255_255_120, sc, ox, oy) end
                     thick(g.pts, (hot and 8 or 6) * sc, col, sc, ox, oy)
                 end
                 if wd.arm then
                     -- armour bands
                     for j = 3, #g.pts - 2, 4 do
                         local pt = g.pts[j]
-                        circle(pt[1] * sc + ox, pt[2] * sc + oy, 4 * sc, Color(120, 126, 132))
+                        circle(pt[1] * sc + ox, pt[2] * sc + oy, 4 * sc, COL_120_126_132)
                     end
                 end
                 local r = win.reads[i]
                 if r and not wd.cut then
-                    draw.SimpleTextOutlined(r, k.Font(11, 700), g.mid[1] * sc + ox, g.mid[2] * sc + oy - 12 * sc, Color(220, 235, 225), TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, Color(0, 0, 0, 220))
+                    draw.SimpleTextOutlined(r, k.Font(11, 700), g.mid[1] * sc + ox, g.mid[2] * sc + oy - 12 * sc, COL_220_235_225, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, COL_0_0_0_220)
                 end
             end
         end
@@ -377,9 +425,9 @@ local function boardPanel(parent, k)
             local x, y, pw, ph = ox + part.x * sc, oy + part.y * sc, part.w * sc, part.h * sc
             draw.RoundedBox(4, x, y, pw, ph, PART_EDGE)
             draw.RoundedBox(4, x + 1, y + 1, pw - 2, ph - 2, PART_BG)
-            draw.SimpleText(part.label, k.Font(14, 700), x + 10 * sc, y + 8 * sc, Color(220, 232, 224))
+            draw.SimpleText(part.label, k.Font(14, 700), x + 10 * sc, y + 8 * sc, COL_220_232_224)
             if part.sub and part.sub ~= "" then
-                draw.SimpleText(part.sub, k.Font(12), x + 10 * sc, y + 26 * sc, Color(140, 165, 150))
+                draw.SimpleText(part.sub, k.Font(12), x + 10 * sc, y + 26 * sc, COL_140_165_150)
             end
             if part.id == "chip" and v.chip then
                 -- blink pattern: S 0.25 s, L 0.75 s, gaps 0.35 s, then a pause
@@ -398,18 +446,18 @@ local function boardPanel(parent, k)
                         t = t + d + 0.35
                     end
                 end
-                local col = v.chip.ok and Color(70, 220, 110) or (lit and Color(255, 60, 50) or Color(70, 20, 20))
+                local col = v.chip.ok and COL_70_220_110 or (lit and COL_255_60_50 or COL_70_20_20)
                 circle(x + pw - 20 * sc, y + 20 * sc, 8 * sc, col)
             end
             if part.id == "chg" then
                 local yy = y + 46 * sc
                 if v.stab and v.stab.dose then
-                    draw.SimpleText("STABILISER", k.Font(11, 700), x + 10 * sc, yy, Color(255, 209, 102))
-                    draw.SimpleText(string.format("%.2f ml", v.stab.dose), k.Font(16, 800), x + 10 * sc, yy + 14 * sc, Color(255, 209, 102))
+                    draw.SimpleText("STABILISER", k.Font(11, 700), x + 10 * sc, yy, COL_255_209_102)
+                    draw.SimpleText(string.format("%.2f ml", v.stab.dose), k.Font(16, 800), x + 10 * sc, yy + 14 * sc, COL_255_209_102)
                     yy = yy + 40 * sc
                 end
                 if v.liquid then
-                    draw.SimpleText(v.liquid.drained and "LIQUID · drained" or "LIQUID CHARGE", k.Font(11, 700), x + 10 * sc, yy, Color(110, 190, 255))
+                    draw.SimpleText(v.liquid.drained and "LIQUID · drained" or "LIQUID CHARGE", k.Font(11, 700), x + 10 * sc, yy, COL_110_190_255)
                 end
             end
         end
@@ -417,11 +465,11 @@ local function boardPanel(parent, k)
         -- sealed plate over the detonator line
         if geo.sealed and not v.sealedOpen then
             local cx, cy = geo.sealed[1] * sc + ox, geo.sealed[2] * sc + oy
-            draw.RoundedBox(4, cx - 70 * sc, cy - 36 * sc, 140 * sc, 72 * sc, Color(138, 147, 156))
-            draw.RoundedBox(4, cx - 69 * sc, cy - 35 * sc, 138 * sc, 70 * sc, Color(58, 64, 72))
-            draw.SimpleText("Sealed plate", k.Font(13, 700), cx, cy - 10 * sc, Color(220, 226, 230), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-            draw.SimpleText("cut " .. math.floor(sealedNow(win) * 100) .. "%", k.Font(12), cx, cy + 12 * sc, Color(170, 178, 186), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-            if v.torching and now % 0.2 < 0.1 then circle(cx, cy - 34 * sc, 6 * sc, Color(255, 200, 90)) end
+            draw.RoundedBox(4, cx - 70 * sc, cy - 36 * sc, 140 * sc, 72 * sc, COL_138_147_156)
+            draw.RoundedBox(4, cx - 69 * sc, cy - 35 * sc, 138 * sc, 70 * sc, COL_58_64_72)
+            draw.SimpleText("Sealed plate", k.Font(13, 700), cx, cy - 10 * sc, COL_220_226_230, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            draw.SimpleText("cut " .. math.floor(sealedNow(win) * 100) .. "%", k.Font(12), cx, cy + 12 * sc, COL_170_178_186, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            if v.torching and now % 0.2 < 0.1 then circle(cx, cy - 34 * sc, 6 * sc, COL_255_200_90) end
         end
 
         -- jumpers
@@ -444,8 +492,8 @@ local function boardPanel(parent, k)
                     local picked = win.pick and win.pick.part == i and win.pick.plus == plus
                     local hot = hov and hov.kind == "term" and hov.part == i and hov.plus == plus
                     circle(tx, ty, 9 * sc, (jumping or hot) and JUMPER or TERM_EDGE)
-                    circle(tx, ty, 7.5 * sc, picked and JUMPER or Color(15, 26, 20))
-                    draw.SimpleText(plus and "+" or "−", k.Font(12, 800), tx, ty, picked and Color(17, 17, 17) or Color(207, 227, 212), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                    circle(tx, ty, 7.5 * sc, picked and JUMPER or COL_15_26_20)
+                    draw.SimpleText(plus and "+" or "−", k.Font(12, 800), tx, ty, picked and COL_17_17_17 or COL_207_227_212, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
                 end
             end
         end
@@ -462,18 +510,18 @@ local function boardPanel(parent, k)
         -- fake board cover
         if v.fake and not v.fake.removed then
             local xray = win.xray and now < win.xray.untilT
-            draw.RoundedBox(6, ox + 8 * sc, oy + 8 * sc, (BW - 16) * sc, (BH - 16) * sc, xray and Color(43, 49, 56, 115) or Color(43, 49, 56, 255))
-            draw.SimpleText("Board cover", k.Font(16, 700), ox + 28 * sc, oy + 30 * sc, Color(207, 214, 220))
-            draw.SimpleText(xray and "X-RAY: mount order shown" or ("Three mounts hold it down · X-rays left: " .. (v.fake.xrays or 0)), k.Font(12), ox + 28 * sc, oy + 52 * sc, Color(143, 154, 164))
+            draw.RoundedBox(6, ox + 8 * sc, oy + 8 * sc, (BW - 16) * sc, (BH - 16) * sc, xray and COL_43_49_56_115 or COL_43_49_56_255)
+            draw.SimpleText("Board cover", k.Font(16, 700), ox + 28 * sc, oy + 30 * sc, COL_207_214_220)
+            draw.SimpleText(xray and "X-RAY: mount order shown" or ("Three mounts hold it down · X-rays left: " .. (v.fake.xrays or 0)), k.Font(12), ox + 28 * sc, oy + 52 * sc, COL_143_154_164)
             for m, g in ipairs(geo.mounts) do
-                circle(g.x * sc + ox, (g.y - 34) * sc + oy, 7 * sc, Color(89, 99, 109))
-                circle(g.x * sc + ox, (g.y + 26) * sc + oy, 7 * sc, Color(89, 99, 109))
+                circle(g.x * sc + ox, (g.y - 34) * sc + oy, 7 * sc, COL_89_99_109)
+                circle(g.x * sc + ox, (g.y + 26) * sc + oy, 7 * sc, COL_89_99_109)
                 local col = colOf(v.fake.cols[m])
                 local hot = hov and hov.kind == "mount" and hov.m == m
                 if v.fake.cut[m] then
                     thick(g.pts, 6 * sc, Color(col.r * 0.45, col.g * 0.45, col.b * 0.45), sc, ox, oy, 7, 9)
                 else
-                    if hot then thick(g.pts, 11 * sc, Color(255, 255, 255, 120), sc, ox, oy) end
+                    if hot then thick(g.pts, 11 * sc, COL_255_255_255_120, sc, ox, oy) end
                     thick(g.pts, 6 * sc, col, sc, ox, oy)
                 end
                 if xray then
@@ -489,7 +537,7 @@ local function boardPanel(parent, k)
             local mx, my = self:CursorPos()
             local wd = v.wires[hov.i]
             local txt = nameOf(wd.c) .. " wire" .. (wd.cut and " (cut)" or "") .. (wd.arm and " · armoured" or "")
-            draw.SimpleTextOutlined(txt, k.Font(13, 700), mx + s(14), my + s(6), color_white, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP, 1, Color(0, 0, 0, 230))
+            draw.SimpleTextOutlined(txt, k.Font(13, 700), mx + s(14), my + s(6), color_white, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP, 1, COL_0_0_0_230)
         end
     end
     return p
@@ -596,7 +644,7 @@ local function buildLeft(win, k)
 
     if v.timer then
         custom(sp, k, s(46), function(_, w, h)
-            k.Plate(0, 0, w, h, { bg = Color(8, 8, 8, 255) })
+            k.Plate(0, 0, w, h, { bg = COL_8_8_8_255 })
             local txt, col = timerText(W() and W().v or v)
             draw.SimpleText("TIMER", k.Font(12, 700), s(10), h / 2, C.label, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
             draw.SimpleText(txt or "", k.Font(24, 800), w - s(10), h / 2, col or C.text, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
@@ -606,7 +654,7 @@ local function buildLeft(win, k)
     section(sp, k, "First inspection")
     if not v.insp then
         text(sp, k, "Hold to look the bomb over before touching anything: detonator, anti-jam, motion sensor, lid switch, charge.")
-        local need = (E.Cfg("inspectTime") or 2.5)
+        local need = (E.Cfg("inspectTime"))
         local b = holdButton(sp, k, "Hold to inspect", need, function() act(0) end, function() act(1) end)
         b:Dock(TOP)
         b:DockMargin(0, 0, s(8), s(4))
@@ -656,13 +704,13 @@ local function buildLeft(win, k)
             if not win2 or not win2.v.tilt then return end
             local r = math.min(w, h) / 2 - s(4)
             local cx, cy = w / 2, h / 2
-            circle(cx, cy, r, Color(61, 90, 71))
-            circle(cx, cy, r - 2, Color(15, 26, 20))
-            circle(cx, cy, r * 0.33, Color(61, 90, 71))
-            circle(cx, cy, r * 0.33 - 1, Color(15, 26, 20))
+            circle(cx, cy, r, COL_61_90_71)
+            circle(cx, cy, r - 2, COL_15_26_20)
+            circle(cx, cy, r * 0.33, COL_61_90_71)
+            circle(cx, cy, r * 0.33 - 1, COL_15_26_20)
             local x, y = E.TiltPos(win2.v.tilt, CurTime())
             local d = math.sqrt(x * x + y * y)
-            circle(cx + x * r * 0.8, cy + y * r * 0.8, s(10), d > 0.8 and Color(255, 110, 80) or Color(255, 209, 102))
+            circle(cx + x * r * 0.8, cy + y * r * 0.8, s(10), d > 0.8 and COL_255_110_80 or COL_255_209_102)
         end)
         local row = vgui.Create("DPanel", sp)
         row:Dock(TOP)
@@ -720,10 +768,10 @@ local function buildLeft(win, k)
             local l = win2.v.liquid
             k.SetCol(C.row)
             surface.DrawRect(0, 0, w, h)
-            k.SetCol(Color(70, 167, 88, 160))
+            k.SetCol(COL_70_167_88_160)
             surface.DrawRect(w * l.band / 100, 1, w * 14 / 100, h - 2)
             local n = E.LiquidNeedle(l, CurTime())
-            k.SetCol(Color(255, 255, 255))
+            k.SetCol(COL_255_255_255)
             surface.DrawRect(w * n / 100 - 1, 0, 3, h)
             k.SetCol(C.edgeDark)
             surface.DrawOutlinedRect(0, 0, w, h)
@@ -746,7 +794,7 @@ local function buildLeft(win, k)
             local left = win2 and win2.v.leakEnd and math.max(0, win2.v.leakEnd - CurTime()) or 0
             draw.SimpleText(string.format("Venting: %.1f s to seal it", left), k.Font(14, 700), 0, h / 2, C.bad, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
         end)
-        btn(sp, k, "Seal the valve", function() act(14) end, { danger = true })
+        btn(sp, k, "Seal the valve", function() act(14) end, { danger = true, enabled = v.kit })
     end
 
     if v.stab and v.safe and not v.stab.done then
@@ -814,7 +862,7 @@ local function overlay(win, k, kind, a, b, c)
     ov:SetPos(0, 0)
     local bad = kind == "fail"
     function ov:Paint(w, h)
-        k.SetCol(Color(0, 0, 0, 255), 215)
+        k.SetCol(COL_0_0_0_255, 215)
         surface.DrawRect(0, 0, w, h)
         local pw, ph = s(560), s(250)
         local x, y = (w - pw) / 2, (h - ph) / 2
@@ -865,7 +913,7 @@ end
 local function openWindow(bomb)
     local k = K()
     if not k then
-        chat.AddText(Color(255, 170, 60), "[EOD] ", color_white, "The defusal window needs rhylib_menus.")
+        Rhylib.Notify(nil, "The defusal window needs Rhy's Core's UI kit", "bad", "EOD")
         return nil
     end
     closeWindow(false)
@@ -938,12 +986,12 @@ local function openWindow(bomb)
     read:SetTall(s(30))
     read:DockMargin(0, 0, 0, s(6))
     function read:Paint(w, h)
-        k.SetCol(Color(8, 8, 8, 255))
+        k.SetCol(COL_8_8_8_255)
         surface.DrawRect(0, 0, w, h)
         k.SetCol(C.edgeDark)
         surface.DrawOutlinedRect(0, 0, w, h)
         draw.SimpleText("PROBE", k.Font(12, 700), s(10), h / 2, C.label, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-        draw.SimpleText(win.lastRead or "—", k.Font(15, 700), s(70), h / 2, Color(130, 255, 160), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        draw.SimpleText(win.lastRead or "—", k.Font(15, 700), s(70), h / 2, COL_130_255_160, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
     end
 
     -- log
@@ -1071,7 +1119,7 @@ Net.Receive("eod.boom", function()
     if win and IsValid(win.frame) and (win.bomb:EntIndex() == idx or not IsValid(win.bomb)) then
         overlay(win, K(), "fail", c[1], c[2], c[3])
     else
-        chat.AddText(Color(255, 170, 60), "[EOD] ", Color(255, 120, 110), "A bomb went off: " .. c[1])
+        Rhylib.Notify(nil, "A bomb went off: " .. c[1], "bad", "EOD")
     end
     local _ = pos
 end)
@@ -1098,7 +1146,7 @@ Net.Receive("eod.gas", function()
     local virus = net.ReadBool()
     local em = ParticleEmitter(pos)
     if not em then return end
-    local col = virus and Color(160, 110, 210) or Color(150, 190, 90)
+    local col = virus and COL_160_110_210 or COL_150_190_90
     local untilT = CurTime() + secs
     E.gasN = (E.gasN or 0) + 1
     local id = "Rhylib.EOD.Gas." .. E.gasN
@@ -1160,17 +1208,9 @@ Rhylib.Hook.Add("HUDPaint", "eod.hint", function()
     else
         txt = "Interference device  ·  E: settings"
     end
-    draw.SimpleTextOutlined(txt, font, ScrW() / 2, ScrH() * 0.58, Color(255, 209, 102), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, Color(0, 0, 0, 220))
+    draw.SimpleTextOutlined(txt, font, ScrW() / 2, ScrH() * 0.58, COL_255_209_102, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, COL_0_0_0_220)
 end)
 
--- Menu closer (rhylib_menus Menus.CloseAll: Esc / pause and other menus
--- opening close this window). Registered now and again at InitPostEntity, since rhylib_menus
--- loads after this addon.
-if Rhylib.Menus and Rhylib.Menus.RegisterCloser then
-    Rhylib.Menus.RegisterCloser("eod", function() if W() then closeWindow(true) return true end end)
-end
-Rhylib.Hook.Add("InitPostEntity", "eod.closer", function()
-    if Rhylib.Menus and Rhylib.Menus.RegisterCloser then
-        Rhylib.Menus.RegisterCloser("eod", function() if W() then closeWindow(true) return true end end)
-    end
-end)
+-- Menu closer (Rhylib.UI.CloseAll: Esc / pause and other menus opening
+-- close this window).
+Rhylib.UI.RegisterCloser("eod", function() if W() then closeWindow(true) return true end end)

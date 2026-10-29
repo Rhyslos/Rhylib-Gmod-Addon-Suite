@@ -8,7 +8,8 @@
     Client: the name plate above it (within 250 units).
     Make your own kind: a small entity file with ENT.Base =
     "rhylib_armoury_base" and the fields below (copy rhylib_crate_small.lua),
-    and add its class to Rhylib.Armoury.CLASSES so it can be saved.
+    and register its class with Rhylib.Armoury.AddClass(class) (from your
+    addon, at load or through Rhylib.After("armoury", ...)) so it can be saved.
 ]]
 
 AddCSLuaFile()

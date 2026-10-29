@@ -8,6 +8,8 @@
     (server checks MP.IsMP). The swing is lag compensated. RMB just asks
     the server (MP.OpenSearch); the server checks MP, range and sight.
     Range and delay come from config mp batonRange, batonDelay, searchRange.
+    Client DrawHUD: "name · LMB stun · RMB search" under the crosshair
+    while aiming at a player in reach (SWEP.Hint).
 ]]
 
 
@@ -23,6 +25,7 @@ SWEP.WorldModel = "models/weapons/w_stunbaton.mdl"
 SWEP.UseHands = true
 SWEP.HoldType = "melee"
 SWEP.Instructions = "LMB: stun   RMB: search"
+SWEP.Hint = "LMB stun  ·  RMB search"   -- (DrawHUD: under the crosshair while aiming at someone in reach)
 
 SWEP.Primary = { ClipSize = -1, DefaultClip = -1, Automatic = false, Ammo = "none" }
 SWEP.Secondary = { ClipSize = -1, DefaultClip = -1, Automatic = false, Ammo = "none" }
@@ -58,4 +61,22 @@ function SWEP:SecondaryAttack()
     local MP = Rhylib.MP
     local target = MP and MP.Target(self:GetOwner(), MP.Cfg("searchRange"))
     if target and MP.OpenSearch then MP.OpenSearch(target) end
+end
+
+if CLIENT then
+    -- Key hint while aiming at someone in reach (looked up every 0.15 s).
+    function SWEP:DrawHUD()
+        local MP = Rhylib.MP
+        if not MP then return end
+        local now = CurTime()
+        if not self.rhylibHintAt or now > self.rhylibHintAt then
+            self.rhylibHintAt = now + 0.15
+            self.rhylibHintT = MP.Target(LocalPlayer(), math.max(MP.Cfg("batonRange"), MP.Cfg("searchRange")))
+        end
+        local who = self.rhylibHintT
+        if not IsValid(who) then return end
+        local s = ScrH() / 1080
+        draw.SimpleText(who:Nick() .. "   ·   " .. self.Hint, Rhylib.UI.Font(14, 500), ScrW() * 0.5, ScrH() * 0.5 + 68 * s,
+            Rhylib.UI.Colors.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
+    end
 end

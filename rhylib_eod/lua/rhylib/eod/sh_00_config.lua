@@ -1,5 +1,5 @@
 --[[
-    EOD (owner 2026-10-09): enemy bombs placed by the GM, defused by
+    EOD: enemy bombs placed by the GM, defused by
     players. Each bomb is a small simulated circuit built from parts and
     rules, so players learn the rules, not one answer:
 
@@ -22,7 +22,8 @@
     to one frequency; it also jams your own side's radio and compass in
     wideband), droid poppers (10% to fry a bomb).
 
-    Files: sv_10_bomb (state, rules, nets), sv_20_world (timer: motion
+    Files: sh_05_circuit (the pure circuit model: roll, board, rules,
+    readings; E.Circuit, E.ROLL), sv_10_bomb (bombs, OPS, nets), sv_20_world (timer: motion
     sensors, interference, timers, detonation, gas, EMP, GM), sv_30_mines,
     sv_35_repmines, cl_10_window (defusal window), cl_20_gm, cl_30_device,
     cl_40_manual (datapad tab), cl_50_mines, cl_55_repmines, cl_60_training.
@@ -45,7 +46,16 @@ local function reg(k, v, d) Config.Register("eod", k, v, d) end
 -- E.Cfg(key): the current value of an "eod" config key (shared).
 -- Read on demand, so changes from Server settings apply at once.
 -- Example: local r = Rhylib.EOD.Cfg("smallRadius")
-function E.Cfg(k) return Config.Get("eod", k) end
+E.Cfg = Config.For("eod")
+
+-- Server settings page: name, side-bar category and sections.
+Config.Describe("eod", { name = "Bombs & mines (EOD)", category = "Combat" })
+Config.Sections("eod", {
+    { "Explosions", { "^small", "^large", "^gas" } },
+    { "Defusal rules", { "^sensorRange$", "^timerWake$", "^capDrain$", "^jumpers$", "^xray", "^inspectTime$", "^reach$", "^heat", "^torchTime$", "^leakTime$", "^hopEvery$", "^popperChance$" } },
+    { "Interference device", { "^device" } },
+    { "Mines", { "^ap", "^lap", "^mine" } },
+})
 
 reg("smallRadius", 600, "Small bomb blast radius (units)")
 reg("smallDamage", 300, "Small bomb blast damage at the centre")
@@ -72,11 +82,13 @@ reg("leakTime", 20, "Gas charges: seconds to seal the valve after cutting the de
 reg("hopEvery", 25, "Frequency hopping receivers: seconds between hops")
 reg("popperChance", 0.1, "Chance a droid popper's EMP fries a bomb")
 reg("deviceMaxRadius", 15, "Interference device: largest radius (metres)")
+reg("deviceMaxPer", 2, "Interference devices one player may have placed at once")
+reg("deviceMaxAll", 12, "Interference devices placed on the whole server at once")
 reg("deviceDrain", 3840, "Interference device: one cell lasts this / radius² seconds in wideband (×4 tuned), at most 900 s (×4)")
 reg("modelSmall", "models/props/starwars/weapons/seismic_charge.mdl", "Small, simplified and training bomb model (HL2 console box if missing)")
 reg("modelLarge", "models/cire992/props2/gethbomb01.mdl", "Large and custom bomb model (HL2 power box if missing)")
 reg("modelDevice", "models/props_lab/reciever01a.mdl", "Interference device model")
--- Mines (2026-10-09y)
+-- Mines
 reg("apRadius", 260, "AP mine: blast radius (units)")
 reg("apDamage", 170, "AP mine: blast damage at the centre")
 reg("lapRadius", 420, "LAP mine (large AP): blast radius (units)")
@@ -94,7 +106,7 @@ reg("mineModelLarge", "models/props/starwars/weapons/lasertrap.mdl", "LAP (large
 reg("mineSize", 20, "AP mine: width it is drawn at (units; the model is scaled to fit, LAP ×1.4)")
 reg("mineSink", 0.55, "Mines: share of a mine's height drawn below the ground (0 = sits on top, 0.9 = almost hidden)")
 reg("mineChain", 140, "Mines: another mine within this (units) of an explosion goes off too")
--- Republic mines (EOD Republic mines skill, 2026-10-10)
+-- Republic mines (EOD Republic mines skill)
 reg("repDamage", 260, "Republic mine: blast damage to droids at the centre")
 reg("repRadius", 280, "Republic mine: blast radius (units; Minefield ×repFieldRadius)")
 reg("repTrigger", 45, "Republic mine: how close a droid must come to set it off (units)")
@@ -115,7 +127,8 @@ E.F0, E.F1 = 2400, 2480   -- frequency band (MHz) on the scanner
 -- Modules: id, name, rank (difficulty), remote = only on remote bombs.
 -- The order here is the order they show in the GM / training builders
 -- and the manual. To add a module: add a row here, give it state in
--- E.Build (sv_10_bomb), rules (an OPS entry and/or a check in cutWire),
+-- C.Build (sh_05_circuit), rules (an OPS entry in sv_10_bomb and/or a
+-- check in C.Cut),
 -- a section in cl_10_window's buildLeft, a CAUSES entry for each way it
 -- can fire, and steps in cl_40_manual's MODULE_STEPS. See the guide
 -- docs/addons/rhylib_eod.md "Adding a module".
@@ -147,6 +160,8 @@ E.TIERS = {
     custom = { budget = 99, max = 99, name = "Custom bomb", big = true },
     training = { budget = 99, max = 99, name = "Training bomb", big = false },
 }
+-- The odds of a random roll (remote, anti-jam, battery weights, ...) are
+-- E.ROLL in sh_05_circuit.lua, with the rest of the circuit model.
 
 -- Logic chip: blink pattern (S short, L long) -> switch setting.
 -- A bomb stores the row number (st.chip.code); the player sends the four
@@ -224,7 +239,7 @@ if Rhylib.Perms and Rhylib.Perms.Register then
     Rhylib.Perms.Register("rhylib.eod.gm", "admin", "Set up, re-roll, start, signal and detonate EOD bombs")
 end
 
--- Items (rhylib_inventory loads after us: also on Rhylib.ModuleLoaded).
+-- Items (once rhylib_inventory has loaded: Rhylib.After).
 local function registerItems()
     local Items = Rhylib.Items
     if not (Items and Items.Register) then return end
@@ -243,18 +258,17 @@ local function registerItems()
         })
     end
 end
-registerItems()
-Rhylib.Hook.Add("Rhylib.ModuleLoaded", "eod.items", function(id) if id == "inventory" then registerItems() end end)
+Rhylib.After("inventory", registerItems)
 
--- Ammo cabinet stock (rhylib_armoury loads before us).
-do
+-- Ammo cabinet stock (whenever rhylib_armoury loads, before or after us).
+Rhylib.After("armoury", function()
     local A = Rhylib.Armoury
     if A and A.AMMO_STOCK then
         for _, id in ipairs({ E.KIT, E.DEVICE, E.SCANNER, E.ARMORKIT, E.RMINE }) do
             if not table.HasValue(A.AMMO_STOCK, id) then A.AMMO_STOCK[#A.AMMO_STOCK + 1] = id end
         end
     end
-end
+end)
 
 -- E.CellLife(radiusM, tuned, longCells): seconds one full cell lasts in
 -- an interference device at that radius (metres). Wideband:
@@ -264,7 +278,7 @@ end
 -- Example: E.CellLife(5, false) -> 153.6   (3840 / 25)
 function E.CellLife(radiusM, tuned, longCells)
     local k = (tuned and 4 or 1) * (longCells and 1.5 or 1)
-    return math.min(900 * k, (E.Cfg("deviceDrain") or 3840) * k / math.max(1, radiusM) ^ 2)
+    return math.min(900 * k, (E.Cfg("deviceDrain")) * k / math.max(1, radiusM) ^ 2)
 end
 
 -- Shared maths (the server's rules and the client's window agree).
@@ -351,9 +365,8 @@ end)
 function E.MineTop(m) return m:LocalToWorld(Vector(0, 0, m:OBBMaxs().z)) end
 
 -- Mines (droid, training and Republic) sit with their origin ON the ground
--- (2026-10-11, owner: they were sunk right through the floor: the server
--- buried them by its own model bounds, which didn't match the drawn
--- model). The collision box is a fixed slab around the ground point, and
+-- (burying them by the server's model bounds, which don't match the drawn
+-- model, sank them right through the floor). The collision box is a fixed slab around the ground point, and
 -- only the drawing sinks the model: E.MineBox(width) for the box,
 -- E.MineMatrix(ent, width) for the client draw (scaled to width, mineSink
 -- of its height below the ground). width: mineSize (LAP ×1.4).
@@ -369,7 +382,7 @@ function E.MineMatrix(ent, width)
     local wide = math.max(mx.x - mn.x, mx.y - mn.y)
     local sc = wide >= 1 and math.Clamp(width / wide, 0.05, 4) or 1
     local h = (mx.z - mn.z) * sc
-    local sink = math.Clamp(E.Cfg("mineSink") or 0.55, 0, 0.9)
+    local sink = math.Clamp(E.Cfg("mineSink"), 0, 0.9)
     m:Translate(Vector(0, 0, -mn.z * sc - sink * h))
     m:Scale(Vector(sc, sc, sc))
     return m

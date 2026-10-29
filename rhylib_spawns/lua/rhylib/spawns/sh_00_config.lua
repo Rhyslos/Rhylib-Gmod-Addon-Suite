@@ -16,8 +16,8 @@
 
     Staff (perm rhylib.spawns.admin) press E on a point to rename it, set
     its battalion, switch an event spawn on or off, or teleport everyone
-    there. Only permanent points are saved (toolgun Permanent tool, or
-    rhylib_spawns_save saves the permanent ones now).
+    there. Only permanent points are saved (toolgun Permanent tool;
+    rhylib_spawns_save re-saves the permanent ones now).
 
     Shared file: Rhylib.Spawns (S) with InBattalion, IsPoint, Options;
     server functions in sv_10_spawns.lua, the menus in cl_10_spawns.lua.
@@ -29,6 +29,7 @@ local S = Rhylib.Spawns
 S.POINT = "rhylib_spawn_point"
 S.EVENT = "rhylib_event_spawn"
 
+Rhylib.Config.Describe("spawns", { name = "Spawn points", category = "Units & roles" })
 Rhylib.Config.Register("spawns", "model", "models/props_combine/combine_mine01.mdl", "Spawn point model")
 Rhylib.Perms.Register("rhylib.spawns.admin", "admin", "Edit and save spawn points, run event teleports")
 
@@ -37,7 +38,7 @@ Rhylib.Perms.Register("rhylib.spawns.admin", "admin", "Edit and save spawn point
 -- their DarkRP job category. "" fits everyone.
 function S.InBattalion(ply, bn)
     if bn == "" then return true end
-    if ply:GetNW2String("rhylib_bn", "") == bn then return true end
+    if ply:GetNW2String(Rhylib.NW.BATTALION, "") == bn then return true end
     local job = RPExtraTeams and RPExtraTeams[ply:Team()]
     return job ~= nil and (job.battalion == bn or job.category == bn)
 end

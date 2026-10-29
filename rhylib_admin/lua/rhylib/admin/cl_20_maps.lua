@@ -42,10 +42,9 @@ end
 -- Example: Rhylib.Admin.MapPicker(function(m) Rhylib.Admin.Run("map", { m }) end)
 local picker
 function Admin.MapPicker(done)
-    local Menus = Rhylib.Menus
-    local K = Menus and Menus.Kit
+    local K = Rhylib.UI and Rhylib.UI.Kit
     if not K then
-        chat.AddText(Color(230, 170, 70), "[Admin] ", Color(225, 225, 225), "Type !map <name> (the map list needs rhylib_menus)")
+        chat.AddText(Color(230, 170, 70), "[Admin] ", Color(225, 225, 225), "Type !map <name> (the map list needs the UI kit)")
         return
     end
     if IsValid(picker) then picker:Remove() end
@@ -53,8 +52,8 @@ function Admin.MapPicker(done)
 
     local f = vgui.Create("EditablePanel")
     picker = f
-    Menus.prompts[f] = true
-    f.OnRemove = function(self) Menus.prompts[self] = nil end
+    Rhylib.UI.prompts[f] = true
+    f.OnRemove = function(self) Rhylib.UI.prompts[self] = nil end
     f:SetSize(math.min(S(980), ScrW() - S(40)), math.min(S(680), ScrH() - S(40)))
     f:Center()
     f:MakePopup()

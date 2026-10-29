@@ -78,6 +78,7 @@ Chat.CHANNEL_BITS = 4  -- bits for a channel index in chat.msg / chat.send (0 = 
 
 local Config = Rhylib.Config
 Config.Register("chat", "defaultChannel", "public", "Channel plain text goes to until a player picks another (public, comms, local, ...)")
+Config.Register("chat", "playerSayHooks", true, "Run other addons' PlayerSay hooks (admin mod mutes, word filters, chat logs) on every message; an empty answer stops the message, changed text is used")
 Config.Register("chat", "localRange", 600, "How far local chat carries (units)")
 Config.Register("chat", "advertCooldown", 30, "Seconds between adverts per player")
 Config.Register("chat", "maxLength", 300, "Longest message in characters")
@@ -97,7 +98,7 @@ end
 -- rhylib_roster's (NW2 rhylib_bn), else your DarkRP job's `battalion` field
 -- (not the Recruits category).
 function Chat.BattalionOf(ply)
-    local bn = ply:GetNW2String("rhylib_bn", "")
+    local bn = ply:GetNW2String(Rhylib.NW.BATTALION, "")
     if bn ~= "" then return bn end
     local job = RPExtraTeams and RPExtraTeams[ply:Team()]
     return job and isstring(job.battalion) and job.battalion or ""
@@ -112,7 +113,7 @@ function Chat.InCommand(ply)
     local Roster = Rhylib.Roster
     if not (Roster and Roster.RankIndex) then return false end
     local need = Roster.RankIndex(Rhylib.Config.Get("chat", "commandRank")) or 6
-    return ply:GetNW2Int("rhylib_rank", 0) >= need
+    return ply:GetNW2Int(Rhylib.NW.RANK, 0) >= need
 end
 
 -- Chat.CanUse(ply, ch): can this player send on / see channel ch?
@@ -182,3 +183,6 @@ function Chat.Parse(text, current)
     if rest == "" then return "switch", ch end
     return "send", ch, rest
 end
+
+-- Server settings page: this module's name and side-bar category.
+if Rhylib.Config.Describe then Rhylib.Config.Describe("chat", { name = "Chat", category = "Units & roles" }) end

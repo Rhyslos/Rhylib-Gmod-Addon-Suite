@@ -115,7 +115,7 @@ Rhylib.Net.Receive("skills.markreq", function(ply)
     local opticsReq = net.ReadBool()
     local fov = net.ReadUInt(10) / 10
     local visorIdx = net.ReadBool() and net.ReadUInt(13) or nil
-    if not ply:Alive() or ply.rhylibDown or not K.Has(ply, "mark_target") then return end
+    if not ply:Alive() or Rhylib.State.IsDown(ply) or not K.Has(ply, "mark_target") then return end
     local now = CurTime()
     if (ply.rhylibMarkNext or 0) > now then return end
     ply.rhylibMarkNext = now + K.Cfg("markCooldown")
@@ -143,11 +143,9 @@ Rhylib.Net.Receive("skills.markreq", function(ply)
     elseif optics then
         -- (the client's zoomed view: the middle 60% of its half-width)
         local cone = math.Clamp(fov * 0.5 * 0.6, 1, K.Cfg("markOpticsCone"))
-        ply:LagCompensation(true)
         list = inCone(ply, cone, K.Cfg("markMax"))
-        ply:LagCompensation(false)
     else
-        ply:LagCompensation(true)
+        -- (a net receive is outside a user command: no lag compensation here)
         local eye = ply:EyePos()
         local tr = util.TraceHull({ start = eye, endpos = eye + ply:GetAimVector() * K.Cfg("markRange"),
             mins = Vector(-8, -8, -8), maxs = Vector(8, 8, 8), filter = ply, mask = MASK_SHOT_HULL })
@@ -159,7 +157,6 @@ Rhylib.Net.Receive("skills.markreq", function(ply)
         else
             list = inCone(ply, K.Cfg("markAimCone"), 1)   -- (forgiving: nearest the crosshair)
         end
-        ply:LagCompensation(false)
     end
     if #list == 0 then return end
     -- Tactical visor: Q locks (longer, red, squad damage); else a plain mark.
@@ -218,7 +215,7 @@ end
 timer.Create("Rhylib.Skills.VisorSpot", 1, 0, function()
     local now = CurTime()
     for _, ply in ipairs(player.GetHumans()) do
-        if ply:GetNW2Bool("rhylib_visorDown", false) and ply:Alive() and not ply.rhylibDown
+        if ply:GetNW2Bool("rhylib_visorDown", false) and ply:Alive() and not Rhylib.State.IsDown(ply)
             and (ply.rhylibVisorSpot or 0) <= now and K.Has(ply, "tactical_visor") then
             ply.rhylibVisorSpot = now + K.Cfg("visorSpotEvery")
             local list = inCone(ply, K.Cfg("visorSpotCone"), K.Cfg("markMax"))
@@ -235,7 +232,7 @@ timer.Create("Rhylib.Skills.SquadAura", 0.5, 0, function()
     local r2 = K.Cfg("squadSkillRange") ^ 2
     for _, h in ipairs(player.GetHumans()) do
         local hasLine, hasLogi = K.Has(h, "steady_line"), K.Has(h, "field_logistics")
-        if (hasLine or hasLogi) and h:Alive() and not h.rhylibDown then
+        if (hasLine or hasLogi) and h:Alive() and not Rhylib.State.IsDown(h) then
             local pos = h:GetPos()
             for _, p in ipairs(K.SquadMembers(h)) do
                 if p:Alive() and p:GetPos():DistToSqr(pos) <= r2 then

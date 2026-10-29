@@ -75,7 +75,7 @@ end
 
 -- Send the message that is being written (its size is recorded by the
 -- net wrappers below).
-local function finish(name, sendFn, target)
+local function finish(sendFn, target)
     sendFn(target)
 end
 
@@ -246,7 +246,7 @@ if SERVER then
                 i = i + 1
             until i > total or net.BytesWritten() > limit
             net.WriteBool(false)
-            finish(name, sendFn, target)
+            finish(sendFn, target)
         end
     end
 

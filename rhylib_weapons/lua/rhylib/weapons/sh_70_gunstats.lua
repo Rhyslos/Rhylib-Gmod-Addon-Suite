@@ -1,6 +1,5 @@
 --[[
-    Per-gun stats in Server settings (2026-10-07, owner: weapon accuracy
-    and the like weren't in the settings page).
+    Per-gun stats in Server settings.
 
     Module "guns", one group of keys per Rhylib gun: <gun>_damage,
     _rpm, _boltSpeed, _reload, _spreadHip, _spreadAim, _bloomPerShot,

@@ -52,7 +52,7 @@ Rhylib.Hook.Add("SetupMove", "mp.move", function(ply, mv)
         -- Escorting slows the MP (rhylib_skills Escort drills: not at all).
         if MP.Escorting(ply) then
             local K = Rhylib.Skills
-            if not (K and K.Has and (K.Has(ply, "escort_drills") or K.Has(ply, "bh_bring"))) then   -- (bh_bring: rhylib_bounty Bring them in)
+            if not (K and K.Has and (K.Has(ply, "escort_drills") or (Rhylib.Bounty and Rhylib.Bounty.Has and Rhylib.Bounty.Has(ply, "bh_bring")))) then   -- (bh_bring: rhylib_bounty Bring them in)
                 local m = MP.Cfg("escortSlow")
                 mv:SetMaxClientSpeed(mv:GetMaxClientSpeed() * m)
                 mv:SetMaxSpeed(mv:GetMaxSpeed() * m)
@@ -163,3 +163,10 @@ Rhylib.Hook.Add("UpdateAnimation", "mp.pose", function(ply)
     if CLIENT then ply:SetRenderAngles(Angle(0, ply:GetNW2Float("rhylib_stunYaw", 0), 0)) end
     return true
 end)
+
+-- Rhylib.State answers (core): "cuffed" (handcuffs or bounty binders: both
+-- set rhylib_cuffed), so cuffed players can't act. Replaces core's bridge
+-- (same owner name "mp").
+if Rhylib.State then
+    Rhylib.State.Provide("cuffed", "mp", function(ply) return MP.IsCuffed(ply) or nil end)
+end

@@ -1,6 +1,9 @@
 --[[
-    Status text for the local player: stunned, cuffed, escorted, jailed.
-    One small plate under the crosshair area, house style.
+    Status text for the local player: stunned, cuffed (or bound by a
+    bounty hunter), escorted, jailed, awaiting processing. One small plate
+    under the crosshair area, house style. Counts down rhylib_cuffFree
+    ("Free in m:ss if nobody comes for you") and rhylib_jailProc
+    ("Processed automatically in m:ss").
     Client only. Reads the NW2 state from sh_00_config; no messages.
 ]]
 
@@ -23,12 +26,17 @@ Rhylib.Hook.Add("HUDPaint", "mp.status", function()
     if not IsValid(ply) or not ply:Alive() then return end
     local title, sub, col
     if MP.IsStunned(ply) then
-        title, sub, col = "STUNNED", math.ceil(ply:GetNW2Float("rhylib_stunEnd", 0) - CurTime()) .. " s", COL_STUN
+        title, sub, col = "STUNNED", math.ceil(ply:GetNW2Float(Rhylib.NW.STUN_END, 0) - CurTime()) .. " s", COL_STUN
     elseif MP.IsCuffed(ply) then
         local by = MP.EscortedBy(ply)
-        title, sub, col = "CUFFED", by and ("Escorted by " .. by:Nick()) or "", COL_CUFF
+        local free = ply:GetNW2Float("rhylib_cuffFree", 0)
+        sub = by and ("Escorted by " .. by:Nick())
+            or (free > 0 and ("Free in " .. fmt(free - CurTime()) .. " if nobody comes for you")) or ""
+        title, col = ply:GetNW2Bool("rhylib_bound", false) and "BOUND" or "CUFFED", COL_CUFF
     elseif MP.IsJailed(ply) and ply:GetNW2Bool("rhylib_jailAwait", false) then
-        title, sub, col = "AWAITING PROCESSING", "An MP at the jail terminal will process you out", COL_CUFF
+        local proc = ply:GetNW2Float("rhylib_jailProc", 0)
+        title, sub, col = "AWAITING PROCESSING", proc > 0 and ("An MP can process you now · automatically in " .. fmt(proc - CurTime()))
+            or "An MP at the jail terminal will process you out", COL_CUFF
     elseif MP.IsJailed(ply) then
         title, sub, col = "JAILED  " .. fmt(MP.JailLeft(ply)), ply:GetNW2String("rhylib_jailWhy", ""), COL_CUFF
     else

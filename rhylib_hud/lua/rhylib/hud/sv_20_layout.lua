@@ -20,30 +20,31 @@ Rhylib.Perms.Register("rhylib.hud.layout", "admin", "Pick the first-person HUD l
 local saved = Rhylib.Data.Get("hud", "layout")
 if saved and HUD.Layouts[saved] then SetGlobal2String("rhylib_hud_layout", saved) end
 
-local function reply(ply, msg)
-    if IsValid(ply) then ply:ChatPrint(msg) else print(msg) end
+local function reply(ply, msg, kind)
+    Rhylib.Notify(IsValid(ply) and ply or nil, msg, kind or "info", "HUD")
 end
 
-concommand.Add("rhylib_hud_layout", function(ply, _, args)
-    local name = string.lower(args[1] or "")
-    if name == "" then
-        local names = {}
-        for k in pairs(HUD.Layouts) do names[#names + 1] = k end
-        table.sort(names)
-        reply(ply, "Default HUD layout: " .. HUD.ServerLayout() .. " (choices: " .. table.concat(names, ", ") .. ")")
-        return
-    end
-    Rhylib.Perms.Check(ply, "rhylib.hud.layout", function(ok)
-        if not ok then
-            reply(ply, "You don't have permission for rhylib_hud_layout")
-            return
+-- rhylib_hud_layout [name]: no name = show the default and the choices
+-- (anyone); a name sets it (perm rhylib.hud.layout).
+Rhylib.Command.Add({
+    name = "rhylib_hud_layout",
+    args = "[layout]",
+    help = "Show or set the server's default first-person HUD layout",
+    tag = "HUD",
+    fn = function(ply, args)
+        local name = string.lower(args[1] or "")
+        if name == "" then
+            local names = {}
+            for k in pairs(HUD.Layouts) do names[#names + 1] = k end
+            table.sort(names)
+            return "Default HUD layout: " .. HUD.ServerLayout() .. " (choices: " .. table.concat(names, ", ") .. ")"
         end
-        if not HUD.Layouts[name] then
-            reply(ply, "Unknown layout '" .. name .. "'")
-            return
-        end
-        SetGlobal2String("rhylib_hud_layout", name)
-        Rhylib.Data.Set("hud", "layout", name)
-        reply(ply, "Default HUD layout set to " .. name .. ": " .. HUD.Layouts[name])
-    end)
-end)
+        Rhylib.Perms.Check(ply, "rhylib.hud.layout", function(ok)
+            if not ok then return reply(ply, "You don't have permission for rhylib_hud_layout", "bad") end
+            if not HUD.Layouts[name] then return reply(ply, "Unknown layout '" .. name .. "'", "bad") end
+            SetGlobal2String("rhylib_hud_layout", name)
+            Rhylib.Data.Set("hud", "layout", name)
+            reply(ply, "Default HUD layout set to " .. name .. ": " .. HUD.Layouts[name], "good")
+        end)
+    end,
+})

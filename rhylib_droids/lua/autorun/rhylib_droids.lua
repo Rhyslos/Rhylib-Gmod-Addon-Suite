@@ -11,4 +11,8 @@ if not Rhylib then
 end
 
 -- Droids shoot rhylib_weapons bolts; it's looked up when they fire.
-Rhylib.LoadModule("droids", { name = "Rhy's Droids & Clones", version = "0.1.0" })
+Rhylib.LoadModule("droids", {
+    name = "Rhy's Droids & Clones",
+    version = "0.1.0",
+    needs = { "weapons" },
+})

@@ -72,23 +72,21 @@ function Admin.TargetWord(p)
     return p:SteamID64() or p:Nick()
 end
 
+-- Admin.ArgChoices[kind] = fn() -> { { word, label } } or nil: other
+-- addons add the pickers for their own argument kinds (rhylib_roster:
+-- rosterrank, qual). Client.
+Admin.ArgChoices = Admin.ArgChoices or {}
+
 -- Choices for an argument kind, or nil (= type it). "?" = type your own.
 -- Each choice: { word sent, label shown }.
 local function choices(kind)
+    if Admin.ArgChoices[kind] then return Admin.ArgChoices[kind]() end
     if kind == "rank" then
         local out = {}
         local mine = Admin.Level(LocalPlayer())
         for _, r in ipairs(Admin.Ranks()) do
             if (r.level or 0) < mine then out[#out + 1] = { r.id, r.name } end
         end
-        return out
-    elseif kind == "rosterrank" and Rhylib.Roster then
-        local out = {}
-        for i, r in ipairs(Rhylib.Roster.Ranks()) do out[#out + 1] = { tostring(i), r[1] .. " · " .. r[2] } end
-        return out
-    elseif kind == "qual" and Rhylib.Roster then
-        local out = {}
-        for _, q in ipairs(Rhylib.Roster.Quals()) do out[#out + 1] = { q[1], q[2] } end
         return out
     elseif kind == "onoff" then
         return { { "on", "On" }, { "off", "Off" } }
@@ -127,10 +125,6 @@ local function choices(kind)
     elseif kind == "callmins" then
         return { { "d", "Preset's own timer" }, { "0", "No timer" }, { "5", "5 minutes" }, { "10", "10 minutes" },
             { "15", "15 minutes" }, { "20", "20 minutes" }, { "30", "30 minutes" }, { "?", "Other..." } }
-    elseif kind == "illness" then
-        return { { "viral", "Viral" }, { "bacterial", "Bacterial" }, { "poison", "Poison" } }
-    elseif kind == "illload" then
-        return { { "20", "Light (20)" }, { "45", "Moderate (45)" }, { "75", "Severe (75)" }, { "?", "Other..." } }
     elseif kind == "mult" then
         return { { "0.5", "Half" }, { "1", "Normal" }, { "1.5", "x1.5" }, { "2", "Double" }, { "3", "Triple" }, { "?", "Other..." } }
     end
@@ -173,7 +167,7 @@ Admin.TrackAsk = track
 -- Pick a player you can use cmd on (players you outrank, you, and * for mass commands).
 -- done(word) gets "^", "*" or Admin.TargetWord(player).
 function Admin.PickPlayer(cmd, done)
-    local K = Rhylib.Menus and Rhylib.Menus.Kit
+    local K = Rhylib.UI and Rhylib.UI.Kit
     if not K then return end
     local me = LocalPlayer()
     local m = K.Menu()
@@ -199,7 +193,7 @@ end
 -- Example: Rhylib.Admin.AskArgs(Rhylib.Admin.byId.kick, function(w)
 --     Rhylib.Admin.Run("kick", { Rhylib.Admin.TargetWord(ply), w[1] }) end)
 function Admin.AskArgs(cmd, done, from)
-    local K = Rhylib.Menus and Rhylib.Menus.Kit
+    local K = Rhylib.UI and Rhylib.UI.Kit
     local words = {}
     local function step(i)
         local a = cmd.args[i]
@@ -296,7 +290,7 @@ Rhylib.Net.Receive("admin.list", function()
     if cb then cb(rows) end
 end)
 
--- Cloak (2026-10-07, owner: others saw the cloaked admin's gun floating):
+-- Cloak (otherwise others see the cloaked admin's gun floating):
 -- Rhylib weapons skip drawing for a cloaked owner (DrawWorldModel); any
 -- other weapon in a cloaked player's hands is hidden on this client here
 -- (re-applied, since the server's effect flags overwrite it on a switch).
@@ -306,7 +300,7 @@ timer.Create("Rhylib.Admin.CloakWeapons", 0.1, 0, function()
     if not IsValid(me) then return end
     local now = {}
     for _, p in ipairs(player.GetAll()) do
-        if p ~= me and p:GetNW2Bool("rhylib_cloak") and not p:IsDormant() then
+        if p ~= me and p:GetNW2Bool(Rhylib.NW.CLOAK) and not p:IsDormant() then
             local w = p:GetActiveWeapon()
             if IsValid(w) then
                 now[w] = p

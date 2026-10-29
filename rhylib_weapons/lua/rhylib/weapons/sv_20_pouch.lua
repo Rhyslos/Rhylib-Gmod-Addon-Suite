@@ -128,15 +128,16 @@ function Pouch.Reset(ply)
     Pouch.Sync(ply)
 end
 
--- Pouch.GiveStartAmmo(ply, swep, force): gives a weapon's start ammo
--- (SWEP.StartMags of its preferred magazine, SWEP.StartCells cells).
--- Testing only, until armouries exist.
-function Pouch.GiveStartAmmo(ply, swep, force)
+-- Pouch.GiveStartAmmo(ply, swep, force, issued): gives a weapon's start
+-- ammo (SWEP.StartMags of its preferred magazine, SWEP.StartCells cells),
+-- marked issued when `issued` is set (it then despawns when dropped and
+-- can't go in lockers, like armoury stock).
+function Pouch.GiveStartAmmo(ply, swep, force, issued)
     local kind = swep.Mags and (swep.FirstMagFor and swep:FirstMagFor(ply) or swep.Mags[1])
     if kind then
-        for _ = 1, swep.StartMags or 0 do Pouch.Add(ply, kind, 1, force) end
+        for _ = 1, swep.StartMags or 0 do Pouch.Add(ply, kind, 1, force, issued) end
     end
-    for _ = 1, swep.StartCells or 0 do Pouch.Add(ply, W.CELL, 1, force) end
+    for _ = 1, swep.StartCells or 0 do Pouch.Add(ply, W.CELL, 1, force, issued) end
 end
 
 -- Hooks ----------------------------------------------------------------
@@ -155,11 +156,15 @@ Rhylib.Hook.Add("Rhylib.InventoryChanged", "weapons.pouch", function(ply)
     Pouch.Sync(ply)
 end)
 
--- A newly picked-up weapon comes with its start ammo (testing only).
+-- Config weapons pickupStartAmmo (default off): a picked-up weapon comes
+-- with its start ammo, issued. Off by default: every pickup (job loadout
+-- guns too) handed out free magazines, so dropping the loadout gun and
+-- respawning farmed ammo.
 Rhylib.Hook.Add("Rhylib.InventoryWeaponPickup", "weapons.startammo", function(ply, class)
+    if not Rhylib.Config.Get("weapons", "pickupStartAmmo") then return end
     local swep = weapons.Get(class)
     if not swep or not swep.IsRhylib then return end
-    Pouch.GiveStartAmmo(ply, swep, true)
+    Pouch.GiveStartAmmo(ply, swep, true, true)
 end)
 
 -- E + R (fire mode) and Shift + E + R (safety).
@@ -170,6 +175,14 @@ Rhylib.Net.Receive("wep.mode", function(ply)
     local wep = ply:GetActiveWeapon()
     if not (IsValid(wep) and wep.IsRhylib) then return end
     if safety then wep:ToggleSafety() else wep:CycleFireMode() end
+end, { rate = 4, burst = 3 })
+
+-- MPs' stun key (cl_30_reload.lua rhylib_stun_key).
+-- Net "wep.stunmode" (client -> server, empty): straight to the gun's
+-- stun mode, or back to the mode before it. Rate 4/s.
+Rhylib.Net.Receive("wep.stunmode", function(ply)
+    local wep = ply:GetActiveWeapon()
+    if IsValid(wep) and wep.IsRhylib and wep.ToggleStunMode then wep:ToggleStunMode() end
 end, { rate = 4, burst = 3 })
 
 -- Reload requests from the R key and the radial menu.
@@ -193,11 +206,11 @@ end, { rate = 4, burst = 3 })
 -- Stored in the player's NW2Bool "rhylib_infammo" (SWEP:InfiniteAmmo()).
 Rhylib.Perms.Register("rhylib.weapons.infammo", "admin", "Infinite test ammo (rhylib_infammo)")
 
-concommand.Add("rhylib_infammo", function(ply)
-    if not IsValid(ply) then return end
-    Rhylib.Perms.Check(ply, "rhylib.weapons.infammo", function(ok)
-        if not IsValid(ply) then return end
-        if not ok then ply:ChatPrint("You don't have permission for rhylib_infammo") return end
+Rhylib.Command.Add({
+    name = "rhylib_infammo", perm = "rhylib.weapons.infammo", tag = "Weapons",
+    help = "Infinite test ammo for yourself (toggle)",
+    fn = function(ply)
+        if not IsValid(ply) then return "Only a player can use rhylib_infammo" end
         local on = not ply:GetNW2Bool("rhylib_infammo")
         ply:SetNW2Bool("rhylib_infammo", on)
         local wep = ply:GetActiveWeapon()
@@ -205,9 +218,9 @@ concommand.Add("rhylib_infammo", function(ply)
             wep:SetClip1(wep:GetMagSize())
             if wep.UsesCell then wep:SetCell(1) end
         end
-        ply:ChatPrint("Infinite test ammo " .. (on and "on" or "off"))
-    end)
-end)
+        return "Infinite test ammo " .. (on and "on" or "off"), "good"
+    end,
+})
 
 -- Dual mode needs both pistols in the inventory: one gone, back to one.
 Rhylib.Hook.Add("Rhylib.InventoryChanged", "weapons.dualcheck", function(ply)

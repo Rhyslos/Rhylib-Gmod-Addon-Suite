@@ -53,14 +53,19 @@ local SHOT_CELL = 1024
 
 -- Net "wep.shot" (server -> players near the shot), one item per bolt in
 -- the core's batch format:
---   shooter UInt 13 (entity index), origin Vector, dir Normal,
+--   shooter UInt 13 (entity index), origin as three Int 16 (whole units:
+--   Source maps fit in ±16384, and a bolt's start is only drawn, so
+--   rounding to a unit is invisible; WriteVector spent ~66 bits), dir Normal,
 --   speed UInt 15 (units/s, so up to 32767), color UInt 4 (BoltColor style),
 --   left Bool (dual pistols: the left gun fired), ahead UInt 6.
 -- ahead: the server bolt's head start (first leg) in 1/100 s, 6 bits.
 local AHEAD_MAX = 63
 local function writeShot(s)
     net.WriteUInt(s.shooter, 13)
-    net.WriteVector(s.origin)
+    local o = s.origin
+    net.WriteInt(math.Clamp(math.Round(o.x), -32768, 32767), 16)
+    net.WriteInt(math.Clamp(math.Round(o.y), -32768, 32767), 16)
+    net.WriteInt(math.Clamp(math.Round(o.z), -32768, 32767), 16)
     net.WriteNormal(s.dir)
     net.WriteUInt(s.speed, 15)
     net.WriteUInt(s.color, 4)
@@ -88,13 +93,13 @@ local traceResult = {}
 local traceData = { mask = MASK_SHOT, output = traceResult }
 
 -- Bolts fly through: soft-knocked players (hidden, can't be hurt), and
--- friendlies (rhylib_droids clone NPCs, 2026-10-06az): players' and
+-- friendlies (rhylib_droids clone NPCs): players' and
 -- clones' bolts pass clones, clones' bolts pass players.
 -- (cloneShot: the bolt came from a clone, even if that clone is gone now)
 local function passes(e, owner, cloneShot)
     local fromClone = cloneShot or (owner ~= nil and owner.IsRhylibClone == true)
     if e:IsPlayer() then
-        if e:GetNW2Bool("rhylib_knockSoft", false) then return true end
+        if e:GetNW2Bool(Rhylib.NW.KNOCK_SOFT, false) then return true end
         return fromClone
     end
     if e.IsRhylibClone == true then return fromClone or (owner ~= nil and owner:IsPlayer()) end
@@ -175,21 +180,14 @@ local function explode(bolt, pos, normal)
     local attacker = IsValid(owner) and owner or game.GetWorld()
     local inflictor = IsValid(bolt.weapon) and bolt.weapon or attacker
     local ex = bolt.explosive
-    local at = pos + normal * 4  -- just off the surface, so walls don't eat the blast
-    if bolt.training then
-        W.TrainingBlast(at, ex.radius, ex.damage, attacker, inflictor)
-    else
-        util.BlastDamage(inflictor, attacker, at, ex.radius, ex.damage)
-        -- (comms jammers, rhylib_radio: a rocket is strength 2)
-        hook.Run("Rhylib.Explosion", at, ex.radius, ex.tier or 2, attacker, inflictor, "rocket")
-    end
-
-    local ed = EffectData()
-    ed:SetOrigin(at)
-    ed:SetNormal(normal)
-    ed:SetMagnitude(1)
-    ed:SetScale(1)
-    util.Effect("Explosion", ed, true, true)
+    -- (just off the surface, so walls don't eat the blast; comms jammers,
+    -- rhylib_radio: a rocket is strength 2) W.Explode is in sv_15_explode.lua.
+    W.Explode({
+        pos = pos + normal * 4, radius = ex.radius, damage = ex.damage,
+        attacker = attacker, inflictor = inflictor, training = bolt.training,
+        tier = ex.tier or 2, kind = "rocket",
+        effectData = { normal = normal, magnitude = 1, scale = 1 },
+    })
 end
 
 -- Hit group, also for models whose hitboxes are all "generic" (guessed
@@ -300,7 +298,7 @@ local function applyHit(bolt, tr, group)
     dmg:SetDamageForce(bolt.dir * bolt.damage * 60)
     -- Which body part was hit (rhylib_medical reads it during the hit).
     local living = ent:IsPlayer() or ent:IsNPC() or ent:IsNextBot()
-    local wasDown = ent.rhylibDown
+    local wasDown = ent:GetNW2Bool(Rhylib.NW.DOWN, false)   -- (rhylib_medical; read uncached: it changes inside this hit)
     if ent:IsPlayer() then ent.rhylibHitGroup = group end
     if rag then ent.rhylibFwd = true end   -- (a hit on the ragdoll counts for its lying player)
     ent:TakeDamageInfo(dmg)
@@ -310,7 +308,7 @@ local function applyHit(bolt, tr, group)
     if IsValid(owner) and owner:IsPlayer() and living then
         local kind = (group == HITGROUP_HEAD or crit) and Bolts.HIT_HEAD or Bolts.HIT_BODY
         -- Dropped them: killed, or downed (rhylib_medical).
-        if ent:Health() <= 0 or (ent:IsPlayer() and not ent:Alive()) or (ent.rhylibDown and not wasDown) then
+        if ent:Health() <= 0 or (ent:IsPlayer() and not ent:Alive()) or (ent:GetNW2Bool(Rhylib.NW.DOWN, false) and not wasDown) then
             kind = Bolts.HIT_KILL
         end
         hitBatch:Send(owner, { kind = kind })
@@ -332,6 +330,7 @@ end
 local groups, groupKeys, groupPool = {}, {}, {}
 local floor = math.floor
 
+local itemPool = {}
 local function sendShot(owner, color, origin, dir, speed, left, ahead)
     local cx, cy, cz = floor(origin.x / SHOT_CELL), floor(origin.y / SHOT_CELL), floor(origin.z / SHOT_CELL)
     local key = (cx + 128) * 65536 + (cy + 128) * 256 + (cz + 128)
@@ -344,15 +343,16 @@ local function sendShot(owner, color, origin, dir, speed, left, ahead)
         groupKeys[#groupKeys + 1] = key
     end
     if g.only ~= owner then g.only = false end
-    g.items[#g.items + 1] = {
-        shooter = owner:EntIndex(),
-        origin = origin,
-        dir = dir,
-        speed = math.min(math.floor(speed), 32767),
-        color = color,
-        left = left and true or false,
-        ahead = math.Clamp(math.floor(ahead * 100 + 0.5), 0, AHEAD_MAX),
-    }
+    -- (item tables are reused: flushShots hands them back to itemPool)
+    local it = table.remove(itemPool) or {}
+    it.shooter = owner:EntIndex()
+    it.origin = origin
+    it.dir = dir
+    it.speed = math.min(math.floor(speed), 32767)
+    it.color = color
+    it.left = left and true or false
+    it.ahead = math.Clamp(math.floor(ahead * 100 + 0.5), 0, AHEAD_MAX)
+    g.items[#g.items + 1] = it
 end
 
 local recipients = {}
@@ -385,7 +385,12 @@ local function flushShots()
             local ok, err = pcall(Rhylib.Net.SendItems, "wep.shot", items, writeShot, net.Send, recipients)
             if not ok then Rhylib.Error("weapons", "shot send failed: %s", tostring(err)) end
         end
-        for i = #items, 1, -1 do items[i] = nil end
+        for i = #items, 1, -1 do
+            local it = items[i]
+            it.origin, it.dir = nil, nil   -- (don't keep the caller's vectors alive)
+            itemPool[#itemPool + 1] = it
+            items[i] = nil
+        end
         groups[key] = nil
         groupKeys[k] = nil
         groupPool[#groupPool + 1] = g
@@ -400,7 +405,7 @@ Rhylib.Hook.Add("Tick", "weapons.shots.flush", flushShots, 990)
 function Bolts.Speed(weapon)
     local s = weapon.BoltSpeed or 7000
     if weapon.Explosive then return s end
-    return s * (Config.Get("weapons", "boltSpeedMult") or 1)
+    return s * (Config.Get("weapons", "boltSpeedMult"))
 end
 
 -- Seconds the shooter's view lags behind the server: ping plus their
@@ -567,39 +572,49 @@ Rhylib.Hook.Add("Tick", "weapons.bolts", function()
 end)
 
 --------------------------------------------------------------------------
--- Bolt reach cap, live (owner: unsure about it, so it's easy to try)
+-- Bolt reach cap: an ordinary setting (weapons boltRange, Server settings >
+-- Combat > Bolts & damage; clients get it with the other settings).
 --   rhylib_boltrange          shows the current value
---   rhylib_boltrange 6000     bolts stop after 6000 units (~115 m)
+--   rhylib_boltrange 6000     sets it (bolts stop after 6000 units, ~115 m)
 --   rhylib_boltrange 0        off: bolts fly their full life
--- Saved (Data "weapons"/"boltRange"), so it stays after a restart.
--- Permission rhylib.weapons.boltrange (default admin). Clients learn the
--- value through Global2Int "rhylib_boltRange" (W.BoltRange()).
+-- The command is a thin wrapper around Rhylib.Settings.Set (the same
+-- override the page sets). Permission rhylib.weapons.boltrange (admin).
+-- An old saved value (Data "weapons"/"boltRange", from before it was a
+-- setting) is moved into the setting once, at the first start.
 --------------------------------------------------------------------------
 
-local function applyBoltRange(n)
-    Config.Set("weapons", "boltRange", n)
-    SetGlobal2Int("rhylib_boltRange", n)
+-- (through rhylib_core's Rhylib.Settings.Set: the same checks, save and
+-- broadcast as the Server settings page)
+local function setBoltRange(n, by)
+    return Rhylib.Settings.Set("weapons", "boltRange", n, by)
 end
 
 Rhylib.Hook.Add("InitPostEntity", "weapons.boltrange", function()
-    local saved = tonumber(Rhylib.Data.Get("weapons", "boltRange"))
-    applyBoltRange(math.max(0, math.floor(saved or tonumber(Config.Get("weapons", "boltRange")) or 0)))
+    local old = tonumber(Rhylib.Data.Get("weapons", "boltRange"))
+    if old then
+        local cur = Config.overrides.weapons and Config.overrides.weapons.boltRange
+        local ok = true
+        if cur == nil then ok = setBoltRange(math.max(0, math.floor(old))) ~= false end
+        if ok then   -- (keep the old row if the setting refused it)
+            Rhylib.Data.Delete("weapons", "boltRange")
+            Rhylib.Print("weapons", "Bolt reach cap moved into Server settings (weapons boltRange)")
+        end
+    end
 end)
 
 Rhylib.Perms.Register("rhylib.weapons.boltrange", "admin", "Change the bolt reach cap (rhylib_boltrange)")
 
-concommand.Add("rhylib_boltrange", function(ply, _, args)
-    local function reply(t) if IsValid(ply) then ply:ChatPrint(t) else print(t) end end
-    Rhylib.Perms.Check(ply, "rhylib.weapons.boltrange", function(ok)
-        if not ok then return reply("You don't have permission for rhylib_boltrange") end
+Rhylib.Command.Add({
+    name = "rhylib_boltrange", perm = "rhylib.weapons.boltrange", tag = "Weapons",
+    help = "Show or set the bolt reach cap (units, 0 = off; also on the Server settings page)", args = "[units]",
+    fn = function(ply, args)
         local n = tonumber(args[1] or "")
         if not n then
             local cur = Rhylib.Weapons.BoltRange()
-            return reply("Bolt reach cap: " .. (cur > 0 and (cur .. " units (~" .. math.Round(cur * 0.019) .. " m)") or "off") .. ". Use rhylib_boltrange <units> (0 = off).")
+            return "Bolt reach cap: " .. (cur > 0 and (cur .. " units (~" .. math.Round(cur * 0.019) .. " m)") or "off") .. ". Use rhylib_boltrange <units> (0 = off), or Server settings."
         end
         n = math.Clamp(math.floor(n), 0, 60000)
-        applyBoltRange(n)
-        Rhylib.Data.Set("weapons", "boltRange", n)
-        reply("Bolt reach cap " .. (n > 0 and ("set to " .. n .. " units (~" .. math.Round(n * 0.019) .. " m)") or "off"))
-    end)
-end)
+        setBoltRange(n, ply)
+        return "Bolt reach cap " .. (n > 0 and ("set to " .. n .. " units (~" .. math.Round(n * 0.019) .. " m)") or "off"), "good"
+    end,
+})

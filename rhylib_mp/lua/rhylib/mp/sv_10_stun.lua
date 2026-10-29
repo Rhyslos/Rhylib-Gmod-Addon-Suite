@@ -13,12 +13,26 @@
     (rhylib_escorting); the pull itself is in sh_10_move. A 0.5 s timer
     ends escorts when the MP dies, is downed, cuffed or 400+ units away.
 
+    Left alone: the same timer runs config cuffAutoRelease. A cuffed
+    player who isn't escorted, isn't jailed and has no MP within
+    cuffNearRange gets NW2Float rhylib_cuffFree = when the cuffs come off
+    (the HUD counts it down); anyone holding them again clears it. At that
+    time MP.Uncuff(ply) and a chat line. Binders prisoners (rhylibBound)
+    are skipped: rhylib_bounty runs its own wait (bindAutoRelease).
+
     Also here: clearing everything on death/spawn/leave, re-cuffing
     players who left while cuffed, blocks on job change / vehicles /
     suicide / weapon pickups, and the interaction wheel actions (mp.wheel).
 ]]
 
 local MP = Rhylib.MP
+
+-- Downed right now (rhylib_medical's own answer, not Rhylib.State's
+-- per-tick cache: these run inside the same tick a player goes down).
+local function downNow(ply)
+    local Med = Rhylib.Medical
+    return Med ~= nil and Med.IsDown ~= nil and Med.IsDown(ply)
+end
 local STOWED = "rhylib_stowed"
 
 MP.cuffed = MP.cuffed or {}   -- [ply] = true, for the escort check timer
@@ -33,7 +47,7 @@ end
 local function getUp(ply)
     if not IsValid(ply) then return end
     timer.Remove("Rhylib.MP.Stun." .. ply:EntIndex())
-    ply:SetNW2Float("rhylib_stunEnd", 0)
+    ply:SetNW2Float(Rhylib.NW.STUN_END, 0)
     local vo = ply.rhylibStunView
     if vo then
         ply:SetViewOffset(vo[1])
@@ -41,7 +55,7 @@ local function getUp(ply)
         ply.rhylibStunView = nil
     end
     ply.rhylibStunImmune = CurTime() + MP.Cfg("stunImmune")
-    if Rhylib.Lying and not ply.rhylibDown then Rhylib.Lying.End(ply) end
+    if Rhylib.Lying and not downNow(ply) then Rhylib.Lying.End(ply) end
 end
 
 -- MP.EndStun(ply): ends a stun now (used by rhylib_admin !free). Server.
@@ -56,7 +70,7 @@ end
 -- Example: Rhylib.MP.Stun(target, mp)
 function MP.Stun(ply, by)
     if not IsValid(ply) or not ply:Alive() then return end
-    if ply.rhylibDown then return end                         -- already downed (rhylib_medical)
+    if downNow(ply) then return end                         -- already downed (rhylib_medical)
     local L = Rhylib.Lying
     if L and L.Knocked and L.Knocked(ply) then return end     -- knocked down / out of a simulation (rhylib_core)
     if MP.IsStunned(ply) then return end                      -- no chain stuns
@@ -65,7 +79,7 @@ function MP.Stun(ply, by)
     local t = MP.Cfg("stunTime")
     if ply:InVehicle() then ply:ExitVehicle() end
     ply:SetNW2Float("rhylib_stunYaw", ply:EyeAngles().y)
-    ply:SetNW2Float("rhylib_stunEnd", CurTime() + t)
+    ply:SetNW2Float(Rhylib.NW.STUN_END, CurTime() + t)
     if not ply.rhylibStunView then
         ply.rhylibStunView = { ply:GetViewOffset(), ply:GetViewOffsetDucked() }
         ply:SetViewOffset(VIEW_LOW)
@@ -90,7 +104,7 @@ Rhylib.Hook.Add("Rhylib.PlayerDowned", "mp.stun", function(ply)
     if ply.rhylibStunView then ply.rhylibViewOff = ply.rhylibStunView end
     ply.rhylibStunView = nil
     timer.Remove("Rhylib.MP.Stun." .. ply:EntIndex())
-    ply:SetNW2Float("rhylib_stunEnd", 0)
+    ply:SetNW2Float(Rhylib.NW.STUN_END, 0)
 end)
 
 --------------------------------------------------------------------------
@@ -102,10 +116,12 @@ end)
 -- Example: Rhylib.MP.Cuff(target, mp)
 function MP.Cuff(ply, by)
     if not IsValid(ply) or MP.IsCuffed(ply) then return end
-    ply:SetNW2Bool("rhylib_cuffed", true)
+    ply:SetNW2Bool(Rhylib.NW.CUFFED, true)
     MP.ClearEscorter(ply)
     ply:SetNW2Entity("rhylib_escortBy", NULL)
     MP.cuffed[ply] = true
+    ply.rhylibCuffFreeAt = nil
+    ply:SetNW2Float("rhylib_cuffFree", 0)
     stow(ply)
     ply:EmitSound("npc/metropolice/gear" .. math.random(1, 6) .. ".wav", 65)
     hook.Run("Rhylib.PlayerCuffed", ply, by)
@@ -115,10 +131,12 @@ end
 -- uncuff, no sound). Fires Rhylib.PlayerUncuffed(ply, by). Server only.
 function MP.Uncuff(ply, by)
     if not IsValid(ply) then return end
-    ply:SetNW2Bool("rhylib_cuffed", false)
+    ply:SetNW2Bool(Rhylib.NW.CUFFED, false)
     MP.ClearEscorter(ply)
     ply:SetNW2Entity("rhylib_escortBy", NULL)
     MP.cuffed[ply] = nil
+    ply.rhylibCuffFreeAt = nil
+    ply:SetNW2Float("rhylib_cuffFree", 0)
     if IsValid(by) then ply:EmitSound("npc/metropolice/gear" .. math.random(1, 6) .. ".wav", 65) end
     hook.Run("Rhylib.PlayerUncuffed", ply, by)
 end
@@ -145,16 +163,58 @@ function MP.SetEscort(ply, by)
     if IsValid(by) then by:SetNW2Entity("rhylib_escorting", ply) end
 end
 
--- Escorts end when the MP is gone, down, cuffed, or far away.
+-- MP.FreeWait(ply, held, secs, msg): the "left alone" wait for a
+-- restrained player. held = someone holds them now (the wait is cleared);
+-- otherwise it starts (secs > 0) and at its end MP.Uncuff(ply) and msg in
+-- their chat. Keeps NW2Float rhylib_cuffFree in step (only on changes).
+-- rhylib_bounty uses it for binders. Server only.
+function MP.FreeWait(ply, held, secs, msg)
+    if held or not secs or secs <= 0 then
+        if ply.rhylibCuffFreeAt then
+            ply.rhylibCuffFreeAt = nil
+            ply:SetNW2Float("rhylib_cuffFree", 0)
+        end
+        return
+    end
+    if not ply.rhylibCuffFreeAt then
+        ply.rhylibCuffFreeAt = CurTime() + secs
+        ply:SetNW2Float("rhylib_cuffFree", ply.rhylibCuffFreeAt)
+    elseif CurTime() >= ply.rhylibCuffFreeAt then
+        MP.Uncuff(ply)
+        if msg then Rhylib.Notify(ply, msg, "info", "MP") end
+    end
+end
+
+-- Escorts end when the MP is gone, down, cuffed, or far away; cuffed
+-- players nobody holds wait out cuffAutoRelease.
 timer.Create("Rhylib.MP.Escort", 0.5, 0, function()
     if next(MP.cuffed) == nil then return end
+    local mps   -- (gathered once, only if a prisoner needs it)
     for ply in pairs(MP.cuffed) do
         if not IsValid(ply) or not MP.IsCuffed(ply) then
             MP.cuffed[ply] = nil
         else
             local by = MP.EscortedBy(ply)
-            if by and (not by:Alive() or by.rhylibDown or MP.IsCuffed(by) or by:GetPos():DistToSqr(ply:GetPos()) > 400 * 400) then
+            if by and (not by:Alive() or Rhylib.State.IsDown(by) or MP.IsCuffed(by) or by:GetPos():DistToSqr(ply:GetPos()) > 400 * 400) then
                 MP.SetEscort(ply, nil)
+                by = nil
+            end
+            if not ply.rhylibBound then
+                local held = by ~= nil or MP.IsJailed(ply)
+                if not held then
+                    if not mps then
+                        mps = {}
+                        for _, p in ipairs(player.GetAll()) do
+                            if p:Alive() and MP.IsMP(p) and not MP.IsCuffed(p) then mps[#mps + 1] = p end
+                        end
+                    end
+                    local r = MP.Cfg("cuffNearRange")
+                    local pos = ply:GetPos()
+                    for _, p in ipairs(mps) do
+                        if p ~= ply and p:GetPos():DistToSqr(pos) < r * r then held = true break end
+                    end
+                end
+                MP.FreeWait(ply, held, MP.Cfg("cuffAutoRelease"), "Nobody came back for you: you slipped the cuffs")
             end
         end
     end

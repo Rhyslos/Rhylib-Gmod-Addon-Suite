@@ -33,9 +33,12 @@
         DTFloat 27   how far down the climbing part of the rope you are
         DTBool 27    being pulled over the top ledge
 
+    Zipline mode (the second grapple fire mode): see "Zipline mode" below.
+
     Realm: shared. Config module "grapple" below. Files: this one (maths,
-    climbing), sv_30_grapple.lua (firing, laying the rope),
-    cl_40_grapple.lua (landing marker, belt line), entities/rhylib_rope.lua.
+    climbing, zipline riding), sv_30_grapple.lua (firing, laying the rope,
+    rigging ziplines), cl_40_grapple.lua (landing marker, belt line),
+    entities/rhylib_rope.lua, entities/rhylib_zipline.lua.
 ]]
 
 local W = Rhylib.Weapons
@@ -45,10 +48,19 @@ local G = W.Grapple
 G.ITEM = "grapple"          -- inventory item id (and pouch kind)
 G.AMMO = "rhylib_grapple"   -- ammo type mirroring how many hooks you carry (client checks)
 G.MAX_POINTS = 16  -- must match the network vars in rhylib_rope.lua
-G.DT_ROPE = 31
-G.DT_S = 27
-G.DT_MANTLE = 27
+-- Player DT slots, claimed through the core registry (rhylib_core sh_05_dt.lua).
+local DT = Rhylib.DT
+G.DT_ROPE = DT and DT.Claim("Entity", "grapple.rope", 31) or 31     -- the rope you're on
+G.DT_S = DT and DT.Claim("Float", "grapple.s", 27) or 27            -- where along it
+G.DT_MANTLE = DT and DT.Claim("Bool", "grapple.mantle", 27) or 27   -- climbing over the top
 G.ropes = G.ropes or {}  -- [rope entity] = true, on server and client
+G.zips = G.zips or {}    -- [zipline entity] = true, on server and client
+G.DT_ZIP = DT and DT.Claim("Entity", "grapple.zip", 30) or 30     -- the zipline you hang from
+G.DT_ZIPV = DT and DT.Claim("Float", "grapple.zipv", 22) or 22    -- your speed along it (+ = toward the far end)
+-- (where along the zipline uses DT_S: you're never on a rope and a zipline at once)
+G.SKILL = "zip_rigger"   -- Autorifleman skill: free far end + skillRange on both modes
+G.POST_H = 84            -- a post's top (where the line ties on) above the ground
+G.HANG = 80              -- a rider's feet hang this far below the line
 
 local Config = Rhylib.Config
 Config.Register("grapple", "range", 1500, "Max distance the hook flies (units, about 30 m)")
@@ -62,6 +74,18 @@ Config.Register("grapple", "cooldown", 1, "Seconds between grapple shots")
 Config.Register("grapple", "showLanding", true, "Show where the hook will land while in grapple mode (false = troopers judge it themselves)")
 Config.Register("grapple", "hookSpeed", 2500, "How fast the hook flies (units/s)")
 Config.Register("grapple", "lowerSpeed", 450, "How fast the rope lowers after the hook grips (units/s)")
+Config.Register("grapple", "skillRange", 525, "Zipline rigger skill (Autorifleman): extra hook range on both modes (units, 525 = 10 m)")
+-- Zipline mode
+Config.Register("grapple", "zipMin", 150, "Zipline: shortest line (units)")
+Config.Register("grapple", "zipTwoWayAngle", 25, "Zipline: steepest slope you can still ride uphill (degrees); steeper lines only take you down")
+Config.Register("grapple", "zipMaxAngle", 60, "Zipline: steepest line it will rig at all (degrees)")
+Config.Register("grapple", "zipAccel", 520, "Zipline: how hard W / S push you along (units/s²)")
+Config.Register("grapple", "zipGravity", 1, "Zipline: how much the slope speeds you up downhill (1 = full gravity along the line)")
+Config.Register("grapple", "zipDrag", 0.7, "Zipline: drag (share of your speed lost per second)")
+Config.Register("grapple", "zipMaxSpeed", 950, "Zipline: top speed (units/s)")
+Config.Register("grapple", "zipMaxRiders", 4, "Zipline: players on one line at once")
+Config.Register("grapple", "zipAttachDist", 52, "Zipline: how close your hands must be to the line to grab on (units)")
+Config.Register("grapple", "zipPostModel", "", "Zipline post model (empty = a plain drawn pole)", { name = "Zipline post", group = "Grapple" })
 
 local WALL_OFFSET = 18   -- climber's centre this far from the wall (hull half width + a bit)
 local BELT = 38          -- belt height above the feet, where the rope attaches
@@ -98,7 +122,8 @@ function G.CanGrip(tr)
     local ent = tr.Entity
     if not IsValid(ent) then return false end
     if ent:IsPlayer() or ent:IsNPC() or ent:IsNextBot() or ent:IsVehicle() or ent:IsWeapon() then return false end
-    if ent:GetClass() == "rhylib_rope" or ent:GetClass() == "rhylib_world_item" then return false end
+    local cls = ent:GetClass()
+    if cls == "rhylib_rope" or cls == "rhylib_zipline" or cls == "rhylib_world_item" then return false end
     if SERVER and ent:GetMoveType() == MOVETYPE_VPHYSICS then
         local phys = ent:GetPhysicsObject()
         if IsValid(phys) and phys:IsMotionEnabled() then return false end  -- loose prop
@@ -224,13 +249,198 @@ local function tryAttach(ply, mv)
     ply:SetDTBool(G.DT_MANTLE, false)
 end
 
--- Climbing movement, server and client (predicted). E near a rope clips on.
+--------------------------------------------------------------------------
+-- Zipline mode
+--
+-- The zipline fire mode (after GRAPPLE on E + R) shoots the hook the same
+-- way, but strings a straight line from a post planted where you stand to
+-- where the hook grips (a wall, a ceiling, anything above the floor). With
+-- the Zipline rigger skill (Autorifleman) the far end can be anywhere: a
+-- hook on the floor plants a second post there, and both modes reach
+-- skillRange further. Riding (anyone, up to zipMaxRiders a line):
+--   E near the line     grab on (your hands at the line, feet hanging)
+--   W / S               slide the way you look / the other way
+--   Jump / E            let go (Jump keeps your speed)
+-- Lines flatter than zipTwoWayAngle ride both ways; steeper ones only take
+-- you down (you can't push uphill and the slope pulls you down). Gravity
+-- along the line speeds you up downhill, drag slows you, zipMaxSpeed caps
+-- it; you stop at either end. Predicted in SetupMove like climbing.
+-- Player state: DTEntity G.DT_ZIP (the line), DTFloat G.DT_S (distance
+-- from the near post), DTFloat G.DT_ZIPV (speed along it).
+--------------------------------------------------------------------------
+
+-- G.Range(ply): how far ply's hook flies (range, + skillRange with the skill).
+function G.Range(ply)
+    local r = cfg("range")
+    if G.HasRigger(ply) then r = r + (cfg("skillRange") or 0) end
+    return r
+end
+
+-- G.HasRigger(ply): has the Zipline rigger skill (rhylib_skills).
+function G.HasRigger(ply)
+    local K = Rhylib.Skills
+    return IsValid(ply) and K ~= nil and K.Has ~= nil and K.Has(ply, G.SKILL) or false
+end
+
+-- G.ZipSlope(a, b): the line's slope in degrees (0 = level) and whether
+-- it rides both ways (at or under zipTwoWayAngle).
+function G.ZipSlope(a, b)
+    local dir = b - a
+    local len = dir:Length()
+    if len < 1 then return 0, true end
+    local deg = math.deg(math.asin(math.Clamp(math.abs(dir.z) / len, 0, 1)))
+    return deg, deg <= cfg("zipTwoWayAngle")
+end
+
+-- G.ZipOn(ply): the zipline ply hangs from, or nil.
+function G.ZipOn(ply)
+    local z = ply:GetDTEntity(G.DT_ZIP)
+    return IsValid(z) and z or nil
+end
+
+-- G.ZipRiders(zip, except): how many players hang from this zipline.
+function G.ZipRiders(zip, except)
+    local n = 0
+    for _, p in ipairs(player.GetAll()) do
+        if p ~= except and p:GetDTEntity(G.DT_ZIP) == zip then n = n + 1 end
+    end
+    return n
+end
+
+local function zipDetach(ply, mv, vel)
+    ply:SetDTEntity(G.DT_ZIP, NULL)
+    ply:SetDTFloat(G.DT_ZIPV, 0)
+    if mv then mv:SetVelocity(vel or Vector(0, 0, 0)) end
+end
+-- G.ZipDetach(ply, mv, vel): lets go of the zipline (knockdowns, downing).
+G.ZipDetach = zipDetach
+
+-- G.ZipGround(ply): the ground under a player that a near post could stand
+-- on (client marker and the hook visual; the server's G.ZipNear also checks
+-- room for the post), or nil.
+local zgtr = {}
+local zgtd = { output = zgtr, mask = MASK_PLAYERSOLID }
+function G.ZipGround(ply)
+    local pos = ply:GetPos()
+    zgtd.start, zgtd.endpos, zgtd.filter = pos + UP * 8, pos - UP * 32, ply
+    util.TraceLine(zgtd)
+    if zgtr.Hit and not zgtr.StartSolid and zgtr.HitNormal.z >= 0.7 and G.CanGrip(zgtr) then
+        return zgtr.HitPos
+    end
+    return nil
+end
+
+-- G.ZipMargin(dir): how far from each end riders stop: at least 20,
+-- more on steep lines so a hanging body keeps clear of the wall.
+function G.ZipMargin(dir)
+    local horiz = math.sqrt(math.max(0, 1 - dir.z * dir.z))
+    return math.max(20, 18 / math.max(0.3, horiz))
+end
+
+-- E near a zipline: grab on where your hands are closest to it.
+local function tryZip(ply, mv)
+    if next(G.zips) == nil then return false end
+    local tr = ply:GetEyeTrace()
+    local hands = mv:GetOrigin() + UP * G.HANG
+    local best, bestS, bestDist
+    for z in pairs(G.zips) do
+        if IsValid(z) and tr.Entity ~= z then   -- (looking at the post = pick it up instead)
+            local d = z:GetZipData()
+            if d then
+                local t = math.Clamp((hands - d.a):Dot(d.dir), d.margin, d.len - d.margin)
+                local dist = (d.a + d.dir * t):Distance(hands)
+                if dist < cfg("zipAttachDist") and (not bestDist or dist < bestDist) then
+                    best, bestS, bestDist = z, t, dist
+                end
+            end
+        end
+    end
+    if not best or G.ZipRiders(best, ply) >= cfg("zipMaxRiders") then return false end
+    ply:SetDTEntity(G.DT_ZIP, best)
+    ply:SetDTFloat(G.DT_S, bestS)
+    ply:SetDTFloat(G.DT_ZIPV, 0)
+    return true
+end
+
+local function rideZip(ply, mv, zip)
+    local d = zip:GetZipData()
+    if not d or not ply:Alive() or ply:GetMoveType() ~= MOVETYPE_WALK or ply:InVehicle() then
+        zipDetach(ply)
+        return
+    end
+    local s, v = ply:GetDTFloat(G.DT_S), ply:GetDTFloat(G.DT_ZIPV)
+    local dir = d.dir
+    -- Where the body really is along the line: something in the way (another
+    -- rider) holds you there instead of the line running on without you.
+    local origin = mv:GetOrigin()
+    local real = (origin + UP * G.HANG - d.a):Dot(dir)
+    if math.abs(real - s) > 12 then s, v = real, 0 end
+
+    if mv:KeyPressed(IN_JUMP) then
+        zipDetach(ply, mv, dir * v + UP * 160)
+        return
+    end
+    if mv:KeyPressed(IN_USE) then
+        zipDetach(ply, mv, dir * v)
+        return
+    end
+
+    local dt = FrameTime()
+    local g = gravityVar:GetFloat() * (ply:GetGravity() ~= 0 and ply:GetGravity() or 1)
+
+    -- W / S along the line, the way you look (S the other way).
+    local fm = mv:GetForwardSpeed()
+    local push = 0
+    if fm ~= 0 then
+        local look = mv:GetAngles():Forward():Dot(dir) >= 0 and 1 or -1
+        push = (fm > 0 and 1 or -1) * look
+    end
+    -- One-way lines: no pushing uphill. Uphill is toward the far end when it's higher.
+    local uphill = dir.z > 0 and 1 or -1
+    if not d.twoWay and push == uphill then push = 0 end
+    local a = push * cfg("zipAccel") - dir.z * g * cfg("zipGravity")
+    v = v + a * dt
+    v = v - v * math.min(1, cfg("zipDrag") * dt)
+    local top = cfg("zipMaxSpeed")
+    v = math.Clamp(v, -top, top)
+    s = s + v * dt
+    local m = d.margin
+    if s <= m then s, v = m, math.max(v, 0) end
+    if s >= d.len - m then s, v = d.len - m, math.min(v, 0) end
+
+    -- Head for the hanging point at a capped speed (no spring, like climbing).
+    local target = d.a + dir * s - UP * G.HANG
+    if origin:DistToSqr(target) > 96 * 96 then   -- (something blocked you: let go)
+        zipDetach(ply, mv)
+        return
+    end
+    local vel = (target - origin) / dt
+    local speed = vel:Length()
+    if speed > 1600 then vel = vel * (1600 / speed) end
+    vel.z = vel.z + g * dt   -- cancel this tick's gravity
+
+    mv:SetVelocity(vel)
+    mv:SetButtons(bit.band(mv:GetButtons(), bit.bnot(bit.bor(IN_JUMP, IN_SPEED, IN_DUCK))))
+    ply:SetDTFloat(G.DT_S, s)
+    ply:SetDTFloat(G.DT_ZIPV, v)
+end
+
+-- Climbing movement, server and client (predicted). E near a rope clips
+-- on (or near a zipline grabs it); riding a zipline is handled here too.
 Rhylib.Hook.Add("SetupMove", "weapons.grapple", function(ply, mv)
+    local zip = ply:GetDTEntity(G.DT_ZIP)
+    if IsValid(zip) then
+        rideZip(ply, mv, zip)
+        return
+    elseif ply:GetDTFloat(G.DT_ZIPV) ~= 0 then
+        ply:SetDTFloat(G.DT_ZIPV, 0)   -- (the line was picked up under you: you just drop)
+    end
     local rope = ply:GetDTEntity(G.DT_ROPE)
     if not IsValid(rope) then
         -- (A rope that was picked up reads as NULL here too: you just drop.)
         if mv:KeyPressed(IN_USE) and ply:Alive() and ply:GetMoveType() == MOVETYPE_WALK then
             tryAttach(ply, mv)
+            if not IsValid(ply:GetDTEntity(G.DT_ROPE)) then tryZip(ply, mv) end
         end
         return
     end
@@ -310,7 +520,9 @@ Rhylib.Hook.Add("SetupMove", "weapons.grapple", function(ply, mv)
 end, -5)  -- before the jetpack and stamina, which leave climbers alone
 
 -- Climbing animation: walk while moving on the rope, stand when still.
+-- Hanging from a zipline: the jump pose (legs off the ground).
 Rhylib.Hook.Add("CalcMainActivity", "weapons.grapple", function(ply, vel)
+    if IsValid(ply:GetDTEntity(G.DT_ZIP)) then return ACT_MP_JUMP, -1 end
     if not IsValid(ply:GetDTEntity(G.DT_ROPE)) then return end
     return vel:LengthSqr() > 100 and ACT_MP_WALK or ACT_MP_STAND_IDLE, -1
 end)

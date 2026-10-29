@@ -37,7 +37,7 @@
         Inv.Icons.Fit(def, x, y, w, h, rot) -> dx, dy, dw, dh (or nil)
         Inv.Icons.Draw(def, x, y, w, h, rot, alpha) -> drawn?
         Inv.Icons.Reset() / PrebuildAll() / RedrawGear() / OpenEditor(id)
-        rhylib_icons_redraw (old name rhylib_inventory_icons): make every
+        rhylib_icons_redraw: make every
         picture again. rhylib_inventory_icon_edit <id>: the editor.
     Also owns Inv.CATEGORY_COLORS (the window uses them too).
 ]]
@@ -340,7 +340,7 @@ local function shootModel(ent, spec, tx, ty, tw, th)
             H, V = axes[2][1], axes[1][1]
         elseif tw > th then
             -- Guns: looking along the thinnest axis showed them from above
-            -- (owner 2026-10-08, muzzle right), so the gun's up is that
+            -- (muzzle right), so the gun's up is that
             -- axis toward the camera: turn a quarter round the barrel to
             -- see its side, upright, muzzle still right.
             V = H:Cross(V)
@@ -654,7 +654,6 @@ local function redraw()
     print("[Rhylib] Inventory pictures are being made again")
 end
 concommand.Add("rhylib_icons_redraw", redraw, nil, "Make your inventory item pictures again")
-concommand.Add("rhylib_inventory_icons", redraw)   -- (old name)
 Rhylib.Net.Receive("inv.iconsredraw", redraw)
 -- Render targets can lose their contents when the screen mode changes or
 -- the game comes back from alt-tab (device reset): make them again then.
@@ -678,8 +677,8 @@ function Icons.RedrawGear()
     end
 end
 
--- Job or model changed (owner 2026-10-08: switching jobs should show the
--- parts of the model you switched into): the gear pictures again, once
+-- Job or model changed (switching jobs should show the parts of the
+-- model you switched into): the gear pictures again, once
 -- the new model has settled (and again a moment later, in case the
 -- model or its bodygroups arrive after the job).
 local hadFocus, lastModel, lastTeam = true, nil, nil
@@ -836,9 +835,9 @@ end
 -- rhylib.inventory.icons can save (the server checks).
 function Icons.OpenEditor(id)
     local def = Items.Get(id)
-    local M = Rhylib.Menus
-    local K = M and M.Kit
-    if not (def and K) then print("[Rhylib] No such item, or rhylib_menus is missing: " .. tostring(id)) return end
+    local UI = Rhylib.UI
+    local K = UI and UI.Kit
+    if not (def and K) then print("[Rhy's] No such item: " .. tostring(id)) return end
     if ed and IsValid(ed.win) then
         local old = ed.win
         ed = nil
@@ -855,7 +854,7 @@ function Icons.OpenEditor(id)
     local S, C = K.S, K.C
     local f = vgui.Create("EditablePanel")
     ed.win = f
-    M.prompts[f] = true
+    UI.prompts[f] = true
     f:SetSize(math.min(S(1100), ScrW() - S(40)), math.min(S(600), ScrH() - S(40)))
     f:Center()
     f:MakePopup()
@@ -864,7 +863,7 @@ function Icons.OpenEditor(id)
         K.Plate(0, 0, w, h, { title = "Item picture: " .. (def.name or id), sub = "Saved pictures are kept on the server and everyone gets them", ticks = "all", header = S(34) })
     end
     function f:OnRemove()
-        M.prompts[self] = nil
+        UI.prompts[self] = nil
         -- (Remove() is deferred: a newer editor may own the hook by now)
         if ed and ed.win == self then
             ed = nil

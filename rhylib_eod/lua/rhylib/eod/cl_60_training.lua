@@ -9,7 +9,7 @@
 local E = Rhylib.EOD
 local Net = Rhylib.Net
 
-local function K() return Rhylib.Menus and Rhylib.Menus.Kit end
+local function K() return Rhylib.UI and Rhylib.UI.Kit end
 local OPAQUE = Color(14, 16, 15, 255)
 
 local tr = { frame = nil, bomb = nil, c = nil }
@@ -162,7 +162,7 @@ Net.Receive("eod.trainopen", function()
 end)
 
 Rhylib.Hook.Add("InitPostEntity", "eod.traincloser", function()
-    if Rhylib.Menus and Rhylib.Menus.RegisterCloser then
-        Rhylib.Menus.RegisterCloser("eodtrain", function() if IsValid(tr.frame) then close() return true end end)
+    if Rhylib.UI and Rhylib.UI.RegisterCloser then
+        Rhylib.UI.RegisterCloser("eodtrain", function() if IsValid(tr.frame) then close() return true end end)
     end
 end)

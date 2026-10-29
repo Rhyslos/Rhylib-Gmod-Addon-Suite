@@ -6,6 +6,10 @@
     your own picks it back up. Rules: rhylib_eod sv_35_repmines.lua.
 ]]
 
+-- Colours used while drawing (made once, not every frame).
+local COL_0_0_0_160 = Color(0, 0, 0, 160)
+local COL_170_205_255_230 = Color(170, 205, 255, 230)
+
 AddCSLuaFile()
 
 DEFINE_BASECLASS("rhylib_grenade_base")
@@ -47,7 +51,7 @@ function SWEP:PlaceMine()
     self:SetNextPrimaryFire(CurTime() + 0.5)
     self:SetNextSecondaryFire(CurTime() + 0.5)
     if not self:SkillOK() then
-        if SERVER then o:ChatPrint("You need the Republic mines skill to plant this") end
+        if SERVER then Rhylib.Notify(o, "You need the Republic mines skill to plant this", "bad", "EOD") end
         return
     end
     local tr = util.TraceLine({
@@ -55,13 +59,13 @@ function SWEP:PlaceMine()
         filter = o, mask = MASK_SOLID_BRUSHONLY,
     })
     if not tr.Hit or tr.HitSky or tr.HitNormal.z < 0.7 then
-        if SERVER then o:ChatPrint("Look at the ground close by to plant the mine") end
+        if SERVER then Rhylib.Notify(o, "Look at the ground close by to plant the mine", "bad", "EOD") end
         return
     end
     local E = Rhylib.EOD
     if SERVER and E and E.RepCanPlace then
         local ok, why = E.RepCanPlace(o, tr.HitPos)
-        if not ok then o:ChatPrint(why) return end
+        if not ok then Rhylib.Notify(o, why, "bad", "EOD") return end
     end
     self:SetNextPrimaryFire(CurTime() + self.ThrowDelay)
     self:SetNextSecondaryFire(CurTime() + self.ThrowDelay)
@@ -94,7 +98,7 @@ if CLIENT then
             if E and E.RepCountClient then n, max = E.RepCountClient() end
             text = string.format("REPUBLIC MINE  ·  CLICK THE GROUND  ·  %d / %d OUT  ·  E ON YOURS: PICK UP", n, max)
         end
-        draw.SimpleTextOutlined(text, font, ScrW() * 0.5, ScrH() * 0.55, Color(170, 205, 255, 230),
-            TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, Color(0, 0, 0, 160))
+        draw.SimpleTextOutlined(text, font, ScrW() * 0.5, ScrH() * 0.55, COL_170_205_255_230,
+            TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, COL_0_0_0_160)
     end
 end

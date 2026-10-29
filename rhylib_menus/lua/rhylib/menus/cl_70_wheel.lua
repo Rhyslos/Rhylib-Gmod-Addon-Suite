@@ -4,10 +4,14 @@
     toward an action and let go of E to do it; let go in the middle to
     cancel. The view stops turning while it's open.
 
-    On a standing player E isn't swallowed: it opens after HOLD seconds,
-    so a tap and E + R (fire modes) still work. On a downed player it opens
-    at once (it replaces medical's E menu). Not on a grapple rope, in the
-    bacta tank, or while R is held.
+    On a standing player E isn't swallowed: it opens after HOLD seconds
+    (HOLD_GUN with a Rhy's gun out), so a tap and E + R (fire modes) still
+    work. On a downed player it opens at once (it replaces medical's E
+    menu). Not on a grapple rope, in the bacta tank, while R is held, or
+    within REPRESS seconds of pressing R with a Rhy's gun out; R pressed
+    just after it opened (E + R a little late) closes it again.
+    A "Hold E · interact" line shows under the crosshair while it's on a
+    standing player you could open it on (target looked up every 0.1 s).
 
     Addons add their actions each time it opens:
         Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.wheel", function(target, me, add)
@@ -55,6 +59,13 @@ local DEADZONE = 44        -- px at 1080p
 local CURSOR_MAX = 150
 local RING = 165
 local HOLD = 0.25          -- s of holding E on a standing player before it opens
+local HOLD_GUN = 0.35      -- the same with a Rhy's gun out (E + R chords)
+local REPRESS = 0.4        -- s after R (Rhy's gun out) the wheel won't open
+
+local function rhyGun(me)
+    local w = me:GetActiveWeapon()
+    return IsValid(w) and w.IsRhylib and not w.ToolGun
+end
 
 -- W.FindTarget(me): the player you're aiming at within RANGE (a downed body
 -- by medical's wider cone, a lying ragdoll -> its owner), or an entity with
@@ -87,8 +98,10 @@ local function canOpen(me)
     if Med and ((Med.Action and Med.Action(me) ~= 0) or (Med.Dragging and Med.Dragging(me))) then return false end
     local G = Rhylib.Weapons and Rhylib.Weapons.Grapple
     if G and G.Attached and G.Attached(me) then return false end   -- (E lets go of the rope)
+    if G and G.ZipOn and G.ZipOn(me) then return false end         -- (or the zipline)
     if IsValid(me:GetNW2Entity("rhylib_tank")) then return false end   -- (E gets out of the tank)
     if me:KeyDown(IN_RELOAD) then return false end   -- (E + R: fire mode)
+    if rhyGun(me) and RealTime() - (W.lastReload or 0) < REPRESS then return false end
     return true
 end
 
@@ -161,6 +174,12 @@ local function isDown(t)
 end
 
 Rhylib.Hook.Add("PlayerBindPress", "menus.wheel", function(ply, bind, pressed, code)
+    if pressed and bind == "+reload" then
+        W.lastReload = RealTime()
+        -- (E + R pressed a little late: the wheel that just opened goes away)
+        if W.open and not W.title and rhyGun(ply) and RealTime() - (W.openedAt or 0) < 0.5 then W.Close() end
+        return
+    end
     if not pressed or not string.find(bind, "+use", 1, true) then return end
     if W.open then return true end
     if not canOpen(ply) then return end
@@ -172,7 +191,7 @@ Rhylib.Hook.Add("PlayerBindPress", "menus.wheel", function(ply, bind, pressed, c
         if W.Open(t) then return true end
         return
     end
-    W.pending = { target = t, at = RealTime() + HOLD }
+    W.pending = { target = t, at = RealTime() + (rhyGun(ply) and HOLD_GUN or HOLD) }
 end, -20)
 
 Rhylib.Hook.Add("Think", "menus.wheel", function()
@@ -250,7 +269,27 @@ end
 local COL_DEAD = Color(0, 0, 0, 140)
 local COL_PICK = Color(60, 72, 88, 235)
 
+-- "Hold E · interact" under the crosshair (standing players only; downed
+-- bodies have medical's own prompt).
+local hint = { at = 0 }
+local function drawHint()
+    local me = LocalPlayer()
+    local now = RealTime()
+    if now >= hint.at then
+        hint.at = now + 0.1
+        local t = IsValid(me) and canOpen(me) and W.FindTarget(me) or nil
+        hint.show = IsValid(t) and t:IsPlayer() and not isDown(t)
+        local key = input.LookupBinding("+use")
+        hint.key = key and string.upper(key) or "E"
+    end
+    if not hint.show or W.pending then return end
+    local s = ScrH() / 1080
+    draw.SimpleTextOutlined("Hold " .. hint.key .. " · interact", UI.Font(14, 600), ScrW() * 0.5, ScrH() * 0.5 + 46 * s,
+        Color(235, 235, 235, 200), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, Color(0, 0, 0, 160))
+end
+
 Rhylib.Hook.Add("HUDPaint", "menus.wheel", function()
+    if not W.open then drawHint() end
     if not W.open or not W.list then return end
     local s = ScrH() / 1080
     local cx, cy = ScrW() * 0.5, ScrH() * 0.5

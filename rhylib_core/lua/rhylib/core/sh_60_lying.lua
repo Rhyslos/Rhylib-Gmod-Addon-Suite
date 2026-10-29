@@ -17,7 +17,7 @@
     players (COLLISION_GROUP_WEAPON) and are unstuck when they get up. NW2: player rhylib_rag (the ragdoll), rhylib_ragCorpse; ragdoll
     rhylib_ragOwner.
 
-    Shared: L.Is, L.Ragdoll, L.Owner, L.BodyPos, L.Cycle, ShouldCollide.
+    Shared: L.Is, L.Ragdoll, L.Owner, L.BodyPos, ShouldCollide.
     Server: L.Begin, L.End, L.Pull, L.Unstick, L.HitGroup, L.ShowPlayer.
     Callers: rhylib_medical (Med.Down / revive / drag), rhylib_mp (MP.Stun),
     sh_61_knock.lua (training eliminations, explosion knockdowns).
@@ -44,12 +44,12 @@ function L.Is(ply)
     return false
 end
 
--- L.Cycle(): animation cycle for the held pose under the hidden player
--- (hitboxes): straight to the end.
-function L.Cycle() return 0.99 end
-
 -- L.Ragdoll(ply): the player's lying ragdoll (server prop_ragdoll; on the
 -- client also a soft-knock client ragdoll, cl_60_lying.lua), or nil.
+-- L.Cycle(ply, seq): the cycle a lying player's hidden pose is held at
+-- (the last frame). medical and mp call it from UpdateAnimation.
+function L.Cycle() return 0.99 end
+
 function L.Ragdoll(ply)
     local r = ply:GetNW2Entity("rhylib_rag")
     return IsValid(r) and r or nil

@@ -47,7 +47,16 @@
     State is NW2 on the player, changed only on events:
       rhylib_stunEnd (CurTime), rhylib_stunYaw, rhylib_cuffed (bool),
       rhylib_escortBy (entity), rhylib_escorting (entity, on the MP),
-      rhylib_jailEnd (CurTime), rhylib_jailWhy, rhylib_jailAwait (bool)
+      rhylib_jailEnd (CurTime), rhylib_jailWhy, rhylib_jailAwait (bool),
+      rhylib_jailProc (CurTime: automatic processing while awaiting),
+      rhylib_cuffFree (CurTime: the cuffs come off by themselves then, 0 =
+      someone holds them; set only when it changes), rhylib_bound (bool,
+      set by rhylib_bounty's binders: a bounty hunter's prisoner)
+
+    Left-alone prisoners: cuffAutoRelease (sv_10_stun) frees a cuffed
+    player nobody holds (no escort, not jailed, no MP within
+    cuffNearRange); being held again restarts the wait. Prisoners bound
+    with binders (ply.rhylibBound) follow rhylib_bounty's own rule.
 ]]
 
 Rhylib.MP = Rhylib.MP or {}
@@ -67,7 +76,9 @@ Config.Register("mp", "escortLeash", 60, "How far behind the MP an escorted pris
 Config.Register("mp", "escortSlow", 0.75, "Speed multiplier for an MP escorting a prisoner (none with the Escort drills skill)")
 Config.Register("mp", "searchRange", 100, "How close you must be to search someone")
 Config.Register("mp", "searchMemory", 300, "Seconds an MP's search rolls on someone's hidden items are kept (searching again doesn't re-roll)")
-Config.Register("mp", "processAuto", 300, "Seconds after a sentence ends before the prisoner is processed out automatically")
+Config.Register("mp", "processAuto", 120, "Seconds after a sentence ends before the prisoner is processed out automatically")
+Config.Register("mp", "cuffAutoRelease", 600, "Seconds a cuffed player left alone (not escorted, not jailed, no MP within cuffNearRange) waits before the cuffs come off by themselves (0 = never)")
+Config.Register("mp", "cuffNearRange", 1500, "An MP this close (units) counts as holding a cuffed prisoner (cuffAutoRelease waits)")
 Config.Register("mp", "maxSentence", 60, "Longest sentence in minutes")
 Config.Register("mp", "jailRadius", 350, "A prisoner further than this from their cell is put back")
 Config.Register("mp", "terminalRange", 400, "Cuffed prisoners this close to a jail terminal can be jailed there")
@@ -93,8 +104,8 @@ end
 -- State readers (shared, read the NW2 values above):
 --   MP.IsStunned(ply) -> bool, MP.IsCuffed(ply) -> bool,
 --   MP.EscortedBy(ply) -> the MP pulling this prisoner, or nil.
-function MP.IsStunned(ply) return ply:GetNW2Float("rhylib_stunEnd", 0) > CurTime() end
-function MP.IsCuffed(ply) return ply:GetNW2Bool("rhylib_cuffed", false) end
+function MP.IsStunned(ply) return ply:GetNW2Float(Rhylib.NW.STUN_END, 0) > CurTime() end
+function MP.IsCuffed(ply) return ply:GetNW2Bool(Rhylib.NW.CUFFED, false) end
 function MP.EscortedBy(ply)
     local e = ply:GetNW2Entity("rhylib_escortBy")
     return IsValid(e) and e or nil
@@ -143,3 +154,16 @@ function MP.Target(ply, range)
     if L and L.Owner and L.Owner(e) then e = L.Owner(e) end
     if IsValid(e) and e:IsPlayer() and e:Alive() then return e end
 end
+
+-- Server settings page: this module's name, sidebar category and sections
+-- (Config.Sections: patterns over the keys, the first match wins; core
+-- applies them to every key of the module, registered before or after).
+local SECTIONS = {
+    { "Stun & baton", { "^stun", "^baton" } },
+    { "Cuffs & escort", { "^cuff", "^escort" } },
+    { "Searching", { "^search" } },
+    { "Jail", { "^process", "^maxSentence$", "^jail", "^terminal", "^poses$" } },
+    { "Property locker", { "^property" } },
+}
+Config.Describe("mp", { name = "Military police", category = "Units & roles" })
+Config.Sections("mp", SECTIONS)   -- (core: applies to keys registered before and after)

@@ -20,6 +20,11 @@
     armoury flag), eodLong (always false now).
 ]]
 
+-- Colours used while drawing (made once, not every frame).
+local COL_120_40_40 = Color(120, 40, 40)
+local COL_255_150_40 = Color(255, 150, 40)
+local COL_80_200_255 = Color(80, 200, 255)
+
 AddCSLuaFile()
 
 ENT.Type = "anim"
@@ -106,7 +111,7 @@ if CLIENT then
         local eye = EyePos()
         if eye:DistToSqr(pos) > 4000 * 4000 then return end
         local on = self:GetActive() and self:Fill() > 0
-        local col = not on and Color(120, 40, 40) or self:GetTuned() and Color(80, 200, 255) or Color(255, 150, 40)
+        local col = not on and COL_120_40_40 or self:GetTuned() and COL_80_200_255 or COL_255_150_40
         render.SetMaterial(RING)
         local top = self:LocalToWorld(Vector(0, 0, self:OBBMaxs().z + 2))
         render.DrawSprite(top, 10, 10, (on and CurTime() % 1 < 0.5) and col or Color(col.r * 0.4, col.g * 0.4, col.b * 0.4))

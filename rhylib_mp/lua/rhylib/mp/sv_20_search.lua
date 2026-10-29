@@ -25,7 +25,7 @@
 ]]
 
 local MP = Rhylib.MP
-local Items = Rhylib.Items
+local Items   -- (Rhylib.Items, looked up by inv() when first needed: rhylib_inventory may load after this addon)
 
 Rhylib.Net.Register("mp.list")
 
@@ -53,7 +53,7 @@ end
 -- within the reach of the tool in hand, with a clear line to the target.
 local function canSearch(mp, target)
     if not (IsValid(mp) and IsValid(target) and mp:Alive() and target:Alive()) then return false end
-    if mp == target or not MP.IsMP(mp) or MP.IsCuffed(mp) or mp.rhylibDown then return false end
+    if mp == target or not MP.IsMP(mp) or MP.IsCuffed(mp) or Rhylib.State.IsDown(mp) then return false end
     local r = toolRange(mp)
     if not r then return false end
     if mp:GetPos():DistToSqr(target:GetPos()) > r * r then return false end
@@ -73,6 +73,7 @@ local function sizeBonus(def)
 end
 
 local function isHidden(target, o)
+    if not inv() then return false end
     return o.data and o.data.hidden ~= nil and o.data.hidden == target:SteamID64() and Items.IsContraband(o.id)
 end
 
@@ -145,7 +146,7 @@ Rhylib.Net.Receive("mp.search", function(mp)
     -- Tell them once per search, not on every reopen.
     if (target.rhylibSearchMsg or 0) < CurTime() then
         target.rhylibSearchMsg = CurTime() + 20
-        target:ChatPrint(mp:Nick() .. " is searching you")
+        Rhylib.Notify(target, mp:Nick() .. " is searching you", "bad", "MP")
     end
 end, { rate = 3, burst = 3 })
 
@@ -161,7 +162,18 @@ Rhylib.Net.Receive("mp.take", function(mp)
     if not o or not MP.SearchFinds(mp, target, o) then return end
     local canLeave, why = Items.CanLeave(st, o)
     if not canLeave then
-        mp:ChatPrint(why)
+        Rhylib.Notify(mp, why, "bad", "MP")
+        return
+    end
+    -- Job loadout gear can't change hands: taking it just removes it (back
+    -- to the armoury; they get it again when they next spawn).
+    if o.data and o.data.loadout then
+        local id, count = o.id, o.count or 1
+        I.Internal.removeInst(target, st, uid)   -- (strips the weapon too)
+        hook.Run("Rhylib.LoadoutDropped", target, id)
+        Rhylib.Notify(mp, "Job gear confiscated (it goes back to the armoury)", "good", "MP")
+        MP.SendList(mp, target)
+        hook.Run("Rhylib.MPConfiscated", mp, target, id, count)
         return
     end
     -- A gun keeps its current clip and cell.
@@ -223,7 +235,7 @@ Rhylib.Net.Register("mp.wheelx")
 
 local function cuffable(t)
     if not IsValid(t) or not t:Alive() or MP.IsCuffed(t) then return false end
-    return MP.IsStunned(t) or t.rhylibDown and true or false
+    return MP.IsStunned(t) or Rhylib.State.IsDown(t) and true or false
 end
 
 local function near(mp, t, slack)
@@ -251,7 +263,7 @@ end
 
 Rhylib.Net.Receive("mp.wheel", function(mp)
     local op, t = net.ReadUInt(2), net.ReadEntity()
-    if not MP.IsMP(mp) or MP.IsCuffed(mp) or mp.rhylibDown or not IsValid(t) or not t:IsPlayer() then return end
+    if not MP.IsMP(mp) or MP.IsCuffed(mp) or Rhylib.State.IsDown(mp) or not IsValid(t) or not t:IsPlayer() then return end
     if op == 0 then
         if not mp:HasWeapon("rhylib_handcuffs") or not cuffable(t) or not near(mp, t) then return stopCuff(mp, true) end
         local from, ends = mp:GetPos(), CurTime() + MP.Cfg("cuffTime")
@@ -259,7 +271,7 @@ Rhylib.Net.Receive("mp.wheel", function(mp)
         timer.Create(name, 0.1, 0, function()
             if not IsValid(mp) then return timer.Remove(name) end
             if not IsValid(t) or not cuffable(t) or not near(mp, t, 50) or mp:GetPos():DistToSqr(from) > 40 * 40
-                or not MP.IsMP(mp) or mp.rhylibDown or MP.IsCuffed(mp) or not mp:HasWeapon("rhylib_handcuffs") then
+                or not MP.IsMP(mp) or Rhylib.State.IsDown(mp) or MP.IsCuffed(mp) or not mp:HasWeapon("rhylib_handcuffs") then
                 return stopCuff(mp, true)
             end
             if CurTime() >= ends then
@@ -268,11 +280,14 @@ Rhylib.Net.Receive("mp.wheel", function(mp)
             end
         end)
     elseif op == 1 then
+        -- (a bounty hunter's prisoner, bound with binders, isn't the MPs' to
+        -- free or move: same rule as the handcuffs' SWEP:MayUse)
+        if t.rhylibBound then return end
         if MP.IsCuffed(t) and near(mp, t) then MP.Uncuff(t, mp) end
     elseif op == 2 then
         if MP.EscortedBy(t) == mp then
             MP.SetEscort(t, nil)
-        elseif MP.IsCuffed(t) and near(mp, t) then
+        elseif MP.IsCuffed(t) and near(mp, t) and not t.rhylibBound then
             MP.SetEscort(t, mp)
         end
     end

@@ -4,7 +4,7 @@
 
     Uses a prop model (models/jajoff/sps/cgiweapons/tc13j/westarm5_h.mdl),
     held in first person by the trooper hands (CarrierVM, DC-15S hold). The
-    model's addon must be installed. Tune with rhylib_vm_editor /
+    model's addon must be installed. Tune with rhylib_vm_editor (Rhy's Dev Tools) /
     rhylib_wm_editor, then paste the lines below. First guesses.
 
     Class rhylib_westarm5. Shared: one file for server and client (AddCSLuaFile).

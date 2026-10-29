@@ -227,10 +227,11 @@ Items.Register("backpack", {
 --------------------------------------------------------------------------
 
 local Config = Rhylib.Config
-Config.Register("inventory", "baseCarry", 18, "Carry cap in kg without a backpack")
-Config.Register("inventory", "giveRange", 130, "How close you must be to give someone an item")
-Config.Register("inventory", "backpackWeightMult", 0.8, "Items inside a backpack count at this fraction of their weight")
-Config.Register("inventory", "contraband", {}, "Contraband item ids: players can hide up to 3 of them from searches, and they're never returned from jail")
+Config.Describe("inventory", { name = "Inventory", category = "Soldiers", sections = { "Size & weight", "Dropped items", "Rules" } })
+Config.Register("inventory", "baseCarry", 18, "Carry cap in kg without a backpack", { section = "Size & weight" })
+Config.Register("inventory", "giveRange", 130, "How close you must be to give someone an item", { section = "Rules" })
+Config.Register("inventory", "backpackWeightMult", 0.8, "Items inside a backpack count at this fraction of their weight", { section = "Size & weight" })
+Config.Register("inventory", "contraband", {}, "Contraband item ids: players can hide up to 3 of them from searches, and they're never returned from jail", { section = "Rules" })
 
 -- Items.IsContraband(id): true if id is in config inventory "contraband".
 -- (The set is cached and rebuilt when the list changes.)
@@ -284,7 +285,7 @@ end
 -- Items.PlayerWeight(ply): weight and cap for any player, from the NW2
 -- floats the server sets (rhylib_weight / rhylib_carry). Shared.
 function Items.PlayerWeight(ply)
-    return ply:GetNW2Float("rhylib_weight", 0), ply:GetNW2Float("rhylib_carry", Config.Get("inventory", "baseCarry"))
+    return ply:GetNW2Float(Rhylib.NW.WEIGHT, 0), ply:GetNW2Float(Rhylib.NW.CARRY, Config.Get("inventory", "baseCarry"))
 end
 
 --------------------------------------------------------------------------

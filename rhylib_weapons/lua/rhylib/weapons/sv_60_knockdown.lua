@@ -8,6 +8,7 @@
     Realm: server. Config: weapons knockMin, knockTimeMin, knockTimeMax,
     knockPush, knockDropChance (sh_00_config.lua). Training blasts don't
     go through damage, so they never knock anyone down.
+    W.Explode{ knock = false } blasts never knock down (W.explodeNoKnock).
     Fires hook Rhylib.CanKnockDown(ply): return false to stop this
     knockdown (rhylib_skills Press forward / Blast hardened, rhylib_admin
     god mode).
@@ -20,6 +21,7 @@ local pending = {}   -- [ply] = { amount, force, pos } from this hit
 
 Rhylib.Hook.Add("EntityTakeDamage", "weapons.knock", function(ent, dmg)
     if not ent:IsPlayer() or bit.band(dmg:GetDamageType(), DMG_BLAST) == 0 then return end
+    if Rhylib.Weapons.explodeNoKnock then return end   -- (W.Explode{ knock = false })
     if dmg:GetDamage() < cfg("knockMin") then return end
     pending[ent] = { amount = dmg:GetDamage(), force = dmg:GetDamageForce(), pos = dmg:GetDamagePosition() }
 end, 90)   -- (before armour at 100 changes the amount)
@@ -33,8 +35,10 @@ local function dropGun(ply)
     for uid, inst in pairs(st.byUid or {}) do
         if inst.id == class then
             if inst.data and inst.data.loadout then return end   -- (job gear would just vanish)
+            local name = wep.PrintName or class
             Inv.Drop(ply, uid, true)
-            return
+            if Inv.Get(ply).byUid[uid] == inst then return end   -- (still carried: the drop was refused)
+            return name   -- (for the message)
         end
     end
 end
@@ -44,7 +48,7 @@ Rhylib.Hook.Add("PostEntityTakeDamage", "weapons.knock", function(ent, dmg, took
     if not p then return end
     pending[ent] = nil
     if cfg("knockTimeMax") <= 0 then return end   -- (0 = knockdowns off)
-    if not took or not ent:Alive() or ent.rhylibDown or ent.rhylibGoingDown then return end   -- (going down: medical's body)
+    if not took or not ent:Alive() or ent:GetNW2Bool(Rhylib.NW.DOWN, false) or ent.rhylibGoingDown then return end   -- (going down: medical's body)
     if hook.Run("Rhylib.CanKnockDown", ent) == false then return end   -- (rhylib_skills: Press forward)
     local L = Rhylib.Lying
     if not (L and L.Knock) or L.Knocked(ent) or L.Ragdoll(ent) then return end
@@ -54,12 +58,11 @@ Rhylib.Hook.Add("PostEntityTakeDamage", "weapons.knock", function(ent, dmg, took
     dir:Normalize()
     local push = dir * cfg("knockPush") * math.Clamp(p.amount / cfg("knockMin"), 1, 2.5)
     -- The gun goes before the body does (the dropped item spawns at the eyes).
-    local drop = math.random() < cfg("knockDropChance")
-    if drop then dropGun(ent) end
+    local drop = math.random() < cfg("knockDropChance") and dropGun(ent) or nil
     local lo = math.max(cfg("knockTimeMin"), 0.5)
     local secs = math.Rand(lo, math.max(cfg("knockTimeMax"), lo))
     if L.Knock(ent, secs, push, true) and drop then
-        ent:ChatPrint("You dropped your weapon")
+        Rhylib.Notify(ent, "You dropped your " .. drop .. ": pick it up again", "bad", "Weapons")
     end
 end, -500)
 

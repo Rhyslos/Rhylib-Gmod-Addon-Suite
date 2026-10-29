@@ -13,9 +13,11 @@
     Spawned things are remembered per player (ent.rhylibSpawner) for cleanup.
     Handlers return the text to echo and log, or nil, "error for the caller".
 
-    Server only. Handlers for other addons' systems (roster, MP jail,
-    medical, DarkRP jobs and money) check the addon is there and return
-    an error like "rhylib_roster isn't installed" if not.
+    Server only. Other addons' commands (roster ranks, MP jail, illness,
+    DarkRP money) live in those addons (Admin.AddCommand); admin only
+    asks hooks for its general ones: Rhylib.AdminRevive / AdminHeal
+    (target, caller), Rhylib.AdminInfo(target, sid, add(line)),
+    Rhylib.KeepNoTarget(ply).
     Hooks it answers: Rhylib.CanStun / Rhylib.CanKnockDown (god mode = no),
     Rhylib.CanChat (mute), PlayerCanHearPlayersVoice (gag), the
     PlayerSpawn* hooks (spawn rights), CanTool, EntityTakeDamage (buddha).
@@ -41,7 +43,7 @@ local function you(caller, t) return caller == t and "themselves" or name(t) end
 -- Example: Rhylib.Admin.SetCloak(ply, true)
 function Admin.SetCloak(ply, on)
     ply.rhylibCloak = on or nil
-    ply:SetNW2Bool("rhylib_cloak", on)
+    ply:SetNW2Bool(Rhylib.NW.CLOAK, on)
     -- A lying player (rhylib_core) is already hidden under their body; leave that be.
     if not ply.rhylibLieHidden then
         ply:SetNoDraw(on)
@@ -51,7 +53,7 @@ function Admin.SetCloak(ply, on)
     ply:SetRenderMode(on and RENDERMODE_TRANSALPHA or RENDERMODE_NORMAL)
     Admin.SetNoTarget(ply, on or ply.rhylibAdminNoTargetOwn)
     -- (the gun is its own entity: hide it on the server too, or others see
-    -- it float where the hidden player is; owner 2026-10-07)
+    -- it float where the hidden player is)
     local w = ply:GetActiveWeapon()
     if IsValid(w) then w:SetNoDraw(on and true or false) end
 end
@@ -68,16 +70,16 @@ Rhylib.Hook.Add("PlayerSwitchWeapon", "admin.cloak", function(ply, old, new)
 end)
 
 -- Admin.SetNoTarget(ply, on): FL_NOTARGET on or off (NPCs and droids
--- ignore the player). Turning it off leaves it on for a downed player when
--- rhylib_medical's noTarget setting says downed players keep it.
+-- ignore the player). Turning it off leaves it on when hook
+-- Rhylib.KeepNoTarget(ply) answers true (rhylib_medical: downed players).
 -- ply.rhylibAdminNoTarget = it's on because of us (cloak or !notarget);
 -- ply.rhylibAdminNoTargetOwn = !notarget itself is on.
 function Admin.SetNoTarget(ply, on)
     ply.rhylibAdminNoTarget = on or nil
     if on then
         ply:AddFlags(FL_NOTARGET)
-    elseif not (Rhylib.Medical and Rhylib.Medical.IsDown(ply) and Rhylib.Medical.Cfg("noTarget")) then
-        ply:RemoveFlags(FL_NOTARGET)   -- (downed players keep it, rhylib_medical)
+    elseif hook.Run("Rhylib.KeepNoTarget", ply) ~= true then
+        ply:RemoveFlags(FL_NOTARGET)   -- (hook: rhylib_medical keeps it on downed players)
     end
 end
 
@@ -115,7 +117,7 @@ Rhylib.Hook.Add("PlayerCanHearPlayersVoice", "admin.gag", function(listener, tal
 end, -50)
 
 -- God mode also means no stuns (EMP, stun bolts, baton, flash) and no
--- explosion knockdowns (owner 2026-10-07: EMP spam on a god-moded admin).
+-- explosion knockdowns (EMP spam would still lock a god-moded admin down).
 Rhylib.Hook.Add("Rhylib.CanStun", "admin.god", function(ply)
     if IsValid(ply) and ply:HasGodMode() then return false end
 end)
@@ -124,7 +126,7 @@ Rhylib.Hook.Add("Rhylib.CanKnockDown", "admin.god", function(ply)
 end)
 
 -- The Rhylib chat box asks this before sending (rhylib_chat).
--- Muted players can still reach staff (owner 2026-10-07): the admin
+-- Muted players can still reach staff: the admin
 -- channel, and private messages to anyone who reads it.
 Rhylib.Hook.Add("Rhylib.CanChat", "admin.mute", function(ply, chId, _, target)
     if not Admin.muted[ply] then return end
@@ -347,78 +349,6 @@ H.rank = function(caller, t, a, ctx)
     return name(caller) .. " set the staff rank of " .. (IsValid(t) and t:Nick() or ctx.sid) .. " to " .. r.name
 end
 
--- Roster (rhylib_roster).
-local function roster() return Rhylib.Roster end
-local function who(t, ctx) return IsValid(t) and t:Nick() or ctx.sid end
-
-H.rrank = function(caller, t, a, ctx)
-    local R = roster()
-    if not (R and R.SetRank) then return nil, "rhylib_roster isn't installed" end
-    local want = tostring(a.rank or "")
-    local idx = tonumber(want)
-    if idx and (idx ~= math.floor(idx) or idx < 1 or idx > #R.Ranks()) then return nil, "Roster rank 1 to " .. #R.Ranks() end
-    idx = idx or R.RankIndex(string.upper(want))
-    if not idx then
-        for i, x in ipairs(R.Ranks()) do
-            if string.lower(x[2]) == string.lower(want) then idx = i end
-        end
-    end
-    if not idx then return nil, "No roster rank " .. want end
-    local c = R.Char(ctx.sid)
-    if not c or (c.bn or "") == "" then return nil, who(t, ctx) .. " isn't in a battalion" end
-    if not R.SetRank(ctx.sid, idx, name(caller)) then return nil, "Nothing changed" end
-    return name(caller) .. " set the roster rank of " .. who(t, ctx) .. " to " .. R.RankName(idx)
-end
-
-H.battalion = function(caller, t, a, ctx)
-    local R = roster()
-    if not (R and R.AddMember) then return nil, "rhylib_roster isn't installed" end
-    -- A battalion is a DarkRP job category.
-    local bn
-    for _, job in pairs(RPExtraTeams or {}) do
-        if job.category and string.lower(job.category) == string.lower(a.bn or "") then bn = job.category end
-    end
-    if not bn and RPExtraTeams then return nil, "No battalion " .. tostring(a.bn) end
-    a.bn = bn or a.bn
-    local c = R.Char(ctx.sid)
-    if not c then return nil, who(t, ctx) .. " has no character yet" end
-    if not c.trained then R.Train(ctx.sid, name(caller)) end
-    if not R.AddMember(ctx.sid, a.bn, name(caller) .. " added") then return nil, "Nothing changed (already in the " .. tostring(a.bn) .. "?)" end
-    return name(caller) .. " put " .. who(t, ctx) .. " in the " .. a.bn
-end
-
-H.unbattalion = function(caller, t, a, ctx)
-    local R = roster()
-    if not (R and R.RemoveMember) then return nil, "rhylib_roster isn't installed" end
-    if not R.RemoveMember(ctx.sid, name(caller)) then return nil, who(t, ctx) .. " isn't in a battalion" end
-    return name(caller) .. " removed " .. who(t, ctx) .. " from their battalion"
-end
-
-H.train = function(caller, t, a, ctx)
-    local R = roster()
-    if not (R and R.Train) then return nil, "rhylib_roster isn't installed" end
-    if not R.Train(ctx.sid, name(caller)) then return nil, who(t, ctx) .. " is already trained (or has no character)" end
-    return name(caller) .. " passed " .. who(t, ctx) .. " through basic training"
-end
-
-H.qual = function(caller, t, a, ctx)
-    local R = roster()
-    if not (R and R.SetQual) then return nil, "rhylib_roster isn't installed" end
-    local q = string.lower(a.qual or "")
-    local known = false
-    for _, x in ipairs(R.Quals()) do if x[1] == q then known = true end end
-    if not known then return nil, "No qualification " .. q end
-    if not R.SetQual(ctx.sid, q, a.on, name(caller)) then return nil, "Nothing changed" end
-    return name(caller) .. (a.on and " qualified " or " removed a qualification from ") .. who(t, ctx) .. ": " .. R.QualName(q)
-end
-
-H.charreset = function(caller, t)
-    local R = roster()
-    if not (R and R.ResetChar) then return nil, "rhylib_roster isn't installed" end
-    if not R.ResetChar(t:SteamID64()) then return nil, name(t) .. " has no character" end
-    return name(caller) .. " reset the character of " .. name(t)
-end
-
 -- Server / events.
 local function startMapChange(caller, m)
     if timer.Exists("rhylib_admin_map") then return nil, "A map change is already counting down (!cancelmap)" end
@@ -477,27 +407,26 @@ end
 -- Permanent things stay: Rhylib's own (toolgun "Permanent" tool,
 -- Rhylib.Perma) and other perma prop addons / sandbox persistence.
 local function isPerma(e)
-    if Rhylib.Perma and Rhylib.Perma.Is(e) then return true end
+    if Rhylib.Perma.Is(e) then return true end
     return e.PermaProps or e.PermaProps_ID or e:GetNWBool("PermaProps", false) or e:GetPersistent() or e.rhylibPerma or false
 end
 
 -- What a full cleanup takes: everything spawned during play that isn't
--- permanent (2026-10-09u, owner: placements are only kept when made
--- permanent). Never map entities, players, held weapons, hands and
+-- permanent (placements are only kept when made permanent). Never map entities, players, held weapons, hands and
 -- viewmodels, grapple ropes, lying bodies, or things attached to a player
 -- or to something permanent.
 local TAKE_PREFIX = { "prop_", "spawned_", "sent_", "gmod_wire_", "edit_", "rhylib_", "npc_" }
 local TAKE_CLASS = { gmod_button = true, gmod_lamp = true, gmod_light = true,
     gmod_balloon = true, gmod_thruster = true, gmod_wheel = true, gmod_hoverball = true, gmod_emitter = true,
     gmod_dynamite = true, gmod_cameraprop = true, gmod_turret = true }
-local KEEP_CLASS = { gmod_hands = true, gmod_gamerules = true, predicted_viewmodel = true, viewmodel = true, rhylib_rope = true,
+local KEEP_CLASS = { gmod_hands = true, gmod_gamerules = true, predicted_viewmodel = true, viewmodel = true, rhylib_rope = true, rhylib_zipline = true,
     physgun_beam = true }
 local function cleanable(e)
     -- (rhylibMapish: there when the map loaded, e.g. point_template spawns)
     if e:CreatedByMap() or e.rhylibMapish or e:IsPlayer() or isPerma(e) then return false end
     local c = e:GetClass()
     if KEEP_CLASS[c] then return false end
-    if e:GetNW2Bool("rhylib_lyingRag", false) then return false end
+    if e:GetNW2Bool(Rhylib.NW.LYING_RAG, false) then return false end
     if e:IsWeapon() and IsValid(e:GetOwner()) then return false end
     local parent = e:GetParent()
     if IsValid(parent) and (parent:IsPlayer() or parent:GetClass() == "predicted_viewmodel" or isPerma(parent)) then return false end
@@ -644,38 +573,6 @@ end
 -- More discipline
 --------------------------------------------------------------------------
 
-local function mp() return Rhylib.MP end
-
-H.jail = function(caller, t, a)
-    local MP = mp()
-    if not (MP and MP.Jail) then return nil, "rhylib_mp isn't installed" end
-    if MP.IsJailed(t) then return nil, name(t) .. " is already jailed" end
-    local minutes = math.floor(a.minutes)
-    if minutes < 1 then return nil, "At least 1 minute" end
-    local ok, err = MP.Jail(t, caller, minutes, a.reason or "")
-    if not ok then return nil, err or ("Couldn't jail " .. name(t)) end
-    return name(caller) .. " jailed " .. name(t) .. " for " .. Admin.FormatMinutes(math.min(minutes, MP.Cfg("maxSentence"))) .. (a.reason ~= "" and (" (" .. a.reason .. ")") or "")
-end
-
-H.unjail = function(caller, t)
-    local MP = mp()
-    if not (MP and MP.Release) then return nil, "rhylib_mp isn't installed" end
-    if not MP.IsJailed(t) then return nil, name(t) .. " isn't jailed" end
-    -- (admins skip the wait: processed straight away)
-    if MP.Process then MP.Process(t, caller) else MP.Release(t, caller) end
-    return name(caller) .. " released " .. name(t) .. " from jail"
-end
-
-H.free = function(caller, t)
-    local MP = mp()
-    if not MP then return nil, "rhylib_mp isn't installed" end
-    local did = false
-    if MP.IsCuffed(t) then MP.Uncuff(t, caller) did = true end
-    if MP.IsStunned(t) and MP.EndStun then MP.EndStun(t) did = true end
-    if not did then return nil, name(t) .. " isn't cuffed or stunned" end
-    return name(caller) .. " freed " .. you(caller, t)
-end
-
 H.unwarn = function(caller, t, a, ctx)
     local n = #Admin.Warnings(ctx.sid)
     if n == 0 then return nil, "No warnings to clear" end
@@ -723,15 +620,9 @@ H.info = function(caller, t, a, ctx)
     if IsValid(t) then
         add("Job: " .. team.GetName(t:Team()) .. " · health " .. t:Health() .. " · armour " .. t:Armor()
             .. " · online " .. math.floor(t:TimeConnected() / 60) .. " min")
-        local MP = mp()
-        if MP and MP.IsJailed(t) then add("In jail: " .. math.ceil(MP.JailLeft(t) / 60) .. " min left") end
     end
-    local R = Rhylib.Roster
-    local c = R and R.Char and R.Char(sid)
-    if c then
-        add("Character: " .. tostring(c.num or "?") .. " " .. tostring(c.nick or "")
-            .. ((c.bn or "") ~= "" and (" · " .. c.bn .. " · " .. R.RankName(c.r or 0)) or (c.trained and " · no battalion" or " · cadet")))
-    end
+    -- Other addons add their lines (rhylib_mp: jail time; rhylib_roster: character).
+    hook.Run("Rhylib.AdminInfo", t, sid, add)
     local w = Admin.Warnings(sid)
     add("Warnings: " .. #w .. (#w > 0 and (" (last: " .. (w[#w].reason or "") .. ")") or ""))
     local b = Admin.GetBan(sid)
@@ -743,10 +634,7 @@ end
 -- Health
 --------------------------------------------------------------------------
 
-local function med() return Rhylib.Medical end
-
 H.revive = function(caller, t)
-    local Med = med()
     if not t:Alive() then
         local pos, ang = t:GetPos(), t:EyeAngles()
         t:Spawn()
@@ -758,8 +646,9 @@ H.revive = function(caller, t)
         end)
         return name(caller) .. " revived " .. you(caller, t) .. " where they fell"
     end
-    if Med and Med.IsDown(t) then
-        Med.Revive(t, t:GetMaxHealth(), caller)
+    -- Downed: the addon that downs players gets them up (hook
+    -- Rhylib.AdminRevive(target, caller) -> true when it did).
+    if Rhylib.State and Rhylib.State.IsDown(t) and hook.Run("Rhylib.AdminRevive", t, caller) == true then
         return name(caller) .. " revived " .. you(caller, t)
     end
     return nil, name(t) .. " isn't down or dead"
@@ -767,36 +656,15 @@ end
 
 H.heal = function(caller, t)
     if not t:Alive() then return nil, name(t) .. " is dead (use !revive)" end
-    local Med = med()
-    if Med and Med.IsDown(t) then Med.Revive(t, t:GetMaxHealth(), caller) end
-    if Med and Med.ClearInjuries then Med.ClearInjuries(t) end
-    if Med and Med.Cure then Med.Cure(t) end
+    -- (hook Rhylib.AdminHeal(target, caller): rhylib_medical gets them up,
+    -- clears injuries and cures illness)
+    hook.Run("Rhylib.AdminHeal", t, caller)
     t:SetHealth(math.max(t:Health(), t:GetMaxHealth()))
     local A = Rhylib.Armor
     local arm = A and A.SpawnArmor and A.SpawnArmor(t) or 100
     if t:Armor() < arm then t:SetArmor(arm) end
     t:Extinguish()
     return name(caller) .. " healed " .. you(caller, t)
-end
-
--- Illness (rhylib_medical): infect with a kind and a load, or cure.
-H.infect = function(caller, t, a)
-    local kind, load = a and a.kind, a and a.load
-    local Med = med()
-    if not (Med and Med.Infect) then return nil, "Needs rhylib_medical" end
-    if Med.Simple and Med.Simple() then return nil, "The simplified medical system is on: no illnesses" end
-    local k = Med.ILL_BY_ID[string.lower(tostring(kind or ""))]
-    if not k then return nil, "Kind: viral, bacterial or poison" end
-    load = math.Clamp(math.floor(tonumber(load) or 40), 1, 100)
-    Med.Infect(t, k, load)
-    return name(caller) .. " infected " .. you(caller, t) .. " (" .. Med.ILL[k].id .. ", " .. load .. ")"
-end
-
-H.cure = function(caller, t)
-    local Med = med()
-    if not (Med and Med.Cure) then return nil, "Needs rhylib_medical" end
-    Med.Cure(t)
-    return name(caller) .. " cured " .. you(caller, t)
 end
 
 H.buddha = function(caller, t)
@@ -813,30 +681,6 @@ Rhylib.Hook.Add("EntityTakeDamage", "admin.buddha", function(ent, dmg)
         dmg:SetDamage(math.max(0, ent:Health() - 1))
     end
 end, 140)
-
-local function darkrpMoney(t)
-    return t.getDarkRPVar and t.addMoney and (t:getDarkRPVar("money") or 0)
-end
-
-H.money = function(caller, t, a)
-    local have = darkrpMoney(t)
-    if not have then return nil, "DarkRP money isn't available" end
-    local n = math.floor(a.amount)
-    if n == 0 then return nil, "Give an amount" end
-    if have + n < 0 then n = -have end
-    t:addMoney(n)
-    local fmt = DarkRP and DarkRP.formatMoney or tostring
-    return name(caller) .. (n >= 0 and (" gave " .. fmt(n) .. " to ") or (" took " .. fmt(-n) .. " from ")) .. you(caller, t)
-end
-
-H.setmoney = function(caller, t, a)
-    local have = darkrpMoney(t)
-    if not have then return nil, "DarkRP money isn't available" end
-    local n = math.max(0, math.floor(a.amount))
-    t:addMoney(n - have)
-    local fmt = DarkRP and DarkRP.formatMoney or tostring
-    return name(caller) .. " set the money of " .. you(caller, t) .. " to " .. fmt(n)
-end
 
 --------------------------------------------------------------------------
 -- Events: size, speed, jump, model (until respawn)
@@ -856,8 +700,8 @@ end
 
 H.scale = function(caller, t, a)
     if not t:Alive() then return nil, name(t) .. " is dead" end
-    local Med, MP = med(), mp()
-    if (Med and Med.IsDown(t)) or (MP and MP.IsStunned(t)) then return nil, name(t) .. " is lying down" end
+    local St = Rhylib.State
+    if St and (St.IsDown(t) or St.Ask("lying", t)) then return nil, name(t) .. " is lying down" end
     local s = math.Clamp(math.floor(a.size * 100 + 0.5) / 100, 0.2, 5)
     applyScale(t, s)
     if s > 1 then t:SetPos(freeSpot(t:GetPos(), { t }, s)) end
@@ -936,19 +780,6 @@ end
 H.cleardecals = function(caller)
     toClients(2)
     return name(caller) .. " cleared decals"
-end
-
--- Jail cell rings (rhylib_mp) off or on for everyone (kept across maps).
--- Global2Bool rhylib_hideCells, saved in Data "admin" "hideCells" (1 / 0)
--- and set again at InitPostEntity.
-Rhylib.Hook.Add("InitPostEntity", "admin.hidecells", function()
-    SetGlobal2Bool("rhylib_hideCells", Rhylib.Data.Get("admin", "hideCells") == 1)
-end)
-H.hidecells = function(caller)
-    local hide = not GetGlobal2Bool("rhylib_hideCells", false)
-    SetGlobal2Bool("rhylib_hideCells", hide)
-    Rhylib.Data.Set("admin", "hideCells", hide and 1 or 0)
-    return name(caller) .. (hide and " hid the jail cells" or " showed the jail cells")
 end
 
 H.freezeprops = function(caller)

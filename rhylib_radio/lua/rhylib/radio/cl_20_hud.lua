@@ -424,7 +424,7 @@ end
 local discPts = {}
 for i = 1, 32 do discPts[i] = { x = 0, y = 0 } end
 
--- Jammer status on the compass (owner 2026-10-07): inside a jammer the
+-- Jammer status on the compass: inside a jammer the
 -- compass "desyncs" (horizontal slices slide back and forth, pop out and
 -- jump, with ghost copies and glitch bars) and a red JAMMED blinks 3
 -- times, then stays; leaving it a green UPLINK ACTIVE blinks 3 times.

@@ -10,13 +10,13 @@
     NW2Int rhylib_haircol (0 = the model's own). (A client-only swap was
     tried first: the server's networked materials undid it.)
     Client only. Adds: R.ApplyHairColour, R.LookPreview, R.LookStepper,
-    R.LookControls, R.WriteLook, R.OpenLook, console rhylib_look and
-    rhylib_hair_debug, the pause menu page Character > Appearance.
+    R.LookControls, R.WriteLook, R.OpenLook, console rhylib_look, the
+    pause menu page Character > Appearance.
 ]]
 
 local R = Rhylib.Roster
 
-local function K() return Rhylib.Menus and Rhylib.Menus.Kit end
+local function K() return Rhylib.UI and Rhylib.UI.Kit end
 
 -- (used if R.PREVIEW has no model; the preview falls back to your own
 -- model when that one isn't installed)
@@ -296,17 +296,5 @@ end
 addLookPage()
 Rhylib.Hook.Add("InitPostEntity", "roster.lookpage", addLookPage)
 
--- Hair colour check: your model's materials, which one is the hair, and
--- what's swapped (paste the output when a colour lands on the wrong part).
-concommand.Add("rhylib_hair_debug", function()
-    local me = LocalPlayer()
-    print("Model " .. me:GetModel() .. "  skin " .. me:GetSkin() .. "  hair colour " .. me:GetNW2Int("rhylib_haircol", 0)
-        .. "  helmet " .. (me:GetNW2Bool("rhylib_helmetOff", false) and "off" or "on"))
-    local hi = hairIndex(me)
-    for i, m in ipairs(me:GetMaterials() or {}) do
-        local sub = me:GetSubMaterial(i - 1) or ""
-        print(string.format("  [%d] %s%s%s", i - 1, m, hi == i - 1 and "   <- hair" or "", sub ~= "" and ("   swapped for " .. sub) or ""))
-    end
-end)
 -- /look on the server (roster.lookopen, empty).
-net.Receive(Rhylib.Net.Name("roster.lookopen"), function() R.OpenLook() end)
+Rhylib.Net.Receive("roster.lookopen", function() R.OpenLook() end)

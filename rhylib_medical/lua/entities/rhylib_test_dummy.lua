@@ -43,6 +43,8 @@ local function dummyModel()
     if util.IsValidModel(m) then return m end
     return util.IsValidModel(MODEL) and MODEL or MODEL_FALLBACK
 end
+-- (toolgun tile picture: the model the dummy's bot will wear)
+ENT.PreviewModel = function() return dummyModel() end
 local MARKER = "models/hunter/blocks/cube025x025x025.mdl"
 ENT.BotName = "Test dummy"   -- bot name, a number is added
 ENT.Tough = false            -- true: blocks all damage, only shows it
@@ -173,17 +175,18 @@ Rhylib.Hook.Add("StartCommand", "dummy.still", function(ply, cmd)
     if DUMMY_MOVE == "run" then cmd:SetButtons(IN_SPEED) end
 end, -200)
 
-concommand.Add("rhylib_dummy_move", function(ply, _, args)
-    if IsValid(ply) and not ply:IsAdmin() then return end
-    local m = string.lower(args[1] or "")
-    if m ~= "still" and m ~= "walk" and m ~= "run" then
-        local msg = "rhylib_dummy_move still|walk|run (now: " .. DUMMY_MOVE .. ")"
-        if IsValid(ply) then ply:ChatPrint(msg) else print(msg) end
-        return
-    end
-    DUMMY_MOVE = m
-    if IsValid(ply) then ply:ChatPrint("Test dummies: " .. m) end
-end)
+Rhylib.Command.Add({
+    name = "rhylib_dummy_move", perm = "rhylib.medical.dummies", minAccess = "admin", tag = "Medical",
+    args = "still|walk|run", help = "Make every test dummy stand still, walk or run back and forth",
+    fn = function(ply, args)
+        local m = string.lower(args[1] or "")
+        if m ~= "still" and m ~= "walk" and m ~= "run" then
+            return "rhylib_dummy_move still|walk|run (now: " .. DUMMY_MOVE .. ")", "bad"
+        end
+        DUMMY_MOVE = m
+        return "Test dummies: " .. m, "good"
+    end,
+})
 
 -- Every spawn: back on the marker, with the dummy model and no weapons.
 Rhylib.Hook.Add("PlayerSpawn", "dummy.place", function(ply)

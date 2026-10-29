@@ -161,6 +161,28 @@ route.pm = function(ply, ch, text, target)
     send({ ply, target }, ch, ply, text, target)
 end
 
+-- Other addons' PlayerSay hooks (not the gamemode's: DarkRP's GM:PlayerSay
+-- would send the line a second time). Commands ("!x", "/x") already go
+-- through the real `say`; this covers plain messages, so admin mod mutes,
+-- word filters and chat logs see them. Returns the text to send, or nil
+-- when a hook answered "" / false (stopped).
+local function playerSayHooks(ply, text, teamOnly)
+    if not Config.Get("chat", "playerSayHooks") then return text end
+    for name, fn in pairs(hook.GetTable().PlayerSay or {}) do
+        local ok, r
+        if isstring(name) then
+            ok, r = pcall(fn, ply, text, teamOnly)
+        elseif IsValid(name) then   -- (hook.Add with an entity as the id)
+            ok, r = pcall(fn, name, ply, text, teamOnly)
+        end
+        if ok then
+            if r == "" or r == false then return nil end
+            if isstring(r) then return r end   -- (like hook.Run: the first answer wins)
+        end
+    end
+    return text
+end
+
 -- chat.send (client -> server): channel index (CHANNEL_BITS), target entity
 -- (PM receiver, else NULL), text. Rate 2/s, burst 5.
 Rhylib.Net.Receive("chat.send", function(ply)
@@ -180,6 +202,8 @@ Rhylib.Net.Receive("chat.send", function(ply)
         note(ply, why or "You can't chat right now")
         return
     end
+    text = playerSayHooks(ply, text, ch.id == "team")
+    if not text or string.Trim(text) == "" then return end
     text = string.sub(text, 1, Config.Get("chat", "maxLength"))
 
     local fn = route[ch.id]

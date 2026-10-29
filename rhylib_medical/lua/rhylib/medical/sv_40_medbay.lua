@@ -25,6 +25,11 @@
 ]]
 
 local Med = Rhylib.Medical
+
+-- Who is in a tank / on a sofa right now (the timers below walk only these).
+Med.tankUsers = Med.tankUsers or {}
+Med.sofaUsers = Med.sofaUsers or {}
+local SOFA_LEAVE = 200   -- (units: moved this far from the sofa = got up some other way)
 local function cfg(k) return Med.Cfg(k) end
 
 Rhylib.Net.Register("chem.open")
@@ -63,6 +68,7 @@ function Med.TankExit(ply, why)
     if not IsValid(ply) then return end
     local tank = ply.rhylibTank
     ply.rhylibTank, ply.rhylibTankTime = nil, nil
+    Med.tankUsers[ply] = nil
     ply.rhylibTankLeft = CurTime()
     ply:SetNW2Entity("rhylib_tank", NULL)
     if IsValid(tank) and tank:GetOccupant() == ply then tank:SetOccupant(NULL) end
@@ -85,6 +91,7 @@ function Med.TankEnter(tank, ply)
     end
     Med.Cancel(ply)
     ply.rhylibTank = tank
+    Med.tankUsers[ply] = true
     ply.rhylibTankIn = CurTime()
     ply.rhylibTankTime = 0
     ply:SetNW2Entity("rhylib_tank", tank)
@@ -121,9 +128,11 @@ local function specialistNear(tank)
 end
 
 timer.Create("Rhylib.Medical.Tanks", 0.5, 0, function()
-    for _, ply in ipairs(player.GetAll()) do
-        local tank = ply.rhylibTank
-        if tank then
+    for ply in pairs(Med.tankUsers) do
+        local tank = IsValid(ply) and ply.rhylibTank
+        if not IsValid(ply) then
+            Med.tankUsers[ply] = nil
+        elseif tank then
             -- (moved out by something else, e.g. an admin teleport or noclip: let them go)
             if not IsValid(tank) or not ply:Alive() or ply.rhylibDown or tank:GetOccupant() ~= ply
                 or ply:GetMoveType() ~= MOVETYPE_NONE or ply:GetPos():DistToSqr(inside(tank)) > 32 * 32 then
@@ -134,6 +143,8 @@ timer.Create("Rhylib.Medical.Tanks", 0.5, 0, function()
                     ply:EmitSound("items/medshot4.wav", 60)
                 end
             end
+        else
+            Med.tankUsers[ply] = nil
         end
     end
 end)
@@ -287,6 +298,7 @@ local function sofaUp(ply, quiet)
     local sofa = ply.rhylibSofa
     if not sofa then return end
     ply.rhylibSofa = nil
+    Med.sofaUsers[ply] = nil
     ply.rhylibSofaLeft = CurTime()
     ply:SetNW2Entity("rhylib_sofa", NULL)
     if IsValid(sofa) and sofa.rhylibUser == ply then sofa.rhylibUser = nil end
@@ -396,6 +408,7 @@ function Med.SofaUse(sofa, ply)
     rag.rhylibFrozen = nil   -- (part frozen: neither state, so setFrozen always runs)
     rag.rhylibFreezeAt = CurTime() + cfg("sofaSettle")
     ply.rhylibSofa = sofa
+    Med.sofaUsers[ply] = true
     ply.rhylibSofaIn = CurTime()
     sofa.rhylibUser = ply
     ply:SetNW2Entity("rhylib_sofa", sofa)
@@ -408,13 +421,14 @@ Rhylib.Hook.Add("KeyPress", "medical.sofa", function(ply, key)
 end)
 
 timer.Create("Rhylib.Medical.Sofas", 1, 0, function()
-    for _, ply in ipairs(player.GetAll()) do
-        local s = ply.rhylibSofa
+    for ply in pairs(Med.sofaUsers) do
+        local s = IsValid(ply) and ply.rhylibSofa
+        if not s then Med.sofaUsers[ply] = nil end
         local L = Rhylib.Lying
         local MP = Rhylib.MP
         if s and ((L and L.Ragdoll and not L.Ragdoll(ply)) or (MP and MP.IsStunned and MP.IsStunned(ply))) then
             sofaUp(ply, true)   -- (stunned or got up some other way: their system owns the body)
-        elseif s and (not IsValid(s) or not ply:Alive() or ply:GetPos():DistToSqr(s:GetPos()) > 200 * 200) then
+        elseif s and (not IsValid(s) or not ply:Alive() or ply:GetPos():DistToSqr(s:GetPos()) > SOFA_LEAVE * SOFA_LEAVE) then
             sofaUp(ply)
         end
     end
@@ -438,51 +452,14 @@ local CLASSES = { "rhylib_bacta_tank", "rhylib_chem_bench", "rhylib_med_sofa" }
 Rhylib.PLACEMENT_CLASSES = Rhylib.PLACEMENT_CLASSES or {}
 for _, c in ipairs(CLASSES) do Rhylib.PLACEMENT_CLASSES[c] = true end
 
--- Saves every permanent tank/bench/sofa (all of them when rhylib_core has
--- no Rhylib.Perma) to Data "med_places"/<map>. Returns how many.
-local function savePlaces()
-    local rows = {}
-    for _, class in ipairs(CLASSES) do
-        for _, e in ipairs(ents.FindByClass(class)) do
-            if (not Rhylib.Perma or Rhylib.Perma.Is(e)) then   -- (only permanent ones, 2026-10-09u)
-                local p, an = e:GetPos(), e:GetAngles()
-                rows[#rows + 1] = { class = class, pos = { p.x, p.y, p.z }, ang = { an.p, an.y, an.r } }
-            end
-        end
-    end
-    Rhylib.Data.Set("med_places", game.GetMap(), rows)
-    return #rows
-end
-
--- Removes the existing ones and spawns the saved list (marked permanent).
--- Runs 1 s after InitPostEntity and after a map cleanup.
-local function loadPlaces()
-    local rows = Rhylib.Data.Get("med_places", game.GetMap())
-    if not istable(rows) then return end
-    for _, class in ipairs(CLASSES) do
-        for _, e in ipairs(ents.FindByClass(class)) do e:Remove() end
-    end
-    for _, r in ipairs(rows) do
-        local e = ents.Create(r.class)
-        if IsValid(e) then
-            e:SetPos(Vector(r.pos[1], r.pos[2], r.pos[3]))
-            e:SetAngles(Angle(r.ang[1], r.ang[2], r.ang[3]))
-            e:Spawn()
-            if Rhylib.Perma then Rhylib.Perma.Mark(e, true) end
-        end
-    end
-end
-if Rhylib.Perma and Rhylib.Perma.Register then Rhylib.Perma.Register(CLASSES, savePlaces) end
-Rhylib.Hook.Add("InitPostEntity", "medical.places", function() timer.Simple(1, loadPlaces) end)
-Rhylib.Hook.Add("PostCleanupMap", "medical.places", loadPlaces)
-
--- Console: rhylib_medical_save (admins, or the server console) saves now.
--- The toolgun's Permanent tool also saves through Rhylib.Perma.Register.
+-- Permanent tanks, benches and sofas come back every map start and after
+-- a cleanup (core's Rhylib.Perma.Placements: Data "med_places"/<map>,
+-- console rhylib_medical_save re-saves the permanent ones).
 Rhylib.Perms.Register("rhylib.medical.admin", "admin", "Save bacta tank and chemistry bench placements")
-concommand.Add("rhylib_medical_save", function(ply)
-    Rhylib.Perms.Check(ply, "rhylib.medical.admin", function(ok)
-        local function reply(m) if IsValid(ply) then ply:ChatPrint(m) else print(m) end end
-        if not ok then return reply("You don't have permission for rhylib_medical_save") end
-        reply("Saved " .. savePlaces() .. " bacta tanks, chemistry benches and med sofas for " .. game.GetMap())
-    end)
-end)
+Med.places = Rhylib.Perma.Placements("medical", {
+    classes = CLASSES,
+    dataModule = "med_places",
+    command = "rhylib_medical_save",
+    perm = "rhylib.medical.admin",
+    freeze = false,   -- (as before: the entities set themselves up)
+})

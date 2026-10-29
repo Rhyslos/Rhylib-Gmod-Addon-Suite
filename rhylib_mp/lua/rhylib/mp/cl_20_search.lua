@@ -2,7 +2,7 @@
     Search window: the searched player's items (main grid, backpack, back
     slot). "Take" buttons only while they're cuffed. Closes when the server
     says the search ended (out of range, baton put away, ...).
-    Client only. Needs rhylib_menus (Menus.Kit) to draw; without it the
+    Client only. Needs the UI kit (Rhylib.UI.Kit, rhylib_core) to draw; without it the
     list arrives but no window opens.
 
     Also here: the MP options on the rhylib_menus interaction wheel
@@ -53,7 +53,7 @@ end)
 -- sends mp.search with NULL so the server stops refreshing. Client only.
 function MP.ShowSearch(target, cuffed, rows)
 
-    local K = Rhylib.Menus and Rhylib.Menus.Kit
+    local K = Rhylib.UI and Rhylib.UI.Kit
     if not K then return end
     local s = K.S
     local f = MP.searchPanel
@@ -137,7 +137,10 @@ end
 Rhylib.Hook.Add("Rhylib.WheelOptions", "mp.wheel", function(t, me, add)
     if not MP.IsMP(me) then return end
     add("Search", function(x) MP.OpenSearch(x) end, { order = 30, sub = "Look through their gear" })
-    if MP.IsCuffed(t) then
+    if MP.IsCuffed(t) and t:GetNW2Bool("rhylib_bound", false) then
+        -- (bound with rhylib_bounty's binders: the hunter's prisoner)
+        add("Uncuff", nil, { order = 32, disabled = "A bounty hunter's prisoner" })
+    elseif MP.IsCuffed(t) then
         add("Uncuff", function(x) wheelOp(1, x) end, { order = 32 })
         add(MP.EscortedBy(t) == me and "Let go" or "Escort", function(x) wheelOp(2, x) end, { order = 33 })
     elseif not me:HasWeapon("rhylib_handcuffs") then
@@ -153,7 +156,7 @@ Rhylib.Hook.Add("Rhylib.WheelOptions", "mp.wheel", function(t, me, add)
     end
 end)
 
-net.Receive(Rhylib.Net.Name("mp.wheelx"), function()
+Rhylib.Net.Receive("mp.wheelx", function()
     local Menus = Rhylib.Menus
     if Menus and Menus.WheelProgressStop then Menus.WheelProgressStop() end
 end)

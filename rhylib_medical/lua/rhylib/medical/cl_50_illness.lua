@@ -1,7 +1,8 @@
 --[[
     Illness (client): symptoms on screen, the analyser window, the dose
     window, test strips (inventory right-click) and the interaction wheel
-    options (draw blood, give medicine; staff: infect / cure).
+    options (draw blood, give medicine; staff: infect / cure), and the
+    datapad's "Illness guide" tab for medics (rhylib_datapad D.AddTab).
 
     Public: Med.LooksIll, Med.IllSigns, Med.OpenAnalyser.
     Hooks used: Rhylib.WheelOptions / Rhylib.WheelEntityOptions
@@ -11,7 +12,7 @@
 
 local Med = Rhylib.Medical
 
-local function K() return Rhylib.Menus and Rhylib.Menus.Kit end
+local function K() return Rhylib.UI and Rhylib.UI.Kit end
 local function Inv() return Rhylib.Inventory end
 -- (item uid size; rhylib_inventory may be missing: the illness flow then does nothing)
 local function uidBits() return Rhylib.Items and Rhylib.Items.UID_BITS or 16 end
@@ -50,7 +51,7 @@ local function progress(text, secs)
 end
 
 -- A timed step was cancelled (uid: an analyser sample, 0 = something else).
-net.Receive(Rhylib.Net.Name("ill.stop"), function()
+Rhylib.Net.Receive("ill.stop", function()
     local uid = net.ReadUInt(uidBits())
     if uid > 0 then
         Med.scanning[uid] = nil
@@ -185,7 +186,7 @@ end
 -- (lists your samples; "Analyse" sends ill.scan). Client only.
 Med.OpenAnalyser = openAnalyser
 
-net.Receive(Rhylib.Net.Name("ill.open"), function()
+Rhylib.Net.Receive("ill.open", function()
     local ent = net.ReadEntity()
     if IsValid(ent) then openAnalyser(ent) end
 end)
@@ -368,17 +369,17 @@ local function openCassette(info)
 end
 
 -- Beep at the start and when the result is in (window open or not).
-net.Receive(Rhylib.Net.Name("ill.beep"), function()
+Rhylib.Net.Receive("ill.beep", function()
     local done, who = net.ReadBool(), net.ReadString()
     local me = LocalPlayer()
     if IsValid(me) then me:EmitSound("buttons/blip1.wav", 75, done and 125 or 100, 0.7, CHAN_STATIC) end
     if done and Med.ShowNote then Med.ShowNote("Test strip ready" .. (who ~= "" and (": " .. who) or "")) end
 end)
 
-net.Receive(Rhylib.Net.Name("ill.cass"), function()
+Rhylib.Net.Receive("ill.cass", function()
     local info = { uid = net.ReadUInt(uidBits()), who = net.ReadString(), elapsed = net.ReadUInt(16),
         dev = net.ReadUInt(10), kind = net.ReadUInt(2), load = net.ReadUInt(7) }
-    info.max = Med.Cfg("stripMax") or 120
+    info.max = Med.Cfg("stripMax")
     openCassette(info)
 end)
 
@@ -480,7 +481,11 @@ Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.illness", function(t, me, add)
         for _, m in ipairs(Med.MEDICINES) do
             if carried(m[1]) > 0 then any = true break end
         end
-        if any then
+        local MP = Rhylib.MP
+        local still = Med.OnSofa(t) or Med.IsDown(t) or t:IsBot() or (MP and MP.IsCuffed and MP.IsCuffed(t))
+        if any and not still then
+            add("Give medicine", nil, { order = 17, disabled = "Lay them on a med sofa" })
+        elseif any then
             add("Give medicine", function(x) openDose(x) end, { order = 17, sub = "Pick the medicine and dose" })
         end
     end
@@ -502,3 +507,47 @@ Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.illness", function(t, me, add)
         end, { order = 91, sub = "Staff: infect or cure" })
     end
 end)
+
+--------------------------------------------------------------------------
+-- Datapad tab "Illness guide" (medics, full medical system only): the
+-- steps from a sick patient to the right dose, for medics who've never
+-- seen it (rhylib_datapad D.AddTab).
+--------------------------------------------------------------------------
+
+local GUIDE = {
+    { "1. Spot it", "Someone who is ill shows an affliction tag on the head in the health (H) menu: UNWELL, ILL or SEVERELY ILL. You can't tell the cause by looking." },
+    { "2. Draw blood", "Lay them on a med sofa, then hold E on them and pick Draw blood (needs a blood sample kit). You get a blood sample item." },
+    { "3. Test strip", "Right-click the sample and pick Apply to a test strip. The strip develops in 30 seconds to 2 minutes; you hear a blip when it's ready. Right-click the used strip to read it: the colour of the Test channel tells you the kind of illness (the key is on the right)." },
+    { "4. Analyse", "Take the sample and its developed strip to a chemistry bench and open the Blood analyser. It gives the dose in units (± a small band)." },
+    { "5. Dose", "Hold E on the patient (on the sofa, downed or cuffed) and pick Give medicine. Pick the medicine that matches the strip's colour and the units from the analyser." },
+    { "Careful", "Too little and the illness keeps growing; too much is an overdose (blurred vision, lost health, twice over and they go down); the wrong medicine makes them sick. Samples and strips spoil after a while." },
+}
+
+local function addGuideTab()
+    local D = Rhylib.Datapad
+    if not (D and D.AddTab) then return end
+    D.AddTab({
+        id = "illness", name = "Illness guide", order = 70,
+        has = function() return Med.IsMedic(LocalPlayer()) and not Med.Simple() end,
+        build = function(content, k)
+            if not k then return end
+            local s = k.S
+            local sp = k.Scroll(content)
+            sp:Dock(FILL)
+            local h = k.Heading(sp, "Treating an illness")
+            h:Dock(TOP)
+            h:DockMargin(0, 0, s(8), s(6))
+            for _, g in ipairs(GUIDE) do
+                local t = k.Label(sp, g[1], 15, 700, k.C.text)
+                t:Dock(TOP)
+                t:DockMargin(0, s(4), s(8), s(2))
+                local l = k.Label(sp, g[2], 14, nil, k.C.textDim)
+                l:Dock(TOP)
+                l:SetWrap(true)
+                l:SetAutoStretchVertical(true)
+                l:DockMargin(0, 0, s(8), s(6))
+            end
+        end,
+    })
+end
+Rhylib.After("datapad", addGuideTab)

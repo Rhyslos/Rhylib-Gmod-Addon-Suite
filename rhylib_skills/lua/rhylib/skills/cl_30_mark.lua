@@ -3,6 +3,8 @@
     Rhylib.MarkKey from rhylib_menus), and marks sent to us (ours or a
     squad mate's) are drawn over the target until they run out or the
     target dies. Through optics, one Q marks several (sv_30_mark).
+    Without the Mark target skill, the first Q of a session prints a quiet
+    chat line saying it needs the Officer skill.
     A Commander's (Tactical visor) Q marks are locks: red diamonds for
     everyone who sees them (the squad hits locked targets harder); other
     marks, spots and Called shot marks orange.
@@ -21,9 +23,19 @@ local COL = Color(242, 160, 60)
 local COL_LOCK = Color(235, 60, 50)
 local COL_OUT = Color(0, 0, 0, 170)
 
+-- Without the skill, Q says once per session what it's for (it used to do
+-- nothing at all).
+local toldMark = false
 Rhylib.Hook.Add("Rhylib.MarkKey", "skills.mark", function()
     local me = LocalPlayer()
-    if not (IsValid(me) and me:Alive() and K.Has(me, "mark_target")) then return end
+    if not (IsValid(me) and me:Alive()) then return end
+    if not K.Has(me, "mark_target") then
+        if not toldMark then
+            toldMark = true
+            chat.AddText(Color(133, 183, 235), "[Skills] ", Color(200, 200, 200), "Q: Mark target needs the Officer skill")
+        end
+        return
+    end
     local G = Rhylib.Gear
     local optics = G and G.Looking and G.Looking(me) or false
     Rhylib.Net.Start("skills.markreq")

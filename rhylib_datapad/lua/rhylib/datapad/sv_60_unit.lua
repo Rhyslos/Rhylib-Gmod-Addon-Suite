@@ -92,7 +92,7 @@ local function list(ns, bn)
     return t
 end
 
-local function note(ply, msg) if IsValid(ply) then ply:ChatPrint(msg) end end
+local function note(ply, msg) if IsValid(ply) then Rhylib.Notify(ply, msg, "info", "Datapad") end end
 
 local function battalionPlayers(bn)
     local out = {}
@@ -361,7 +361,7 @@ end
 
 local function tellOrder(bn, o, msg)
     for _, p in ipairs(battalionPlayers(bn)) do
-        if assigned(o, sid(p)) then p:ChatPrint(msg) end
+        if assigned(o, sid(p)) then Rhylib.Notify(p, msg, "info", "Datapad") end
     end
 end
 
@@ -383,7 +383,7 @@ function D.SetOrderStatus(ply, bn, id, st, admin)
             -- Tell whoever issued it (if online and not the one changing it).
             for _, p in ipairs(player.GetHumans()) do
                 if p ~= ply and o.bs and sid(p) == o.bs then
-                    p:ChatPrint(ply:Nick() .. " set your order \"" .. (o.ti or "") .. "\" to " .. D.ORDER_STATUS[st])
+                    Rhylib.Notify(p, ply:Nick() .. " set your order \"" .. (o.ti or "") .. "\" to " .. D.ORDER_STATUS[st], "info", "Datapad")
                 end
             end
             return true
@@ -540,7 +540,7 @@ D.TermRecv("dp.uapply", {
         note(ply, "Application sent to the " .. bn .. ". Check its status here at the battalion computer.")
         -- Tell the battalion's managers who are online.
         for _, p in ipairs(battalionPlayers(bn)) do
-            if isManager(p, bn, false) then p:ChatPrint(ply:Nick() .. " applied to the " .. bn .. " (battalion computer, Applications)") end
+            if isManager(p, bn, false) then Rhylib.Notify(p, ply:Nick() .. " applied to the " .. bn .. " (battalion computer, Applications)", "good", "Datapad") end
         end
         D.SendUnit(ply, ent, a)
     end,
@@ -575,7 +575,7 @@ D.TermRecv("dp.uappget", {
         Rhylib.Net.Start("dp.uappinfo")
         net.WriteUInt(appId, 16)
         local ps = D.PlayerStats and D.PlayerStats(id) or {}
-        for _, k in ipairs(D.STAT_KEYS) do net.WriteUInt(math.Clamp(ps[k] or 0, 0, 2 ^ 31), 32) end
+        D.WriteStatRow(ps)
         -- Qualifications held.
         local Ro = R()
         local c = Ro and Ro.Char(id)
@@ -656,7 +656,7 @@ D.TermRecv("dp.ursvp", {
         if not p or p.sec ~= D.SEC_SESSION then return end
         p.rv = p.rv or {}
         p.rv["s" .. sid(ply)] = { n = ply:Nick(), s = arg.s }
-        D.StoreQuiet("dp_board", bn, b)
+        D.SaveBook("dp_board", bn, b, p, true)   -- (quiet: sign-ups don't count as new data)
         D.SendPost(ply, p)
     end,
 })
@@ -678,7 +678,7 @@ D.TermRecv("dp.ucheck", {
         local key = "s" .. sid(ply)
         if p.ci[key] then return end
         p.ci[key] = ply:Nick()
-        D.StoreQuiet("dp_board", bn, b)
+        D.SaveBook("dp_board", bn, b, p, true)
         if D.AddStat then D.AddStat(ply, "at", 1) end
         note(ply, "Checked in for " .. (p.ti or "the session"))
         D.SendPost(ply, p)

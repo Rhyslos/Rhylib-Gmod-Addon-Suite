@@ -23,6 +23,10 @@
     A permanent thing that gets removed (undo, remover, broken) is saved
     again without it (EntityRemoved), except during a map cleanup or
     shutdown.
+    Rows that fail to load (their entity class or addon missing that boot)
+    are kept in P.unloaded and written back by every SaveGeneric, so they
+    survive until the addon is back; `rhylib_perma_forget_missing` (server
+    console or superadmin) drops them.
 ]]
 
 Rhylib.Perma = Rhylib.Perma or {}
@@ -70,7 +74,7 @@ end
 -- Never kept by the plain list: players, NPCs, carried weapons, vehicles
 -- (they need their vehicle script), loose inventory items (their data),
 -- hands/viewmodels, ropes and lying bodies.
-local SKIP = { gmod_hands = true, predicted_viewmodel = true, viewmodel = true, rhylib_rope = true,
+local SKIP = { gmod_hands = true, predicted_viewmodel = true, viewmodel = true, rhylib_rope = true, rhylib_zipline = true,
     rhylib_world_item = true, gmod_gamerules = true, physgun_beam = true,
     rhylib_grenade = true, rhylib_he_planted = true, rhylib_b2_rocket = true }   -- (live explosives)
 
@@ -137,6 +141,9 @@ function P.SaveGeneric()
             rows[#rows + 1] = row
         end
     end
+    -- Rows that failed to load this map (a missing addon or model) stay
+    -- saved, so one bad boot can't wipe them (rhylib_perma_forget_missing).
+    for _, r in ipairs(P.unloaded or {}) do rows[#rows + 1] = r end
     Rhylib.Data.Set("perma", game.GetMap(), rows)
     return #rows
 end
@@ -152,13 +159,16 @@ function P.LoadGeneric()
         if P.Is(e) and not P.savers[e:GetClass()] then e:Remove() end
     end
     P.loading = nil
+    P.unloaded = {}
     local n = 0
     for _, r in ipairs(rows) do
+        local made = false
         local ok, err = pcall(function()
-            if not (isstring(r.c) and istable(r.p) and istable(r.a)) then return end
-            if P.savers[r.c] then return end   -- (its own addon spawns those)
+            if not (isstring(r.c) and istable(r.p) and istable(r.a)) then made = true return end   -- (broken row: drop it)
+            if P.savers[r.c] then made = true return end   -- (its own addon spawns those)
             local e = ents.Create(r.c)
             if not IsValid(e) then return end
+            made = true
             local isProp = string.sub(r.c, 1, 5) == "prop_"
             if isProp and isstring(r.m) and r.m ~= "" then e:SetModel(r.m) end
             e:SetPos(vec(r.p))
@@ -193,9 +203,25 @@ function P.LoadGeneric()
             n = n + 1
         end)
         if not ok then Rhylib.Warn("core", "permanent %s didn't load: %s", tostring(r.c), tostring(err)) end
+        if not made then P.unloaded[#P.unloaded + 1] = r end
     end
     if n > 0 then Rhylib.Print("core", "Placed %d permanent things on %s", n, game.GetMap()) end
+    if #P.unloaded > 0 then
+        Rhylib.Warn("core", "%d permanent things couldn't be made on %s (an addon missing?). They stay saved; rhylib_perma_forget_missing drops them.",
+            #P.unloaded, game.GetMap())
+    end
 end
+
+-- rhylib_perma_forget_missing (server console or superadmin): drop the
+-- saved rows that failed to load on this map.
+concommand.Add("rhylib_perma_forget_missing", function(ply)
+    if IsValid(ply) and not ply:IsSuperAdmin() then return end
+    local n = #(P.unloaded or {})
+    P.unloaded = {}
+    P.SaveGeneric()
+    local msg = "[Rhylib] Dropped " .. n .. " permanent things that couldn't be made on " .. game.GetMap()
+    if IsValid(ply) then ply:ChatPrint(msg) else print(msg) end
+end)
 
 -- What exists right after the map loads (incl. point_template spawns,
 -- which aren't CreatedByMap) counts as the map for !cleanup.

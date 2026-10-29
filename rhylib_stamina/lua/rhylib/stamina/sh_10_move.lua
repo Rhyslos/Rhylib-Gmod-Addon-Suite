@@ -19,11 +19,11 @@
 
 local S = Rhylib.Stamina
 local Config = Rhylib.Config
-local J_DT_HAS = 31  -- rhylib_jetpack's "wearing a jetpack" bool (DTBool; read without needing the addon)
+-- rhylib_jetpack's "wearing a jetpack" bool (DTBool), read by its core DT
+-- name so it works without the addon.
+local J_DT_HAS = Rhylib.DT.Claim("Bool", "jetpack.has", 31)
 
-local function cfg(key)
-    return Config.Get("stamina", key)
-end
+local cfg = Rhylib.Config.For("stamina")
 
 -- Start a new line: stamina st at time from, changing by rate per second.
 local function setLine(ply, st, from, rate)

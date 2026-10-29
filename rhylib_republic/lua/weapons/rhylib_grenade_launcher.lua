@@ -1,5 +1,5 @@
 --[[
-    T-19 grenade launcher (2026-10-10, owner: EOD Grenade launcher skill;
+    T-19 grenade launcher (EOD Grenade launcher skill;
     "our own mortar clone").
 
     Fires the thermal detonators you carry (inventory items) as its rounds,
@@ -12,7 +12,7 @@
     The longest shot (aimed about 45° up) is weapons launcherRange (60 m).
 
     Carrier and prop values are first guesses copied from the DP-23: tune
-    with rhylib_vm_editor / rhylib_wm_editor and paste the lines below.
+    with rhylib_vm_editor (Rhy's Dev Tools) / rhylib_wm_editor and paste the lines below.
 
     Class rhylib_grenade_launcher. Shared: one file for server and client (AddCSLuaFile).
     Base rhylib_base (rhylib_weapons), where every SWEP field is explained;
@@ -113,7 +113,7 @@ end
 -- Muzzle speed for the configured longest shot (from LAUNCH_HEIGHT onto
 -- level ground: R² = u(u + 2h), u = v²/g).
 function SWEP:LaunchSpeed()
-    local R = math.max(5, Config.Get("weapons", "launcherRange") or 60) * UNITS_PER_M
+    local R = math.max(5, Config.Get("weapons", "launcherRange")) * UNITS_PER_M
     local h = LAUNCH_HEIGHT
     return math.sqrt(gravity() * (math.sqrt(h * h + R * R) - h))
 end
@@ -182,7 +182,7 @@ if SERVER then
     -- error of launcherSpread, at LaunchSpeed() with no drag. Server only.
     function SWEP:Launch(o)
         local ang = o:EyeAngles()
-        local err = Config.Get("weapons", "launcherSpread") or 0.6
+        local err = Config.Get("weapons", "launcherSpread")
         ang.p = ang.p + (math.random() * 2 - 1) * err
         ang.y = ang.y + (math.random() * 2 - 1) * err
         local dir = ang:Forward()
@@ -198,8 +198,8 @@ if SERVER then
         g.thrower = o
         g.launched = true
         g.training = self.loadedTraining or nil
-        g.Damage = Config.Get("weapons", "launcherDamage") or 140
-        g.Radius = Config.Get("weapons", "launcherRadius") or 300
+        g.Damage = Config.Get("weapons", "launcherDamage")
+        g.Radius = Config.Get("weapons", "launcherRadius")
         -- Demolitions (EOD): harder and wider.
         local K = Rhylib.Skills
         if K and K.DemoMults then

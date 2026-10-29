@@ -7,7 +7,8 @@
       no lock  laser guided: the spot the shooter aims at (ENT:LaserSpot),
                while they live and hold the same gun; after that, the last
                spot
-    Moved by hand each tick with one trace, like rhylib_b2_rocket. Blast =
+    Moved by hand each tick with one trace, like rhylib_b2_rocket. Blast
+    (rhylib_weapons W.Explode) =
     the RPS-6's (Explosive radius / damage), hook Rhylib.Explosion strength
     2 for comms jammers (kind "rocket"). Gives up after 12 s (explodes
     where it is).
@@ -62,7 +63,7 @@ if SERVER then
         self:SetMoveType(MOVETYPE_NONE)
         self:SetSolid(SOLID_NONE)
         self.dir = (self.dir or self:GetForward()):GetNormalized()
-        self.speed = Config.Get("weapons", "topSpeed") or 1500
+        self.speed = Config.Get("weapons", "topSpeed")
         self.born = CurTime()
         self.dieAt = CurTime() + 12
         local me, owner = self, self.owner
@@ -80,7 +81,7 @@ if SERVER then
         local to = self.lastSpot
         local flat = Vector(to.x - from.x, to.y - from.y, 0)
         local dist = flat:Length()
-        local want = math.Clamp(dist * 0.5, 250, Config.Get("weapons", "topClimb") or 900)
+        local want = math.Clamp(dist * 0.5, 250, Config.Get("weapons", "topClimb"))
         local roof = util.TraceLine({ start = from, endpos = from + Vector(0, 0, want + 80), mask = MASK_SOLID_BRUSHONLY })
         local h = roof.Hit and (roof.HitPos.z - from.z - 80) or want
         if h >= 150 and dist > 300 then
@@ -102,14 +103,13 @@ if SERVER then
         local owner = IsValid(self.owner) and self.owner or game.GetWorld()
         local inflictor = IsValid(self.weapon) and self.weapon or self
         local ex = self.explosive or { radius = 200, damage = 250 }
-        util.BlastDamage(inflictor, owner, pos, ex.radius, ex.damage)
-        hook.Run("Rhylib.Explosion", pos, ex.radius, ex.tier or 2, owner, inflictor, "rocket")
-        local ed = EffectData()
-        ed:SetOrigin(pos)
-        ed:SetMagnitude(1)
-        ed:SetScale(1)
-        util.Effect("Explosion", ed, true, true)
-        util.Decal("Scorch", pos + Vector(0, 0, 8), pos - Vector(0, 0, 40), self)
+        Rhylib.Weapons.Explode({
+            pos = pos, radius = ex.radius, damage = ex.damage,
+            attacker = owner, inflictor = inflictor,
+            tier = ex.tier or 2, kind = "rocket",
+            effectData = { magnitude = 1, scale = 1 },
+            decal = true, decalFilter = self,
+        })
         self:StopSound("weapons/rpg/rocket1.wav")
         self:Remove()
     end

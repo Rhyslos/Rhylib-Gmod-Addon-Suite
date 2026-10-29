@@ -1,5 +1,5 @@
 --[[
-    A planted high explosive charge (rhylib_he_charge weapon, 2026-10-07).
+    A planted high explosive charge (rhylib_he_charge weapon).
     Class rhylib_he_planted: not the weapon's name (they would clash).
 
     fuse > 0: counts down and goes off. Placing one also gives every synced
@@ -8,7 +8,7 @@
     fuse 0 (sync): waits with a slow amber light until its planter places a
     charge with a timer; removed after weapons heIdleLife seconds if that
     never happens. NW2Int rhylib_heSynced on the planter = how many wait.
-    Blast: util.BlastDamage heRadius / heDamage, and hook Rhylib.Explosion
+    Blast (rhylib_weapons W.Explode): heRadius / heDamage, and hook Rhylib.Explosion
     strength 3 (comms jammers, rhylib_radio) within heJammerReach.
     Beeps once a second, faster over the last 5 s; a small readout above it
     shows the seconds left (or SYNC).
@@ -86,7 +86,7 @@ if SERVER then
             end
         else
             self:SetBoom(0)
-            self.dieAt = CurTime() + (Config.Get("weapons", "heIdleLife") or 900)
+            self.dieAt = CurTime() + (Config.Get("weapons", "heIdleLife"))
             HE.waiting[self.sid] = HE.waiting[self.sid] or {}
             HE.waiting[self.sid][self] = true
             recount(self.sid)
@@ -105,6 +105,11 @@ if SERVER then
         elseif self.dieAt and now > self.dieAt then
             self:Remove()
             return
+        elseif boom <= 0 then
+            -- (synced and waiting: nothing to beep; SetBoom from a timed
+            -- charge resets nextBeep, so check again soon)
+            self:NextThink(now + 0.25)
+            return true
         end
         self:NextThink(now + 0.05)
         return true
@@ -119,15 +124,17 @@ if SERVER then
         if not IsValid(attacker) then attacker = self end
         local ed = EffectData()
         ed:SetOrigin(pos)
-        util.Effect("Explosion", ed, true, true)
-        util.Effect("HelicopterMegaBomb", ed, true, true)
-        sound.Play("ambient/explosions/explode_" .. math.random(1, 4) .. ".wav", pos, 100, 95)
-        local r = (Config.Get("weapons", "heRadius") or 350) * (self.radiusMult or 1)
-        util.BlastDamage(self, attacker, pos, r, (Config.Get("weapons", "heDamage") or 400) * (self.damageMult or 1))
-        util.ScreenShake(pos, 14, 160, 1.2, r * 3)
-        util.Decal("Scorch", pos + Vector(0, 0, 8), pos - Vector(0, 0, 40), self)
+        util.Effect("HelicopterMegaBomb", ed, true, true)   -- (on top of W.Explode's "Explosion")
+        local r = (Config.Get("weapons", "heRadius")) * (self.radiusMult or 1)
         -- strength 3: the only thing that takes down large and map-wide jammers
-        hook.Run("Rhylib.Explosion", pos, Config.Get("weapons", "heJammerReach") or 250, 3, attacker, self, "he")
+        Rhylib.Weapons.Explode({
+            pos = pos, radius = r, damage = (Config.Get("weapons", "heDamage")) * (self.damageMult or 1),
+            attacker = attacker, inflictor = self,
+            tier = 3, reach = Config.Get("weapons", "heJammerReach"), kind = "he",
+            sound = { "ambient/explosions/explode_" .. math.random(1, 4) .. ".wav", 100, 95 },
+            shake = { 14, 160, 1.2, r * 3 },
+            decal = true, decalFilter = self,
+        })
         self:Remove()
     end
 

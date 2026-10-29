@@ -51,7 +51,7 @@ local function setDims(cid, w, h)
     Inv.cont[cid] = { w = w, h = h, items = cur and cur.items or {} }
 end
 
-net.Receive(Rhylib.Net.Name("inv.full"), function()
+Rhylib.Net.Receive("inv.full", function()
     Items.EnsureReady()
     Inv.cont = {}
     Inv.byUid = {}
@@ -81,7 +81,7 @@ end)
 
 -- Outside container ------------------------------------------------------
 
-net.Receive(Rhylib.Net.Name("inv.ext"), function()
+Rhylib.Net.Receive("inv.ext", function()
     Items.EnsureReady()
     if not net.ReadBool() then
         Inv.cont[EXT] = nil
@@ -124,21 +124,20 @@ end, function(ch)
 end)
 
 -- Inv.ShowNote(text): a short note in the window (from the client
--- itself); a notification when the window is shut.
+-- itself); with the window shut, a Rhylib.Notify notice (core) instead.
 function Inv.ShowNote(text)
     if not text then return end
     Inv.note, Inv.noteTime = text, RealTime()
-    if not IsValid(Inv.panel) then notification.AddLegacy(text, NOTIFY_GENERIC, 3) end
+    if not IsValid(Inv.panel) then Rhylib.Notify(nil, text, "info", "Inventory") end
 end
 
--- Short messages from the server, shown in the inventory window.
-net.Receive(Rhylib.Net.Name("inv.note"), function()
-    Inv.note = net.ReadString()
-    Inv.noteTime = RealTime()
-    if not IsValid(Inv.panel) then notification.AddLegacy(Inv.note, NOTIFY_GENERIC, 3) end
+-- Short messages from the server (Inv.Note, used by many addons): in the
+-- inventory window while it's open, else a Rhylib.Notify notice.
+Rhylib.Net.Receive("inv.note", function()
+    Inv.ShowNote(net.ReadString())
 end)
 
-net.Receive(Rhylib.Net.Name("inv.busy"), function()
+Rhylib.Net.Receive("inv.busy", function()
     Inv.busyEnd = net.ReadFloat()
     Inv.busyStart = CurTime()
 end)
@@ -173,7 +172,7 @@ function Inv.RequestBulk(action)
 end
 
 -- Something came into (or went out of) your inventory from a storage.
-net.Receive(Rhylib.Net.Name("inv.took"), function()
+Rhylib.Net.Receive("inv.took", function()
     surface.PlaySound("items/ammo_pickup.wav")
 end)
 
@@ -308,7 +307,7 @@ end
 -- in range.
 function Inv.GiveTarget()
     local ply = LocalPlayer()
-    local r = Rhylib.Config.Get("inventory", "giveRange") or 130
+    local r = Rhylib.Config.Get("inventory", "giveRange")
     local w = Inv.giveTo
     if IsValid(w) and w:Alive() and RealTime() - (Inv.giveToAt or 0) < 60 and w:GetPos():DistToSqr(ply:GetPos()) < r * r then return w end
     local tr = util.TraceHull({

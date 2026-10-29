@@ -191,7 +191,7 @@ end
 if SERVER then
     Rhylib.Hook.Add("FinishMove", "medical.drag", function(ply, mv)
         local body = ply:GetNW2Entity("rhylib_dragging")
-        if IsValid(body) and body:GetNW2Entity("rhylib_dragBy") == ply then dragBody(body, ply) end
+        if IsValid(body) and body:GetNW2Entity(Rhylib.NW.DRAG_BY) == ply then dragBody(body, ply) end
     end)
 end
 
@@ -251,3 +251,13 @@ Rhylib.Hook.Add("UpdateAnimation", "medical.pose", function(ply)
     if CLIENT then ply:SetRenderAngles(Angle(0, ply:GetNW2Float("rhylib_downYaw", 0), 0)) end
     return true
 end)
+
+-- Rhylib.State answers (core): "down" for every addon that asks, and the
+-- down player can't act and isn't a target. (Replaces core's bridge, same
+-- owner name "medical".)
+if Rhylib.State then
+    Rhylib.State.Provide("down", "medical", function(ply)
+        if SERVER then return ply.rhylibDown == true or nil end
+        return ply:GetNW2Bool(Rhylib.NW.DOWN, false) or nil
+    end)
+end

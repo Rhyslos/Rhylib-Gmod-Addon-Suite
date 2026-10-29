@@ -42,7 +42,7 @@ function Menus.AddPage(id, page)
     Menus.pages[id] = page
 end
 
--- Submenus, in side bar order (owner: the flat list was messy).
+-- Submenus, in side bar order (a flat list was messy).
 -- Menus.AddGroup(id, { title, order }): adds a submenu. The five below are
 -- the built-in ones; pages name one of them in their `group` field.
 Menus.groups = Menus.groups or {}

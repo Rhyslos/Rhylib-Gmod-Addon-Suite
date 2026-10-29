@@ -16,7 +16,7 @@ E.repMines = E.repMines or {}   -- [planted mine entity] = true
 
 -- How many one player may have out: repLimit, or repLimitField with Minefield.
 local function limit(ply)
-    return E.Skill(ply, "eod_minefield") and (E.Cfg("repLimitField") or 6) or (E.Cfg("repLimit") or 3)
+    return E.Skill(ply, "eod_minefield") and (E.Cfg("repLimitField")) or (E.Cfg("repLimit"))
 end
 
 -- E.RepCount(ply) -> how many Republic mines ply has out. Server.
@@ -72,8 +72,8 @@ function E.RepBoom(m)
     local pos = m:WorldSpaceCenter() + Vector(0, 0, 8)
     local planter = m:GetPlanter()
     local attacker = IsValid(planter) and planter or m
-    local r = (E.Cfg("repRadius") or 280) * (m:GetWide() and (E.Cfg("repFieldRadius") or 1.3) or 1)
-    local dmg = E.Cfg("repDamage") or 260
+    local r = (E.Cfg("repRadius")) * (m:GetWide() and (E.Cfg("repFieldRadius")) or 1)
+    local dmg = E.Cfg("repDamage")
     local ed = EffectData()
     ed:SetOrigin(pos)
     util.Effect("Explosion", ed, true, true)
@@ -98,7 +98,7 @@ function E.RepBoom(m)
             end
         end
     end
-    hook.Run("Rhylib.Explosion", pos, E.Cfg("mineChain") or 140, 1, IsValid(planter) and planter or nil, m, "repmine")
+    hook.Run("Rhylib.Explosion", pos, E.Cfg("mineChain"), 1, IsValid(planter) and planter or nil, m, "repmine")
     E.repMines[m] = nil
     m:SetNoDraw(true)
     timer.Simple(0.1, function() if IsValid(m) then m:Remove() end end)
@@ -112,7 +112,7 @@ local function tick()
     local D = Rhylib.Droids
     if not (D and D.active and next(D.active)) then return end
     local now = CurTime()
-    local trig = E.Cfg("repTrigger") or 45
+    local trig = E.Cfg("repTrigger")
     local t2 = trig * trig
     for m in pairs(E.repMines) do
         if not IsValid(m) then

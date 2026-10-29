@@ -23,17 +23,19 @@
     Checks: a player must be superadmin (IsSuperAdmin, not a permission).
     Bot rows: keys containing "9007199684" (bot SteamID64s) or exactly
     "BOT". Map modules: armoury, spawns, dp_places, med_places, mp_places,
-    training (rows keyed by map name, removed when maps/<name>.bsp is
+    training, radio_jammers, bounty_places, perma (rows keyed by map name, removed when maps/<name>.bsp is
     missing; the current map never). Inactive: "seen" in module "char"
     (rhylib_roster) older than <days>; every row (not module admin) whose
     key holds that SteamID64, roster member lists, Data "char_nums"/"all".
+    The dry run lists up to 30 of the names. (rhylib_roster refreshes "seen"
+    on joining, every 10 minutes and at shutdown, not only on leaving.)
     Example: rhylib_purge_inactive 90 (lists), then rhylib_purge_inactive 90 confirm
 ]]
 
 local Data = Rhylib.Data
 local TABLE = "rhylib_kv"
 
-local MAP_MODULES = { "armoury", "spawns", "dp_places", "med_places", "mp_places", "training" }
+local MAP_MODULES = { "armoury", "spawns", "dp_places", "med_places", "mp_places", "training", "radio_jammers", "bounty_places", "perma" }
 local KEEP_MODULES = { admin = true }   -- (ranks and bans stay, whatever happens)
 
 local function decode(str)
@@ -138,7 +140,7 @@ concommand.Add("rhylib_purge_inactive", function(ply, _, args)
     for _, r in ipairs(sql.Query("SELECT key, value FROM " .. TABLE .. " WHERE module = 'char'") or {}) do
         local c = decode(r.value)
         if istable(c) and (tonumber(c.seen) or 0) < cutoff and not online[r.key] then
-            gone[r.key] = true
+            gone[r.key] = c.nick or r.key
             count = count + 1
         end
     end
@@ -152,6 +154,12 @@ concommand.Add("rhylib_purge_inactive", function(ply, _, args)
         end
     end
     if args[2] ~= "confirm" then
+        local names = {}
+        for id, nick in pairs(gone) do
+            if #names >= 30 then names[#names + 1] = "..." break end
+            names[#names + 1] = tostring(nick) .. " (" .. id .. ")"
+        end
+        if #names > 0 then say("[Rhylib] Would remove: " .. table.concat(names, ", ")) end
         return say(string.format("[Rhylib] %d players not seen for %d days, %d saved rows. Run rhylib_purge_inactive %d confirm to remove them.",
             count, days, #hits, days))
     end

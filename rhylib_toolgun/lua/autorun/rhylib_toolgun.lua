@@ -5,4 +5,8 @@ if not Rhylib then
     return
 end
 
-Rhylib.LoadModule("toolgun", { name = "Rhy's Toolgun", version = "0.1.0" })
+Rhylib.LoadModule("toolgun", {
+    name = "Rhy's Toolgun",
+    version = "0.1.0",
+    needs = { "weapons" },
+})

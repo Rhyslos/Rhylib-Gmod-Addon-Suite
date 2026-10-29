@@ -22,11 +22,17 @@
     Saved: Data "toolgun"/"keep_<SteamID64>" = true for !keeptoolgun.
     Chat: !toolgun or /toolgun, !keeptoolgun or /keeptoolgun.
 
-    Placing no longer saves anything (owner 2026-10-09u): staff make a thing
+    Placing no longer saves anything: staff make a thing
     permanent with the Permanent tool (rhylib_core sh_62_perma.lua).
 ]]
 
 local Tool = Rhylib.Tool
+
+-- A notice to a player (core Rhylib.Notify), tagged [Rhy's Toolgun] unless
+-- another tag is given.
+local function note(ply, text, kind, tag)
+    if IsValid(ply) then Rhylib.Notify(ply, text, kind or "info", tag or "Toolgun") end
+end
 local CLASS = "rhylib_toolgun"
 
 local function holding(ply)
@@ -96,9 +102,9 @@ local function perma(ply, on)
     local P = Rhylib.Perma
     if not (P and P.Set) then return end
     local ent = Tool.PermaTarget(ply)
-    if not IsValid(ent) then return ply:ChatPrint("[Permanent] Aim at something") end
+    if not IsValid(ent) then return note(ply, "Aim at something", "bad", "Permanent") end
     local ok, msg = P.Set(ent, on)
-    ply:ChatPrint("[Permanent] " .. msg)
+    note(ply, msg, ok and "good" or "bad", "Permanent")
     ply:EmitSound(ok and "buttons/button14.wav" or "buttons/button10.wav", 60, ok and (on and 120 or 90) or 100)
 end
 
@@ -121,7 +127,7 @@ local function place(ply, e, count, name, mode)
         if not (D and D.PaintMode) then return end
         local n = D.PaintMode(tr.HitPos, e.order, e.side)
         local what = e.side == 1 and "clone" or "droid"
-        ply:ChatPrint(string.format("[%s] %d %s%s: %s", e.side == 1 and "Clones" or "Droids", n, what, n == 1 and "" or "s", D.MODE_NAMES[e.order] or e.order))
+        note(ply, string.format("%d %s%s: %s", n, what, n == 1 and "" or "s", D.MODE_NAMES[e.order] or e.order), "info", e.side == 1 and "Clones" or "Droids")
         ply:EmitSound("buttons/button14.wav", 60, n > 0 and 120 or 80)
         return
     end
@@ -140,14 +146,14 @@ local function place(ply, e, count, name, mode)
             undo.Finish()
             ply:EmitSound("buttons/button14.wav", 60, 110)
         end
-        if #list < want then ply:ChatPrint(string.format("Placed %d of %d (limit reached or no room).", #list, want)) end
+        if #list < want then note(ply, string.format("Placed %d of %d (limit reached or no room).", #list, want), "bad") end
         return
     end
     -- Follow tool: LMB picks clones (one you aim at, else all near the spot).
     if e.follow then
         if not (D and D.ToggleFollowPick) then return end
         local n = D.ToggleFollowPick(ply, tr)
-        ply:ChatPrint(string.format("[Clones] %d picked. RMB: they follow you, or the player you aim at.", n))
+        note(ply, string.format("%d picked. RMB: they follow you, or the player you aim at.", n), "info", "Clones")
         ply:EmitSound("buttons/button14.wav", 60, 120)
         return
     end
@@ -174,10 +180,10 @@ local function place(ply, e, count, name, mode)
     local clone = droid and D.CloneCount and (e.class == "rhylib_clone" or scripted_ents.IsBasedOn(e.class, "rhylib_clone"))
     for i = 1, count do
         if clone and D.CloneCount() >= D.Cfg("cloneMax") then
-            if made == 0 then ply:ChatPrint("Clone limit reached (" .. D.Cfg("cloneMax") .. ").") end
+            if made == 0 then note(ply, "Clone limit reached (" .. D.Cfg("cloneMax") .. ").", "bad") end
             break
         elseif droid and not clone and D.Count() >= D.Cfg("maxActive") then
-            if made == 0 then ply:ChatPrint("Droid limit reached (" .. D.Cfg("maxActive") .. ").") end
+            if made == 0 then note(ply, "Droid limit reached (" .. D.Cfg("maxActive") .. ").", "bad") end
             break
         end
         local pos = tr.HitPos
@@ -231,7 +237,7 @@ Rhylib.Net.Receive("tool.place", function(ply)
     if not e then return end
     if not e.count then count = 1 end
     allowedEntry(ply, e, function() place(ply, e, count, name, mode) end)
-end, { rate = 20, burst = 20 })   -- (owner: as fast as you click)
+end, { rate = 20, burst = 20 })   -- (as fast as you click)
 
 -- Spawning spawn-window things (sandbox gamemodes, DarkRP included).
 local function markSpawned(ent)
@@ -252,7 +258,7 @@ end
 local function spawnProp(ply, model, skin, body, tr)
     model = string.lower((string.gsub(model, "\\", "/")))
     if string.find(model, "%.[/\\]") then return end   -- (no ../ paths, as sandbox)
-    if not util.IsValidModel(model) then return ply:ChatPrint("Not a model: " .. model) end
+    if not util.IsValidModel(model) then return note(ply, "Not a model: " .. model, "bad") end
     local class, can, done, kind, clean
     if util.IsValidProp(model) then
         class, can, done, kind, clean = "prop_physics", "PlayerSpawnProp", "PlayerSpawnedProp", "Prop", "props"
@@ -308,7 +314,7 @@ local function spawnThing(ply, kind, name, skin, body, wep)
     end
     local fn = ({ Spawn_SENT, Spawn_NPC, Spawn_Vehicle, Spawn_Weapon })[kind - 1]
     if not isfunction(fn) then
-        return ply:ChatPrint("This gamemode has no sandbox spawning for " .. (KIND_NAMES[kind] or "that"))
+        return note(ply, "This gamemode has no sandbox spawning for " .. (KIND_NAMES[kind] or "that"), "bad")
     end
     -- (only things the spawn menu lists)
     local lists = { "SpawnableEntities", "NPC", "Vehicles", "Weapon" }
@@ -366,7 +372,7 @@ Rhylib.Net.Receive("tool.remove", function(ply)
         end
         -- (gamemasters can't undo the permanent map setup)
         if e and not full and Rhylib.Perma and Rhylib.Perma.Is(IsValid(e.ent) and e.ent or ent) then
-            ply:ChatPrint("[Toolgun] That's part of the permanent map setup: ask an admin")
+            note(ply, "That's part of the permanent map setup: ask an admin", "bad")
             return
         end
         -- Droid markers aren't solid: the nearest one to where you aim.
@@ -379,6 +385,9 @@ Rhylib.Net.Receive("tool.remove", function(ply)
             if best then ent, e = best, { class = best:GetClass() } end
         end
         if not e then return end
+        -- (limited access: the permission came from the first trace's thing;
+        -- the aim may have moved while the check ran, so it must be the same kind)
+        if not full and not (pre and e.class == pre.class) then return end
         -- (a permanent thing is saved again without it)
         local P = Rhylib.Perma
         local victim = IsValid(e.ent) and e.ent or ent
@@ -398,8 +407,8 @@ Rhylib.Net.Receive("tool.follow", function(ply)
         local L = Rhylib.Lying
         if IsValid(tr.Entity) and L and L.Owner and IsValid(L.Owner(tr.Entity)) then target = L.Owner(tr.Entity) end
         local n = D.AssignFollow(ply, target)
-        ply:ChatPrint(n > 0 and string.format("[Clones] %d now follow %s.", n, target == ply and "you" or target:Nick())
-            or "[Clones] Pick clones first (LMB).")
+        note(ply, n > 0 and string.format("%d now follow %s.", n, target == ply and "you" or target:Nick())
+            or "Pick clones first (LMB).", n > 0 and "good" or "bad", "Clones")
         ply:EmitSound("buttons/button14.wav", 60, n > 0 and 110 or 80)
     end)
 end, { rate = 10, burst = 10 })
@@ -414,7 +423,7 @@ Rhylib.Net.Receive("tool.save", function(ply)
             if not seen[fn] then seen[fn] = true P.Save(class) end
         end
         P.Save("")   -- (the plain list)
-        ply:ChatPrint("Saving every permanent thing on " .. game.GetMap())
+        note(ply, "Saving every permanent thing on " .. game.GetMap(), "good")
     end)
 end, { rate = 1, burst = 2 })
 
@@ -424,7 +433,7 @@ local function give(ply)
     if not IsValid(ply) then return end
     anyAccess(ply, function(ok)
         if not IsValid(ply) then return end
-        if not ok then return ply:ChatPrint("You don't have permission for the toolgun") end
+        if not ok then return note(ply, "You don't have permission for the toolgun", "bad") end
         if not ply:HasWeapon(CLASS) then ply:Give(CLASS) end
         ply:SelectWeapon(CLASS)
     end)
@@ -451,16 +460,16 @@ local function keepToolgun(ply)
     if not IsValid(ply) then return end
     anyAccess(ply, function(ok)
         if not IsValid(ply) then return end
-        if not ok then return ply:ChatPrint("You don't have permission for the toolgun") end
+        if not ok then return note(ply, "You don't have permission for the toolgun", "bad") end
         local on = not Tool.KeepsToolgun(ply)
         ply.rhylibKeepTool = on
         if on then
             Rhylib.Data.Set("toolgun", keepKey(ply), true)
             if ply:Alive() and not ply:HasWeapon(CLASS) then ply:Give(CLASS) end
-            ply:ChatPrint("[Toolgun] You'll keep the toolgun after dying. Say !keeptoolgun again to stop.")
+            note(ply, "You'll keep the toolgun after dying. Say !keeptoolgun again to stop.", "good")
         else
             Rhylib.Data.Delete("toolgun", keepKey(ply))
-            ply:ChatPrint("[Toolgun] You won't get the toolgun back after dying any more.")
+            note(ply, "You won't get the toolgun back after dying any more.")
         end
     end)
 end
@@ -476,14 +485,17 @@ Rhylib.Hook.Add("PlayerSpawn", "toolgun.keep", function(ply)
     end)
 end)
 
-Rhylib.Hook.Add("PlayerSay", "toolgun.chat", function(ply, text)
-    local t = string.lower(string.Trim(text or ""))
-    if t == "!toolgun" or t == "/toolgun" then
-        give(ply)
-        return ""
-    end
-    if t == "!keeptoolgun" or t == "/keeptoolgun" then
-        keepToolgun(ply)
-        return ""
-    end
-end, -50)
+-- !toolgun / /toolgun and !keeptoolgun / /keeptoolgun (Rhylib.Command;
+-- the access check is give / keepToolgun's own, so no perm here). The
+-- console versions are rhylib_toolgun_give and rhylib_keeptoolgun (the
+-- plain rhylib_toolgun console command is the client's, it sends tool.give).
+Rhylib.Command.Add({
+    name = "rhylib_toolgun_give", chat = { "toolgun" }, tag = "Toolgun",
+    help = "Get Rhy's toolgun (staff)",
+    fn = function(ply) give(ply) end,
+})
+Rhylib.Command.Add({
+    name = "rhylib_keeptoolgun", chat = { "keeptoolgun" }, tag = "Toolgun",
+    help = "Keep the toolgun after every respawn (say it again to stop)",
+    fn = function(ply) keepToolgun(ply) end,
+})

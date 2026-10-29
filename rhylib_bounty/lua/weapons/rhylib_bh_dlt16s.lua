@@ -2,7 +2,7 @@
     DLT-16S (rhylib_bounty, carbine). Heavy carbine: harder hits, more kick, heavier.
     Model models/jajoff/sps/cgiweapons/tc13j/dlt16s.mdl (Workshop: the TC-13J weapon pack). Built on rhylib_dc15s
     for its first- and third-person holding; the model sits differently,
-    so tune it with rhylib_vm_editor / rhylib_wm_editor and paste the lines
+    so tune it with rhylib_vm_editor (Rhy's Dev Tools) / rhylib_wm_editor and paste the lines
     in here. Bounty hunter gun: sold at the Bounty Office (not in the
     Republic armouries), stun mode with the Stun rounds skill (B.Gun in
     sh_00_config.lua).

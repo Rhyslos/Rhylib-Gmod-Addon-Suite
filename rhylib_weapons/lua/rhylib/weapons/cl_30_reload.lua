@@ -7,10 +7,17 @@
             mouse toward an option and let go of R to pick it.
             Let go in the middle to cancel.
 
+    Optional keys of their own (client convars, "" = off; Settings >
+    Controls, section Weapons): rhylib_firemode_key (next fire mode, like
+    E + R), rhylib_safety_key (safety, like Shift + E + R), rhylib_stun_key
+    (MPs: straight to the stun mode and back to the last mode, net
+    wep.stunmode). E + R and Shift + E + R keep working.
+
     The client only asks; the server checks the pouch and runs the reload.
-    Realm: client. Sends nets wep.mode and wep.reload (read in
-    sv_20_pouch.lua). Config weapons reloadHoldTime sets how long R must
-    be held. The toolgun (SWEP.ToolGun) and an open inventory keep R.
+    Realm: client. Sends nets wep.mode, wep.stunmode and wep.reload (read
+    in sv_20_pouch.lua). Config weapons reloadHoldTime sets how long R must
+    be held. The toolgun (SWEP.ToolGun) keeps R; the open inventory keeps
+    it only while an item is being dragged (R turns it).
 ]]
 
 local W = Rhylib.Weapons
@@ -110,8 +117,9 @@ end
 -- Catch R before the default reload runs.
 Rhylib.Hook.Add("PlayerBindPress", "weapons.reload", function(ply, bind, pressed)
     if not pressed or not string.find(bind, "+reload", 1, true) then return end
-    -- R rotates items while the inventory is open.
-    if Rhylib.Inventory and IsValid(Rhylib.Inventory.panel) then return true end
+    -- R turns the item being dragged in the open inventory.
+    local Inv = Rhylib.Inventory
+    if Inv and IsValid(Inv.panel) and Inv.panel.drag then return true end
     if not activeRhylibWeapon() then return end
 
     -- E + R: fire mode. Shift + E + R: safety.
@@ -231,3 +239,38 @@ Rhylib.Hook.Add("HUDPaint", "weapons.reload", function()
     -- Menu cursor.
     draw.RoundedBox(4 * s, cx + R.cx - 4 * s, cy + R.cy - 4 * s, 8 * s, 8 * s, UI.Colors.text)
 end)
+
+--------------------------------------------------------------------------
+-- Keys of their own for fire mode, safety and stun (off by default)
+--------------------------------------------------------------------------
+
+local KEYS = {
+    { cv = CreateClientConVar("rhylib_firemode_key", "", true, false, "Next fire mode (like E + R); empty = off"),
+      send = function() Rhylib.Net.Start("wep.mode") net.WriteBool(false) net.SendToServer() end },
+    { cv = CreateClientConVar("rhylib_safety_key", "", true, false, "Safety on/off (like Shift + E + R); empty = off"),
+      send = function() Rhylib.Net.Start("wep.mode") net.WriteBool(true) net.SendToServer() end },
+    { cv = CreateClientConVar("rhylib_stun_key", "", true, false, "MPs: straight to the stun mode and back; empty = off"),
+      send = function() Rhylib.Net.Start("wep.stunmode") net.SendToServer() end },
+}
+
+Rhylib.Hook.Add("Think", "weapons.modekeys", function()
+    local me = LocalPlayer()
+    local wep = activeRhylibWeapon()
+    for _, k in ipairs(KEYS) do
+        local name = k.cv:GetString()
+        local code = name ~= "" and input.GetKeyCode(name) or nil
+        local down = wep ~= nil and code ~= nil and code > 0 and input.IsButtonDown(code) or false
+        if down and not k.was and not (gui.IsGameUIVisible() or vgui.CursorVisible() or me:IsTyping()) then k.send() end
+        k.was = down
+    end
+end)
+
+local function addKeySettings()
+    local M = Rhylib.Menus
+    if not (M and M.AddSetting) then return end
+    M.AddSetting("Weapons", { id = "wep.firemodekey", order = 50, title = "Fire mode key", desc = "Next fire mode (E + R works too)", kind = "key", convar = "rhylib_firemode_key" })
+    M.AddSetting("Weapons", { id = "wep.safetykey", order = 51, title = "Safety key", desc = "Safety on/off (Shift + E + R works too)", kind = "key", convar = "rhylib_safety_key" })
+    M.AddSetting("Weapons", { id = "wep.stunkey", order = 52, title = "Stun mode key (MPs)", desc = "Straight to stun, press again for the last mode", kind = "key", convar = "rhylib_stun_key" })
+end
+addKeySettings()
+Rhylib.Hook.Add("InitPostEntity", "weapons.modekeys", addKeySettings)

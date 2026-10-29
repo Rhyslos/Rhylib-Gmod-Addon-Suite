@@ -310,10 +310,10 @@ end)
 function TP.Toggle()
     local m = TP.Mode()
     if m == "first" then
-        chat.AddText(Color(255, 190, 80), "This server is first person only.")
+        Rhylib.Notify(nil, "This server is first person only", "info", "Third person")
         return
     elseif m == "third" then
-        chat.AddText(Color(255, 190, 80), "This server keeps everyone in third person.")
+        Rhylib.Notify(nil, "This server keeps everyone in third person", "info", "Third person")
         return
     end
     RunConsoleCommand("rhylib_thirdperson", enabledVar:GetBool() and "0" or "1")

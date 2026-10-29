@@ -154,19 +154,39 @@ local function isArray(t)
     return n == #t
 end
 
--- Same type as the default, and roughly the same shape: no NaN, no
--- huge numbers, no negatives where the default isn't, arrays stay
--- arrays (with the same kind of first item).
-local function sameKind(new, default)
+-- Same type as the default, and the same shape all the way down (to a
+-- depth of 6): no NaN, no huge numbers, no negatives where the default
+-- isn't, arrays stay arrays. Array items: a list whose default items are
+-- all one type checks every new item against the first default item; a
+-- mixed row (e.g. { "name", 3, true }) checks item i against default
+-- item i. Keyed tables check the keys both have. Anything the default
+-- doesn't show (extra keys, extra row items) only has to be no function.
+local function sameKind(new, default, depth)
+    depth = depth or 0
     if default == nil then return type(new) ~= "function" end
     if type(new) ~= type(default) then return false end
     if isnumber(new) then
         if new ~= new or math.abs(new) > 1e6 then return false end
         if default >= 0 and new < 0 then return false end
     end
-    if istable(new) and next(default) ~= nil then
+    if istable(new) then
+        if depth >= 6 then return true end
+        if next(default) == nil then return true end   -- (an empty default shows no shape)
         if isArray(default) ~= isArray(new) then return false end
-        if isArray(default) and new[1] ~= nil and type(new[1]) ~= type(default[1]) then return false end
+        if isArray(default) then
+            local oneType = true
+            for i = 2, #default do
+                if type(default[i]) ~= type(default[1]) then oneType = false break end
+            end
+            for i, v in ipairs(new) do
+                local like = oneType and default[1] or default[i]
+                if not sameKind(v, like, depth + 1) then return false end
+            end
+        else
+            for k2, v in pairs(new) do
+                if not sameKind(v, default[k2], depth + 1) then return false end
+            end
+        end
     end
     return true
 end
@@ -195,6 +215,37 @@ local function broadcast(m, k, value)
     net.Broadcast()
 end
 
+-- Rhylib.Settings.Set(module, key, value | nil, by): set (or with nil
+-- clear) a Server settings override from code, exactly as the page does:
+-- the same checks (registered, not a protected module, same kind as the
+-- default, model paths), then saved, sent to everyone and logged. No
+-- permission check: the caller decides who may. Returns ok, why.
+-- Server. Example: Rhylib.Settings.Set("weapons", "boltRange", 6000, ply)
+local function setValue(m, k, value, by)
+    local def = Config.defs[m] and Config.defs[m][k]
+    if not def or PROTECTED[m] then return false, "no such setting" end
+    if value ~= nil then
+        if not sameKind(value, def.default) then return false, "that isn't a valid value" end
+        if m == "models" or Config.IsModelDefault(def.default) then
+            if isstring(value) then value = string.Trim((string.gsub(value, "\\", "/"))) end
+            if m == "models" and value == "" then value = nil end   -- (empty = back to the shipped model)
+            local why = value and badModel(value)
+            if why then return false, why end
+        end
+    end
+    if (m == "models" or Config.IsModelDefault(def.default)) and Rhylib.Models then
+        Rhylib.Models.pending[m .. "\0" .. k] = true
+    end
+    Config.SetOverride(m, k, value)
+    save()
+    broadcast(m, k, value)
+    Rhylib.Print("settings", "%s set %s.%s to %s", IsValid(by) and by:Nick() or "Console", m, k,
+        value == nil and "(default)" or tostring(istable(value) and util.TableToJSON(value) or value))
+    return true
+end
+Rhylib.Settings = Rhylib.Settings or {}
+Rhylib.Settings.Set = function(m, k, value, by) return setValue(m, k, value, by) end
+
 Rhylib.Net.Receive("core.cfgset", function(ply)
     local m, k = net.ReadString(), net.ReadString()
     local has = net.ReadBool()
@@ -206,28 +257,15 @@ Rhylib.Net.Receive("core.cfgset", function(ply)
         if has then
             local t = util.JSONToTable(raw or "")
             value = istable(t) and fixColors(t.v) or nil
-            if value == nil or not sameKind(value, def.default) then
+            if value == nil then
                 if IsValid(ply) then ply:ChatPrint("[Settings] " .. m .. "." .. k .. ": that isn't a valid value") end
                 return
             end
-            if m == "models" or Config.IsModelDefault(def.default) then
-                if isstring(value) then value = string.Trim((string.gsub(value, "\\", "/"))) end
-                if m == "models" and value == "" then value = nil end   -- (empty = back to the shipped model)
-                local why = value and badModel(value)
-                if why then
-                    if IsValid(ply) then ply:ChatPrint("[Settings] " .. ((def.meta and def.meta.name) or (m .. "." .. k)) .. ": " .. why) end
-                    return
-                end
-            end
         end
-        if (m == "models" or Config.IsModelDefault(def.default)) and Rhylib.Models then
-            Rhylib.Models.pending[m .. "\0" .. k] = true
+        local ok, why = setValue(m, k, value, ply)
+        if not ok and IsValid(ply) then
+            ply:ChatPrint("[Settings] " .. ((def.meta and def.meta.name) or (m .. "." .. k)) .. ": " .. tostring(why))
         end
-        Config.SetOverride(m, k, value)
-        save()
-        broadcast(m, k, value)
-        Rhylib.Print("settings", "%s set %s.%s to %s", IsValid(ply) and ply:Nick() or "Console", m, k,
-            value == nil and "(default)" or tostring(istable(value) and util.TableToJSON(value) or value))
     end)
 end, { rate = 4, burst = 8 })
 

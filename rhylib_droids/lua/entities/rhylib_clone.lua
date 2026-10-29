@@ -1,5 +1,5 @@
 --[[
-    Clone trooper NPC (2026-10-06az, owner: Cody needs reinforcements): the
+    Clone trooper NPC (Cody needs reinforcements): the
     droid NextBot (rhylib_b1) on the Republic side. Same brain: moves and
     fires together, takes cover, aims with the same rules. Differences
     (all in rhylib_b1.lua / sv_10_droids.lua, keyed on IsRhylibClone):

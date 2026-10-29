@@ -31,12 +31,12 @@ function B.WrapServerSkills()
     K.DamageMult = function(ply, bolt, ent, tr, group)
         local m, crit = old(ply, bolt, ent, tr, group)
         if not (IsValid(ply) and ply:IsPlayer()) then return m, crit end
-        if IsValid(ent) and K.Has(ply, "bh_marked") then
+        if IsValid(ent) and B.Has(ply, "bh_marked") then
             local key = B.TargetKey(ent)
             if key and B.ContractTargets(ply)[key] then m = m * B.Mult("marked") end
         end
         local wep = bolt and bolt.weapon
-        if group == HITGROUP_HEAD and IsValid(wep) and wep.BountyWeapon and K.Has(ply, "bh_deadshot") then
+        if group == HITGROUP_HEAD and IsValid(wep) and wep.BountyWeapon and B.Has(ply, "bh_deadshot") then
             m = m * B.Mult("deadShot")
         end
         return m, crit
@@ -46,10 +46,10 @@ if Rhylib.Skills then B.WrapServerSkills() end
 
 -- Finisher: one hit ends a downed bounty target.
 Rhylib.Hook.Add("EntityTakeDamage", "bounty.finisher", function(ent, dmg)
-    if not (IsValid(ent) and ent:IsPlayer() and ent.rhylibDown) then return end
+    if not (IsValid(ent) and ent:IsPlayer() and ent:GetNW2Bool(Rhylib.NW.DOWN, false)) then return end   -- (rhylib_medical downed)
     local by = dmg:GetAttacker()
     if not (IsValid(by) and by:IsPlayer() and B.Has(by, "bh_finisher")) then return end
-    local key = "p" .. (ent:SteamID64() or "")
+    local key = B.PlayerKey(ent)
     for _, b in pairs(B.list) do
         if b.tkey == key and b.mode ~= "alive" then
             dmg:SetDamage(math.max(dmg:GetDamage(), 100000))

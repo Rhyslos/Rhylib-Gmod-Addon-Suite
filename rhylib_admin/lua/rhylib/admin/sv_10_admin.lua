@@ -9,7 +9,7 @@
         r<sid>   staff rank id          b<sid>  ban { reason, by, byName, at, untilT (0 = forever), name }
         w<sid>   warnings { { reason, byName, at } }
         bans     index { ["s"..sid] = name }     log  { { t, text } } newest first (LOG_CAP)
-        hideCells  1 / 0 (sv_20_handlers, !hidecells)
+        hideCells  1 / 0 (written by rhylib_mp's !hidecells; kept in this module)
     Mute / gag / freeze / return spots are for the session only.
 
     Net messages (all through Rhylib.Net, names get the "rhylib." prefix):
@@ -125,9 +125,32 @@ local function applyRank(ply)
 end
 Admin.ApplyRank = applyRank
 
+-- No owner yet (no `owners` in the config and nobody saved above admin):
+-- nobody can open Server settings, so say how to fix it, loudly, at
+-- startup and to every human who joins until one is set.
+local function noOwner()
+    if not game.IsDedicated() then return false end   -- (the listen host is always the top rank)
+    if #(Admin.Cfg("owners") or {}) > 0 then return false end
+    local top = Admin.TopRank and Admin.TopRank()
+    for _, r in ipairs(sql.Query("SELECT value FROM rhylib_kv WHERE module = " .. sql.SQLStr(KEY) .. " AND key LIKE 'r%'") or {}) do
+        local id = util.JSONToTable(r.value or "")
+        id = id and id.v
+        local rank = isstring(id) and Admin.RankById(id)
+        if rank and rank.level >= Admin.Cfg("superLevel") then return false end
+    end
+    return true
+end
+local OWNER_HELP = "[Rhy's Admin] No owner is set, so nobody can use the staff tools or Server settings. In the server console run: rhylib_admin rank <SteamID64> owner (or set admin owners in a host config file)."
+Rhylib.Hook.Add("InitPostEntity", "admin.noowner", function()
+    timer.Simple(3, function() if noOwner() then MsgC(Color(255, 120, 80), OWNER_HELP .. "\n") end end)
+end)
+
 Rhylib.Hook.Add("PlayerInitialSpawn", "admin.rank", function(ply)
     -- After the engine's own users.txt / listen-host group (which we replace).
     timer.Simple(0, function() applyRank(ply) end)
+    timer.Simple(8, function()
+        if IsValid(ply) and not ply:IsBot() and noOwner() then ply:ChatPrint(OWNER_HELP) end
+    end)
 end)
 
 -- Another admin mod changing a group: put ours back (use !rank instead).
@@ -342,9 +365,12 @@ Admin.handlers = Admin.handlers or {}
 
 -- One argument word -> its value, or nil, error. Number kinds are checked
 -- here; other kinds come back as the word.
+-- Admin.NumberKinds[kind] = true: another addon's argument kind that is a
+-- number (rhylib_medical: illload).
+Admin.NumberKinds = Admin.NumberKinds or {}
+local NUMBER = { number = true, minutes = true, scale = true, mult = true }
 local function parseArg(kind, word)
-    if kind == "illload" and (word == nil or word == "") then return 40 end   -- (left out: moderate)
-    if kind == "number" or kind == "minutes" or kind == "scale" or kind == "mult" or kind == "illload" then
+    if NUMBER[kind] or Admin.NumberKinds[kind] then
         local n = tonumber(word)
         if not n or n ~= n or n == math.huge or n == -math.huge then return nil, "Expected a number, got \"" .. tostring(word) .. "\"" end
         return n
@@ -389,6 +415,145 @@ local function hasText(cmd)
     return false
 end
 
+-- Exec steps (split out of Admin.Exec). Each returns nil, "error" on a
+-- refusal; a reply of `true` means "a picker was opened, stop quietly".
+
+-- The target(s) from words[1]. Returns t = { target, sid, many,
+-- selfDefault, next = index of the first argument word } or nil, err.
+local function resolveTarget(caller, cmd, words, full)
+    local t = { next = 1 }
+    if not cmd.target then return t end
+    local q = words[1]
+    if (q == nil or q == "") and cmd.target == "opt" then
+        -- (no target)
+    elseif (q == nil or q == "") and cmd.target == "self" then
+        t.target = caller
+        if not IsValid(t.target) then return nil, "Give a player name" end
+        t.selfDefault = true
+    elseif q == nil or q == "" then
+        if ask(caller, cmd, {}, 0) then return nil, true end
+        return nil, "Usage: !" .. cmd.id .. " <player>" .. (cmd.args[1] and " ..." or "")
+    elseif q == "*" then
+        if not cmd.mass then return nil, "!" .. cmd.id .. " can't be used on everyone" end
+        if not full then return nil, "You can only use " .. cmd.id .. " on yourself" end
+        t.next = 2
+        t.many = {}
+        for _, p in ipairs(player.GetAll()) do
+            if p ~= caller and Admin.CanTarget(caller, p) then t.many[#t.many + 1] = p end
+        end
+        if #t.many == 0 then return nil, "Nobody you can use it on" end
+        return t
+    elseif cmd.target == "self" and #words <= #cmd.args and not hasText(cmd)
+        and (tonumber(q) or not Admin.FindPlayer(caller, q)) and IsValid(caller) then
+        -- "!hp 50", "!model reset": just the arguments, on yourself.
+        t.target = caller
+        t.selfDefault = true
+    else
+        t.next = 2
+        if cmd.target == "id" then
+            local sid, p = Admin.FindId(caller, q)
+            if not sid then return nil, p end
+            t.sid, t.target = sid, p
+        else
+            local p, err = Admin.FindPlayer(caller, q)
+            if not p then return nil, err end
+            t.target = p
+        end
+    end
+    -- Rank checks for a single target.
+    local target = t.target
+    if not full and target ~= caller then return nil, "You can only use " .. cmd.id .. " on yourself" end
+    if IsValid(target) and not Admin.CanTarget(caller, target) then
+        return nil, target:Nick() .. " has the same rank as you or higher"
+    end
+    if cmd.target == "id" and not IsValid(target) and t.sid and caller then
+        -- Offline: their stored rank still counts.
+        local r = Admin.RankById(storedRank(t.sid) or "user")
+        if isOwnerId(t.sid) or (r and (r.level or 0) >= Admin.Level(caller)) then
+            return nil, "That player has the same rank as you or higher"
+        end
+    end
+    if IsValid(target) and not t.sid and not target:IsBot() then t.sid = target:SteamID64() end
+    return t
+end
+
+-- The arguments from words[t.next...]. Returns args or nil, err (true =
+-- a picker opened for the missing ones).
+local function parseArgs(caller, cmd, words, t)
+    local args, i = {}, t.next
+    for n, a in ipairs(cmd.args) do
+        local key, label, kind = a[1], a[2], a[3]
+        local start = i
+        local word
+        if kind == "text" then
+            word = table.concat(words, " ", i)
+            i = #words + 1
+        else
+            word = words[i]
+            i = i + 1
+            -- Optional (opt = true): a word that doesn't fit is left for the next argument.
+            if a.opt and word ~= nil and word ~= "" and parseArg(kind, word) == nil then
+                word = nil
+                i = start
+            end
+        end
+        if (word == nil or word == "") and a.opt then
+            word = a.def ~= nil and tostring(a.def) or ""   -- (def: the value when left out)
+        elseif (word == nil or word == "") and (kind ~= "text" or a.need) then
+            -- Ask for this one and the rest; keep what was typed before it,
+            -- with the target pinned to who it found (not "@" or a name part).
+            local given = {}
+            for k = 1, start - 1 do given[k] = words[k] end
+            if t.selfDefault then
+                table.insert(given, 1, "^")   -- (left out = you; keep it that way)
+            elseif cmd.target and not t.many and given[1] then
+                if IsValid(t.target) then given[1] = t.target:IsBot() and t.target:Nick() or t.target:SteamID64()
+                elseif t.sid then given[1] = t.sid end
+            end
+            if ask(caller, cmd, given, n) then return nil, true end
+            return nil, "Missing " .. string.lower(label) .. " (!" .. cmd.id .. ")"
+        end
+        local v, err = parseArg(kind, word or "")
+        if v == nil then return nil, err end
+        args[key] = v
+    end
+    return args
+end
+
+-- "*": the handler once per player; one summary line.
+local function runMany(caller, cmd, fn, many, args)
+    local done, lastErr = 0, nil
+    for _, p in ipairs(many) do
+        if IsValid(p) then
+            local ok, text, err = pcall(fn, caller, p, args, { sid = not p:IsBot() and p:SteamID64() or nil, cmd = cmd, mass = true })
+            if not ok then
+                ErrorNoHalt("[Rhylib Admin] " .. cmd.id .. ": " .. tostring(text) .. "\n")
+            elseif text then
+                done = done + 1
+            else
+                lastErr = err
+            end
+        end
+    end
+    if done == 0 then return Admin.Tell(caller, lastErr or "Nothing happened", true) end
+    local text = nameOf(caller) .. " used " .. cmd.name .. " on everyone (" .. done .. " player" .. (done == 1 and "" or "s") .. ")"
+    echo(text)
+    Admin.Log(text)
+end
+
+local function runOne(caller, cmd, fn, t, args)
+    local ok, text, err = pcall(fn, caller, t.target, args, { sid = t.sid, cmd = cmd })
+    if not ok then
+        ErrorNoHalt("[Rhylib Admin] " .. cmd.id .. ": " .. tostring(text) .. "\n")
+        return Admin.Tell(caller, "That failed (see the server console)", true)
+    end
+    if err then return Admin.Tell(caller, err, true) end
+    if text then
+        echo(text)
+        Admin.Log(text)
+    end
+end
+
 -- Admin.Exec(caller, id, words): runs a command as if typed.
 -- caller: a player or NULL/nil (console). id: command id or alias.
 -- words: list of strings (target first if the command has one).
@@ -409,137 +574,21 @@ function Admin.Exec(caller, id, words)
         return Admin.Tell(caller, "You don't have permission for " .. cmd.id, true)
     end
     words = words or {}
-    local i = 1
-
-    -- Target (or many, with *).
-    local target, sid, many, selfDefault
-    if cmd.target then
-        local q = words[1]
-        if (q == nil or q == "") and cmd.target == "opt" then
-            -- (no target)
-        elseif (q == nil or q == "") and cmd.target == "self" then
-            target = caller
-            if not IsValid(target) then return Admin.Tell(caller, "Give a player name", true) end
-            selfDefault = true
-        elseif q == nil or q == "" then
-            if ask(caller, cmd, {}, 0) then return end
-            return Admin.Tell(caller, "Usage: !" .. cmd.id .. " <player>" .. (cmd.args[1] and " ..." or ""), true)
-        elseif q == "*" then
-            if not cmd.mass then return Admin.Tell(caller, "!" .. cmd.id .. " can't be used on everyone", true) end
-            if not full then return Admin.Tell(caller, "You can only use " .. cmd.id .. " on yourself", true) end
-            i = 2
-            many = {}
-            for _, p in ipairs(player.GetAll()) do
-                if p ~= caller and Admin.CanTarget(caller, p) then many[#many + 1] = p end
-            end
-            if #many == 0 then return Admin.Tell(caller, "Nobody you can use it on", true) end
-        elseif cmd.target == "self" and #words <= #cmd.args and not hasText(cmd)
-            and (tonumber(q) or not Admin.FindPlayer(caller, q)) and IsValid(caller) then
-            -- "!hp 50", "!model reset": just the arguments, on yourself.
-            target = caller
-            selfDefault = true
-        else
-            i = 2
-            local err
-            if cmd.target == "id" then
-                sid, target = Admin.FindId(caller, q)
-                if not sid then return Admin.Tell(caller, target, true) end
-            else
-                target, err = Admin.FindPlayer(caller, q)
-                if not target then return Admin.Tell(caller, err, true) end
-            end
-        end
-        if not many then
-            if not full and target ~= caller then
-                return Admin.Tell(caller, "You can only use " .. cmd.id .. " on yourself", true)
-            end
-            if IsValid(target) and not Admin.CanTarget(caller, target) then
-                return Admin.Tell(caller, target:Nick() .. " has the same rank as you or higher", true)
-            end
-            if cmd.target == "id" and not IsValid(target) and sid and caller then
-                -- Offline: their stored rank still counts.
-                local r = Admin.RankById(storedRank(sid) or "user")
-                if isOwnerId(sid) or (r and (r.level or 0) >= Admin.Level(caller)) then
-                    return Admin.Tell(caller, "That player has the same rank as you or higher", true)
-                end
-            end
-            if IsValid(target) and not sid and not target:IsBot() then sid = target:SteamID64() end
-        end
-    end
-
-    -- Arguments.
-    local args = {}
-    for n, a in ipairs(cmd.args) do
-        local key, label, kind = a[1], a[2], a[3]
-        local start = i
-        local word
-        if kind == "text" then
-            word = table.concat(words, " ", i)
-            i = #words + 1
-        else
-            word = words[i]
-            i = i + 1
-            -- Optional (opt = true): a word that doesn't fit is left for the next argument.
-            if a.opt and word ~= nil and word ~= "" and parseArg(kind, word) == nil then
-                word = nil
-                i = start
-            end
-        end
-        if (word == nil or word == "") and a.opt then
-            word = ""
-        elseif (word == nil or word == "") and (kind ~= "text" or a.need) then
-            -- Ask for this one and the rest; keep what was typed before it,
-            -- with the target pinned to who it found (not "@" or a name part).
-            local given = {}
-            for k = 1, start - 1 do given[k] = words[k] end
-            if selfDefault then
-                table.insert(given, 1, "^")   -- (left out = you; keep it that way)
-            elseif cmd.target and not many and given[1] then
-                if IsValid(target) then given[1] = target:IsBot() and target:Nick() or target:SteamID64()
-                elseif sid then given[1] = sid end
-            end
-            if ask(caller, cmd, given, n) then return end
-            return Admin.Tell(caller, "Missing " .. string.lower(label) .. " (!" .. cmd.id .. ")", true)
-        end
-        local v, err = parseArg(kind, word or "")
-        if v == nil then return Admin.Tell(caller, err, true) end
-        args[key] = v
-    end
-
-    local fn = Admin.handlers[cmd.id]
-    if not fn then return Admin.Tell(caller, "Not available: " .. cmd.id, true) end
-
-    if many then
-        local done, lastErr = 0, nil
-        for _, p in ipairs(many) do
-            if IsValid(p) then
-                local ok, text, err = pcall(fn, caller, p, args, { sid = not p:IsBot() and p:SteamID64() or nil, cmd = cmd, mass = true })
-                if not ok then
-                    ErrorNoHalt("[Rhylib Admin] " .. cmd.id .. ": " .. tostring(text) .. "\n")
-                elseif text then
-                    done = done + 1
-                else
-                    lastErr = err
-                end
-            end
-        end
-        if done == 0 then return Admin.Tell(caller, lastErr or "Nothing happened", true) end
-        local text = nameOf(caller) .. " used " .. cmd.name .. " on everyone (" .. done .. " player" .. (done == 1 and "" or "s") .. ")"
-        echo(text)
-        Admin.Log(text)
+    local t, err = resolveTarget(caller, cmd, words, full)
+    if not t then
+        if err ~= true then Admin.Tell(caller, err, true) end
         return
     end
-
-    local ok, text, err = pcall(fn, caller, target, args, { sid = sid, cmd = cmd })
-    if not ok then
-        ErrorNoHalt("[Rhylib Admin] " .. cmd.id .. ": " .. tostring(text) .. "\n")
-        return Admin.Tell(caller, "That failed (see the server console)", true)
+    local args
+    args, err = parseArgs(caller, cmd, words, t)
+    if not args then
+        if err ~= true then Admin.Tell(caller, err, true) end
+        return
     end
-    if err then return Admin.Tell(caller, err, true) end
-    if text then
-        echo(text)
-        Admin.Log(text)
-    end
+    local fn = Admin.handlers[cmd.id]
+    if not fn then return Admin.Tell(caller, "Not available: " .. cmd.id, true) end
+    if t.many then return runMany(caller, cmd, fn, t.many, args) end
+    return runOne(caller, cmd, fn, t, args)
 end
 
 -- Chat: !command ... or /command ... (only our commands; others pass on).
@@ -642,10 +691,18 @@ Rhylib.Net.Receive("admin.listget", function(ply)
             rows[#rows + 1] = { tostring(w.at or 0), w.reason or "", w.byName or "?" }
         end
     end
+    -- At most 255 rows and ~56 KB (one net message holds 64 KB).
+    local n, bytes = 0, 0
+    for k = 1, math.min(#rows, 255) do
+        local size = 1
+        for _, v in ipairs(rows[k]) do size = size + math.min(#v, 300) + 1 end
+        if bytes + size > 56000 then break end
+        bytes, n = bytes + size, k
+    end
     Rhylib.Net.Start("admin.list")
     net.WriteUInt(which, 2)
-    net.WriteUInt(math.min(#rows, 255), 8)
-    for k = 1, math.min(#rows, 255) do
+    net.WriteUInt(n, 8)
+    for k = 1, n do
         local r = rows[k]
         net.WriteUInt(#r, 3)
         for _, v in ipairs(r) do net.WriteString(string.sub(v, 1, 300)) end

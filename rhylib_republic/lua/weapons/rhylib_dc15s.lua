@@ -3,7 +3,7 @@
 
     Uses a prop model (models/jajoff/sps/cgiweapons/tc13j/dc15s.mdl), held in first person by
     the trooper hands (CarrierVM). The model's addon must be installed.
-    Tune with rhylib_vm_editor, then paste its lines below.
+    Tune with rhylib_vm_editor (Rhy's Dev Tools), then paste its lines below.
 
     Class rhylib_dc15s. Shared: one file for server and client (AddCSLuaFile).
     Base rhylib_base (rhylib_weapons), where every SWEP field is explained;
@@ -62,7 +62,7 @@ SWEP.Recoil = { up = 0.55, side = 0.3, bias = -0.1, recover = 0.55, aimMult = 0.
 SWEP.Damage = 22
 SWEP.BoltSpeed = 7000
 SWEP.BoltColor = 1
-SWEP.FireSound = "weapons/dc15a/dc15a_fire.ogg"   -- (owner 2026-10-09l: the DC-15A sound, a bit brighter)
+SWEP.FireSound = "weapons/dc15a/dc15a_fire.ogg"   -- (the DC-15A sound, a bit brighter)
 SWEP.FireSoundPitch = 1.12
 SWEP.FireSoundLevel = 140
 

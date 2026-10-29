@@ -14,11 +14,12 @@
     Each battalion keeps buckets: all time, today, this and last week, this
     month (older day/week/month buckets are dropped). Each bucket has the
     totals and one row per member. Counts gather in memory and are saved
-    once a minute (and at shutdown).
+    every 5 minutes (and at shutdown).
 
       dp.stats   entity, period (3 bits, index in D.PERIODS) -> dp.statsr:
-                 period (3), totals (one UInt 32 per D.STAT_KEYS), members
-                 (count 7, at most 60, most minutes first; name + the 11 stats)
+                 period (3), totals (D.WriteStatRow: each D.STAT_KEYS value as
+                 D.WriteStat, 16 bits under 32768), members (count 7, at
+                 most 60, most minutes first; name + a stat row)
 
     Data "dp_stats"/battalion = { b = { [bucket] = { t = {...}, p = { ["s"..sid] = {n = name, ...} } } } }
     (member keys are prefixed: JSON would turn a bare SteamID64 into a number)
@@ -34,9 +35,7 @@ local D = Rhylib.Datapad
 
 Rhylib.Net.Register("dp.statsr")
 
--- Stat ids, in the order every stats message writes them (the clients keep
--- the same list: add new ones at the end on both sides).
-D.STAT_KEYS = { "kd", "kp", "de", "rv", "he", "ar", "mi", "mo", "at", "jd", "ev" }
+-- (Stat ids, names and the wire format: D.STAT_KEYS, D.WriteStatRow in sh_00_config.lua.)
 D.PERIODS = { "today", "week", "lastweek", "month", "all" }   -- index sent on the network
 
 local dirty = {}   -- [battalion] = true
@@ -123,12 +122,16 @@ local function flush()
     for id in pairs(pdirty) do D.Store("dp_pst", id, D.PlayerStats(id)) end
     pdirty = {}
 end
+-- A minute played for everyone each minute; saved every 5 minutes (each
+-- save re-encodes a whole battalion's stats, all-time rows included) and
+-- at shutdown.
+local ticks = 0
 timer.Create("Rhylib.Datapad.Stats", 60, 0, function()
-    -- A minute played for everyone.
     for _, p in ipairs(player.GetHumans()) do
         D.AddStat(p, "mi", 1)
     end
-    flush()
+    ticks = ticks + 1
+    if ticks % 5 == 0 then flush() end
 end)
 Rhylib.Hook.Add("ShutDown", "datapad.stats", flush, -10)  -- before Data flushes at 0
 
@@ -184,13 +187,13 @@ D.TermRecv("dp.stats", {
         table.sort(members, function(x, y) return (x.mi or 0) > (y.mi or 0) end)
         Rhylib.Net.Start("dp.statsr")
         net.WriteUInt(period, 3)
-        for _, k in ipairs(D.STAT_KEYS) do net.WriteUInt(math.Clamp(b.t[k] or 0, 0, 2 ^ 31), 32) end
+        D.WriteStatRow(b.t)
         local n = math.min(#members, 60)
         net.WriteUInt(n, 7)
         for i = 1, n do
             local p = members[i]
             net.WriteString(p.n or "?")
-            for _, k in ipairs(D.STAT_KEYS) do net.WriteUInt(math.Clamp(p[k] or 0, 0, 2 ^ 31), 32) end
+            D.WriteStatRow(p)
         end
         net.Send(ply)
     end,

@@ -303,8 +303,8 @@ function Med.Start(helper, kind, target, opts)
 
     local now = CurTime()
     if kind == Med.A_STAB then
-        target:SetNW2Float("rhylib_downLeft", Med.TimeLeft(target))
-        target:SetNW2Entity("rhylib_stabBy", helper)
+        target:SetNW2Float(Rhylib.NW.DOWN_LEFT, Med.TimeLeft(target))
+        target:SetNW2Entity(Rhylib.NW.STAB_BY, helper)
         Med.acts[helper] = { kind = kind, target = target }
         setAct(helper, kind, target, now, 0)
         return true
@@ -314,8 +314,8 @@ function Med.Start(helper, kind, target, opts)
     a.endTime = now + duration(helper, kind, target == helper, a.kit)
     -- Reviving pauses the bleed-out (unless someone already stabilises).
     if Med.REVIVES[kind] and not Med.StabilisedBy(target) then
-        target:SetNW2Float("rhylib_downLeft", Med.TimeLeft(target))
-        target:SetNW2Entity("rhylib_stabBy", helper)
+        target:SetNW2Float(Rhylib.NW.DOWN_LEFT, Med.TimeLeft(target))
+        target:SetNW2Entity(Rhylib.NW.STAB_BY, helper)
         a.paused = true
     end
     Med.acts[helper] = a
@@ -328,16 +328,16 @@ end
 -- Only if `helper` is the one holding the pause (rhylib_stabBy). The timer
 -- restarts from the frozen time left: downEnd = now + downLeft.
 local function resume(t, helper)
-    if not IsValid(t) or t:GetNW2Entity("rhylib_stabBy") ~= helper then return end
+    if not IsValid(t) or t:GetNW2Entity(Rhylib.NW.STAB_BY) ~= helper then return end
     for h, o in pairs(Med.acts) do
         if h ~= helper and o.target == t and (Med.REVIVES[o.kind] or o.kind == Med.A_STAB) then
-            t:SetNW2Entity("rhylib_stabBy", h)
+            t:SetNW2Entity(Rhylib.NW.STAB_BY, h)
             o.paused = true
             return
         end
     end
-    t:SetNW2Float("rhylib_downEnd", CurTime() + t:GetNW2Float("rhylib_downLeft", 0))
-    t:SetNW2Entity("rhylib_stabBy", NULL)
+    t:SetNW2Float(Rhylib.NW.DOWN_END, CurTime() + t:GetNW2Float(Rhylib.NW.DOWN_LEFT, 0))
+    t:SetNW2Entity(Rhylib.NW.STAB_BY, NULL)
 end
 
 -- Med.Cancel(helper): stops helper's action without its effect (safe to
@@ -425,9 +425,9 @@ local function finishAct(helper, a)
         if not Med.Consume(helper, kit) then return end
         local add = Med.Cfg("bloodPackAdd")
         if Med.StabilisedBy(t) then
-            t:SetNW2Float("rhylib_downLeft", t:GetNW2Float("rhylib_downLeft", 0) + add)
+            t:SetNW2Float(Rhylib.NW.DOWN_LEFT, t:GetNW2Float(Rhylib.NW.DOWN_LEFT, 0) + add)
         else
-            t:SetNW2Float("rhylib_downEnd", t:GetNW2Float("rhylib_downEnd", 0) + add)
+            t:SetNW2Float(Rhylib.NW.DOWN_END, t:GetNW2Float(Rhylib.NW.DOWN_END, 0) + add)
         end
         Med.Note(helper, "Blood pack in: +" .. add .. " s")
     elseif a.kind == Med.A_FA_HEAL then

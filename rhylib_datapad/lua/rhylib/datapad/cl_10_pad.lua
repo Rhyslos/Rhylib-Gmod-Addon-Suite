@@ -22,7 +22,7 @@
 
 local D = Rhylib.Datapad
 
-local function K() return Rhylib.Menus and Rhylib.Menus.Kit end
+local function K() return Rhylib.UI and Rhylib.UI.Kit end
 local function when(t) return t and t > 0 and os.date("%d %b %H:%M", t) or "" end
 local OPAQUE = Color(14, 16, 15, 255)   -- solid background: readable over anything
 
@@ -41,7 +41,7 @@ end
 -- D.BnColor(bn): a battalion's colour (its DarkRP job category, else the
 -- colour of a job in it), brightened so the strongest channel is at least
 -- 150 to read as an accent. nil if unknown. Cached per name.
--- Example: Rhylib.Menus.Kit.Tint(panel, function() return D.BnColor("212th") end)
+-- Example: Rhylib.UI.Kit.Tint(panel, function() return D.BnColor("212th") end)
 local bnColors = {}
 function D.BnColor(bn)
     if not bn or bn == "" then return nil end
@@ -115,7 +115,7 @@ function D.OrderSub(o)
 end
 
 function D.OrderColor(st)
-    local C = Rhylib.Menus.Kit.C
+    local C = Rhylib.UI.Kit.C
     if st == 4 or st == 3 then return C.good end
     if st == 5 then return C.bad end
     if st == 6 then return C.textDim end
@@ -125,7 +125,7 @@ end
 -- D.OrderStatusMenu(o, full, onPick): a menu of the statuses this player
 -- may pick (full = manager: any; else In progress / Completed); onPick(status).
 function D.OrderStatusMenu(o, full, onPick)
-    local m = Rhylib.Menus.Kit.Menu()
+    local m = Rhylib.UI.Kit.Menu()
     for st, name in ipairs(D.ORDER_STATUS) do
         if st ~= o.st and (full or st == 2 or st == 3) then
             m:AddOption(name, function() onPick(st) end)
@@ -688,15 +688,8 @@ local function loaTab()
     end
 end
 
-local STAT_NAMES = { kd = "Droid kills", kp = "Player kills", de = "Deaths", rv = "Revives", he = "Heals",
-    ar = "Arrests", mi = "Hours", mo = "Money", at = "Attended", jd = "Arrested", ev = "Events" }
-local STAT_KEYS = { "kd", "kp", "de", "rv", "he", "ar", "mi", "mo", "at", "jd", "ev" }   -- server order
-
-local function statText(key, v)
-    if key == "mi" then return string.format("%.1f", (v or 0) / 60) end
-    if key == "mo" then return string.Comma and string.Comma(v or 0) or tostring(v or 0) end
-    return tostring(v or 0)
-end
+local STAT_NAMES = D.STAT_NAMES   -- (sh_00_config.lua)
+local statText = D.StatText
 
 local function statsTab()
     local k = K()
@@ -706,10 +699,7 @@ local function statsTab()
     if not sy or not sy.x then return end
     local x = sy.x
     local mp = D.IsMPBattalion(sy.bn)
-    local keys = {}
-    for _, key in ipairs(STAT_KEYS) do
-        if not ((mp and key == "jd") or (not mp and key == "ar")) then keys[#keys + 1] = key end
-    end
+    local keys = D.StatKeysShown(mp)
     local sp = k.Scroll(content)
     sp:Dock(FILL)
     local function table3(title, cols)
@@ -1391,9 +1381,9 @@ Rhylib.Net.Receive("dp.dlx", function()
     for i = 1, net.ReadUInt(6) do
         x.leave[i] = { name = net.ReadString(), from = net.ReadUInt(32), to = net.ReadUInt(32), why = net.ReadString() }
     end
-    for _, key in ipairs(STAT_KEYS) do x.weekAll[key] = net.ReadUInt(32) end
-    for _, key in ipairs(STAT_KEYS) do x.weekMe[key] = net.ReadUInt(32) end
-    for _, key in ipairs(STAT_KEYS) do x.allMe[key] = net.ReadUInt(32) end
+    x.weekAll = D.ReadStatRow()
+    x.weekMe = D.ReadStatRow()
+    x.allMe = D.ReadStatRow()
     local f = x.file
     for i = 1, net.ReadUInt(5) do f.quals[i] = net.ReadString() end
     f.ncom = net.ReadUInt(8)

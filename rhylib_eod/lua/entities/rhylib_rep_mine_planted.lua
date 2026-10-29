@@ -46,7 +46,7 @@ if SERVER then
         self:SetModel(self:WantedModel())
         self:SetSolid(SOLID_BBOX)
         local E = Rhylib.EOD
-        local mn, mx = E.MineBox(E.Cfg("mineSize") or 20)   -- (origin on the ground; see E.MineMatrix)
+        local mn, mx = E.MineBox(E.Cfg("mineSize"))   -- (origin on the ground; see E.MineMatrix)
         self:SetCollisionBounds(mn, mx)
         self:SetMoveType(MOVETYPE_NONE)
         self:SetCollisionGroup(COLLISION_GROUP_DEBRIS)

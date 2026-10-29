@@ -23,6 +23,9 @@
     refreshed every 3 s (respawns, joins, job changes).
     One open call per kind per caller (a new one replaces it); callCooldown
     between two of the same kind.
+    D.StartCall(ply, kind, items) sends one from code (rhylib_medical's
+    downed "call a medic" key: no datapad needed); D.CallKindFor(to) finds
+    the kind for a `to` ("medic").
 ]]
 
 local D = Rhylib.Datapad
@@ -63,7 +66,9 @@ end
 
 local function seesPos(c, p)
     local r = roleOf(c, p)
-    return r ~= 0 or not def(c.kind).accept
+    local d = def(c.kind)
+    if not d then return r ~= 0 end   -- (its kind was taken out of the calls setting meanwhile)
+    return r ~= 0 or not d.accept
 end
 
 local function involved(c)
@@ -108,18 +113,29 @@ end
 
 local function nick(p) return IsValid(p) and p:Nick() or "?" end
 
-D.PadRecv("dp.call", function(ply)
-    local kind, items = net.ReadUInt(3), net.ReadUInt(16)
+-- D.CallKindFor(to): the index of the first "calls" entry whose `to` is
+-- that ("medic", "mp", "eod", ...), or nil.
+function D.CallKindFor(to)
+    for i, d in ipairs(D.Cfg("calls") or {}) do
+        if d.to == to then return i end
+    end
+end
+
+-- D.StartCall(ply, kind, items): send a quick response call as ply
+-- (the datapad's dp.call, and rhylib_medical's downed "call a medic",
+-- which needs no datapad in hand). Returns true if it went out.
+function D.StartCall(ply, kind, items)
     local d = def(kind)
-    if not d then return end
+    if not d then return false end
+    items = items or 0
     if not d.items then items = 0 end
-    if d.items and items == 0 then return end
+    if d.items and items == 0 then return false end
     -- Cooldown per kind.
     lastCall[ply] = lastCall[ply] or {}
     local now = CurTime()
     if now < (lastCall[ply][kind] or 0) + D.Cfg("callCooldown") then
-        ply:ChatPrint("Wait a moment before calling again")
-        return
+        Rhylib.Notify(ply, "Wait a moment before calling again", "bad", "Datapad")
+        return false
     end
     lastCall[ply][kind] = now
     -- One open call per kind: a new one replaces it.
@@ -134,8 +150,14 @@ D.PadRecv("dp.call", function(ply)
     end
     D.calls[c.id] = c
     local n = table.Count(c.to)
-    ply:ChatPrint((d.short or d.name) .. " call sent" .. (n == 0 and " (nobody can answer it right now)" or (" to " .. n .. " player" .. (n == 1 and "" or "s"))))
+    Rhylib.Notify(ply, (d.short or d.name) .. " call sent" .. (n == 0 and " (nobody can answer it right now)" or (" to " .. n .. " player" .. (n == 1 and "" or "s"))), "good", "Datapad")
     update(c)
+    return true
+end
+
+D.PadRecv("dp.call", function(ply)
+    local kind, items = net.ReadUInt(3), net.ReadUInt(16)
+    D.StartCall(ply, kind, items)
 end, { rate = 2, burst = 4 })
 
 Rhylib.Net.Receive("dp.callr", function(ply)
@@ -143,7 +165,7 @@ Rhylib.Net.Receive("dp.callr", function(ply)
     if not c or not c.to[ply] or responded(c, ply) or not ply:Alive() then return end
     c.resp[#c.resp + 1] = ply
     local d = def(c.kind)
-    if IsValid(c.caller) then c.caller:ChatPrint((d and d.inbound or "Help") .. " inbound: " .. ply:Nick()) end
+    if IsValid(c.caller) then Rhylib.Notify(c.caller, (d and d.inbound or "Help") .. " inbound: " .. ply:Nick(), "info", "Datapad") end
     update(c)
 end, { rate = 3, burst = 5 })
 

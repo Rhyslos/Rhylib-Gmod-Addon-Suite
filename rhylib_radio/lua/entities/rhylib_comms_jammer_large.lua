@@ -1,5 +1,5 @@
 --[[
-    Comms jammer (large) (rhylib_radio, 2026-10-07, owner): the comms jammer
+    Comms jammer (large) (rhylib_radio): the comms jammer
     (rhylib_comms_jammer.lua) with radio jammerRangeLarge / jammerPointsLarge / jammerModelLarge (four times the small one's range).
 ]]
 

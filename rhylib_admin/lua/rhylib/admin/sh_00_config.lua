@@ -44,7 +44,9 @@ Config.Register("admin", "ranks", {
                 "noclip", "noclip.self", "god", "cloak", "notarget", "hp", "armor", "give", "spawn",
                 "map", "cleanup", "announce", "setjob", "spectate", "info", "tell", "revive", "heal", "buddha",
                 "scale", "speed", "jump", "model", "playsound", "stopsound", "slap", "ignite", "free", "infect", "cure",
-                "freezeprops", "cleardecals", "call", "rhylib.chat.event", "rhylib.weapons.infammo", "rhylib.eod.gm", "rhylib.bounty.gm" } },
+                "freezeprops", "cleardecals", "call", "rhylib.chat.event", "rhylib.weapons.infammo", "rhylib.eod.gm", "rhylib.bounty.gm",
+                -- (running events: the toolgun is the spawn menu, event spawn points, comms jammers)
+                "rhylib.toolgun", "rhylib.spawns.admin", "rhylib.radio.admin" } },
     { id = "moderator", name = "Moderator", level = 50, color = Color(90, 170, 240), inherits = { "trialmod" },
       perms = { "ban", "slay", "teleport", "noclip", "god", "cloak", "notarget", "hp", "armor", "bans", "setjob",
                 "jail", "unjail", "revive", "heal", "stopsound", "freezeprops", "cleardecals", "ignite", "hidecells" } },
@@ -240,3 +242,6 @@ if CLIENT then
         end
     end)
 end
+
+-- Server settings page: this module's name and sidebar category.
+Config.Describe("admin", { name = "Admin", category = "Server & interface" })

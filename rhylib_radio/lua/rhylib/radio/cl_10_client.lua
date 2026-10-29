@@ -112,7 +112,7 @@ end
 
 -- R.Note(text): a "[Radio] text" chat line (client version).
 function R.Note(text)
-    chat.AddText(R.COL.squad, "[Radio] ", Color(225, 225, 225), text)
+    Rhylib.Notify(nil, text, "info", "Radio")
 end
 
 -- R.Mine(): your own unpacked radio state. R.Selected(): the slot the
@@ -231,10 +231,6 @@ end)
 Rhylib.Net.Receive("radio.txev", function()
     local idx, kind, id = net.ReadUInt(8), net.ReadUInt(2), net.ReadUInt(R.ID_BITS)
     R.tx[idx] = { kind = kind, id = id }
-end)
-
-Rhylib.Net.Receive("radio.note", function()
-    R.Note(net.ReadString())
 end)
 
 Rhylib.Net.Receive("radio.pos", function()

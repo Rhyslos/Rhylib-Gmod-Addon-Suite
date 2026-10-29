@@ -38,7 +38,9 @@
       "mp_idx"/"all"        { ["s" .. SteamID64] = name } of everyone on file
       "mp_places"/map name  placed cells, terminals and property lockers
 
-    Permission: rhylib.mp.admin (admin) for the rhylib_mp_save command.
+    Permission: rhylib.mp.admin (admin) for the rhylib_mp_save command,
+    which re-saves the permanent ones and says how many are placed but not
+    permanent (those aren't kept).
 ]]
 
 local MP = Rhylib.MP
@@ -112,6 +114,7 @@ local function setState(ply)
     ply:SetNW2Float("rhylib_jailEnd", rec and math.max(rec.ends, 1) or 0)
     ply:SetNW2String("rhylib_jailWhy", rec and rec.why or "")
     ply:SetNW2Bool("rhylib_jailAwait", rec and rec.awaiting or false)
+    ply:SetNW2Float("rhylib_jailProc", rec and rec.awaiting and (rec.processAt or 0) or 0)   -- (HUD countdown)
 end
 
 -- Everything the prisoner carries becomes evidence; issued gear is just removed.
@@ -198,7 +201,7 @@ function MP.Jail(ply, by, minutes, why)
     setState(ply)
     save(ply)
     addRecord(ply, rec.by, minutes, rec.why)
-    ply:ChatPrint(string.format("Jailed by %s for %d min: %s", rec.by, minutes, rec.why))
+    Rhylib.Notify(ply, string.format("Jailed by %s for %d min: %s", rec.by, minutes, rec.why), "bad", "MP")
     hook.Run("Rhylib.PlayerJailed", ply, by, minutes, rec.why)
     return true
 end
@@ -214,8 +217,16 @@ function MP.EndSentence(ply, by)
     rec.processAt = CurTime() + MP.Cfg("processAuto")
     setState(ply)
     save(ply)
-    ply:ChatPrint((IsValid(by) and ("Released by " .. by:Nick() .. ".") or "Your sentence is over.")
-        .. " Wait to be processed: an MP at the terminal, or automatically in " .. math.ceil(MP.Cfg("processAuto") / 60) .. " min.")
+    local secs = math.ceil(MP.Cfg("processAuto"))
+    Rhylib.Notify(ply, (IsValid(by) and ("Released by " .. by:Nick() .. ".") or "Your sentence is over.")
+        .. " Wait to be processed: an MP at the terminal, or automatically in "
+        .. (secs >= 120 and (math.ceil(secs / 60) .. " min") or (secs .. " s")) .. ".", "info", "MP")
+    -- Tell the MPs on the server (once, when the wait starts).
+    for _, p in ipairs(player.GetHumans()) do
+        if p ~= ply and p ~= by and MP.IsMP(p) then
+            Rhylib.Notify(p, ply:Nick() .. " is waiting to be processed at the jail terminal", "info", "MP")
+        end
+    end
 end
 
 -- MP.Returnable(e) -> bool: evidence entry e goes back to its owner
@@ -272,9 +283,9 @@ function MP.Process(ply, by)
         end)
     end
     local kept = #(rec.evidence or {}) - #back
-    ply:ChatPrint((IsValid(by) and ("Processed by " .. by:Nick() .. ". ") or "Processed. ")
+    Rhylib.Notify(ply, (IsValid(by) and ("Processed by " .. by:Nick() .. ". ") or "Processed. ")
         .. (IsValid(locker) and "Your things are in the property locker" or "Your things are back")
-        .. (kept > 0 and (" (" .. kept .. " kept as evidence)") or "") .. ".")
+        .. (kept > 0 and (" (" .. kept .. " kept as evidence)") or "") .. ".", "good", "MP")
     hook.Run("Rhylib.PlayerReleased", ply, by)
 end
 
@@ -422,11 +433,11 @@ Rhylib.Net.Receive("mp.jail", function(mp)
         if c == p then ok = true break end
     end
     if not ok then
-        mp:ChatPrint("They need to be cuffed and at the terminal")
+        Rhylib.Notify(mp, "They need to be cuffed and at the terminal", "bad", "MP")
         return
     end
     local done, err = MP.Jail(p, mp, minutes, why)
-    if not done and err then mp:ChatPrint(err) end
+    if not done and err then Rhylib.Notify(mp, err, "bad", "MP") end
     MP.OpenTerminal(mp, term)
 end, { rate = 2, burst = 3 })
 
@@ -465,57 +476,16 @@ local CLASSES = { "rhylib_jail_cell", "rhylib_jail_terminal", "rhylib_property_l
 Rhylib.PLACEMENT_CLASSES = Rhylib.PLACEMENT_CLASSES or {}
 for _, c in ipairs(CLASSES) do Rhylib.PLACEMENT_CLASSES[c] = true end
 
--- MP.SavePlaces() -> count: saves this map's cells, terminals and property
--- lockers to Data "mp_places"/map. Only permanent ones (the toolgun's
--- Permanent tool, 2026-10-09u) when rhylib_core's Perma exists. Also run
--- by the Permanent tool itself (Perma.Register below). Server only.
-function MP.SavePlaces()
-    local list = {}
-    for _, class in ipairs(CLASSES) do
-        for _, e in ipairs(ents.FindByClass(class)) do
-            if (not Rhylib.Perma or Rhylib.Perma.Is(e)) then
-                local pos, ang = e:GetPos(), e:GetAngles()
-                list[#list + 1] = { class = class, pos = { pos.x, pos.y, pos.z }, ang = { ang.p, ang.y, ang.r } }
-            end
-        end
-    end
-    Data.Set("mp_places", game.GetMap(), list)
-    return #list
-end
-if Rhylib.Perma and Rhylib.Perma.Register then Rhylib.Perma.Register(CLASSES, MP.SavePlaces) end
+-- This map's permanent cells, terminals and property lockers (core's
+-- Rhylib.Perma.Placements: Data "mp_places"/<map>, loaded 1 s after the
+-- map starts and after a cleanup, frozen; console rhylib_mp_save re-saves
+-- the permanent ones and says how many are placed but not permanent).
+MP.places = Rhylib.Perma.Placements("mp", {
+    classes = CLASSES,
+    dataModule = "mp_places",
+    command = "rhylib_mp_save",
+    perm = "rhylib.mp.admin",
+})
 
-concommand.Add("rhylib_mp_save", function(ply)
-    Rhylib.Perms.Check(ply, "rhylib.mp.admin", function(ok)
-        if not ok then
-            if IsValid(ply) then ply:ChatPrint("You don't have permission for rhylib_mp_save") end
-            return
-        end
-        local n = MP.SavePlaces()
-        local msg = "Saved " .. n .. " jail cells, terminals and property lockers for " .. game.GetMap()
-        if IsValid(ply) then ply:ChatPrint(msg) else print(msg) end
-    end)
-end)
-
--- Map start and after a cleanup: remove any placed copies, then spawn the
--- saved ones frozen and marked permanent.
-local function loadPlaces()
-
-    local list = Data.Get("mp_places", game.GetMap())
-    if not istable(list) then return end
-    for _, class in ipairs(CLASSES) do
-        for _, e in ipairs(ents.FindByClass(class)) do e:Remove() end
-    end
-    for _, it in ipairs(list) do
-        local e = ents.Create(it.class)
-        if IsValid(e) then
-            e:SetPos(Vector(it.pos[1], it.pos[2], it.pos[3]))
-            e:SetAngles(Angle(it.ang[1], it.ang[2], it.ang[3]))
-            e:Spawn()
-            local phys = e:GetPhysicsObject()
-            if IsValid(phys) then phys:EnableMotion(false) end
-            if Rhylib.Perma then Rhylib.Perma.Mark(e, true) end
-        end
-    end
-end
-Rhylib.Hook.Add("InitPostEntity", "mp.places", loadPlaces)
-Rhylib.Hook.Add("PostCleanupMap", "mp.places", loadPlaces)
+-- MP.SavePlaces() -> saved, notPermanent (kept for callers).
+function MP.SavePlaces() return MP.places:Save() end

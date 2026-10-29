@@ -21,10 +21,10 @@ local I = Inv.Internal
 -- neither locked nor downed. Returns true/false.
 function Inv.CanGive(ply, target)
     if not (IsValid(target) and target:IsPlayer() and target ~= ply and target:Alive() and ply:Alive()) then return false end
-    local r = Config.Get("inventory", "giveRange") or 130
+    local r = Config.Get("inventory", "giveRange")
     if ply:GetPos():DistToSqr(target:GetPos()) > r * r then return false end
     if Inv.Locked(ply) or Inv.Locked(target) then return false end
-    if ply.rhylibDown or target.rhylibDown then return false end   -- downed (rhylib_medical)
+    if Rhylib.State.IsDown(ply) or Rhylib.State.IsDown(target) then return false end   -- downed (rhylib_medical)
     local tr = util.TraceLine({ start = ply:EyePos(), endpos = target:WorldSpaceCenter(), filter = { ply, target }, mask = MASK_SOLID })
     return not tr.Hit
 end
@@ -62,6 +62,7 @@ function Inv.GiveTo(ply, target, uid, single)
     local left = Inv.AddItem(target, inst.id, n, table.Copy(inst.data or {}))
     local given = n - left
     if given <= 0 then
+        I.undoCapture(ply, inst)
         local dupe = Inv.AtLimit(target, inst.id)
         Inv.Note(ply, target:Nick() .. (dupe and (" already carries " .. (Inv.Limit(target, inst.id) > 1 and Inv.Limit(target, inst.id) or "one")) or " has no room"))
         return 0
@@ -91,7 +92,7 @@ end, { rate = 6, burst = 6 })
 -- def.hand that sit on the hotbar.
 Rhylib.Net.Receive("inv.hold", function(ply)
     local uid = net.ReadUInt(Items.UID_BITS)
-    if not ply:Alive() or Inv.Locked(ply) or ply.rhylibDown then return end
+    if not ply:Alive() or Inv.Locked(ply) or Rhylib.State.IsDown(ply) then return end
     local inst = Inv.Get(ply).byUid[uid]
     local def = inst and Items.defs[inst.id]
     if not (def and def.hand and inst.hb) then return end

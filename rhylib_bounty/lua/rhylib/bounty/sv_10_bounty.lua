@@ -13,11 +13,18 @@
     = money owed to an offline poster (paid when they join).
 
     Messages:
-      bounty.listreq  client -> server (empty): send me the board (rate 1/s)
-      bounty.list     server -> client(s): UInt 32 length + compressed JSON
-                      list of { id, kind, name, model, reward, mode, free,
-                      std, by (sid), byName, left (s), tsid, tidx (target
-                      entity index, 0 = none) }
+      bounty.listreq  client -> server (empty): send me the board (rate 1/s;
+                      clients ask once loaded in)
+      bounty.diff     server -> client(s): reset (bool: the whole board
+                      follows), then items: more (bool), remove (bool), then
+                      id (UInt 24) for a remove, else a row: id UInt 24, npc
+                      bool, name, model, reward UInt 32, mode UInt 2 (1 dead,
+                      2 alive, 3 either), free, std (bools), by (sid), byName,
+                      seconds left UInt 24, tsid, tidx UInt 16 (target entity
+                      index, 0 = none); more = false ends it. The snapshot
+                      goes to the asking player only; changes (B.sent
+                      signatures, flushed 0.5 s after B.Changed, and when
+                      someone joins or leaves) go to everyone, one row each.
       bounty.open     server -> client: office entity (open the window)
       bounty.post     client -> server: office, target sid, reward (UInt 32),
                       mode (UInt 2), standalone, free (bools)
@@ -29,6 +36,9 @@
       bounty.collect  client -> server: body entity (start collecting proof)
       bounty.collectx server -> client: collecting stopped (reason string)
       bounty.msg      server -> client: ok (bool), text
+    Also: the target of a new player bounty is told ("There's a price on
+    your head", config notifyTarget / notifyAmount); a bound prisoner is
+    freed when no bounty on them is left (weapons/rhylib_binders.lua).
     Hooks fired: Rhylib.BountyPosted(b), Rhylib.BountyClaimed(b, ply, how
     ("proof" | "alive")), Rhylib.BountyClosed(b, why).
 ]]
@@ -37,7 +47,7 @@ local B = Rhylib.Bounty
 local Data = Rhylib.Data
 local Net = Rhylib.Net
 
-for _, n in ipairs({ "bounty.list", "bounty.open", "bounty.msg", "bounty.collectx" }) do Net.Register(n) end
+for _, n in ipairs({ "bounty.diff", "bounty.open", "bounty.msg", "bounty.collectx" }) do Net.Register(n) end
 
 B.list = B.list or {}       -- [id] = bounty
 B.bodies = B.bodies or {}   -- [ragdoll] = { tkey, name, at, taken }
@@ -46,6 +56,23 @@ B.collecting = B.collecting or {}   -- [ply] = { body, ends, pos }
 local OFFICE_RANGE = 220
 
 local function sid(ply) return ply:SteamID64() or "" end
+
+-- B.PlayerKey(ply): a player's target key. "p" .. SteamID64 for people;
+-- bots share one SteamID64, so they get "pb" .. UserID (test bots).
+function B.PlayerKey(ply)
+    if ply:IsBot() then return "pb" .. ply:UserID() end
+    return "p" .. sid(ply)
+end
+
+-- B.TargetPlayer(b): the online player a player bounty is on, or nil.
+function B.TargetPlayer(b)
+    if b.botId then
+        local p = Player(b.botId)
+        return IsValid(p) and p or nil
+    end
+    local p = b.sid and b.sid ~= "" and player.GetBySteamID64(b.sid)
+    return IsValid(p) and p or nil
+end
 
 -- B.Msg(ply, ok, text): a line in the office window and in chat.
 function B.Msg(ply, ok, text)
@@ -112,7 +139,7 @@ end)
 local function save()
     local rows = {}
     for _, b in pairs(B.list) do
-        if b.kind == "player" then
+        if b.kind == "player" and not b.botId then   -- (test-bot bounties end with the session)
             rows[#rows + 1] = { id = b.id, kind = b.kind, tkey = b.tkey, sid = b.sid, name = b.name, model = b.model,
                 reward = b.reward, mode = b.mode, by = b.by, byName = b.byName, free = b.free, std = b.std, at = b.at, ends = b.ends }
         end
@@ -133,41 +160,108 @@ if not B.loaded then
     load()
 end
 
--- The board for the clients (debounced).
-local function wire()
-    local out, now = {}, os.time()
-    for _, b in pairs(B.list) do
-        local tidx = 0
-        if b.kind == "npc" and IsValid(b.ent) then tidx = b.ent:EntIndex()
-        elseif b.kind == "player" then
-            local p = player.GetBySteamID64(b.sid)
-            if IsValid(p) then tidx = p:EntIndex() end
-        end
-        out[#out + 1] = { id = b.id, kind = b.kind, name = b.name, model = b.model, reward = b.reward, mode = b.mode,
-            free = b.free, std = b.std, by = b.by, byName = b.byName, left = math.max(0, b.ends - now), tsid = b.sid or "", tidx = tidx }
+-- The board for the clients: one row per bounty as the client sees it.
+local function wireRow(b)
+    local tidx = 0
+    if b.kind == "npc" and IsValid(b.ent) then tidx = b.ent:EntIndex()
+    elseif b.kind == "player" then
+        local p = B.TargetPlayer(b)
+        if p then tidx = p:EntIndex() end
     end
-    table.sort(out, function(a, c) return a.reward > c.reward end)
-    return out
+    return { id = b.id, kind = b.kind, name = tostring(b.name or ""), model = tostring(b.model or ""), reward = math.floor(tonumber(b.reward) or 0),
+        mode = b.mode, free = b.free and true or false, std = b.std and true or false, by = tostring(b.by or ""), byName = tostring(b.byName or ""),
+        ends = b.ends or 0, tsid = tostring(b.sid or ""), tidx = tidx }
 end
 
--- B.SendList(ply): the board to one player (nil = everyone).
-function B.SendList(ply)
-    local raw = util.Compress(util.TableToJSON(wire()) or "[]") or ""
-    Net.Start("bounty.list")
-    net.WriteUInt(#raw, 32)
-    net.WriteData(raw, #raw)
-    if ply then net.Send(ply) else net.Broadcast() end
+-- (everything but the time left: a change in any of these is an update)
+local function sig(r)
+    return table.concat({ r.kind, r.name, r.model, r.reward, r.mode, tostring(r.free), tostring(r.std), r.by, r.byName, r.ends, r.tsid, r.tidx }, "\1")
 end
+
+local function writeRow(r, now)
+    net.WriteUInt(r.id, 24)
+    net.WriteBool(r.kind == "npc")
+    net.WriteString(string.sub(r.name, 1, 64))
+    net.WriteString(string.sub(r.model, 1, 160))
+    net.WriteUInt(math.Clamp(r.reward, 0, 4294967295), 32)
+    net.WriteUInt(B.MODE_INDEX[r.mode] or 1, 2)
+    net.WriteBool(r.free)
+    net.WriteBool(r.std)
+    net.WriteString(string.sub(r.by, 1, 24))
+    net.WriteString(string.sub(r.byName, 1, 64))
+    net.WriteUInt(math.Clamp(r.ends - now, 0, 16777215), 24)   -- (seconds left; the client counts down)
+    net.WriteString(string.sub(r.tsid, 1, 24))
+    net.WriteUInt(math.Clamp(r.tidx, 0, 65535), 16)
+end
+
+-- B.sent[id] = signature the clients have. Diffs go to everyone, a full
+-- snapshot only to a player who asks (on joining).
+B.sent = B.sent or {}
+
+-- One bounty.diff: reset bool, then items { more bool, remove bool, id
+-- UInt 24 (remove) | row (upsert) }, more = false at the end. Rows are
+-- ~100-250 bytes: at most 150 a message (a bigger snapshot is split, the
+-- first part has reset = true).
+local function sendOps(ops, reset, target)
+    local now = os.time()
+    local i, first = 1, true
+    repeat
+        Net.Start("bounty.diff")
+        net.WriteBool(reset and first)
+        local n = 0
+        while i <= #ops and n < 150 do
+            local o = ops[i]
+            net.WriteBool(true)
+            net.WriteBool(o.remove == true)
+            if o.remove then net.WriteUInt(o.id, 24) else writeRow(o.row, now) end
+            i, n = i + 1, n + 1
+        end
+        net.WriteBool(false)
+        if target then net.Send(target) else net.Broadcast() end
+        first = false
+    until i > #ops
+end
+
+-- B.SendList(ply): the whole board to one player.
+function B.SendList(ply)
+    if not IsValid(ply) then return end
+    local ops = {}
+    for _, b in pairs(B.list) do ops[#ops + 1] = { row = wireRow(b) } end
+    sendOps(ops, true, ply)
+end
+
+-- What changed since the last flush, to everyone.
+local function flush()
+    local ops, seen = {}, {}
+    for id, b in pairs(B.list) do
+        seen[id] = true
+        local r = wireRow(b)
+        local s = sig(r)
+        if B.sent[id] ~= s then
+            B.sent[id] = s
+            ops[#ops + 1] = { row = r }
+        end
+    end
+    for id in pairs(B.sent) do
+        if not seen[id] then
+            B.sent[id] = nil
+            ops[#ops + 1] = { remove = true, id = id }
+        end
+    end
+    if #ops > 0 then sendOps(ops, false, nil) end
+end
+B.FlushBoard = flush
 
 function B.Changed()
     save()
-    timer.Create("Rhylib.Bounty.Send", 0.5, 1, function() B.SendList() end)
+    timer.Create("Rhylib.Bounty.Send", 0.5, 1, flush)
 end
 
 Net.Receive("bounty.listreq", function(ply) B.SendList(ply) end, { rate = 1, burst = 3 })
--- Targets' entities change as people join and leave.
-Rhylib.Hook.Add("PlayerInitialSpawn", "bounty.board", function() timer.Create("Rhylib.Bounty.Send", 2, 1, function() B.SendList() end) end)
-Rhylib.Hook.Add("PlayerDisconnected", "bounty.board", function() timer.Create("Rhylib.Bounty.Send", 1, 1, function() B.SendList() end) end)
+-- A target joining or leaving changes their tidx: flush sends that
+-- bounty's row only (nothing else changed).
+Rhylib.Hook.Add("PlayerInitialSpawn", "bounty.board", function() timer.Create("Rhylib.Bounty.Send", 2, 1, flush) end)
+Rhylib.Hook.Add("PlayerDisconnected", "bounty.board", function() timer.Create("Rhylib.Bounty.Send", 1, 1, flush) end)
 
 -- B.Close(b, why): take a bounty off the board.
 function B.Close(b, why)
@@ -220,6 +314,22 @@ local function modeLabel(m)
     return m
 end
 
+-- Config notifyTarget: the target hears about a bounty posted on them (not
+-- NPC or test-bot bounties). A tick later, so a standalone bounty that
+-- failed (no room for the contract) and closed again says nothing.
+-- notifyAmount false leaves the reward out.
+Rhylib.Hook.Add("Rhylib.BountyPosted", "bounty.notify", function(b)
+    if b.kind ~= "player" or b.botId or not B.Cfg("notifyTarget") then return end
+    timer.Simple(0, function()
+        if not B.list[b.id] then return end
+        local p = B.TargetPlayer(b)
+        if not p then return end
+        local text = "There's a price on your head (" .. string.lower(modeLabel(b.mode)) .. ")"
+        if B.Cfg("notifyAmount") then text = text .. ": " .. money(b.reward) end
+        B.Msg(p, false, text)
+    end)
+end)
+
 -- The items of an id a player carries: list of instances.
 local function carried(ply, id)
     local out = {}
@@ -257,7 +367,7 @@ end
 -- npc's bounty key), or nil.
 function B.TargetKey(ent)
     if not IsValid(ent) then return nil end
-    if ent:IsPlayer() then return "p" .. sid(ent) end
+    if ent:IsPlayer() then return B.PlayerKey(ent) end
     return ent.rhylibBountyKey
 end
 
@@ -298,7 +408,8 @@ Net.Receive("bounty.post", function(ply)
             reward = math.Clamp(reward, 1, 10000000)
         end
         local b = {
-            kind = "player", tkey = "p" .. tsid, sid = tsid, name = target:Nick(), model = target:GetModel(),
+            kind = "player", tkey = B.PlayerKey(target), sid = target:IsBot() and "" or tsid, botId = target:IsBot() and target:UserID() or nil,
+            name = target:Nick(), model = target:GetModel(),
             reward = reward, mode = mode[1], by = free and "" or sid(ply), byName = free and "Bounty office" or ply:Nick(),
             free = free or nil, std = std or nil,
         }
@@ -447,17 +558,17 @@ end
 
 -- A wanted player died: their body (the lying corpse, or one made here).
 Rhylib.Hook.Add("PlayerDeath", "bounty.body", function(ply)
-    local tkey = "p" .. sid(ply)
+    local tkey = B.PlayerKey(ply)
     if not wantedDead(tkey) then return end
     local cap = capture(ply)
     timer.Simple(0.05, function()
         if not IsValid(ply) or not wantedDead(tkey) then return end
-        local rag = ply:GetNW2Entity("rhylib_corpse")
+        local rag = ply:GetNW2Entity(Rhylib.NW.CORPSE)
         if not IsValid(rag) then
             rag = build(cap)
             if not IsValid(rag) then return end
             ply:SetNW2Bool("rhylib_ragCorpse", true)   -- (rhylib_core hides the engine's own ragdoll)
-            ply:SetNW2Entity("rhylib_corpse", rag)
+            ply:SetNW2Entity(Rhylib.NW.CORPSE, rag)
         end
         B.MarkBody(rag, tkey, ply:Nick())
     end)
@@ -519,6 +630,10 @@ Net.Receive("bounty.collect", function(ply)
     local body = IsValid(rag) and B.bodies[rag]
     if not body or body.taken then
         Net.Start("bounty.collectx") net.WriteString(body and "Someone already took the proof" or "Nothing to collect here") net.Send(ply)
+        return
+    end
+    if body.tkey == B.PlayerKey(ply) then
+        Net.Start("bounty.collectx") net.WriteString("That's your own body") net.Send(ply)
         return
     end
     if not ply:Alive() or ply:GetPos():DistToSqr(rag:GetPos()) > 130 * 130 then
@@ -583,11 +698,13 @@ function B.TurnIn(ply)
     local I = Inv()
     local total, lines = 0, {}
     -- Proof: every open dead/either bounty on that target posted before the death.
+    local own = B.PlayerKey(ply)
     for _, proof in ipairs(carried(ply, B.PROOF)) do
         local d = proof.data or {}
         local got = 0
         for _, b in pairs(B.list) do
-            if b.tkey == d.tkey and b.mode ~= "alive" and (b.at or 0) <= (tonumber(d.at) or 0) and not (b.by ~= "" and b.by == sid(ply)) then
+            -- (nobody claims the bounty on themselves)
+            if b.tkey ~= own and b.tkey == d.tkey and b.mode ~= "alive" and (b.at or 0) <= (tonumber(d.at) or 0) and not (b.by ~= "" and b.by == sid(ply)) then
                 local contract = b.std and B.HasContract(ply, b.id)
                 if not b.std or contract then
                     got = got + pay(ply, b, 1, "proof")
@@ -602,13 +719,14 @@ function B.TurnIn(ply)
         end
     end
     -- A prisoner you escort.
+    -- Only hunters turn prisoners in (not MPs or bystanders escorting one).
     local MP = Rhylib.MP
-    if MP and MP.cuffed then
+    if MP and MP.cuffed and B.MayHunt(ply) then
         for p in pairs(MP.cuffed) do
             if IsValid(p) and MP.EscortedBy(p) == ply then
                 local got = 0
                 for _, b in pairs(B.list) do
-                    if b.tkey == "p" .. sid(p) and b.mode ~= "dead" and not (b.by ~= "" and b.by == sid(ply)) then
+                    if b.tkey == B.PlayerKey(p) and b.mode ~= "dead" and not (b.by ~= "" and b.by == sid(ply)) then
                         local contract = b.std and B.HasContract(ply, b.id)
                         if not b.std or contract then
                             -- Bonuses only on office (staff) bounties: a player's
@@ -630,7 +748,7 @@ function B.TurnIn(ply)
                     MP.Uncuff(p, ply)
                     p.rhylibBound = nil
                     p:Spawn()
-                    p:ChatPrint("[Bounty] " .. ply:Nick() .. " handed you in. You're free to go.")
+                    Rhylib.Notify(p, ply:Nick() .. " handed you in. You're free to go.", "info", "Bounty")
                 end
             end
         end

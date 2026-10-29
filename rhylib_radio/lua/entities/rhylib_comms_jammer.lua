@@ -1,5 +1,5 @@
 --[[
-    Comms jammer (rhylib_radio, 2026-10-07, owner): while it's on, players
+    Comms jammer (rhylib_radio): while it's on, players
     within its range can't use the radio: keying it only gives
     static, others hear them only as local voice, they hear no radio, and
     the radio text channels (squad, battalion, command, comms) are closed.

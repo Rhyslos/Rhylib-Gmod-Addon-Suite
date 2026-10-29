@@ -303,7 +303,7 @@ Rhylib.Hook.Add("HUDPaint", "hud.damage", function()
     local lowNow = false
     if cvLow:GetBool() then
         local frac = math.max(ply:Health(), 0) / math.max(ply:GetMaxHealth(), 1)
-        if frac < 0.3 and not ply:GetNW2Bool("rhylib_down", false) then   -- (not while downed: that has its own screen)
+        if frac < 0.3 and not Rhylib.State.IsDown(ply) then   -- (not while downed: that has its own screen)
             lowNow = true
             local period = 0.6 + frac * 2
             local p = 0.5 + 0.5 * math.sin(now * math.pi * 2 / period)

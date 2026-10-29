@@ -4,7 +4,7 @@
 
     Uses a prop model (models/jajoff/sps/cgiweapons/tc13j/dp24.mdl), held in
     first person by the trooper hands (CarrierVM, DC-15S hold). The model's
-    addon must be installed. Tune with rhylib_vm_editor / rhylib_wm_editor,
+    addon must be installed. Tune with rhylib_vm_editor (Rhy's Dev Tools) / rhylib_wm_editor,
     then paste the lines below. First guesses.
 
     Class rhylib_dp24. Shared: one file for server and client (AddCSLuaFile).
@@ -74,7 +74,7 @@ SWEP.Mags = { "mag_medium" }
 SWEP.Grapple = true
 SWEP.FireModes = { "semi" }
 
--- Power cell too (2026-10-09t, owner: snipers and shotguns take cells; about 12 magazines (10 shots each) per cell).
+-- Power cell too (snipers and shotguns take cells; about 12 magazines (10 shots each) per cell).
 SWEP.UsesCell = true
 SWEP.CellShots = 120
 SWEP.CellReloadMult = 1.6

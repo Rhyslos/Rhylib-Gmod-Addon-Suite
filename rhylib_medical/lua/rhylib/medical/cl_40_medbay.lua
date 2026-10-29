@@ -51,7 +51,7 @@ Rhylib.Net.Receive("chem.open", function()
     local canCraft = net.ReadBool()
     if not IsValid(bench) then return end
     if IsValid(openM) then openM:Remove() end
-    local Kit = Rhylib.Menus and Rhylib.Menus.Kit
+    local Kit = Rhylib.UI and Rhylib.UI.Kit
     local m = Kit and Kit.Menu() or DermaMenu()
     openM = m
     -- The bench is the blood analyser too (cl_50_illness.lua).

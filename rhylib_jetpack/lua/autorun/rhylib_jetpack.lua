@@ -5,4 +5,8 @@ if not Rhylib then
     return
 end
 
-Rhylib.LoadModule("jetpack", { name = "Rhy's Jetpack", version = "0.1.0" })
+Rhylib.LoadModule("jetpack", {
+    name = "Rhy's Jetpack",
+    version = "0.1.0",
+    wants = { "inventory" },
+})

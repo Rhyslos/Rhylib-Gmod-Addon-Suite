@@ -33,7 +33,8 @@ Rhylib.Config.Register("core", "dataFlushDelay", FLUSH_DELAY, "Seconds between b
 
 sql.Query("CREATE TABLE IF NOT EXISTS " .. TABLE .. " (module TEXT NOT NULL, key TEXT NOT NULL, value TEXT, PRIMARY KEY (module, key))")
 
-Data.pending = Data.pending or {}  -- [module][key] = encoded string, or false to delete
+-- [module][key] = { value } (encoded at flush), or false to delete.
+Data.pending = Data.pending or {}
 local pending = Data.pending
 local DELETE = false
 
@@ -60,7 +61,14 @@ function Data.Flush()
             if value == DELETE then
                 sql.Query("DELETE FROM " .. TABLE .. " WHERE module = " .. m .. " AND key = " .. k)
             else
-                sql.Query("INSERT OR REPLACE INTO " .. TABLE .. " (module, key, value) VALUES (" .. m .. ", " .. k .. ", " .. sql.SQLStr(value) .. ")")
+                local ok, str
+                if isstring(value) then ok, str = true, value   -- (queued by the old code before a Lua refresh)
+                else ok, str = pcall(encode, value[1]) end
+                if ok and str then
+                    sql.Query("INSERT OR REPLACE INTO " .. TABLE .. " (module, key, value) VALUES (" .. m .. ", " .. k .. ", " .. sql.SQLStr(str) .. ")")
+                else
+                    Rhylib.Error("data", "%s/%s couldn't be saved: %s", module, key, tostring(str))
+                end
             end
         end
     end
@@ -82,11 +90,15 @@ local function scheduleFlush()
 end
 
 -- Data.Set(module, key, value): save a value (queued; Get sees it at once).
+-- The value is turned into JSON once, when the queue is written (so ten
+-- Sets of a big table in a few seconds cost one encode). A table is kept
+-- by reference until then: changes made to it after Set and before the
+-- write are saved too (normally what you want: Set it again anyway).
 -- Example: Rhylib.Data.Set("myaddon", ply:SteamID64(), { kills = 3 })
 function Data.Set(module, key, value)
     key = tostring(key)
     pending[module] = pending[module] or {}
-    pending[module][key] = encode(value)
+    pending[module][key] = { value }
     scheduleFlush()
 end
 
@@ -107,7 +119,9 @@ function Data.Get(module, key)
     local p = pending[module]
     if p and p[key] ~= nil then
         if p[key] == DELETE then return nil end
-        return decode(p[key])
+        -- (a fresh copy through JSON, exactly what a read after the write gives)
+        if isstring(p[key]) then return decode(p[key]) end
+        return decode(encode(p[key][1]))
     end
 
     local row = sql.QueryRow("SELECT value FROM " .. TABLE .. " WHERE module = " .. sql.SQLStr(module) .. " AND key = " .. sql.SQLStr(key))

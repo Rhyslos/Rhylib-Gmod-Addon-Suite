@@ -18,7 +18,7 @@
                 pinned, outcome 2). No texts: those come with dp.dread.
       dp.dlx    battalion, manager, orders (D.WriteOrders), LOA (count 6;
                 name, from 32, to 32, reason), stats: battalion this week,
-                you this week, you all time (11 x UInt 32 each), quals
+                you this week, you all time (D.WriteStatRow each), quals
                 (count 5), commendations (total 8, count 4 sent: time, by,
                 text), active strikes (count 4: time, expires, by, text)
       dp.dlm    battalion info (D.WriteInfo), mission (D.WriteMission)
@@ -41,6 +41,7 @@ end
 -- os.time, always higher than before) and dp.ver to its online members,
 -- so their datapad's sync light blinks "New data".
 -- Example: after editing "dp_ord" yourself: D.Store(...) then D.Touch(bn)
+-- (row books bump by themselves in D.SaveBook)
 function D.Touch(bn)
     local t = D.Load("dp_ver", bn, {})
     t.v = math.max((t.v or 0) + 1, os.time())
@@ -56,18 +57,10 @@ function D.Touch(bn)
     net.Send(list)
 end
 
--- Every save of a battalion's logs or board counts as a change
--- (D.StoreQuiet saves without that: sign-ups, check-ins). Other modules
--- (orders, info, missions) call D.Touch themselves. "__" keys (the medical
--- book, the index) never bump anything.
--- (This wraps whatever D.Store is at load time: reloading only this file
--- with Lua refresh wraps it twice. A map change puts it right.)
-local store = D.Store
-D.StoreQuiet = store
-function D.Store(ns, key, v)
-    store(ns, key, v)
-    if (ns == "dp_log" or ns == "dp_board") and string.sub(key, 1, 2) ~= "__" then D.Touch(key) end
-end
+-- Every save of a battalion's logs or board counts as a change: D.SaveBook
+-- (sv_10_pad.lua) calls D.Touch for "dp_log" / "dp_board" (not for "__"
+-- keys, and not when saved quietly: sign-ups, check-ins). Other modules
+-- (orders, info, missions) call D.Touch themselves.
 
 D.PadRecv("dp.dl", function(ply)
     local bn = D.Battalion(ply)
@@ -129,12 +122,9 @@ function D.SendExtra(ply, bn)
     local b = D.Load("dp_stats", bn, {}).b or {}
     local keys = D.StatBucketKeys()
     local week, all = b[keys.week] or {}, b[keys.all] or {}
-    local function row(t)
-        for _, k in ipairs(D.STAT_KEYS) do net.WriteUInt(math.Clamp(t[k] or 0, 0, 2 ^ 31), 32) end
-    end
-    row(week.t or {})
-    row(week.p and week.p["s" .. id] or {})
-    row(all.p and all.p["s" .. id] or {})
+    D.WriteStatRow(week.t)
+    D.WriteStatRow(week.p and week.p["s" .. id])
+    D.WriteStatRow(all.p and all.p["s" .. id])
     -- Your file: quals held, commendations, active strikes.
     local Ro = Rhylib.Roster
     local c = Ro and Ro.Char(id)

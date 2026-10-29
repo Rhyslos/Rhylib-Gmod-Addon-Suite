@@ -2,7 +2,7 @@
     Training (client): the sim health bar (only while it's below full or
     you're eliminated, and not while a training gun is in hand: then the
     HUD's health bar turns yellow and shows it) and the respawn beacon list.
-    The list needs rhylib_menus (Menus.Kit); without it the client picks
+    The list needs the UI kit (Rhylib.UI.Kit); without it the client picks
     the nearest beacon as soon as it may.
 ]]
 
@@ -63,8 +63,7 @@ end
 
 local function open(by, readyAt, autoAt, list)
     close()
-    local M = Rhylib.Menus
-    local K = M and M.Kit
+    local K = Rhylib.UI and Rhylib.UI.Kit
     if not K then
         -- No menus addon: the nearest beacon after the wait.
         timer.Simple(math.max(0, readyAt - CurTime()), function() pick(nil) end)
@@ -105,7 +104,7 @@ local function open(by, readyAt, autoAt, list)
     n:Dock(BOTTOM)
 end
 
-net.Receive(Rhylib.Net.Name("train.out"), function()
+Rhylib.Net.Receive("train.out", function()
     if not net.ReadBool() then return close() end
     local by = net.ReadString()
     local readyAt, autoAt = net.ReadFloat(), net.ReadFloat()

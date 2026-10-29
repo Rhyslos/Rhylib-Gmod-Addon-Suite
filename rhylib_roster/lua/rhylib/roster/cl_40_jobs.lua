@@ -36,7 +36,7 @@ local view = { kind = "list" }   -- list | edit { cmd, isNew, form } | battalion
 local busyUntil = 0   -- waiting for roster.jobmsg (gives up after 5 s)
 local function isBusy() return RealTime() < busyUntil end
 
-local function K() return Rhylib.Menus and Rhylib.Menus.Kit end
+local function K() return Rhylib.UI and Rhylib.UI.Kit end
 
 local function redraw()
     local M = Rhylib.Menus

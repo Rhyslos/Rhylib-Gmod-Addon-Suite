@@ -4,7 +4,7 @@
 
     Uses a prop model (models/jajoff/sps/cgiweapons/tc13j/dc15a.mdl), held in first person by
     the trooper hands (CarrierVM). The model's addon must be installed.
-    Tune with rhylib_vm_editor, then paste its lines below.
+    Tune with rhylib_vm_editor (Rhy's Dev Tools), then paste its lines below.
     All numbers are first guesses for tuning.
 
     Class rhylib_dc15a. Shared: one file for server and client (AddCSLuaFile).
@@ -96,7 +96,7 @@ SWEP.StartMags = 8
 SWEP.StartCells = 1
 
 -- Inventory size in cells
-SWEP.InvW = 6   -- (long guns are 6 long, the inventory is 6 wide; owner 2026-10-07)
+SWEP.InvW = 6   -- (long guns are 6 long, the inventory is 6 wide)
 SWEP.InvH = 1
 SWEP.InvLarge = true
 SWEP.InvWeight = 5.5         -- kg

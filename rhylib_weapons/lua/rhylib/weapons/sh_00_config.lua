@@ -17,22 +17,39 @@
 Rhylib.Weapons = Rhylib.Weapons or {}
 
 local Config = Rhylib.Config
+
+-- How the Server settings page shows these modules (Config.Describe;
+-- sections = { title, { Lua patterns matched against the key } }, the
+-- first match wins, in this order).
+if Config.Describe then
+    Config.Describe("weapons", { name = "Weapons", category = "Combat", sections = {
+        { "Bolts & damage", { "^lagCompMax$", "^boltSpeedMult$", "^shotRange$", "^boltRange$", "^boltLife$", "^headMult$", "^limbMult$" } },
+        { "Accuracy & recoil", { "^recoilMult$", "^crouchSpread$", "^firstShotMult$" } },
+        { "Ammo & reloading", { "^reloadHoldTime$", "^maxMags$", "^maxCells$", "^lowCell" } },
+        { "Explosion knockdown", { "^knock" } },
+        { "Shields", { "^shield", "^cgShield", "^phalanx" } },
+        { "Grenades & charges", { "^he", "^emp", "^breach", "^flash" } },
+    } })
+    Config.Describe("guns", { name = "Gun stats", category = "Combat" })
+    Config.Describe("armor", { name = "Armour", category = "Combat" })
+    Config.Describe("grapple", { name = "Grapple hook", category = "Combat" })
+end
 Config.Register("weapons", "handsModel", "models/aussiwozzi/cgi/base/trooper_arms.mdl",
     "First-person arms for everyone (a c_arms model; a DarkRP job's handsModel overrides it; \"\" = the player model's own)")
 Config.Register("weapons", "lagCompMax", 0.35, "Max seconds (ping + interpolation) covered by lag compensation on a bolt's first leg")
 Config.Register("weapons", "boltSpeedMult", 1.3, "Multiplies every gun's bolt speed (faster = less leading)")
+Config.Register("weapons", "pickupStartAmmo", false, "Picking up a gun also gives its start magazines (issued, so they can't be stockpiled). Off: ammo comes from the armoury's ammo cabinet")
 Config.Register("weapons", "recoilMult", 1, "Multiplies every gun's view recoil (SWEP.Recoil)")
 Config.Register("weapons", "crouchSpread", 0.8, "Spread while crouched on the ground, as a share of the standing cone (the crosshair tightens with it; 1 = no bonus)")
 Config.Register("weapons", "firstShotMult", 0.35, "Spread of a first shot from rest, as a share of the normal cone")
 Config.Register("weapons", "shotRange", 6000, "Players further than this from a shot don't receive it")
 Config.Register("weapons", "boltRange", 0, "Bolts stop (no damage, no impact) after this many units; 0 = off, they fly their full life. Scoped guns and rockets never stop early. Admins change it live with rhylib_boltrange")
 
--- W.BoltRange(): the bolt reach cap in units (0 = none). Shared: the
--- server reads the config, clients the Global2Int "rhylib_boltRange"
--- (set by sv_10_bolts.lua). Example: if Rhylib.Weapons.BoltRange() > 0 then ... end
+-- W.BoltRange(): the bolt reach cap in units (0 = none), the setting
+-- weapons boltRange on both realms (clients get Server settings changes
+-- with the rest). Example: if Rhylib.Weapons.BoltRange() > 0 then ... end
 function Rhylib.Weapons.BoltRange()
-    if SERVER then return tonumber(Config.Get("weapons", "boltRange")) or 0 end
-    return GetGlobal2Int("rhylib_boltRange", 0)
+    return tonumber(Config.Get("weapons", "boltRange")) or 0
 end
 Config.Register("weapons", "boltLife", 1.2, "Seconds before a bolt that hit nothing disappears")
 Config.Register("weapons", "headMult", 2, "Damage multiplier for head hits")

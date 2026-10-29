@@ -80,8 +80,8 @@ local function targetPos(b)
     if b.kind == "npc" then
         return IsValid(b.ent) and b.ent:Health() > 0 and b.ent:GetPos() or nil, b.ent
     end
-    local p = player.GetBySteamID64(b.sid)
-    if IsValid(p) and p:Alive() then return p:GetPos(), p end
+    local p = B.TargetPlayer(b)
+    if p and p:Alive() then return p:GetPos(), p end
     return nil
 end
 

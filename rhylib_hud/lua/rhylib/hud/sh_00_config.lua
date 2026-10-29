@@ -18,6 +18,7 @@
 Rhylib.HUD = Rhylib.HUD or {}
 
 local Config = Rhylib.Config
+Config.Describe("hud", { name = "HUD", category = "Server & interface" })
 Config.Register("hud", "targetRange", 700, "How close you must be to see a player's name and health when looking at them")
 Config.Register("hud", "iconRange", 1500, "How far away speaking and typing icons are drawn")
 

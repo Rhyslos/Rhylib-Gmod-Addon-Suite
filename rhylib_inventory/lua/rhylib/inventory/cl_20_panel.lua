@@ -275,8 +275,8 @@ function PANEL:LayoutKey()
 end
 
 -- Works out where every region sits and sizes the window; shrinks the
--- cells when that would run off the screen (owner 2026-10-07: at 2560x1440
--- with a storage open the far right column was cut off).
+-- cells when that would run off the screen (at 2560x1440 with a storage
+-- open the far right column used to be cut off).
 function PANEL:Relayout()
     if self.baseK and self.k ~= self.baseK then self:SetScaleK(self.baseK) end
     self:LayoutOnce()
@@ -972,8 +972,8 @@ function PANEL:DropAllowed(d, r, tx, ty)
     local probe = { uid = -1, id = d.inst.id, count = d.inst.count, data = d.inst.data }
 
     if toExt and Inv.ext and Inv.ext.depot then
-        -- Anything can be handed in (and is gone): owner 2026-10-08, no
-        -- walking to the right cabinet just to get rid of something.
+        -- Anything can be handed in (and is gone): no walking to the
+        -- right cabinet just to get rid of something.
         if fromExt then return false end
         return Items.CanLeave(Inv, d.inst) and true or false
     end
@@ -1270,8 +1270,8 @@ function PANEL:OnMouseReleased(code)
 
     local r, tx, ty = self:DragTarget(d)
     if not r then
-        -- (owner 2026-10-08: let go anywhere that isn't a grid or slot,
-        -- inside the window too, and it's dropped)
+        -- (let go anywhere that isn't a grid or slot, inside the window
+        -- too, and it's dropped)
         Inv.RequestDrop(d.inst, d.single)
         return
     end

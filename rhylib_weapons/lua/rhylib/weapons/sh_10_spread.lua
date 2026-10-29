@@ -87,13 +87,12 @@ function Spread.GetState(wep, t)
     return b * bd, k1 * kd, k2 * kd, k3 * kd
 end
 
--- Crouching (2026-10-07, owner: show on the crosshair that crouching is
--- more accurate): weapons crouchSpread, eased in with the eyes going down
+-- Crouching is more accurate, and the crosshair shows it: weapons crouchSpread, eased in with the eyes going down
 -- (the current view offset is predicted, so server, client and crosshair
 -- agree and the arcs close smoothly as you duck). Only on the ground.
 function Spread.StanceMult(owner)
     if not (IsValid(owner) and owner:IsPlayer() and owner:IsOnGround()) then return 1 end
-    local m = Rhylib.Config.Get("weapons", "crouchSpread") or 1
+    local m = Rhylib.Config.Get("weapons", "crouchSpread")
     if m == 1 then return 1 end
     local stand, duck = owner:GetViewOffset().z, owner:GetViewOffsetDucked().z
     local f
@@ -176,7 +175,7 @@ function Spread.ShotDirection(wep, aimAng, index)
     local cone = Spread.MeanCone(wep, now)
     -- A first shot from rest goes (almost) where the chevron points.
     if now - wep:GetKickTime() > Spread.REST_TIME then
-        cone = cone * (Rhylib.Config.Get("weapons", "firstShotMult") or 1)
+        cone = cone * (Rhylib.Config.Get("weapons", "firstShotMult"))
     end
     local a = util.SharedRandom("rhylib.spread.a", 0, 2 * math.pi, index or 0)
     local u = util.SharedRandom("rhylib.spread.r", 0, 1, index or 0)

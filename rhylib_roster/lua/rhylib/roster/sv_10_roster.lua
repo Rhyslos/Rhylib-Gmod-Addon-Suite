@@ -137,8 +137,8 @@ function R.Publish(ply)
     ply:SetNW2Int("rhylib_haircol", c and tonumber(c.hcol) or 0)
     ply:SetNW2Int("rhylib_skin", c and tonumber(c.skin) or 0)
     ply:SetNW2Bool("rhylib_trained", c and c.trained or false)
-    ply:SetNW2String("rhylib_bn", c and c.bn or "")
-    ply:SetNW2Int("rhylib_rank", c and c.r or 0)
+    ply:SetNW2String(Rhylib.NW.BATTALION, c and c.bn or "")
+    ply:SetNW2Int(Rhylib.NW.RANK, c and c.r or 0)
     local q = {}
     if c and istable(c.q) then
         for id, on in pairs(c.q) do
@@ -241,13 +241,27 @@ Rhylib.Hook.Add("CanChangeRPName", "roster.name", function(ply)
     if R.Char(sid(ply)) then return false, "Your name comes from your character" end
 end)
 
-Rhylib.Hook.Add("PlayerDisconnected", "roster.seen", function(ply)
+-- "Last seen" (rhylib_purge_inactive reads it): written on leaving, on
+-- joining, every 10 minutes for everyone online and at shutdown, since
+-- GMod fires no PlayerDisconnected on a map change, shutdown or crash.
+local function markSeen(ply)
+    if not IsValid(ply) or ply:IsBot() then return end
     local c = R.Char(sid(ply))
     if c then
         c.seen = os.time()
         R.SaveChar(sid(ply), c)
     end
+end
+Rhylib.Hook.Add("PlayerDisconnected", "roster.seen", markSeen)
+Rhylib.Hook.Add("PlayerInitialSpawn", "roster.seen", function(ply)
+    timer.Simple(5, function() markSeen(ply) end)
 end)
+timer.Create("Rhylib.Roster.Seen", 600, 0, function()
+    for _, p in ipairs(player.GetHumans()) do markSeen(p) end
+end)
+Rhylib.Hook.Add("ShutDown", "roster.seen", function()
+    for _, p in ipairs(player.GetHumans()) do markSeen(p) end
+end, -10)   -- (before the data flush at 0)
 
 --------------------------------------------------------------------------
 -- Character creator
@@ -295,13 +309,14 @@ Rhylib.Net.Receive("roster.look", function(ply)
     R.Publish(ply)
 end, { rate = 2, burst = 4 })
 
--- Admin: rhylib_char_reset <name or SteamID64>: the player picks a new character.
-concommand.Add("rhylib_char_reset", function(caller, _, args)
-    Rhylib.Perms.Check(caller, "rhylib.roster.admin", function(allowed)
-        local function say(m) if IsValid(caller) then caller:ChatPrint(m) else print(m) end end
-        if not allowed then return say("You don't have permission for rhylib_char_reset") end
+-- Admin: rhylib_char_reset <name or SteamID64 or clone number> (console,
+-- or perm rhylib.roster.admin): the player picks a new character.
+Rhylib.Command.Add({
+    name = "rhylib_char_reset", perm = "rhylib.roster.admin", tag = "Roster",
+    args = "<SteamID64, clone number or exact name>", help = "Make a player pick a new character",
+    fn = function(caller, args)
         local q = string.lower(string.Trim(table.concat(args, " ")))
-        if q == "" then return say("Usage: rhylib_char_reset <SteamID64, clone number or exact name>") end
+        if q == "" then return "Usage: rhylib_char_reset <SteamID64, clone number or exact name>", "bad" end
         local target, id
         -- SteamID64, then clone number, then exactly one name match.
         for _, p in ipairs(player.GetHumans()) do
@@ -320,7 +335,7 @@ concommand.Add("rhylib_char_reset", function(caller, _, args)
             local found
             for _, p in ipairs(player.GetHumans()) do
                 if string.find(string.lower(p:Nick()), q, 1, true) then
-                    if found then return say("More than one player matches '" .. q .. "'; use the SteamID64 or clone number") end
+                    if found then return "More than one player matches '" .. q .. "'; use the SteamID64 or clone number", "bad" end
                     found = p
                 end
             end
@@ -328,22 +343,22 @@ concommand.Add("rhylib_char_reset", function(caller, _, args)
         end
         id = id or (IsValid(target) and sid(target)) or (validSid(q) and q)
         local c = id and R.Char(id)
-        if not c then return say("No character found for " .. q) end
+        if not c then return "No character found for " .. q, "bad" end
         local nums = numbers()
         nums["n" .. c.num] = nil
         Data.Set("char_nums", "all", nums)
         setMember(c.bn or "", id, false)
         chars[id] = false
         Data.Delete("char", id)
-        say("Reset the character of " .. (IsValid(target) and target:Nick() or id))
         if IsValid(target) then
             R.Publish(target)
             checkJob(target)
             if target.setDarkRPVar then target:setDarkRPVar("rpname", "New recruit") end
             needCharacter(target)
         end
-    end)
-end)
+        return "Reset the character of " .. (IsValid(target) and target:Nick() or id), "good"
+    end,
+})
 
 --------------------------------------------------------------------------
 -- Roster actions
@@ -635,32 +650,63 @@ Rhylib.Net.Receive("roster.jobmodel", function(ply)
     local found
     for _, m in ipairs(job.model) do if string.lower(m) == want then found = m end end
     if not found then return end
-    if not ply:Alive() or ply.rhylibDown or ply:GetNW2Bool("rhylib_cuffed", false) then
-        ply:ChatPrint("You can't change your model right now")
+    if not ply:Alive() or Rhylib.State.IsDown(ply) or Rhylib.State.IsCuffed(ply) then
+        Rhylib.Notify(ply, "You can't change your model right now", "bad", "Roster")
         return
     end
     local L = Rhylib.Lying
-    if L and L.Ragdoll and IsValid(L.Ragdoll(ply)) then return ply:ChatPrint("You can't change your model right now") end
+    if L and L.Ragdoll and IsValid(L.Ragdoll(ply)) then return Rhylib.Notify(ply, "You can't change your model right now", "bad", "Roster") end
     ply:SetModel(found)
     ply:SetupHands()
     hook.Run("Rhylib.JobModelChanged", ply, found)
-    ply:ChatPrint("Model updated")
+    Rhylib.Notify(ply, "Model updated", "good", "Roster")
 end, { rate = 0.5, burst = 2 })
 
--- /roster opens the Battalion page.
-Rhylib.Hook.Add("PlayerSay", "roster.cmd", function(ply, text)
-    local t = string.lower(string.Trim(text))
-    if t == "/roster" or t == "!roster" then
+-- Net roster.trainreq (client -> server, empty): a cadet asks for basic
+-- training. Everyone online who could pass them (manageRank or higher in
+-- any battalion) gets a chat line; the cadet hears how many. Once every
+-- 2 minutes.
+Rhylib.Net.Receive("roster.trainreq", function(ply)
+    local me = R.Get(ply)
+    if not me.has or me.trained then return end
+    if CurTime() < (ply.rhylibTrainReqAt or 0) then
+        return Rhylib.Notify(ply, "You asked a moment ago: give them a little time", "bad", "Roster")
+    end
+    ply.rhylibTrainReqAt = CurTime() + 120
+    local need, n = manageRank(), 0
+    for _, p in ipairs(player.GetHumans()) do
+        local c = R.Get(p)
+        if p ~= ply and c.bn ~= "" and c.rank >= need then
+            Rhylib.Notify(p, "Cadet " .. ply:Nick() .. " is asking for basic training (Battalion page: Pass)", "info", "Roster")
+            n = n + 1
+        end
+    end
+    Rhylib.Notify(ply, n > 0 and ("Asked " .. n .. " instructor" .. (n == 1 and "" or "s") .. " online for basic training")
+        or "Nobody who can train you is on right now; try again later", n > 0 and "good" or "bad", "Roster")
+end, { rate = 1, burst = 2 })
+
+-- !roster / /roster opens the Battalion page (console rhylib_roster_open);
+-- !look / !appearance the Appearance page (rhylib_look_open). (No
+-- /battalion while rhylib_admin is installed: there that word is the
+-- staff command !battalion.)
+Rhylib.Command.Add({
+    name = "rhylib_roster_open", help = "Open the Battalion page",
+    chat = file.Exists("autorun/rhylib_admin.lua", "LUA") and { "roster" } or { "roster", "battalion" },
+    fn = function(ply)
+        if not IsValid(ply) then return end
         Rhylib.Net.Start("roster.open")
         net.Send(ply)
-        return ""
-    end
-    if (t == "/look" or t == "!look") and R.Char(sid(ply)) then
+    end,
+})
+Rhylib.Command.Add({
+    name = "rhylib_look_open", chat = { "look", "appearance" }, help = "Open the Appearance page",
+    fn = function(ply)
+        if not IsValid(ply) then return end
+        if not R.Char(sid(ply)) then return "Make your character first", "bad" end
         Rhylib.Net.Start("roster.lookopen")
         net.Send(ply)
-        return ""
-    end
-end)
+    end,
+})
 
 -- The battalion board: officers (boardRank and up) of that battalion post.
 Rhylib.Hook.Add("Rhylib.CanPostBoard", "roster.board", function(ply, bn)

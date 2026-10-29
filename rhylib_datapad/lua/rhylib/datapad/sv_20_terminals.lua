@@ -134,9 +134,12 @@ function D.UseTerminal(ent, ply)
     D.SendTerminal(ply, ent)
 end
 
--- Every terminal message: near the computer, then h.run(ply, ent, access, arg).
--- h.read reads the rest of the message now (the permission check can answer later).
-local function recv(name, h, limits)
+-- D.TermRecv(name, { read = fn() -> arg, run = fn(ply, ent, access, arg) }, limits):
+-- receive a computer message: the computer entity first, the player near
+-- it, then h.run(ply, ent, access, arg). h.read reads the rest of the
+-- message at once (the permission check can answer later). Used here and
+-- by the board, search, stats, unit, personnel and mission files.
+function D.TermRecv(name, h, limits)
     Rhylib.Net.Receive(name, function(ply)
         local ent = net.ReadEntity()
         local arg = h.read and h.read() or nil
@@ -148,11 +151,13 @@ local function recv(name, h, limits)
     end, limits or { rate = 4, burst = 6 })
 end
 
--- For the board, search, stats, unit, personnel and mission files:
---   D.TermRecv(name, { read = fn() -> arg, run = fn(ply, ent, access, arg) }, limits)
+-- Also for those files:
 --   D.TermAccess(ply, ent, admin) -> the access table above
 --   D.TermNear(ply, ent), D.IsMedTerm(ent), D.TermKey(ent) (battalion or D.MED_KEY)
-D.TermRecv, D.TermAccess, D.TermNear, D.IsMedTerm, D.TermKey = recv, access, near, isMed, keyOf
+D.TermAccess = access
+D.TermNear = near
+D.IsMedTerm = isMed
+D.TermKey = keyOf
 
 local function findEntry(book, id)
     for i, e in ipairs(book.list) do
@@ -160,7 +165,7 @@ local function findEntry(book, id)
     end
 end
 
-recv("dp.tread", {
+D.TermRecv("dp.tread", {
     read = function() return net.ReadUInt(20) end,
     run = function(ply, ent, a, id)
         local key = keyOf(ent)
@@ -178,19 +183,19 @@ recv("dp.tread", {
 -- at the holotable) goes into the book, newest first; the rest stays on the
 -- pad. The book is trimmed to logCap / medCap. A first upload adds the
 -- battalion to the "__index" list (MP lookups).
-recv("dp.tup", {
+D.TermRecv("dp.tup", {
     run = function(ply, ent, a)
         local key = keyOf(ent)
         if key == "" then
-            ply:ChatPrint("This computer has no battalion yet (an admin sets it)")
+            Rhylib.Notify(ply, "This computer has no battalion yet (an admin sets it)", "bad", "Datapad")
             return
         end
         if not a.upload then
-            ply:ChatPrint(isMed(ent) and "Only medics upload here" or "This isn't your battalion's computer")
+            Rhylib.Notify(ply, isMed(ent) and "Only medics upload here" or "This isn't your battalion's computer", "bad", "Datapad")
             return
         end
         if D.Banned(key, sid(ply)) then
-            ply:ChatPrint("You're banned from uploading here")
+            Rhylib.Notify(ply, "You're banned from uploading here", "bad", "Datapad")
             return
         end
         local want = isMed(ent) and D.KIND_MED or D.KIND_LOG
@@ -211,7 +216,7 @@ recv("dp.tup", {
         if n == 0 then return end
         local cap = isMed(ent) and D.Cfg("medCap") or D.Cfg("logCap")
         while #book.list > cap do table.remove(book.list) end
-        D.Store("dp_log", key, book)
+        D.SaveBook("dp_log", key, book)   -- (new rows, removed ones, index, version bump)
         D.Store("dp_pad", sid(ply), keep)
         if not isMed(ent) and not D.HasBattalion(key) then
             local idx = D.Battalions()
@@ -219,13 +224,13 @@ recv("dp.tup", {
             D.Store("dp_log", "__index", idx)
         end
         if Rhylib.MP and Rhylib.MP.IndexPlayer then Rhylib.MP.IndexPlayer(sid(ply), ply:Nick()) end
-        ply:ChatPrint("Uploaded " .. n .. " note" .. (n == 1 and "" or "s"))
+        Rhylib.Notify(ply, "Uploaded " .. n .. " note" .. (n == 1 and "" or "s"), "good", "Datapad")
         D.SendTerminal(ply, ent)
         if D.Holding(ply) then D.SendState(ply) end  -- an open datapad sees the change
     end,
 }, { rate = 2, burst = 3 })
 
-recv("dp.tdel", {
+D.TermRecv("dp.tdel", {
     read = function() return net.ReadUInt(20) end,
     run = function(ply, ent, a, id)
         local key = keyOf(ent)
@@ -234,12 +239,12 @@ recv("dp.tdel", {
         local _, i = findEntry(book, id)
         if not i then return end
         table.remove(book.list, i)
-        D.Store("dp_log", key, book)
+        D.SaveBook("dp_log", key, book)
         D.SendTerminal(ply, ent)
     end,
 })
 
-recv("dp.tban", {
+D.TermRecv("dp.tban", {
     read = function() return net.ReadUInt(20) end,
     run = function(ply, ent, a, id)
         local key = keyOf(ent)
@@ -249,12 +254,12 @@ recv("dp.tban", {
         local bans = D.Load("dp_ban", key, {})
         bans["s" .. e.s] = e.a or "?"
         D.Store("dp_ban", key, bans)
-        ply:ChatPrint((e.a or "?") .. " can no longer upload here")
+        Rhylib.Notify(ply, (e.a or "?") .. " can no longer upload here", "bad", "Datapad")
         D.SendTerminal(ply, ent)
     end,
 })
 
-recv("dp.tunban", {
+D.TermRecv("dp.tunban", {
     read = function() return net.ReadString() end,
     run = function(ply, ent, a, id)
         local key = keyOf(ent)
@@ -267,7 +272,7 @@ recv("dp.tunban", {
     end,
 })
 
-recv("dp.tset", {
+D.TermRecv("dp.tset", {
     read = function() return D.Clip(net.ReadString(), 64) end,
     run = function(ply, ent, a, bn)
         -- The window's button only sets a new computer; changing one is a command.
@@ -276,7 +281,7 @@ recv("dp.tset", {
         ent:SetBattalion(bn)
         D.SavePlacements(true)
         if Rhylib.Perma and not Rhylib.Perma.Is(ent) then
-            ply:ChatPrint("Battalion set. Make the computer permanent (toolgun Permanent tool) to keep it after a map change")
+            Rhylib.Notify(ply, "Battalion set. Make the computer permanent (toolgun Permanent tool) to keep it after a map change", "good", "Datapad")
         end
         D.SendTerminal(ply, ent)
     end,
@@ -286,90 +291,61 @@ recv("dp.tset", {
 -- Admin commands
 --------------------------------------------------------------------------
 
--- rhylib_datapad_inspect: toggle reading any battalion computer / the holotable.
-concommand.Add("rhylib_datapad_inspect", function(ply)
-    if not IsValid(ply) then return end
-    withAdmin(ply, function(admin)
-        if not admin then ply:ChatPrint("Admins only") return end
+-- rhylib_datapad_inspect: toggle reading any battalion
+-- computer / the holotable. rhylib_datapad_setbattalion <name>: change
+-- (or with no name, clear) the battalion of the computer you're looking at.
+Rhylib.Command.Add({
+    name = "rhylib_datapad_inspect", perm = "rhylib.datapad.admin", tag = "Datapad",
+    help = "Read and moderate every battalion computer (toggle)",
+    fn = function(ply)
+        if not IsValid(ply) then return "Only a player can inspect" end
         ply.rhylibDpInspect = not ply.rhylibDpInspect or nil
-        ply:ChatPrint(ply.rhylibDpInspect and "Inspecting: you can read and moderate every computer (run again to stop)"
-            or "Inspection off: only your own battalion's computer")
-    end)
-end)
+        return ply.rhylibDpInspect and "Inspecting: you can read and moderate every computer (run again to stop)"
+            or "Inspection off: only your own battalion's computer"
+    end,
+})
 
--- rhylib_datapad_setbattalion <name>: change (or with no name, clear) the
--- battalion of the computer you're looking at.
-concommand.Add("rhylib_datapad_setbattalion", function(ply, _, args, argStr)
-    if not IsValid(ply) then return end
-    withAdmin(ply, function(admin)
-        if not admin then ply:ChatPrint("Admins only") return end
+Rhylib.Command.Add({
+    name = "rhylib_datapad_setbattalion", perm = "rhylib.datapad.admin", tag = "Datapad",
+    help = "Set (or clear) the battalion of the computer you look at", args = "[battalion]",
+    fn = function(ply, _, argStr)
+        if not IsValid(ply) then return "Only a player can do that" end
         local tr = ply:GetEyeTrace()
         local ent = tr.Entity
         if not IsValid(ent) or ent:GetClass() ~= "rhylib_bn_computer" or tr.HitPos:DistToSqr(ply:EyePos()) > 400 * 400 then
-            ply:ChatPrint("Look at a battalion computer")
-            return
+            return "Look at a battalion computer", "bad"
         end
         local bn = D.Clip(string.Trim(argStr or ""), 64)
         if string.sub(bn, 1, 2) == "__" then return end
         ent:SetBattalion(bn)
         D.SavePlacements(true)
-        ply:ChatPrint(bn ~= "" and ("Computer set to the " .. bn) or "Computer cleared (set it again from its window)")
-    end)
-end)
+        return bn ~= "" and ("Computer set to the " .. bn) or "Computer cleared (set it again from its window)", "good"
+    end,
+})
 
 --------------------------------------------------------------------------
--- Placements
+-- Placements (rhylib_core Rhylib.Perma.Placements): the permanent
+-- computers and holotables of this map, with their battalion, in Data
+-- "dp_places"/<map> rows { class, pos, ang, bn }. Loaded 1 s after
+-- InitPostEntity and after a map cleanup; nothing saved = the map is left
+-- alone. rhylib_datapad_save (rhylib.datapad.admin) re-saves them.
 --------------------------------------------------------------------------
 
 local CLASSES = { "rhylib_bn_computer", "rhylib_med_holotable" }
 
--- D.SavePlacements(quiet): save the permanent computers of this map (with
--- their battalion) to Data "dp_places"/map; returns how many.
--- quiet: only re-save a map that was saved before (keeps a battalion change).
--- Without Rhylib.Perma (older core) every computer is saved.
+D.places = Rhylib.Perma.Placements("datapad", {
+    classes = CLASSES,
+    dataModule = "dp_places",
+    save = function(e) return { bn = e.GetBattalion and e:GetBattalion() or "" } end,
+    load = function(e, row) if e.SetBattalion then e:SetBattalion(row.bn or "") end end,
+    command = "rhylib_datapad_save",
+    perm = "rhylib.datapad.admin",
+    freeze = false,   -- (they were never frozen on load before)
+})
+
+-- D.SavePlacements(quiet) -> how many were saved. quiet: only re-save a
+-- map that was saved before (keeps a battalion change).
 function D.SavePlacements(quiet)
     if quiet and not istable(Rhylib.Data.Get("dp_places", game.GetMap())) then return 0 end
-    local rows = {}
-    for _, class in ipairs(CLASSES) do
-        for _, e in ipairs(ents.FindByClass(class)) do
-            if (not Rhylib.Perma or Rhylib.Perma.Is(e)) then   -- (only permanent ones, 2026-10-09u)
-                local p, an = e:GetPos(), e:GetAngles()
-                rows[#rows + 1] = { class = class, pos = { p.x, p.y, p.z }, ang = { an.p, an.y, an.r },
-                    bn = e.GetBattalion and e:GetBattalion() or "" }
-            end
-        end
-    end
-    Rhylib.Data.Set("dp_places", game.GetMap(), rows)
-    return #rows
+    return (D.places:Save())
 end
-
--- Replace the computers on the map with the saved ones (InitPostEntity +1 s,
--- PostCleanupMap), marked permanent. Nothing saved = the map is left alone.
-local function loadPlaces()
-    local rows = Rhylib.Data.Get("dp_places", game.GetMap())
-    if not istable(rows) then return end
-    for _, class in ipairs(CLASSES) do
-        for _, e in ipairs(ents.FindByClass(class)) do e:Remove() end
-    end
-    for _, r in ipairs(rows) do
-        local e = ents.Create(r.class)
-        if IsValid(e) then
-            e:SetPos(Vector(r.pos[1], r.pos[2], r.pos[3]))
-            e:SetAngles(Angle(r.ang[1], r.ang[2], r.ang[3]))
-            e:Spawn()
-            if e.SetBattalion then e:SetBattalion(r.bn or "") end
-            if Rhylib.Perma then Rhylib.Perma.Mark(e, true) end
-        end
-    end
-end
-if Rhylib.Perma and Rhylib.Perma.Register then Rhylib.Perma.Register(CLASSES, function() return D.SavePlacements() end) end
-Rhylib.Hook.Add("InitPostEntity", "datapad.places", function() timer.Simple(1, loadPlaces) end)
-Rhylib.Hook.Add("PostCleanupMap", "datapad.places", loadPlaces)
-
-concommand.Add("rhylib_datapad_save", function(ply)
-    Rhylib.Perms.Check(ply, "rhylib.datapad.admin", function(ok)
-        local function reply(m) if IsValid(ply) then ply:ChatPrint(m) else print(m) end end
-        if not ok then reply("You don't have permission for rhylib_datapad_save") return end
-        reply("Saved " .. D.SavePlacements() .. " datapad computers for " .. game.GetMap())
-    end)
-end)

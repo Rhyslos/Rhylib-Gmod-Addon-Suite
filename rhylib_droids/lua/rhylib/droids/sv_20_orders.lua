@@ -1,5 +1,5 @@
 --[[
-    Droid orders (server, owner 2026-10-06): what GMs tell droids to do.
+    Droid orders (server): what GMs tell droids to do.
 
       Modes (per droid, NW2String rhylib_dmode for the GM labels):
         guard   hold a post (droid.home) and fight within guardRadius
@@ -26,9 +26,9 @@
     Net droids.aggro (client -> server, the toolgun's buttons): level
     UInt 3 (1-5). Checked against permission rhylib.toolgun (registered by
     rhylib_toolgun; without that addon the check always says no).
-    Chat: !droidaggro / !aggression [1-5] (same permission; no number shows
-    the level). Console: rhylib_droidaggro <1-5> (server console or
-    superadmin; no number sets 3).
+    Command (Rhylib.Command): rhylib_droidaggro [1-5], chat !droidaggro /
+    !aggression (same permission; the server console always may); no
+    number shows the level.
     Clone markers and orders use side 1 (see D.MarkerPlaced, D.PaintMode).
 ]]
 
@@ -88,7 +88,7 @@ function D.ApplyMarker(droid, marker)
     droid.nextLook = 0
 end
 
--- Markers have a side (2026-10-06bb, owner: clones need their own attack
+-- Markers have a side (clones need their own attack
 -- and defend orders): side 1 = clone markers (D.clones, D.lastCloneOrder),
 -- else droid markers (D.active, D.lastOrder / D.lastFallback).
 local function sideList(side) return side == 1 and (D.clones or {}) or D.active end
@@ -225,7 +225,7 @@ function D.PaintMode(pos, mode, side)
             d.woken, d.redirect, d.planAt = true, true, 0
         end
     end
-    -- Spread out (owner: alone or two and two): pair them up; the second
+    -- Spread out (alone or two and two): pair them up; the second
     -- of each pair walks beside the first (D.Buddy).
     if mode == "roam" and D.Buddy then
         table.sort(picked, function(a, b) return a:EntIndex() < b:EntIndex() end)
@@ -266,17 +266,19 @@ function D.SetAggro(n, by)
     for d in pairs(D.active) do
         if IsValid(d) then d.planAt = 0 end
     end
-    local msg = string.format("[Droids] Aggression %d: %s%s", n, D.AGGRO_NAMES[n], IsValid(by) and (" (" .. by:Nick() .. ")") or "")
+    local msg = string.format("Aggression %d: %s%s", n, D.AGGRO_NAMES[n], IsValid(by) and (" (" .. by:Nick() .. ")") or "")
+    local admins = {}
     for _, p in ipairs(player.GetHumans()) do
-        if p:IsAdmin() then p:ChatPrint(msg) end
+        if p:IsAdmin() then admins[#admins + 1] = p end
     end
-    print(msg)
+    if #admins > 0 then Rhylib.Notify(admins, msg, "info", "Droids") end
+    print("[Droids] " .. msg)
 end
 
 local function canOrder(ply, fn)
     Rhylib.Perms.Check(ply, "rhylib.toolgun", function(ok)
         if not IsValid(ply) then return end
-        if not ok then return ply:ChatPrint("You don't have permission to command droids") end
+        if not ok then return Rhylib.Notify(ply, "You don't have permission to command droids", "bad", "Droids") end
         fn()
     end)
 end
@@ -288,19 +290,16 @@ Rhylib.Net.Receive("droids.aggro", function(ply)
     canOrder(ply, function() D.SetAggro(n, ply) end)
 end, { rate = 4, burst = 6 })
 
-Rhylib.Hook.Add("PlayerSay", "droids.aggro", function(ply, text)
-    local cmd, arg = string.match(string.lower(string.Trim(text or "")), "^[!/](%S+)%s*(%S*)")
-    if cmd ~= "droidaggro" and cmd ~= "aggression" then return end
-    local n = tonumber(arg)
-    if not n then
-        ply:ChatPrint(string.format("[Droids] Aggression is %d (%s). !droidaggro 1-5 changes it.", D.Aggro(), D.AGGRO_NAMES[D.Aggro()]))
-        return ""
-    end
-    canOrder(ply, function() D.SetAggro(n, ply) end)
-    return ""
-end, -50)
-
-concommand.Add("rhylib_droidaggro", function(ply, _, args)
-    if IsValid(ply) and not ply:IsSuperAdmin() then return end
-    D.SetAggro(args[1])
-end)
+-- rhylib_droidaggro <1-5> / !droidaggro / !aggression (Rhylib.Command,
+-- perm rhylib.toolgun): sets the live aggression; no number says it.
+Rhylib.Command.Add({
+    name = "rhylib_droidaggro", chat = { "droidaggro", "aggression" }, perm = "rhylib.toolgun", minAccess = "admin",
+    help = "Droid aggression for every droid (1 retreat ... 5 charge); no number shows it", args = "[1-5]", tag = "Droids",
+    fn = function(ply, args)
+        local n = tonumber(args[1])
+        if not n then
+            return string.format("Aggression is %d (%s). !droidaggro 1-5 changes it.", D.Aggro(), D.AGGRO_NAMES[D.Aggro()])
+        end
+        D.SetAggro(n, IsValid(ply) and ply or nil)
+    end,
+})

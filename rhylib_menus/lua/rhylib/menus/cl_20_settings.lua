@@ -278,3 +278,8 @@ Menus.AddSetting("Inventory", {
     title = "Cell size", desc = "Size of the inventory grid; reopen the inventory to apply",
     kind = "slider", convar = "rhylib_inventory_cellsize", min = 48, max = 128,
 })
+
+-- Rows for other addons' console-only options (shown only when the
+-- convar exists, i.e. that addon is installed).
+Menus.AddSetting("HUD", { id = "hud.visor", order = 38, title = "Helmet visor",
+    desc = "The clone helmet visor around the first-person HUD (rhylib_hud_visor)", kind = "toggle", convar = "rhylib_hud_visor" })

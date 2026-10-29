@@ -39,7 +39,7 @@ local COL_SIM_LINE = Color(250, 215, 90, 170)
 local COL_EMPTY_ALPHA = 45
 
 -- Shape, as shares of the screen (0..1). Mirrored left/right.
--- Brow (top band): each player can tune it in Settings (owner-picked
+-- Brow (top band): each player can tune it in Settings (picked
 -- defaults 0.015 / 0.045; convar names changed once so an earlier default
 -- doesn't stick).
 local browEdgeVar = CreateClientConVar("rhylib_visorbrow_edge", "0.015", true, false, "Visor brow depth at the screen sides (share of the height)")
@@ -234,7 +234,7 @@ end
 
 -- HUD.OpticsWeaponMode(): true while binoculars / rangefinder are in
 -- weapon mode (rhylib_gear): no visor; the third-person HUD shows over
--- the binocular view instead (owner).
+-- the binocular view instead.
 function HUD.OpticsWeaponMode()
     local ply = LocalPlayer()
     return IsValid(ply) and ply:GetNW2Int("rhylib_optics", 0) ~= 0 and ply:GetNW2Bool("rhylib_opticsFire", false)

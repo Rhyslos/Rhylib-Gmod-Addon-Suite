@@ -69,7 +69,7 @@ local function iconMat(paths)
 end
 SP.IconMat = iconMat
 
--- The window's background: solid dark grey (owner 2026-10-07: not see-through; 2026-10-08: a little darker, closer to the rest of the UI).
+-- The window's background: solid dark grey (not see-through, close to the rest of the UI).
 SP.BG = Color(44, 47, 49, 255)
 
 -- SP.AddTab(id, def): adds or replaces a tab (see the header).
@@ -202,7 +202,7 @@ function SP.ModelTile(parent, model, skin, body, run)
 end
 
 --------------------------------------------------------------------------
--- Hover preview (owner 2026-10-07: helps find the right model): after a
+-- Hover preview (helps find the right model): after a
 -- short hover, a big turning view of the model under the mouse (or the
 -- tile's icon, enlarged, when there's no model) next to the cursor.
 -- One panel, drawn on top, never takes the mouse; a Think hook exists

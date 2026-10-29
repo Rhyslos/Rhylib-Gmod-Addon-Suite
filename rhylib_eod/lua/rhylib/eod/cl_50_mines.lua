@@ -4,10 +4,21 @@
     and the mine scanner (beam, outlines, beeps, marking).
 ]]
 
+-- Colours used while drawing (made once, not every frame).
+local COL_0_0_0_220 = Color(0, 0, 0, 220)
+local COL_0_0_0_230 = Color(0, 0, 0, 230)
+local COL_120_255_200 = Color(120, 255, 200)
+local COL_130_255_200 = Color(130, 255, 200)
+local COL_180_180_180 = Color(180, 180, 180)
+local COL_200_200_200 = Color(200, 200, 200)
+local COL_255_170_40 = Color(255, 170, 40)
+local COL_70_167_88_170 = Color(70, 167, 88, 170)
+local COL_90_230_120 = Color(90, 230, 120)
+
 local E = Rhylib.EOD
 local Net = Rhylib.Net
 
-local function K() return Rhylib.Menus and Rhylib.Menus.Kit end
+local function K() return Rhylib.UI and Rhylib.UI.Kit end
 local OPAQUE = Color(14, 16, 15, 255)
 local RED = Color(255, 70, 60)
 
@@ -62,7 +73,7 @@ Rhylib.Hook.Add("PlayerBindPress", "eod.mineuse", function(ply, bind, pressed)
     Net.Start("eod.mineuse")
     net.WriteEntity(m)
     net.SendToServer()
-end)
+end, -5)   -- (before medical's E menu, as before the load-order change)
 
 --------------------------------------------------------------------------
 -- The mine window
@@ -157,7 +168,7 @@ local function openWin(m, center, width, period, ph)
         end
     end
 
-    local dig = holdBtn(k, f, "Hold: dig it out", function() return (E.Cfg("mineDigTime") or 3) end, 0, 1,
+    local dig = holdBtn(k, f, "Hold: dig it out", function() return (E.Cfg("mineDigTime")) end, 0, 1,
         function() return IsValid(m) and not m:GetDug() end)
     dig:Dock(TOP)
     dig:DockMargin(0, s(6), 0, s(8))
@@ -169,7 +180,7 @@ local function openWin(m, center, width, period, ph)
         k.SetCol(C.row)
         surface.DrawRect(0, 0, w, h)
         if IsValid(m) and m:GetDug() and not m:GetSafe() then
-            k.SetCol(Color(70, 167, 88, 170))
+            k.SetCol(COL_70_167_88_170)
             surface.DrawRect(w * (E.mineWin.center - E.mineWin.width / 2) / 100, 1, w * E.mineWin.width / 100, h - 2)
             local n = E.MineNeedle(E.mineWin.period, E.mineWin.ph, CurTime())
             k.SetCol(color_white)
@@ -185,7 +196,7 @@ local function openWin(m, center, width, period, ph)
     pin:Dock(TOP)
     pin:DockMargin(0, s(6), 0, s(8))
 
-    local lift = holdBtn(k, f, "Hold: lift it away", function() return E.Cfg("mineLiftTime") or 2 end, 3, 4,
+    local lift = holdBtn(k, f, "Hold: lift it away", function() return E.Cfg("mineLiftTime") end, 3, 4,
         function() return IsValid(m) and m:GetSafe() end)
     lift:Dock(TOP)
 
@@ -251,8 +262,8 @@ Rhylib.Hook.Add("HUDPaint", "eod.onmine", function()
     local font = k and k.Font(26, 800) or "DermaLarge"
     if IsValid(m) then
         local a = 180 + 75 * math.abs(math.sin(CurTime() * 4))
-        draw.SimpleTextOutlined("YOU'RE STANDING ON A MINE", font, ScrW() / 2, ScrH() * 0.3, Color(255, 70, 60, a), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 2, Color(0, 0, 0, 230))
-        draw.SimpleTextOutlined("Don't move. Don't jump. Call for EOD.", k and k.Font(16, 700) or "DermaDefaultBold", ScrW() / 2, ScrH() * 0.3 + 32, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, Color(0, 0, 0, 230))
+        draw.SimpleTextOutlined("YOU'RE STANDING ON A MINE", font, ScrW() / 2, ScrH() * 0.3, Color(255, 70, 60, a), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 2, COL_0_0_0_230)
+        draw.SimpleTextOutlined("Don't move. Don't jump. Call for EOD.", k and k.Font(16, 700) or "DermaDefaultBold", ScrW() / 2, ScrH() * 0.3 + 32, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, COL_0_0_0_230)
     end
     -- others stuck on mines
     local small = k and k.Font(13, 800) or "DermaDefaultBold"
@@ -260,7 +271,7 @@ Rhylib.Hook.Add("HUDPaint", "eod.onmine", function()
         if p ~= ply and not p:IsDormant() and IsValid(p:GetNW2Entity("rhylib_onMine")) and p:GetPos():DistToSqr(ply:GetPos()) < 2500 * 2500 then
             local sc = (p:GetPos() + Vector(0, 0, 82)):ToScreen()
             if sc.visible then
-                draw.SimpleTextOutlined("ON A MINE", small, sc.x, sc.y, RED, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, Color(0, 0, 0, 230))
+                draw.SimpleTextOutlined("ON A MINE", small, sc.x, sc.y, RED, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, COL_0_0_0_230)
             end
         end
     end
@@ -282,8 +293,8 @@ Rhylib.Hook.Add("PreDrawHalos", "eod.mines", function()
         end
     end
     if #red > 0 then halo.Add(red, RED, 2, 2, 1, true, true) end
-    if #orange > 0 then halo.Add(orange, Color(255, 170, 40), 3, 3, 2, true, true) end
-    if #green > 0 then halo.Add(green, Color(90, 230, 120), 2, 2, 1, true, false) end
+    if #orange > 0 then halo.Add(orange, COL_255_170_40, 3, 3, 2, true, true) end
+    if #green > 0 then halo.Add(green, COL_90_230_120, 2, 2, 1, true, false) end
 end)
 
 -- Marked mines: a little red flag on a pole.
@@ -293,7 +304,7 @@ Rhylib.Hook.Add("PostDrawTranslucentRenderables", "eod.mineflags", function(dept
     for _, m in ipairs(mines()) do
         if IsValid(m) and m:GetMarked() and not m:GetSafe() and m:GetPos():DistToSqr(eye) < 3000 * 3000 then
             local base = m:GetPos() + Vector(18, 0, 0)
-            render.DrawLine(base, base + Vector(0, 0, 34), Color(200, 200, 200), true)
+            render.DrawLine(base, base + Vector(0, 0, 34), COL_200_200_200, true)
             render.SetColorMaterial()
             render.DrawQuad(base + Vector(0, 0, 34), base + Vector(14, 0, 30), base + Vector(14, 0, 30), base + Vector(0, 0, 26), RED)
             render.DrawQuad(base + Vector(0, 0, 26), base + Vector(14, 0, 30), base + Vector(14, 0, 30), base + Vector(0, 0, 34), RED)
@@ -325,14 +336,14 @@ Rhylib.Hook.Add("Think", "eod.scanner", function()
         nearest = nil
         return
     end
-    local range = E.Cfg("mineScanRange") or 700
-    local cone = E.Cfg("mineScanCone") or 22
+    local range = E.Cfg("mineScanRange")
+    local cone = E.Cfg("mineScanCone")
     local dir = E.ScanDir(ply)
     if not IsValid(E.mineBeam) then
         E.mineBeam = ProjectedTexture()
         E.mineBeam:SetTexture("effects/flashlight001")
         E.mineBeam:SetEnableShadows(false)
-        E.mineBeam:SetColor(Color(120, 255, 200))
+        E.mineBeam:SetColor(COL_120_255_200)
         E.mineBeam:SetBrightness(2.5)
         E.mineBeam:SetNearZ(8)
     end
@@ -379,7 +390,7 @@ Rhylib.Hook.Add("Think", "eod.scanners.others", function()
         if p ~= me and not p:IsDormant() and p:Alive() then
             local w = p:GetActiveWeapon()
             if IsValid(w) and w:GetClass() == E.SCANNER and w:GetOn() and p:GetPos():DistToSqr(me:GetPos()) < 3000 * 3000 then
-                local tr = util.TraceLine({ start = p:EyePos(), endpos = p:EyePos() + E.ScanDir(p) * (E.Cfg("mineScanRange") or 700), filter = p, mask = MASK_SOLID_BRUSHONLY })
+                local tr = util.TraceLine({ start = p:EyePos(), endpos = p:EyePos() + E.ScanDir(p) * (E.Cfg("mineScanRange")), filter = p, mask = MASK_SOLID_BRUSHONLY })
                 local dl = DynamicLight(0x7400 + p:EntIndex())
                 if dl then
                     dl.pos = tr.HitPos + tr.HitNormal * 8
@@ -425,15 +436,15 @@ function E.ScannerHUD(wep)
     local on = wep:GetOn()
     local y = ScrH() * 0.72
     draw.SimpleTextOutlined(on and "SCANNER ON  ·  LMB off  ·  RMB mark a mine" or "SCANNER OFF  ·  LMB on", font, ScrW() / 2, y,
-        on and Color(130, 255, 200) or Color(180, 180, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, Color(0, 0, 0, 220))
+        on and COL_130_255_200 or COL_180_180_180, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, COL_0_0_0_220)
     if on and nearest then
         draw.SimpleTextOutlined(string.format("MINE  %.1f m", nearest / E.UNITS_PER_M), k and k.Font(20, 800) or "DermaLarge", ScrW() / 2, y + 26,
-            RED, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, Color(0, 0, 0, 220))
+            RED, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, COL_0_0_0_220)
     end
 end
 
 Rhylib.Hook.Add("InitPostEntity", "eod.minecloser", function()
-    if Rhylib.Menus and Rhylib.Menus.RegisterCloser then
-        Rhylib.Menus.RegisterCloser("eodmine", function() if E.mineWin and IsValid(E.mineWin.frame) then closeWin(true) return true end end)
+    if Rhylib.UI and Rhylib.UI.RegisterCloser then
+        Rhylib.UI.RegisterCloser("eodmine", function() if E.mineWin and IsValid(E.mineWin.frame) then closeWin(true) return true end end)
     end
 end)

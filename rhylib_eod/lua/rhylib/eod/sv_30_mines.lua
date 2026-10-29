@@ -182,7 +182,7 @@ function E.MineBoom(mine, cause)
     util.BlastDamage(mine, mine, pos, r, E.Cfg(lap and "lapDamage" or "apDamage") or 170)
     util.ScreenShake(pos, lap and 10 or 6, 120, 0.8, r * 2.5)
     util.Decal("Scorch", pos + Vector(0, 0, 8), pos - Vector(0, 0, 40), mine)
-    hook.Run("Rhylib.Explosion", pos, E.Cfg("mineChain") or 140, 1, nil, mine, "mine")
+    hook.Run("Rhylib.Explosion", pos, E.Cfg("mineChain"), 1, nil, mine, "mine")
     E.mines[mine] = nil
     E.KeepForNextMap(mine)
     mine:SetNoDraw(true)
@@ -278,7 +278,7 @@ local function tick()
                 -- whoever is on it must hold still
                 local moved = presser:GetPos()
                 if not presser:Alive() or presser:GetMoveType() == MOVETYPE_NOCLIP
-                    or math.sqrt((moved.x - m.pressPos.x) ^ 2 + (moved.y - m.pressPos.y) ^ 2) > (E.Cfg("mineShift") or 16)
+                    or math.sqrt((moved.x - m.pressPos.x) ^ 2 + (moved.y - m.pressPos.y) ^ 2) > (E.Cfg("mineShift"))
                     or (not presser:IsOnGround() and now - m.pressAt > 0.3) then
                     E.MineBoom(m, "mine")
                 end
@@ -370,7 +370,7 @@ Net.Receive("eod.mineact", function(p)
     elseif op == 1 then
         local h = p.eodMineHold
         p.eodMineHold = nil
-        local need = (E.Cfg("mineDigTime") or 3)
+        local need = (E.Cfg("mineDigTime"))
         if m:GetDug() or not h or h.m ~= m or h.op ~= 0 or now - h.t < need * 0.9 then return end
         m:SetDug(true)
         E.Msg(p, "Dug out: the fuse is showing. Push the safety pin in while the needle is in the zone.")
@@ -400,7 +400,7 @@ Net.Receive("eod.mineact", function(p)
     elseif op == 4 then
         local h = p.eodMineHold
         p.eodMineHold = nil
-        local need = E.Cfg("mineLiftTime") or 2
+        local need = E.Cfg("mineLiftTime")
         if not m:GetSafe() or not h or h.m ~= m or h.op ~= 3 or now - h.t < need * 0.9 then return end
         if m.IsTrainingMine then
             E.Msg(p, "Training mine lifted: well done. It re-buries itself to go again.")
@@ -428,10 +428,10 @@ Net.Receive("eod.minemark", function(p)
     if not (IsValid(w) and w:GetClass() == E.SCANNER and w.GetOn and w:GetOn()) then return end
     local eye = p:EyePos()
     local mp = E.MineTop(m) + m:GetUp() * 2
-    local range = E.Cfg("mineScanRange") or 700
+    local range = E.Cfg("mineScanRange")
     if eye:DistToSqr(mp) > (range + 60) ^ 2 then return end
     local dir = E.ScanDir and E.ScanDir(p) or p:GetAimVector()
-    if dir:Dot((mp - eye):GetNormalized()) < math.cos(math.rad((E.Cfg("mineScanCone") or 22) + 6)) then return end
+    if dir:Dot((mp - eye):GetNormalized()) < math.cos(math.rad((E.Cfg("mineScanCone")) + 6)) then return end
     if util.TraceLine({ start = eye, endpos = mp, mask = MASK_SOLID_BRUSHONLY }).Hit then return end
     m:SetMarked(not m:GetMarked())
     sound.Play("buttons/blip1.wav", p:GetPos(), 60, m:GetMarked() and 130 or 90)

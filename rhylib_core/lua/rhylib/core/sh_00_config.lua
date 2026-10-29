@@ -24,6 +24,21 @@
 
     Register a setting in a sh_ file when client code reads it too:
     a setting registered only on the server has no default on clients.
+
+    Also:
+      Config.For(module) -> cfg(key)    a getter for one module (use it
+                                        instead of a local cfg function and
+                                        never add "or <default>": the
+                                        registered default is the default)
+      meta.section (Register)           the Server settings page section
+                                        ("B1 grenades") for that setting
+      Config.Describe(module, { name, category, sections? })
+                                        the module's shown name and sidebar
+                                        category on the Server settings page
+                                        ("Combat", "Soldiers", "Units & roles",
+                                        "NPCs", "Server & interface")
+      Config.Sections(module, { {title, {patterns}}, ... })
+                                        the module's page sections, in order
 ]]
 
 Rhylib.Config = Rhylib.Config or {}
@@ -37,12 +52,22 @@ Config.overrides = Config.overrides or {}  -- [module][key] = value from the Ser
 -- The default's type is the setting's type: the Server settings page only
 -- accepts values of the same type. desc is shown on that page.
 -- meta (optional): extra facts for the Server settings page, e.g.
--- { name = "Shown name", group = "Weapons" } (model overrides use it).
+-- { name = "Shown name", group = "Weapons" } (model overrides use it),
+-- { section = "B1 grenades" } (the section chip the setting sits under).
 -- Registering again replaces the default (Lua refresh safe).
 -- Example: Rhylib.Config.Register("myaddon", "range", 500, "How far it reaches (units)")
+local sectionFor   -- (below: Config.Sections patterns)
 function Config.Register(module, key, default, desc, meta)
     Config.defs[module] = Config.defs[module] or {}
-    Config.defs[module][key] = { default = default, desc = desc or "", meta = meta }
+    local d = { default = default, desc = desc or "", meta = meta }
+    Config.defs[module][key] = d
+    if not (meta and meta.section) then
+        local sec = sectionFor(module, key)
+        if sec then
+            d.meta = d.meta or {}
+            d.meta.section, d.meta.autoSection = sec, true
+        end
+    end
 end
 
 -- Config.IsModelDefault(default): true for a model path setting (a string
@@ -106,3 +131,75 @@ function Config.Get(module, key)
     end
     return nil
 end
+
+-- Config.For(module) -> cfg(key): a getter bound to one module, cached.
+-- Same as Config.Get(module, key) (unknown keys warn once). Don't write
+-- cfg("x") or 5: if the key may be missing, that's a missing Register.
+-- Example: local cfg = Rhylib.Config.For("eod")  ...  local r = cfg("reach")
+Config.getters = Config.getters or {}
+function Config.For(module)
+    local g = Config.getters[module]
+    if g then return g end
+    local Get = Config.Get
+    g = function(key) return Get(module, key) end
+    Config.getters[module] = g
+    return g
+end
+
+-- Config.Describe(module, { name = "Droids & clones", category = "NPCs" }):
+-- how the Server settings page names a module and where it puts it in the
+-- side bar. Shared (register it where the client sees it). Modules that
+-- never call it fall back to the page's own list, then to "Other".
+Config.modules = Config.modules or {}   -- [module] = { name, category, sections, order }
+function Config.Describe(module, info)
+    local d = Config.modules[module] or {}
+    for k, v in pairs(info or {}) do
+        if k ~= "sections" then d[k] = v end
+    end
+    Config.modules[module] = d
+    -- sections: either { {title, {patterns}}, ... } (= Config.Sections) or
+    -- just the titles in order { "General", ... }.
+    local secs = info and info.sections
+    if istable(secs) and secs[1] ~= nil then
+        if istable(secs[1]) then Config.Sections(module, secs)
+        else d.order = secs end
+    end
+end
+
+-- Config.Sections(module, { { title, { Lua patterns } }, ... }): the
+-- Server settings page sections of a module, in this order; each key goes
+-- to the first section with a pattern that matches it (string.find), and
+-- meta.section on the key (Register) still wins. Applies to keys already
+-- registered and to ones registered later. Shared.
+-- Example: Config.Sections("droids", { { "B1 grenades", { "^b1Nade" } }, { "B1 battle droids", { "^b1" } } })
+function Config.Sections(module, list)
+    local d = Config.modules[module] or {}
+    Config.modules[module] = d
+    d.sections = list
+    local order = {}
+    for i, s in ipairs(list) do order[i] = s[1] end
+    d.order = order
+    for key, def in pairs(Config.defs[module] or {}) do
+        if not (def.meta and def.meta.section) or def.meta.autoSection then
+            local sec = sectionFor(module, key)
+            if sec then
+                def.meta = def.meta or {}
+                def.meta.section, def.meta.autoSection = sec, true
+            end
+        end
+    end
+end
+
+sectionFor = function(module, key)
+    local d = Config.modules[module]
+    local list = d and d.sections
+    if not list then return nil end
+    for _, s in ipairs(list) do
+        for _, pat in ipairs(s[2] or {}) do
+            if string.find(key, pat) then return s[1] end
+        end
+    end
+end
+
+Config.Describe("core", { name = "Core", category = "Server & interface" })
+Config.Describe("models", { name = "Model overrides" })

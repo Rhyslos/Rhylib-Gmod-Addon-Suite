@@ -22,14 +22,14 @@
     stamina is stored as a straight line that only changes when
     something changes (sprint starts or stops, a jump, the load changes),
     not every tick:
-        DTFloat 28  stamina at the start of the line
-        DTFloat 29  when the line starts (in the future while regen waits)
-        DTFloat 26  stamina per second along the line (minus = sprinting)
-        DTBool  28  exhausted
-        stamina now = DTFloat 28 + DTFloat 26 * max(0, now - DTFloat 29),
-                      kept between 0 and max
-    The jetpack uses DTBool 29-31 and DTFloat 23, 30-31; the grapple uses
-    DTFloat 27 and DTBool 27; Sidestep (rhylib_skills) DTFloat 24-25.
+        S.DT_STAMINA   (Float) stamina at the start of the line
+        S.DT_FROM      (Float) when the line starts (in the future while regen waits)
+        S.DT_RATE      (Float) stamina per second along the line (minus = sprinting)
+        S.DT_EXHAUSTED (Bool)  exhausted
+        stamina now = STAMINA + RATE * max(0, now - FROM), kept between 0 and max
+    (The slot numbers come from Rhylib.DT, core's table of who uses which
+    player DT slot: "stamina.value", "stamina.from", "stamina.rate",
+    "stamina.exhausted".)
 
     Optional links: rhylib_medical (Med.StaminaCap lowers the max),
     rhylib_skills (WeightPenaltyMult, RegenMult, FreeSprint).
@@ -38,30 +38,33 @@
 Rhylib.Stamina = Rhylib.Stamina or {}
 local S = Rhylib.Stamina
 
-S.DT_STAMINA = 28
-S.DT_FROM = 29
-S.DT_RATE = 26
-S.DT_EXHAUSTED = 28
+-- Player DT slots, claimed through core's table (sh_05_dt.lua) under
+-- their seeded names, so no two addons can pick the same one.
+local DT = Rhylib.DT
+S.DT_STAMINA = DT.Claim("Float", "stamina.value", 28)
+S.DT_FROM = DT.Claim("Float", "stamina.from", 29)
+S.DT_RATE = DT.Claim("Float", "stamina.rate", 26)
+S.DT_EXHAUSTED = DT.Claim("Bool", "stamina.exhausted", 28)
 
 local Config = Rhylib.Config
-Config.Register("stamina", "max", 100, "Full stamina")
-Config.Register("stamina", "sprintDrain", 12, "Stamina per second while sprinting with no load (100 / 12 = about 8 s of sprint)")
-Config.Register("stamina", "jumpCost", 8, "Stamina per jump")
-Config.Register("stamina", "regen", 20, "Stamina per second while resting, with no load")
-Config.Register("stamina", "regenDelay", 1, "Seconds after sprinting or jumping before stamina comes back")
-Config.Register("stamina", "exhaustedUntil", 25, "After running dry, no sprinting until stamina is back to this")
-Config.Register("stamina", "maxPenalty", 0.8, "Penalty at a full load without a backpack")
-Config.Register("stamina", "maxPenaltyPack", 0.6, "Penalty at a full load with a backpack worn")
-Config.Register("stamina", "penaltyCurve", 1.2, "Higher = light loads cost less, the last kilos cost more")
-Config.Register("stamina", "heavyFrom", 0.75, "Above this share of your carry cap you also move slower")
-Config.Register("stamina", "heavySlow", 0.1, "Speed lost at a full load (0.1 = 10% slower walk and sprint); grows from heavyFrom")
-Config.Register("stamina", "overloadWalkMult", 0.8, "Walk speed multiplier while over the carry cap")
-Config.Register("stamina", "lowAimBelow", 20, "Below this stamina, spread starts to grow")
-Config.Register("stamina", "lowAimSpread", 0.5, "Extra spread at zero stamina, as a fraction of the weapon's resting cone")
+Config.Register("stamina", "max", 100, "Full stamina", { section = "Stamina" })
+Config.Register("stamina", "sprintDrain", 12, "Stamina per second while sprinting with no load (100 / 12 = about 8 s of sprint)", { section = "Stamina" })
+Config.Register("stamina", "jumpCost", 8, "Stamina per jump", { section = "Stamina" })
+Config.Register("stamina", "regen", 20, "Stamina per second while resting, with no load", { section = "Stamina" })
+Config.Register("stamina", "regenDelay", 1, "Seconds after sprinting or jumping before stamina comes back", { section = "Stamina" })
+Config.Register("stamina", "exhaustedUntil", 25, "After running dry, no sprinting until stamina is back to this", { section = "Stamina" })
+Config.Register("stamina", "maxPenalty", 0.8, "Penalty at a full load without a backpack", { section = "Carry weight" })
+Config.Register("stamina", "maxPenaltyPack", 0.6, "Penalty at a full load with a backpack worn", { section = "Carry weight" })
+Config.Register("stamina", "penaltyCurve", 1.2, "Higher = light loads cost less, the last kilos cost more", { section = "Carry weight" })
+Config.Register("stamina", "heavyFrom", 0.75, "Above this share of your carry cap you also move slower", { section = "Carry weight" })
+Config.Register("stamina", "heavySlow", 0.1, "Speed lost at a full load (0.1 = 10% slower walk and sprint); grows from heavyFrom", { section = "Carry weight" })
+Config.Register("stamina", "overloadWalkMult", 0.8, "Walk speed multiplier while over the carry cap", { section = "Carry weight" })
+Config.Register("stamina", "lowAimBelow", 20, "Below this stamina, spread starts to grow", { section = "Stamina" })
+Config.Register("stamina", "lowAimSpread", 0.5, "Extra spread at zero stamina, as a fraction of the weapon's resting cone", { section = "Stamina" })
 
-local function cfg(key)
-    return Config.Get("stamina", key)
-end
+Config.Describe("stamina", { name = "Stamina & weight", category = "Soldiers", sections = { "Stamina", "Carry weight" } })
+
+local cfg = Config.For("stamina")
 
 -- S.Max(ply): most stamina this player can have (a hurt torso lowers it,
 -- rhylib_medical).
@@ -106,10 +109,10 @@ end
 -- cap. Reads NW2 rhylib_weight / rhylib_carry from rhylib_inventory (0 and
 -- the base cap without it).
 function S.Load(ply)
-    local weight = ply:GetNW2Float("rhylib_weight", 0)
+    local weight = ply:GetNW2Float(Rhylib.NW.WEIGHT, 0)
     -- (only asked when rhylib_inventory registered it: no "unknown setting" warning without it)
     local base = (Config.defs.inventory and Config.Get("inventory", "baseCarry")) or 20
-    local cap = ply:GetNW2Float("rhylib_carry", base)
+    local cap = ply:GetNW2Float(Rhylib.NW.CARRY, base)
     if cap <= 0 then cap = base end
     return weight / cap, cap > base
 end
@@ -128,9 +131,9 @@ end
 -- the cap, then down to 1 - heavySlow at a full load.
 function S.LoadSpeedMult(ply)
     local load = S.Load(ply)
-    local from = cfg("heavyFrom") or 0.75
+    local from = cfg("heavyFrom")
     if load <= from then return 1 end
-    return 1 - (cfg("heavySlow") or 0) * math.min((load - from) / math.max(1 - from, 0.01), 1)
+    return 1 - cfg("heavySlow") * math.min((load - from) / math.max(1 - from, 0.01), 1)
 end
 
 -- S.SpreadPenalty(ply, baseCone): extra spread in degrees for a weapon whose

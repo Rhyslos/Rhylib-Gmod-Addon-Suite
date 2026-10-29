@@ -13,7 +13,7 @@ AddCSLuaFile()
 
 ENT.Type = "anim"
 ENT.Base = "base_anim"
-ENT.PrintName = "Rhylib item"
+ENT.PrintName = "Rhy's item"
 ENT.Category = "Rhy's Items & ammo"
 ENT.Spawnable = false
 ENT.Model = "models/items/boxmrounds.mdl"
@@ -40,12 +40,13 @@ if SERVER then
     end
 
     function ENT:Use(activator)
-        if not IsValid(activator) or not activator:IsPlayer() then return end
+        if self.taken or not IsValid(activator) or not activator:IsPlayer() then return end
         if self:GiveTo(activator) then
+            self.taken = true   -- (Remove() is deferred: a second Use the same tick gets nothing)
             activator:EmitSound(self.PickupSound, 60)
             self:Remove()
         else
-            activator:PrintMessage(HUD_PRINTCENTER, "No room for this")
+            Rhylib.Notify(activator, "No room for this", "bad", "Inventory")
         end
     end
 end

@@ -35,18 +35,24 @@ function Inv.CleanHotbar(ply)
     return removed
 end
 
-concommand.Add("rhylib_cleanhotbar", function(ply, _, args)
-    if not IsValid(ply) then return end
-
-    if args[1] == "auto" then
-        ply.rhylibAutoClean = not ply.rhylibAutoClean
-        ply:ChatPrint("Clean hotbar on spawn: " .. (ply.rhylibAutoClean and "on" or "off"))
-        if not ply.rhylibAutoClean then return end
-    end
-
-    local n = Inv.CleanHotbar(ply)
-    ply:ChatPrint("Removed " .. n .. " weapon" .. (n == 1 and "" or "s") .. " that weren't in your inventory.")
-end)
+-- rhylib_cleanhotbar [auto]: strip weapons that
+-- aren't in your inventory; "auto" switches doing it on every spawn.
+Rhylib.Command.Add({
+    name = "rhylib_cleanhotbar",
+    args = "[auto]",
+    help = "Remove weapons in your hands that aren't in your inventory (auto: on every spawn)",
+    tag = "Inventory",
+    fn = function(ply, args)
+        if not IsValid(ply) then return "Run it in game" end
+        if args[1] == "auto" then
+            ply.rhylibAutoClean = not ply.rhylibAutoClean
+            Rhylib.Notify(ply, "Clean hotbar on spawn: " .. (ply.rhylibAutoClean and "on" or "off"), "info", "Inventory")
+            if not ply.rhylibAutoClean then return end
+        end
+        local n = Inv.CleanHotbar(ply)
+        return "Removed " .. n .. " weapon" .. (n == 1 and "" or "s") .. " that weren't in your inventory.", "good"
+    end,
+})
 
 -- Runs after the loadout and after inventory weapons are given back.
 Rhylib.Hook.Add("PlayerSpawn", "inventory.autoclean", function(ply)

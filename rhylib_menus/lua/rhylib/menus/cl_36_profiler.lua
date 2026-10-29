@@ -23,7 +23,7 @@ Menus.Prof = P
 P.history = P.history or {}   -- last 60 samples
 P.last = P.last or nil
 
-net.Receive(Rhylib.Net.Name("core.profdata"), function()
+Rhylib.Net.Receive("core.profdata", function()
     local n = net.ReadUInt(16)
     local raw = net.ReadData(n)
     local data = util.JSONToTable(util.Decompress(raw or "") or "") or nil
@@ -137,7 +137,7 @@ local function build(page)
         local stats = {
             { "Ticks / s", d.ticks .. " of " .. d.tickRate, tickOk and C.good or C.bad },
             { "Slowest tick", d.worst .. " ms", d.worst > 1000 / d.tickRate * 2 and C.warn or C.text },
-            { "Rhylib / tick", string.format("%.3f ms", d.perTick), C.text },
+            { "Rhy's / tick", string.format("%.3f ms", d.perTick), C.text },
             { "Net out", bytes(d.bytes), C.text },
             { "Lua memory", d.mem .. " MB", C.text },
             { "Players", d.humans .. " + " .. d.bots .. " bots" .. ((d.load or 0) > 0 and (" (" .. d.load .. " load)") or ""), C.text },
@@ -154,7 +154,7 @@ local function build(page)
         end
         local y = S(20) + S(48) * 2 + S(6)
         local gw = math.floor(w / 2) - S(6)
-        graph(0, y, gw, S(70), "perTick", C.accent, "Rhylib ms per tick", " ms")
+        graph(0, y, gw, S(70), "perTick", C.accent, "Rhy's ms per tick", " ms")
         graph(gw + S(12), y, gw, S(70), "ticks", C.good, "Ticks per second", "")
         y = y + S(82)
 

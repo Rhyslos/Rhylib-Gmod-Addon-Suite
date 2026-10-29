@@ -1,5 +1,5 @@
 --[[
-    Squad pings (2026-10-07, owner): hold the ping key (rhylib_radio_pingkey,
+    Squad pings : hold the ping key (rhylib_radio_pingkey,
     default O) for a wheel of ping types; release on one to mark where you
     aim (or yourself, for the "on me" kinds) for your radio squad.
 

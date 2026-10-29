@@ -2,7 +2,7 @@
     Spawn points (client): the respawn list while dead (number keys 1-9
     pick; the highlighted one is where you'll come back; the panel takes no
     mouse, so clicking still respawns) and the staff edit menu. Both need
-    rhylib_menus (Menus.Kit); without it no list shows and players respawn
+    the UI kit (Rhylib.UI.Kit, in core); without it no list shows and players respawn
     at the default point.
 ]]
 
@@ -28,8 +28,7 @@ local current   -- the list shown: { idx, name, event, dist }
 -- number keys pick.
 local function open(list, chosen)
     close()
-    local M = Rhylib.Menus
-    local K = M and M.Kit
+    local K = Rhylib.UI and Rhylib.UI.Kit
     if not K then return end
     current = list
     local S2 = K.S
@@ -70,7 +69,7 @@ Rhylib.Hook.Add("PlayerBindPress", "spawns.pick", function(ply, bind, pressed)
     end
 end, -30)
 
-net.Receive(Rhylib.Net.Name("spawn.list"), function()
+Rhylib.Net.Receive("spawn.list", function()
     if not net.ReadBool() then return close() end
     local list = {}
     for i = 1, net.ReadUInt(6) do
@@ -113,10 +112,9 @@ local function battalions()
     return out
 end
 
-net.Receive(Rhylib.Net.Name("spawn.edit"), function()
+Rhylib.Net.Receive("spawn.edit", function()
     local ent = net.ReadEntity()
-    local M = Rhylib.Menus
-    local K = M and M.Kit
+    local K = Rhylib.UI and Rhylib.UI.Kit
     if not (IsValid(ent) and K) then return end
     local m = K.Menu()
     m:AddOption("Rename (" .. ent:GetBeaconName() .. ")", function()

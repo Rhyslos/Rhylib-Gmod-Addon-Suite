@@ -9,9 +9,18 @@
     skills.reset (empty), skills.note (server -> player: bad bool, text;
     a chat line).
     Hooks fired: Rhylib.SkillsChanged(ply) after every change,
-    Rhylib.CanResetSkills(ply) (return true to allow a reset / late undo
-    while freePoints is off), Rhylib.SkillPoints(ply) (in K.Points).
+    Rhylib.CanResetSkills(ply) (return true / false to allow or refuse a
+    reset while freePoints is off; true also allows a late undo; nil = the
+    built-in rule), Rhylib.SkillPoints(ply) (in K.Points).
+    Free resets (built in): one every resetCooldownDays (7) days per
+    player; the last one is Data "skills" key "r"..SteamID64 (os.time).
+    K.ResetState(ply) -> ok, nextAt, viaCooldown; NW2Int rhylib_skillReset
+    on the player = 0 (allowed now), -1 (never) or the os.time of the next
+    free reset (set on join, after a reset, every 60 s), read by
+    K.ResetInfo for the Reset button. Admin resets don't use it up.
     Console: rhylib_skills_reset [name] (perm rhylib.skills.admin, admin).
+    While freePoints is on: a warning in the server console at start and a
+    chat + console line to every superadmin who joins.
     K.SetSkills(ply, set) applies a set (NW2String, save, inventory grids).
     K.DamageMult(ply, bolt, ent, tr, group) for rhylib_weapons (Focus fire,
     Carbine sidearm, Point blank, Headhunter, Shotgun drills, crits /
@@ -62,7 +71,7 @@ function K.Stored(ply)
             end
         end
     end
-    -- The officer split (2026-10-05): a save with officer skills from both
+    -- The officer split: a save with officer skills from both
     -- specs (old saves had Adaptable in the pistol tree) keeps the spec
     -- with more skills; losing Adaptable also drops what it borrowed.
     local count = { pistol = 0, commander = 0 }
@@ -183,7 +192,7 @@ local function applyHealth(ply, spawned)
     if want == have then return end
     ply.rhylibReinforced = want
     ply:SetMaxHealth(math.max(1, ply:GetMaxHealth() - have + want))
-    if ply:Alive() and not ply.rhylibDown then
+    if ply:Alive() and not Rhylib.State.IsDown(ply) then
         local hp = ply:Health()
         if spawned then hp = hp + math.max(0, want - have) end
         ply:SetHealth(math.Clamp(hp, 1, ply:GetMaxHealth()))
@@ -286,22 +295,88 @@ Rhylib.Net.Receive("skills.unlearn", function(ply)
     K.Note(ply, "Undid " .. n.name)
 end, { rate = 4, burst = 8 })
 
+-- K.ResetState(ply): may they reset their skills now? Returns ok, nextAt
+-- (0 = now, -1 = never, else os.time of the next free reset), viaCooldown
+-- (true when the free reset is what allows it, so it gets used up).
+-- freePoints = always; then the hook Rhylib.CanResetSkills (a true / false
+-- answer wins); then one free reset every resetCooldownDays days. Server.
+local function resetKey(ply) return "r" .. (ply:SteamID64() or "0") end
+function K.ResetState(ply)
+    if K.Cfg("freePoints") then return true, 0, false end
+    local r = hook.Run("Rhylib.CanResetSkills", ply)
+    if r == true then return true, 0, false end
+    if r == false then return false, -1, false end
+    local days = tonumber(K.Cfg("resetCooldownDays")) or 0
+    if days <= 0 or ply:IsBot() then return false, -1, false end
+    local last = tonumber(Data.Get("skills", resetKey(ply))) or 0
+    local nextAt = last + math.floor(days * 86400)
+    if os.time() >= nextAt then return true, 0, true end
+    return false, nextAt, false
+end
+
+-- NW2Int rhylib_skillReset for the client's Reset button (K.ResetInfo).
+local function publishReset(ply)
+    if not IsValid(ply) then return end
+    local _, nextAt = K.ResetState(ply)
+    ply:SetNW2Int("rhylib_skillReset", math.Clamp(nextAt, -1, 2147483647))
+end
+K.PublishReset = publishReset
+Rhylib.Hook.Add("PlayerInitialSpawn", "skills.resetinfo", function(ply)
+    timer.Simple(1, function() publishReset(ply) end)
+end)
+timer.Create("Rhylib.Skills.ResetInfo", 60, 0, function()
+    for _, p in ipairs(player.GetHumans()) do publishReset(p) end
+end)
+
+local function daysText(secs)
+    if secs >= 86400 then
+        local d = math.ceil(secs / 86400)
+        return d .. " day" .. (d == 1 and "" or "s")
+    end
+    local h = math.max(1, math.ceil(secs / 3600))
+    return h .. " hour" .. (h == 1 and "" or "s")
+end
+
 Rhylib.Net.Receive("skills.reset", function(ply)
     if K.ClassOf(ply) then return K.Note(ply, "You're playing a class: leave it on the Class page first", true) end
     if next(K.Stored(ply)) == nil then return end
-    if not K.Cfg("freePoints") and hook.Run("Rhylib.CanResetSkills", ply) ~= true then
-        return K.Note(ply, "You can't reset your skills right now", true)
+    local ok, nextAt, viaCooldown = K.ResetState(ply)
+    if not ok then
+        if nextAt > 0 then
+            return K.Note(ply, "Your next free reset is in " .. daysText(nextAt - os.time()), true)
+        end
+        return K.Note(ply, "Skill resets are off on this server", true)
     end
     K.SetSkills(ply, {})
     ply.rhylibLearnedAt = nil
-    K.Note(ply, "Skills reset")
+    if viaCooldown then Data.Set("skills", resetKey(ply), os.time()) end
+    publishReset(ply)
+    local days = tonumber(K.Cfg("resetCooldownDays")) or 0
+    K.Note(ply, viaCooldown and ("Skills reset. Your next free reset is in " .. daysText(days * 86400)) or "Skills reset")
 end, { rate = 1, burst = 2 })
 
--- Admins: rhylib_skills_reset <name> (or yourself).
-concommand.Add("rhylib_skills_reset", function(ply, _, args)
-    local function reply(t) if IsValid(ply) then ply:ChatPrint(t) else print(t) end end
-    Rhylib.Perms.Check(ply, "rhylib.skills.admin", function(ok)
-        if not ok then return reply("You don't have permission for rhylib_skills_reset") end
+-- freePoints is a testing switch: warn the server console once at start
+-- and superadmins once per join while it's on.
+local FREE_WARN = "Skills are free (freePoints is on): switch it off in Server settings before going live"
+Rhylib.Hook.Add("InitPostEntity", "skills.freewarn", function()
+    if K.Cfg("freePoints") then Rhylib.Warn("skills", "%s", FREE_WARN) end
+end)
+Rhylib.Hook.Add("PlayerInitialSpawn", "skills.freewarn", function(ply)
+    timer.Simple(8, function()
+        if IsValid(ply) and ply:IsSuperAdmin() and K.Cfg("freePoints") then
+            K.Note(ply, FREE_WARN, true)
+            ply:PrintMessage(HUD_PRINTCONSOLE, "[Skills] " .. FREE_WARN .. "\n")
+        end
+    end)
+end)
+
+-- Admins: rhylib_skills_reset [name] (yourself without a name; also
+-- !skillsreset). Rhylib.Command, perm rhylib.skills.admin.
+Rhylib.Perms.Register("rhylib.skills.admin", "admin", "Reset other players' skills")
+Rhylib.Command.Add({
+    name = "rhylib_skills_reset", chat = { "skillsreset" }, perm = "rhylib.skills.admin",
+    help = "Reset a player's skills (yourself without a name)", args = "[name]", tag = "Skills",
+    fn = function(ply, args)
         local target = IsValid(ply) and ply or nil
         if args[1] then
             target = nil
@@ -309,13 +384,12 @@ concommand.Add("rhylib_skills_reset", function(ply, _, args)
                 if string.find(string.lower(p:Nick()), string.lower(args[1]), 1, true) then target = p end
             end
         end
-        if not IsValid(target) then return reply("No such player") end
+        if not IsValid(target) then return "No such player", "bad" end
         if K.ClassOf(target) and K.LeaveClass then K.LeaveClass(target, true) end
         K.SetSkills(target, {})
-        reply("Reset the skills of " .. target:Nick())
-    end)
-end)
-Rhylib.Perms.Register("rhylib.skills.admin", "admin", "Reset other players' skills")
+        return "Reset the skills of " .. target:Nick(), "good"
+    end,
+})
 
 --------------------------------------------------------------------------
 -- Damage (called by rhylib_weapons for each bolt hit)
@@ -433,7 +507,8 @@ end
 -- armour soaks the reduced amount). Multipliers stack by multiplying.
 -- DMG_DIRECT (bleeding, bleed-out) and downed players are left alone.
 Rhylib.Hook.Add("EntityTakeDamage", "skills.resist", function(ent, dmg)
-    if not ent:IsPlayer() or ent.rhylibDown then return end
+    -- (uncached: the downed state can change inside this tick)
+    if not ent:IsPlayer() or ent.rhylibDown or ent:GetNW2Bool(Rhylib.NW.DOWN, false) then return end
     if bit.band(dmg:GetDamageType(), DMG_DIRECT) ~= 0 then return end   -- (bleeding, bleed-out)
     local m = 1
     local set = K.Set(ent)
@@ -541,7 +616,8 @@ Rhylib.Hook.Add("PlayerTick", "skills.combatdrop", function(ply)
     end
     local J = Rhylib.Jetpack
     if ply:OnGround() or ply:GetMoveType() ~= MOVETYPE_WALK or ply:WaterLevel() >= 2 or not (J and J.Has and J.Has(ply))
-        or IsValid(ply:GetDTEntity(31)) then   -- (on a grapple rope)
+        or IsValid(ply:GetDTEntity(Rhylib.DT and Rhylib.DT.Slot("Entity", "grapple.rope") or 31))   -- (on a grapple rope)
+        or IsValid(ply:GetDTEntity(Rhylib.DT and Rhylib.DT.Slot("Entity", "grapple.zip") or 30)) then   -- (on a zipline)
         ply.rhylibAirFrom, ply.rhylibAirJet = nil, nil
         return
     end
@@ -596,5 +672,12 @@ Rhylib.Hook.Add("Rhylib.CarryLimit", "skills.dual", function(ply, id, def)
     -- (training copies inherit SkillModes from the real gun)
     local swep = def and def.weapon and weapons.GetStored(K.ItemGun(def.weapon))
     local need = swep and swep.SkillModes and swep.SkillModes.dual
-    if need and K.Has(ply, need) then return 2 end
+    if not need then return end
+    -- (a bounty hunter skill only counts while hunting: rhylib_bounty B.Has)
+    local B = Rhylib.Bounty
+    if swep.BountyWeapon and B and B.Has then
+        if B.Has(ply, need) then return 2 end
+        return
+    end
+    if K.Has(ply, need) then return 2 end
 end)

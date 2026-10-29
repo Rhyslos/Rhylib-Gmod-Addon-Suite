@@ -14,7 +14,8 @@
     offers the same actions plus "Injuries"; the wheel takes E on downed
     players, so the small E menu here is the fallback without it.
     Public: Med.ShowNote(text), Med.clientDown (list of downed players).
-    Nets: med.note (in), med.act (out: kind 4 bits, target index 8 bits).
+    Nets: med.act (out: kind 4 bits, target index 8 bits). Notices:
+    Rhylib.Notify (Med.ShowNote).
 ]]
 
 local Med = Rhylib.Medical
@@ -44,13 +45,9 @@ local function faCharge()
     return ", uses charge"
 end
 
-local note, noteTime = nil, 0
--- Med.ShowNote(text): the same short message under the crosshair, from the
--- client (e.g. a kit with nobody aimed at). Shows for 2.5 s.
-function Med.ShowNote(text) note, noteTime = text, RealTime() end
-Rhylib.Net.Receive("med.note", function()
-    note, noteTime = net.ReadString(), RealTime()
-end)
+-- Med.ShowNote(text): a short notice from the client (e.g. a kit with
+-- nobody aimed at), through Rhylib.Notify like the server's Med.Note.
+function Med.ShowNote(text) Rhylib.Notify(nil, text, "info", "Medical") end
 
 --------------------------------------------------------------------------
 -- Drawing helpers (house style when rhylib_hud is installed)
@@ -109,7 +106,7 @@ local function drawDowned(ply)
     surface.SetDrawColor(COL_DIM)
     surface.DrawRect(0, 0, W, H)
 
-    local w, h = S(360), S(150)
+    local w, h = S(360), S(172)
     local x, y = math.floor((W - w) / 2), math.floor(H * 0.62)
     plate(x, y, w, h, "Downed", COL_DOWN)
 
@@ -131,13 +128,19 @@ local function drawDowned(ply)
     end
     text(line, 15, W / 2, y + S(82), C.textDim)
 
+    -- Call a medic (reload key; net med.callmedic). The panel shows when it can go again.
+    local reload = string.upper(input.LookupBinding("+reload") or "R")
+    local again = (Med.medicCallAt or 0) - CurTime()
+    text(again > 0 and ("Medic called · again in " .. math.ceil(again) .. " s") or ("Press " .. reload .. " to call a medic"),
+        13, W / 2, y + S(112), again > 0 and C.good or C.text)
+
     local hold = ply.rhylibGiveUp
     local need = Med.Cfg("giveUpTime")
     if hold then
-        bar(x + S(20), y + S(126), w - S(40), S(4), (CurTime() - hold) / need, COL_DOWN)
-        text("Giving up...", 13, W / 2, y + S(114), C.text)
+        bar(x + S(20), y + S(148), w - S(40), S(4), (CurTime() - hold) / need, COL_DOWN)
+        text("Giving up...", 13, W / 2, y + S(136), C.text)
     else
-        text("Hold " .. string.upper(input.LookupBinding("+jump") or "SPACE") .. " to give up", 13, W / 2, y + S(120), C.textDim)
+        text("Hold " .. string.upper(input.LookupBinding("+jump") or "SPACE") .. " to give up", 13, W / 2, y + S(142), C.textDim)
     end
 end
 
@@ -190,7 +193,8 @@ local function drawPrompt(ply)
     local W, H = ScrW(), ScrH()
     local use = string.upper(input.LookupBinding("+use") or "E")
     local str = use .. "  Medical"
-    if Med.HoldingHands(ply) then str = str .. "      Hold LMB  Drag" end
+    if Med.HoldingHands(ply) then str = str .. "      Hold LMB  Drag"
+    else str = str .. "      Holster to drag" end
     text(t:Nick() .. " · down", 15, W / 2, H * 0.5 + S(40), COL_DOWN, nil, 600)
     text(str, 14, W / 2, H * 0.5 + S(60), C.text)
 end
@@ -262,9 +266,6 @@ Rhylib.Hook.Add("HUDPaint", "medical.hud", function()
         end
     end
 
-    if note and RealTime() - noteTime < 2.5 then
-        text(note, 15, ScrW() / 2, ScrH() * 0.5 + S(90), C.warn)
-    end
 end)
 
 --------------------------------------------------------------------------
@@ -293,16 +294,16 @@ local function carried(id)
 end
 
 local function openMenu(ply, t)
-    local Menus = Rhylib.Menus
-    if Menus and Menus.RegisterCloser and not Med.closerAdded then
+    local UI = Rhylib.UI
+    if UI and UI.RegisterCloser and not Med.closerAdded then
         Med.closerAdded = true
-        Menus.RegisterCloser("medical", function()
+        UI.RegisterCloser("medical", function()
             if IsValid(openM) then openM:Remove() return true end
             return false
         end)
     end
     if IsValid(openM) then openM:Remove() end
-    local K = Menus and Menus.Kit
+    local K = UI and UI.Kit
     local m = K and K.Menu() or DermaMenu()
     openM = m
     local any = false
@@ -345,7 +346,7 @@ end
 -- { order, sub, disabled }) puts an option on the wheel.
 Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.wheel", function(t, me, add)
     if Med.IsDown(me) then return end
-    local cfgRange = Med.Cfg("viewRange") or 120
+    local cfgRange = Med.Cfg("viewRange")
     if Med.IsDown(t) then
         local stab = Med.StabilisedBy(t)
         if stab then
@@ -376,6 +377,18 @@ Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.wheel", function(t, me, add)
     if Med.OpenInjuries and not Med.Simple() and t:GetPos():DistToSqr(me:GetPos()) < cfgRange * cfgRange * 2 then
         add("Injuries", function(x) Med.OpenInjuries(x) end, { order = 20, sub = "Check and treat" })
     end
+end)
+
+-- Downed: the reload key calls a medic (server checks and cools it down).
+Rhylib.Hook.Add("PlayerBindPress", "medical.callmedic", function(ply, bind, pressed)
+    if not pressed or not string.find(bind, "+reload", 1, true) or not Med.IsDown(ply) then return end
+    if (Med.medicCallAt or 0) > CurTime() then return true end
+    Rhylib.Net.Start("med.callmedic")
+    net.SendToServer()
+    return true
+end)
+Rhylib.Net.Receive("med.called", function()
+    Med.medicCallAt = net.ReadFloat()
 end)
 
 -- E (+use) on a downed player opens the small menu (the wheel takes E

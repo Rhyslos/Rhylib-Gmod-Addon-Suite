@@ -3,6 +3,9 @@
     mine picks it up, and the count for the weapon's HUD line.
 ]]
 
+-- Colours used while drawing (made once, not every frame).
+local COL_0_0_0_180 = Color(0, 0, 0, 180)
+
 local E = Rhylib.EOD
 local Net = Rhylib.Net
 
@@ -26,7 +29,7 @@ function E.RepCountClient()
         if IsValid(m) and m:GetPlanter() == me then n = n + 1 end
     end
     local field = E.Skill(me, "eod_minefield")
-    return n, field and (E.Cfg("repLimitField") or 6) or (E.Cfg("repLimit") or 3)
+    return n, field and (E.Cfg("repLimitField")) or (E.Cfg("repLimit"))
 end
 
 Rhylib.Hook.Add("PreDrawHalos", "eod.repmines", function()
@@ -76,5 +79,5 @@ Rhylib.Hook.Add("HUDPaint", "eod.reppick", function()
     local s = ScrH() / 1080
     local font = Rhylib.UI and Rhylib.UI.Font and Rhylib.UI.Font(13, 700) or "DermaDefaultBold"
     draw.SimpleTextOutlined("E: PICK UP YOUR MINE", font, ScrW() * 0.5, ScrH() * 0.5 + 40 * s, BLUE,
-        TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, Color(0, 0, 0, 180))
+        TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, COL_0_0_0_180)
 end)

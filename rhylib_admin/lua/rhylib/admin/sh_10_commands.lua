@@ -22,9 +22,11 @@
               text (the rest of the line), word, number, duration ("30m",
               "2h", "1d", "1w", "perm"), rank, rosterrank, battalion,
               qual, onoff, map (picker), class, job, minutes, scale, mult,
-              model, sound, call (a preset id), callmins,
-              illness (viral / bacterial / poison), illload (1-100, 40 when
-              left out)
+              model, sound, call (a preset id), callmins; other addons add
+              kinds (rhylib_roster rosterrank / qual, rhylib_medical illness /
+              illload) with Admin.ArgChoices (client pickers) and
+              Admin.NumberKinds (server: parsed as a number)
+            def = the value used when an opt argument is left out
             Number kinds are checked on the server (sv_10_admin parseArg);
             the rest arrive as the word typed and the handler checks them.
             The kind also picks the client's menu of choices (cl_10_admin).
@@ -58,9 +60,6 @@ Admin.COMMANDS = {
     { id = "setjob", name = "Set job", cat = "Discipline", target = "self", args = { { "job", "Job command or name", "job" } }, desc = "DarkRP job, skipping its checks" },
     { id = "spectate", name = "Spectate", cat = "Teleport", target = "player", args = {}, aliases = { "spec" }, desc = "Watch them; run again (or !unspectate) to stop" },
     { id = "unspectate", name = "Stop spectating", cat = "Teleport", perm = "spectate", args = {} },
-    { id = "jail", name = "Jail", cat = "Discipline", target = "player", args = { { "minutes", "Minutes", "minutes" }, { "reason", "Reason", "text" } }, desc = "Into a jail cell (rhylib_mp); items go to evidence" },
-    { id = "unjail", name = "Release from jail", cat = "Discipline", target = "player", args = {} },
-    { id = "free", name = "Uncuff / unstun", cat = "Discipline", mass = true, target = "self", args = {}, aliases = { "uncuff", "unstun" } },
     { id = "unwarn", name = "Clear warnings", cat = "Discipline", target = "id", args = {}, aliases = { "clearwarns" } },
     { id = "slap", name = "Slap", cat = "Discipline", mass = true, target = "player", args = {} },
     { id = "ignite", name = "Set on fire", cat = "Discipline", mass = true, target = "player", args = {} , desc = "10 seconds" },
@@ -86,13 +85,7 @@ Admin.COMMANDS = {
 
     { id = "revive", name = "Revive", cat = "Powers", mass = true, target = "self", args = {}, desc = "Gets a downed player up; a dead one respawns where they fell" },
     { id = "heal", name = "Heal fully", cat = "Powers", mass = true, target = "self", args = {}, desc = "Full health and armour, injuries gone, revived if down" },
-    { id = "infect", name = "Infect (illness)", cat = "Powers", mass = true, target = "self",
-      args = { { "kind", "Kind", "illness" }, { "load", "Strength 1-100", "illload", opt = true } },
-      desc = "Gives them an illness for medics to find and treat (rhylib_medical)" },
-    { id = "cure", name = "Cure illness", cat = "Powers", mass = true, target = "self", args = {}, desc = "Takes an illness away" },
     { id = "buddha", name = "Buddha", cat = "Powers", target = "self", args = {}, desc = "Takes damage but never drops below 1 health" },
-    { id = "money", name = "Give money", cat = "Powers", target = "self", args = { { "amount", "Amount (negative takes)", "number" } }, aliases = { "addmoney" } },
-    { id = "setmoney", name = "Set money", cat = "Powers", perm = "money", target = "self", args = { { "amount", "Amount", "number" } } },
 
     -- Events (until they respawn)
     { id = "scale", name = "Size", cat = "Events", mass = true, target = "self", args = { { "size", "Size (1 = normal, 0.2 - 5)", "scale" } }, aliases = { "size" } },
@@ -108,19 +101,12 @@ Admin.COMMANDS = {
 
     -- Ranks
     { id = "rank", name = "Set staff rank", cat = "Ranks", target = "id", args = { { "rank", "Rank", "rank" } }, desc = "Below your own rank only" },
-    { id = "rrank", name = "Set roster rank", cat = "Ranks", perm = "roster", target = "id", args = { { "rank", "Rank", "rosterrank" } }, aliases = { "rosterrank" } },
-    { id = "battalion", name = "Set battalion", cat = "Ranks", perm = "roster", target = "id", args = { { "bn", "Battalion", "battalion" } }, desc = "Moves them in as PVT" },
-    { id = "unbattalion", name = "Remove from battalion", cat = "Ranks", perm = "roster", target = "id", args = {} },
-    { id = "train", name = "Pass basic training", cat = "Ranks", perm = "roster", target = "id", args = {} },
-    { id = "qual", name = "Qualification", cat = "Ranks", perm = "roster", target = "id", args = { { "qual", "Qualification", "qual" }, { "on", "On / off", "onoff" } } },
-    { id = "charreset", name = "Reset character", cat = "Ranks", target = "player", args = {}, desc = "They pick a new number and nickname" },
 
     -- Server / events
     { id = "map", name = "Change map", cat = "Server", args = { { "map", "Map", "map" } }, desc = "Pick from a list (or !map part-of-name); 10 s countdown" },
     { id = "cleanup", name = "Clean up spawned things", cat = "Server", target = "opt", args = {}, desc = "Everything that isn't part of the map or made permanent (toolgun Permanent tool); or one player's things with a target (^ = yours)" },
     { id = "cancelmap", name = "Cancel map change", cat = "Server", perm = "map", args = {} },
     { id = "restartmap", name = "Restart map", cat = "Server", perm = "map", args = {}, aliases = { "maprestart" }, desc = "Reloads this map after a 10 s countdown" },
-    { id = "hidecells", name = "Show / hide jail cells", cat = "Server", args = {}, desc = "Hides the jail cell rings for everyone (again to show them)" },
     { id = "freezeprops", name = "Freeze all props", cat = "Server", args = {}, aliases = { "nolag" }, desc = "Stops every moving prop (lag)" },
     { id = "cleardecals", name = "Clear decals", cat = "Server", args = {}, desc = "Blood, scorch marks and client death ragdolls, for everyone" },
     { id = "announce", name = "Announcement", cat = "Server", args = { { "text", "Text", "text", need = true } }, aliases = { "a" }, desc = "A banner for everyone" },
@@ -135,19 +121,19 @@ Admin.SECTIONS = {
     player = {
         { "Info & messages", { "info", "warnings", "tell", "warn", "unwarn" } },
         { "Move", { "goto", "bring", "return", "teleport", "spectate" } },
-        { "Health", { "heal", "revive", "hp", "armor", "respawn", "infect", "cure" } },
-        { "Restrain", { "freeze", "unfreeze", "free", "jail", "unjail" } },
+        { "Health", { "heal", "revive", "hp", "armor", "respawn" } },
+        { "Restrain", { "freeze", "unfreeze" } },
         { "Chat & voice", { "mute", "unmute", "gag", "ungag" } },
         { "Powers", { "god", "buddha", "noclip", "cloak", "notarget", "give" } },
         { "Event fun", { "scale", "speed", "jump", "model", "slap", "ignite", "extinguish" } },
-        { "Job & money", { "setjob", "money", "setmoney" } },
-        { "Roster & staff rank", { "rank", "rrank", "battalion", "unbattalion", "train", "qual", "charreset" } },
+        { "Job & money", { "setjob" } },
+        { "Roster & staff rank", { "rank" } },
         { "Punish", { "slay", "kick", "ban" } },
     },
     server = {
         { "Map", { "map", "restartmap", "cancelmap" } },
         { "Announcements & sound", { "announce", "playsound", "stopsound" } },
-        { "Cleanup", { "cleanup", "freezeprops", "cleardecals", "hidecells" } },
+        { "Cleanup", { "cleanup", "freezeprops", "cleardecals" } },
         { "Staff", { "who", "unspectate" } },
     },
     skip = { call = true, endcall = true, unban = true },
@@ -157,12 +143,61 @@ Admin.SECTIONS = {
 -- Also fills in c.order (list position) and c.perm (defaults to the id).
 Admin.byId = {}
 Admin.byAlias = {}
-for i, c in ipairs(Admin.COMMANDS) do
+local function index(c, i)
     c.order = i
     c.perm = c.perm or c.id
     Admin.byId[c.id] = c
     Admin.byAlias[c.id] = c
     for _, a in ipairs(c.aliases or {}) do Admin.byAlias[a] = c end
+end
+for i, c in ipairs(Admin.COMMANDS) do index(c, i) end
+
+-- Admin.AddCommand(def, handler, place): another addon adds an admin
+-- command (shared: call it on both realms so the staff menu knows it).
+--   def      same shape as an Admin.COMMANDS entry (id, name, cat,
+--            target, args, perm, mass, aliases, desc).
+--   handler  server: function(caller, target, args, ctx) like
+--            Admin.handlers (ignored on the client; may be nil there).
+--   place    optional { "player" | "server", "Section title" }: where the
+--            staff menu shows its button (a new section is made if needed).
+-- Same id again replaces it (Lua refresh). Admin's own chat parser
+-- handles every admin word first (PlayerSay -50), so a word is never also
+-- run by Rhylib.Command.
+-- Rhylib.Admin is created by rhylib_admin; other addons call this through
+-- Rhylib.After("admin", fn).
+-- Example (rhylib_mp):
+--   Rhylib.After("admin", function()
+--       Rhylib.Admin.AddCommand({ id = "jail", name = "Jail", cat = "Discipline", target = "player",
+--           args = { { "minutes", "Minutes", "minutes" } } }, SERVER and jailHandler, { "player", "Restrain" })
+--   end)
+function Admin.AddCommand(def, handler, place)
+    local old = Admin.byId[def.id]
+    if old then
+        for i, c in ipairs(Admin.COMMANDS) do
+            if c == old then Admin.COMMANDS[i] = def index(def, i) break end
+        end
+    else
+        Admin.COMMANDS[#Admin.COMMANDS + 1] = def
+        index(def, #Admin.COMMANDS)
+    end
+    def.args = def.args or {}
+    if SERVER and handler then
+        Admin.handlers = Admin.handlers or {}
+        Admin.handlers[def.id] = handler
+    end
+    if place and Admin.SECTIONS[place[1]] then
+        local list = Admin.SECTIONS[place[1]]
+        local sec
+        for _, sct in ipairs(list) do if sct[1] == place[2] then sec = sct end end
+        if not sec then
+            sec = { place[2], {} }
+            list[#list + 1] = sec
+        end
+        local have = false
+        for _, id in ipairs(sec[2]) do if id == def.id then have = true end end
+        if not have then sec[2][#sec[2] + 1] = def.id end
+    end
+    return def
 end
 
 -- Admin.ParseDuration(text): "30m" / "2h" / "1d" / "1w" / "1y" / "perm" /

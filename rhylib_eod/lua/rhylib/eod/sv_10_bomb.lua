@@ -6,28 +6,13 @@
     bomb.eod = st (state). Viewers (window open) get eod.state (compressed
     JSON of E.View) after every change; the probe answers with eod.read.
 
-    How a bomb works (the circuit model):
-      features f   E.Roll(kind) or a builder (GM custom / training) picks
-                   what the bomb has: det, battery, antiJam, motion, lid,
-                   sensor, charge, hop, mods, timerSecs.
-      parts        buildBoard(f) places boxes on a 760 x 420 board. Each
-                   part has an id ("bat", "cap", "det", ...); parts with
-                   term = true get + and − terminals for jumpers.
-      wires        { k = kind, a = part id, b = part id, [armoured],
-                   [sealed] }. The kind (supply, feed, det, ...) is the
-                   wire's job; players never see it, only its colour and
-                   the probe's reading (E.Reading).
-      state st     E.Build(f): cut[i], drained[part], capacitor time,
-                   timer, heat, and one sub-table per module.
-      rules        cutWire (by wire kind), shortPart (a jumper from a
-                   part's + to its own −), jumpParts (a jumper between two
-                   parts), the OPS table (one function per window action),
-                   and the world timer in sv_20_world (motion, anti-jam,
-                   timer, gas leak, tilt, torch). A rule that fails calls
-                   fail(bomb, cause) -> E.Detonate with an E.CAUSES key.
-      done         cutting the detonator line ("det") while it reads DEAD
-                   sets st.safe; E.CheckDone then also waits for the gas
-                   valve and the stabiliser before st.done.
+    The circuit model itself (rolling, the board, the rules, readings)
+    is pure and lives in sh_05_circuit.lua (E.Circuit); this file plays
+    its outcomes on real bombs: log lines (eod.msg), the timer readout,
+    detonation (fail -> E.Detonate with an E.CAUSES key), the tilt jolt
+    and heat after cuts and jumpers, and the OPS table (one function per
+    window action). The world timer in sv_20_world runs motion,
+    anti-jam, timer, gas leak, tilt and torch.
 
     Power: "powered" = any supply wire not cut (and its battery not
     shorted) OR a capacitor still at 5% or more. The capacitor starts to
@@ -54,284 +39,45 @@ end
 
 E.bombs = E.bombs or {}   -- [bomb entity] = true, every set-up bomb (the world timer walks it)
 
-local function chance(p) return math.random() < p end
--- Weighted pick: { key = weight, ... } -> a key.
-local function pickW(o)
-    local t = 0
-    for _, v in pairs(o) do t = t + v end
-    local x = math.random() * t
-    for k, v in pairs(o) do
-        x = x - v
-        if x < 0 then return k end
-    end
-    return next(o)
-end
-local function shuffle(t)
-    t = table.Copy(t)
-    for i = #t, 2, -1 do
-        local j = math.random(i)
-        t[i], t[j] = t[j], t[i]
-    end
-    return t
-end
+local C = E.Circuit   -- (sh_05_circuit.lua: the pure circuit model)
+
 -- E.Shuffle(list) -> a shuffled copy (the list itself is left alone).
-E.Shuffle = shuffle
+function E.Shuffle(t) return C.Shuffle(t) end
 
 --------------------------------------------------------------------------
--- Rolling and building
+-- Rolling and building (sh_05_circuit.lua has the model and the rules)
 --------------------------------------------------------------------------
 
--- Features for a bomb type (simple / small / large). Custom bombs pass
--- their own (GM window).
--- E.Roll(kind) -> f: a random feature table. Server only. Fields:
---   type       "simple" | "small" | "large" (callers may change it to
---              "custom" / "training" afterwards)
---   det        "timer" | "remote"
---   antiJam    bool (remote only)       motion   nil | "normal" | "sensitive"
---   lid        bool (lid switch)        battery  "single" | "dual" | "capacitor" | "collapse"
---   sensor     bool (self-powered charge: own cell + sensor)
---   charge     "he" | "gas" | "virus"   hop      bool (frequency hopping, large remote only)
---   mods       { [module id] = true }   timerSecs (optional; builders set it)
--- Simplified bombs are fixed: timer, lid switch, single battery, HE.
+-- E.Roll(kind) -> f: a random feature table (see C.Roll). Server only.
 -- Example: E.Rebuild(bomb, E.Roll("large"))
-function E.Roll(kind)
-    if kind == "simple" then
-        return { type = "simple", det = "timer", antiJam = false, motion = nil, lid = true, battery = "single",
-            sensor = false, charge = "he", hop = false, mods = {} }
-    end
-    local large = kind == "large"
-    local det = chance(large and 0.6 or 0.5) and "remote" or "timer"
-    local f = {
-        type = large and "large" or "small", det = det,
-        antiJam = det == "remote" and chance(large and 0.4 or 0.2),
-        motion = chance(large and 0.7 or 0.5) and (large and chance(0.5) and "sensitive" or "normal") or nil,
-        lid = chance(large and 0.5 or 0.4),
-        battery = pickW(large and { dual = 30, capacitor = 25, collapse = 25, single = 20 } or { single = 40, capacitor = 30, collapse = 30 }),
-        sensor = chance(large and 0.3 or 0.2),
-        charge = pickW(large and { he = 80, gas = 10, virus = 10 } or { he = 70, gas = 20, virus = 10 }),
-        hop = large and det == "remote" and chance(0.3),
-        mods = {},
-    }
-    -- Modules within the tier's budget: points = ranks, and a cap on how many.
-    -- (modules in random order; each one that fits is taken 75% of the time)
-    local t = E.TIERS[f.type]
-    local left, n = t.budget, 0
-    for _, m in ipairs(shuffle(E.MODS)) do
-        if n >= t.max then break end
-        if not (m.remote and det ~= "remote") and m.rank <= left and chance(0.75) then
-            f.mods[m.id] = true
-            left = left - m.rank
-            n = n + 1
-        end
-    end
-    return f
-end
+function E.Roll(kind) return C.Roll(kind) end
 
--- The board: parts (board units, 760 x 420) and wires.
--- Returns parts (list, in this order: the client and net eod.act refer
--- to a part by its index here) and wires (list; the index is the wire
--- number in eod.act / eod.read, so at most 31 wires: 5 bits).
---
--- Part ids:  bat / batB (batteries), cap (capacitor), col (collapse
--- circuit), aj (anti-jam), rx (receiver), tmr (timer), det (detonator),
--- chip (logic chip), relay + load (signal relay + dummy load), ant
--- (antenna), chg (charge), cell (charge cell of a self-powered charge).
--- Three columns: L (power), M (detonator side), R (antenna and charge).
---
--- Wire kinds (w.k) and what they join:
---   supply   bat/batB -> cap, else tmr, else det   battery power
---   feed     cap -> tmr or det                     capacitor output
---   tmrline  tmr -> det                            timer to detonator
---   collapse col -> bat                            collapse sense (LOOP 3V)
---   antenna  ant -> rx                             armoured with a relay
---   ajmon    aj -> rx                              anti-jam monitor (MON)
---   relay    rx -> relay, trig relay -> det        armoured (relay module)
---   sense    bat -> chg                            self-powered charge sensor
---   det      det -> chg                            the detonator line (sealed
---                                                  with the sealed module)
---   logic    chip -> det                           logic chip line
---   tamper   tmr -> chg                            tamper loop (LOOP 5V)
---   decoy    a pair not already wired              does nothing (1, or 2 on
---                                                  large/custom)
--- A new wire kind needs: a W(...) line here, a branch in E.Reading (what
--- the probe says), a branch in cutWire (what cutting it does), a name in
--- cl_20_gm KIND_NAMES, and a row in the manual's probe table.
-local function buildBoard(f)
-    local P, parts = {}, {}
-    -- add(id, label, sub-label, x, y, w, h, term): term = has + / − terminals
-    local function add(id, label, sub, x, y, w, h, term)
-        local p = { id = id, label = label, sub = sub, x = x, y = y, w = w, h = h, term = term or nil }
-        parts[#parts + 1] = p
-        P[id] = p
-    end
-    local L, M, R = 20, 310, 590
-    add("bat", f.battery == "dual" and "Battery A" or "Battery", "9V cell", L, 20, 130, 62, true)
-    if f.battery == "dual" then add("batB", "Battery B", "9V cell", L, 100, 130, 62, true) end
-    if f.battery == "capacitor" then add("cap", "Capacitor", "C-40", L, 180, 130, 62, true) end
-    if f.battery == "collapse" then add("col", "Collapse", "circuit", L, 260, 130, 56) end
-    if f.antiJam then add("aj", "Anti-jam", "module", L, 334, 130, 56) end
-    if f.det == "remote" then add("rx", "Receiver", "RX-9", M, 20, 140, 58) end
-    if f.det == "timer" then add("tmr", "Timer", "", M, 100, 140, 62) end
-    add("det", "Detonator", "", M, 190, 140, 84, true)
-    if f.mods.chip then add("chip", "Logic chip", "LED", M, 300, 140, 70) end
-    local relay = f.mods.relay and f.det == "remote"
-    if relay then
-        add("relay", "Relay", "armoured", M, 100, 140, 62, true)
-        add("load", "Dummy load", "", 458, 112, 126, 56, true)
-    end
-    if f.det == "remote" then add("ant", "Antenna", "", R, 20, 150, 48) end
-    local sub = (f.charge == "gas" and "gas canister") or (f.charge == "virus" and "bio canister") or "HE block"
-    add("chg", "Charge", f.sensor and (sub .. " · cell") or sub, R, 96, 150, 300)
-    if f.sensor then add("cell", "Charge cell", "+ sensor", R + 12, 316, 126, 64, true) end
-
-    local wires = {}
-    -- W(kind, from part, to part, extra fields such as armoured / sealed)
-    local function W(k, a, b, extra)
-        local w = { k = k, a = a, b = b }
-        if extra then for kk, vv in pairs(extra) do w[kk] = vv end end
-        wires[#wires + 1] = w
-    end
-    local nxt = P.cap and "cap" or P.tmr and "tmr" or "det"
-    W("supply", "bat", nxt)
-    if P.batB then W("supply", "batB", nxt) end
-    if P.cap then W("feed", "cap", P.tmr and "tmr" or "det") end
-    if P.tmr then W("tmrline", "tmr", "det") end
-    if P.col then W("collapse", "col", "bat") end
-    if P.ant then W("antenna", "ant", "rx", relay and { armoured = true } or nil) end
-    if P.aj then W("ajmon", "aj", "rx") end
-    if relay then
-        W("relay", "rx", "relay", { armoured = true })
-        W("trig", "relay", "det", { armoured = true })
-    end
-    if f.sensor then W("sense", "bat", "chg") end
-    W("det", "det", "chg", f.mods.sealed and { sealed = true } or nil)
-    if P.chip then W("logic", "chip", "det") end
-    -- (tamper loop: never on simplified, half the small bombs, always otherwise)
-    if P.tmr and f.type ~= "simple" and (f.type ~= "small" or chance(0.5)) then W("tamper", "tmr", "chg") end
-    -- decoys: pairs of parts that exist and aren't wired yet
-    local cand = {}
-    for _, c in ipairs({ { "bat", "chg" }, { "rx", "chg" }, { "tmr", "chg" }, { "col", "chg" }, { "aj", "chg" }, { "chip", "chg" }, { "cap", "chg" }, { "batB", "det" } }) do
-        local dup = false
-        for _, w in ipairs(wires) do if w.a == c[1] and w.b == c[2] then dup = true end end
-        if P[c[1]] and P[c[2]] and not dup then cand[#cand + 1] = c end
-    end
-    local nd = (f.type == "large" or f.type == "custom") and 2 or 1
-    for i, c in ipairs(shuffle(cand)) do
-        if i > nd then break end
-        W("decoy", c[1], c[2])
-    end
-    if not relay then f.mods.relay = nil end   -- (a relay asked for on a timer bomb is dropped)
-    return parts, wires
-end
-
--- Tilt switch drift: three sines (slow, medium, fast) with random
--- amplitude, speed and phase. See E.TiltPos in sh_00_config.
-local function sineSet(amp)
-    local s = { a = {}, w = {}, p = {} }
-    local base, periods = { 0.3, 0.2, 0.12 }, { { 7, 13 }, { 4, 8 }, { 2.5, 4.5 } }
-    for i = 1, 3 do
-        s.a[i] = base[i] * amp * math.Rand(0.85, 1.15)
-        s.w[i] = 2 * math.pi / math.Rand(periods[i][1], periods[i][2])
-        s.p[i] = math.Rand(0, 2 * math.pi)
-    end
-    return s
-end
-
--- A fresh state for features f.
--- E.Build(f) -> st. Server only. Doesn't touch any entity: E.SetupBomb
--- (sv_20_world) stores it as bomb.eod. Main fields:
---   f, type, kindName, big, mods, parts, wires, colors[i] (E.COLOURS index per wire)
---   freq (MHz, 2405-2475), hopAt     viewers { [ply] = true } (window open)
---   inspected, open, lidReleased     cut[i], drained[partId], jumps, jumpers left
---   antiJam / collapse / sensor      start from f; cutting MON / LOOP 3V or
---                                    shorting the charge cell turns them off
---   remoteDead, relayed              receiver can't fire the bomb any more
---   timerSecs, timerEnd, timerLeft, timerWaiting, timerStopped
---   capAt, capZero                   capacitor drain start / shorted empty
---   safe, gasSealed, done, over      detonator cut / valve sealed / finished / gone off
---   heat, heatAt                     thermal heat (cools heatCool per second)
--- Module state (nil when the bomb doesn't have the module):
---   sealedOpen, sealedP (0-1)        sealed plate (always open without the module)
---   tilt  { x, y = sine sets, nx, ny = nudges, mult, t0, pausedAt }
---   chip  { code = E.CHIP_CODES row, ok }
---   liquid { band (green band start), period, ph, drained }
---   fake  { removed, xrays, order (mount numbers in cut order), n, cut[3], cols[3] }
---   stab  { dose (0.75-5.0 ml in 0.25 steps), done }
--- A new module adds its own sub-table here, guarded by f.mods.<id>.
-function E.Build(f)
-    local parts, wires = buildBoard(f)
-    local t = E.TIERS[f.type] or E.TIERS.small
-    local all = {}
-    for i = 1, #E.COLOURS do all[i] = i end
-    local cols = shuffle(all)
-    local st = {
-        f = f, type = f.type, kindName = t.name, big = t.big, mods = f.mods, parts = parts, wires = wires,
-        colors = {}, freq = 2405 + math.random(0, 70), hopAt = CurTime() + (E.Cfg("hopEvery") or 25),
-        viewers = {},
-        inspected = false, open = false, lidReleased = false,
-        cut = {}, drained = {}, jumps = {}, jumpers = E.Cfg("jumpers") or 3,
-        antiJam = f.antiJam and true or false, collapse = f.battery == "collapse", sensor = f.sensor and true or false,
-        remoteDead = f.det ~= "remote", relayed = false,
-        timerSecs = f.det == "timer" and (f.timerSecs or (f.type == "simple" and 150 or t.big and 240 or 180)) or nil,
-        timerWaiting = f.det == "timer",
-        safe = false, gasSealed = false, done = false, over = false, recovered = false,
-        heat = 0, heatAt = CurTime(), sealedOpen = not f.mods.sealed, sealedP = 0,
-        tilt = f.mods.tilt and { x = sineSet(1), y = sineSet(1), nx = 0, ny = 0, mult = t.big and 1 or 0.85 } or nil,
-        chip = f.mods.chip and { code = math.random(#E.CHIP_CODES), ok = false } or nil,
-        liquid = f.mods.liquid and { band = 15 + math.random() * 60, period = 3.5 + math.random() * 3, ph = math.random() * 6.283, drained = false } or nil,
-        fake = f.mods.fake and { removed = false, xrays = E.Cfg("xrays") or 2, order = shuffle({ 1, 2, 3 }), n = 0, cut = { false, false, false }, cols = {} } or nil,
-        stab = f.mods.stab and { dose = 0.75 + math.random(0, 17) * 0.25, done = false } or nil,
-    }
-    for i = 1, #wires do st.colors[i] = cols[(i - 1) % #cols + 1] end
-    if st.fake then
-        local c2 = shuffle({ 1, 2, 3, 4, 5, 6, 7, 8 })
-        st.fake.cols = { c2[1], c2[2], c2[3] }
-    end
-    return st
-end
+-- E.Build(f) -> st: a fresh state (see C.Build). Server only. Doesn't
+-- touch any entity: E.SetupBomb (sv_20_world) stores it as bomb.eod.
+function E.Build(f) return C.Build(f, CurTime()) end
 
 --------------------------------------------------------------------------
--- Circuit helpers
+-- Circuit helpers (now = CurTime())
 --------------------------------------------------------------------------
 
--- Is any battery still feeding the board? (a supply wire not cut, whose
--- battery wasn't shorted). E.AnySupply(st) -> bool.
-local function anySupply(st)
-    for i, w in ipairs(st.wires) do
-        if w.k == "supply" and not st.cut[i] and not st.drained[w.a] then return true end
-    end
-    return false
-end
-E.AnySupply = anySupply
+-- E.AnySupply(st) -> bool: is any battery still feeding the board?
+E.AnySupply = C.AnySupply
+local anySupply = C.AnySupply
 
--- Capacitor charge, 0-100. 100 until the supply is gone (capAt set by
--- powerGone), then a straight line down to 0 over capDrain seconds;
--- 0 once shorted (capZero) or with no capacitor. E.CapNow(st) -> number.
-local function capNow(st)
-    if st.f.battery ~= "capacitor" or st.capZero then return 0 end
-    if not st.capAt then return 100 end
-    return math.max(0, 100 - (CurTime() - st.capAt) * 100 / math.max(1, E.Cfg("capDrain") or 15))
-end
-E.CapNow = capNow
+-- E.CapNow(st) -> 0-100: capacitor charge now.
+function E.CapNow(st) return C.CapNow(st, CurTime()) end
+local capNow = E.CapNow
 
 -- Live power anywhere: a battery, or the capacitor at 5% or more.
-local function powered(st) return anySupply(st) or capNow(st) >= 5 end
+local function powered(st) return C.Powered(st, CurTime()) end
 
 -- E.Covered(bomb) -> bool: an active interference device blocked this
 -- bomb's remote signal in the last 0.5 s (the world timer refreshes it).
 function E.Covered(bomb) return (bomb.eodCovered or 0) > CurTime() end
 
--- Board heat now (heat at heatAt, minus cooling since). E.HeatNow(st).
-local function heatNow(st) return math.max(0, st.heat - (CurTime() - st.heatAt) * (E.Cfg("heatCool") or 9)) end
-E.HeatNow = heatNow
-
-local function isBattery(id) return id == "bat" or id == "batB" end
-
-local function partOf(st, id)
-    for _, p in ipairs(st.parts) do if p.id == id then return p end end
-end
-
-local function colourName(st, i) return E.COLOURS[st.colors[i] or 1][1] end
+-- E.HeatNow(st): board heat now.
+function E.HeatNow(st) return C.HeatNow(st, CurTime()) end
+local heatNow = E.HeatNow
 
 --------------------------------------------------------------------------
 -- Sending
@@ -381,7 +127,7 @@ function E.View(bomb, ply)
         jumps = st.jumps, jumpers = st.jumpers, safe = st.safe, done = st.done, gas = st.f.charge ~= "he", gasSealed = st.gasSealed,
         leakEnd = st.leakEnd, relayed = st.relayed, now = now, wires = {},
         heat = heatNow(st), torching = st.torchBy ~= nil, sealedOpen = st.sealedOpen, sealedP = st.sealedP,
-        recover = st.done and not st.recovered and E.Skill(ply, "eod_render") and Rhylib.Items and Rhylib.Items.Get("rhylib_he_charge") and true or nil,
+        recover = st.done and not st.recovered and not bomb.IsTrainingBomb and E.Skill(ply, "eod_render") and Rhylib.Items and Rhylib.Items.Get("rhylib_he_charge") and true or nil,
         kit = E.HasKit(ply),
     }
     for i, w in ipairs(st.wires) do
@@ -468,51 +214,21 @@ local function fail(bomb, cause) E.Detonate(bomb, cause) return true end
 -- fired. Only bombs with the thermal fuse heat up, unless always (the
 -- torch on a sealed plate heats any bomb).
 local function addHeat(bomb, ply, n, always)
-    local st = bomb.eod
-    if not (st.mods.fuse or always) then return false end
-    st.heat = heatNow(st) + n
-    st.heatAt = CurTime()
-    if st.heat >= 100 then return fail(bomb, "heat") end
+    if C.AddHeat(bomb.eod, n, CurTime(), always) then return fail(bomb, "heat") end
     return false
 end
 E.AddHeat = addHeat
 
--- Tilt switch: knock the bubble k in a random direction (cuts 0.12,
--- jumpers 0.16, mount cuts 0.1).
-local function jolt(bomb, ply, k)
-    local t = bomb.eod.tilt
-    if not t or bomb.eod.safe then return end
-    local a = math.random() * 2 * math.pi
-    t.nx = t.nx + math.cos(a) * k
-    t.ny = t.ny + math.sin(a) * k
-end
-
--- Power is gone (every supply cut or drained).
--- Self-powered charge still armed -> fires. Otherwise the capacitor
--- starts draining and a timer stops (it keeps the time it had left).
--- Returns true if it fired.
-local function powerGone(bomb)
-    local st = bomb.eod
-    if st.sensor then return fail(bomb, "sensor") end
-    if st.f.battery == "capacitor" and not st.capAt and not st.capZero then st.capAt = CurTime() end
-    if st.timerEnd then
-        st.timerLeft = math.max(0, st.timerEnd - CurTime())
-        st.timerEnd = nil
-    end
-    if st.timerSecs then st.timerStopped = true st.timerWaiting = false end
-    return false
-end
+-- Tilt switch: knock the bubble k in a random direction.
+local function jolt(bomb, ply, k) C.Jolt(bomb.eod, k) end
 
 -- E.CheckDone(bomb): once the detonator is cut (st.safe), the gas valve
 -- sealed (gas / virus) and the stabiliser dosed (if any), mark the bomb
 -- done: the readout says SAFE and viewers get eod.done. Called after
--- every action; a new module that must be finished after the detonator
--- line adds its check here.
+-- every action (C.ReadyDone has the conditions).
 function E.CheckDone(bomb)
     local st = bomb.eod
-    if st.done or st.over or not st.safe then return end
-    if st.f.charge ~= "he" and not st.gasSealed then return end
-    if st.stab and not st.stab.done then return end
+    if not C.ReadyDone(st) then return end
     st.done = true
     st.leakEnd = nil
     st.torchBy = nil
@@ -527,196 +243,28 @@ function E.CheckDone(bomb)
     end
 end
 
--- E.Reading(st, i) -> string: what the probe says about wire i. This is
--- the only way players learn a wire's job, so each kind has its own
--- wording (the manual's "Probe readings" table explains them):
---   supply "LIVE 9V" / "DEAD (drained)"; feed / det / tmrline: "LIVE 9V"
---   (tmrline adds "· CLOCK"), "LIVE · CAP n%", "DEAD · CAP n%" (under 5%),
---   "DEAD"; antenna "SIGNAL · f GHz" / "JAMMED · f GHz" / "DEAD";
---   ajmon "MON ..."; collapse "LOOP 3V"; sense "LIVE 9V · SENSE";
---   tamper "LOOP 5V"; logic "LOGIC · pulsing" / "DEAD · chip safe";
---   relay / trig "RELAY ..." / "TRIGGER ..."; decoy "DEAD".
+-- E.Reading(st, i) -> string: what the probe says about wire i now (C.Reading).
 -- st.covered must be set first (OPS[4] does) for the JAMMED reading.
-function E.Reading(st, i)
-    if st.cut[i] then return "CUT" end
-    local w = st.wires[i]
-    local k = w.k
-    local cap = capNow(st)
-    if k == "supply" then return st.drained[w.a] and "DEAD (drained)" or "LIVE 9V" end
-    if k == "feed" or k == "det" or k == "tmrline" then
-        if anySupply(st) then return "LIVE 9V" .. (k == "tmrline" and " · CLOCK" or "") end
-        if st.f.battery == "capacitor" and cap >= 5 then return "LIVE · CAP " .. math.Round(cap) .. "%" end
-        if st.f.battery == "capacitor" and k ~= "tmrline" and cap > 0 then return "DEAD · CAP " .. math.Round(cap) .. "%" end
-        return "DEAD"
-    end
-    local freq = string.format("%.3f GHz", st.freq / 1000)
-    if k == "antenna" then
-        local base = (st.remoteDead and not st.relayed) and "DEAD" or ((st.covered and "JAMMED · " or "SIGNAL · ") .. freq)
-        return base .. (w.armoured and " · armoured" or "")
-    end
-    if k == "ajmon" then return "MON · watching receiver" end
-    if k == "collapse" then return "LOOP 3V" end
-    if k == "sense" then return anySupply(st) and "LIVE 9V · SENSE" or "DEAD" end
-    if k == "tamper" then return "LOOP 5V" end
-    if k == "logic" then return st.chip and st.chip.ok and "DEAD · chip safe" or "LOGIC · pulsing" end
-    if k == "relay" then return st.relayed and "SIGNAL → DUMMY LOAD · armoured" or ("RELAY · " .. freq .. " · armoured") end
-    if k == "trig" then return st.relayed and "DEAD · armoured" or "TRIGGER · armed · armoured" end
-    return "DEAD"
+function E.Reading(st, i) return C.Reading(st, i, CurTime()) end
+
+-- Play an outcome from the circuit rules: a new timer end onto the
+-- bomb's readout, its log lines to ply, then the detonation if any.
+-- Returns true if the bomb went off.
+local function apply(bomb, ply, o)
+    if o.timerEnd then bomb:SetNW2Float("rhylib_eodEnd", o.timerEnd) end
+    for _, l in ipairs(o.lines) do msg(ply, l[1], l[2]) end
+    if o.boom then return fail(bomb, o.boom) end
+    return false
 end
 
--- Wirecutters on wire i. The rule for each wire kind:
---   supply   collapse armed -> boom; else cut; last supply -> powerGone
---   feed / tmrline   still powered -> boom
---   antenna  anti-jam armed -> boom; else the receiver is dead
---   sense    self-powered charge still armed -> boom
---   ajmon    disarms anti-jam      collapse  disarms the collapse circuit
---   tamper   halves a running timer
---   logic    chip not in safe mode -> boom
---   det      liquid charge still full, chip not safe, or still powered
---            -> boom; else SAFE (gas / virus: the valve leaks, seal it
---            within leakTime)
---   decoy    nothing
--- Sealed wires can't be cut until the plate is open; armoured never.
--- Every cut jolts the tilt bubble and heats a fused board.
--- "was" = powered before this cut, so cutting the last supply and then a
--- line doesn't count as live. Returns true if the bomb went off.
+-- Wirecutters on wire i (rules: C.Cut). Every cut jolts the tilt bubble
+-- and heats a fused board. Returns true if the bomb went off.
 local function cutWire(bomb, ply, i)
-    local st = bomb.eod
-    local w = st.wires[i]
-    if not w or st.cut[i] then return end
-    if w.sealed and not st.sealedOpen then msg(ply, "That wire runs under the sealed plate") return end
-    if w.armoured then msg(ply, colourName(st, i) .. " is armoured: the cutters won't go through", true) return end
-    local name = colourName(st, i)
-    local was = powered(st)
-    local k = w.k
-    if k == "supply" then
-        if st.collapse then return fail(bomb, "collapse") end
-        st.cut[i] = true
-        msg(ply, "Cut " .. name .. " (battery supply)")
-        if not anySupply(st) and powerGone(bomb) then return true end
-    elseif k == "feed" then
-        if was then return fail(bomb, "feed") end
-        st.cut[i] = true
-        msg(ply, "Cut " .. name .. " (capacitor feed, dead)")
-    elseif k == "tmrline" then
-        if was then return fail(bomb, "tmrline") end
-        st.cut[i] = true
-        msg(ply, "Cut " .. name .. " (timer line, dead)")
-    elseif k == "antenna" then
-        if st.antiJam then return fail(bomb, "antenna") end
-        st.cut[i] = true
-        st.remoteDead = true
-        msg(ply, "Cut " .. name .. ": receiver dead")
-    elseif k == "sense" then
-        if st.sensor then return fail(bomb, "sensor") end
-        st.cut[i] = true
-        msg(ply, "Cut " .. name .. " (SENSE line, sensor already dead)")
-    elseif k == "ajmon" then
-        st.cut[i] = true
-        st.antiJam = false
-        msg(ply, "Cut " .. name .. ": anti-jam disarmed")
-    elseif k == "collapse" then
-        st.cut[i] = true
-        st.collapse = false
-        msg(ply, "Cut " .. name .. ": collapse circuit disarmed")
-    elseif k == "tamper" then
-        st.cut[i] = true
-        if st.timerEnd then
-            local left = (st.timerEnd - CurTime()) / 2
-            st.timerEnd = CurTime() + left
-            bomb:SetNW2Float("rhylib_eodEnd", st.timerEnd)
-            msg(ply, "Cut " .. name .. ": tamper loop, the timer halved", true)
-        else
-            msg(ply, "Cut " .. name .. " (tamper loop)")
-        end
-    elseif k == "logic" then
-        if not (st.chip and st.chip.ok) then return fail(bomb, "chip") end
-        st.cut[i] = true
-        msg(ply, "Cut " .. name .. " (logic line, chip already safe)")
-    elseif k == "det" then
-        if st.liquid and not st.liquid.drained then return fail(bomb, "liquidfull") end
-        if st.chip and not st.chip.ok then return fail(bomb, "chip") end
-        if was then return fail(bomb, "det") end
-        st.cut[i] = true
-        st.safe = true
-        msg(ply, "Cut " .. name .. ": detonator disconnected")
-        if st.f.charge ~= "he" then
-            st.leakEnd = CurTime() + (E.Cfg("leakTime") or 20)
-            msg(ply, "The canister valve is open: seal it", true)
-        end
-    else
-        st.cut[i] = true
-        msg(ply, "Cut " .. name .. ": nothing happened")
-    end
+    local o = C.Cut(bomb.eod, i, CurTime())
+    if apply(bomb, ply, o) then return true end
+    if not o.cut then return end
     jolt(bomb, ply, 0.12)
-    if addHeat(bomb, ply, E.Cfg("heatCut") or 24) then return true end
-    return false
-end
-
--- A jumper from a part's + to its own − (a short):
---   relay -> boom (latches closed)        load -> nothing
---   cell  -> self-powered charge disarmed
---   cap   -> supply still live: boom; else emptied at once
---   det   -> powered: boom; else nothing
---   bat / batB -> collapse armed: boom; else that battery is drained
---                 (the last one -> powerGone)
--- Returns true if the bomb went off.
-local function shortPart(bomb, ply, id)
-    local st = bomb.eod
-    local label = (partOf(st, id) or {}).label or id
-    if id == "relay" then return fail(bomb, "relayshort") end
-    if id == "load" then msg(ply, "Shorted the dummy load: no effect") return false end
-    if id == "cell" then
-        st.sensor = false
-        msg(ply, "Shorted the charge cell: sparks, then nothing. Sensor dead")
-        return false
-    end
-    if id == "cap" then
-        if anySupply(st) then return fail(bomb, "capshort") end
-        st.capZero = true
-        msg(ply, "Shorted the capacitor: emptied")
-        return false
-    end
-    if id == "det" then
-        if powered(st) then return fail(bomb, "detshort") end
-        msg(ply, "Shorted the detonator: no power, nothing happened")
-        return false
-    end
-    if isBattery(id) then
-        if st.collapse then return fail(bomb, "collapse") end
-        st.drained[id] = true
-        msg(ply, "Shorted " .. label .. ": drained")
-        if not anySupply(st) then return powerGone(bomb) end
-        return false
-    end
-    msg(ply, "Jumper across " .. label .. ": no effect")
-    return false
-end
-
--- A jumper between two different parts (terminal polarity doesn't
--- matter here):
---   relay <-> load -> the relay is redirected: the remote can't fire it
---   relay <-> det  -> boom
---   det <-> a live battery or a capacitor at 5%+ -> boom
---   anything else  -> nothing (it still uses up the jumper)
--- Returns true if the bomb went off.
-local function jumpParts(bomb, ply, x, y)
-    local st = bomb.eod
-    local a, b = x, y
-    if a > b then a, b = b, a end   -- (sorted, so each pair is checked once)
-    if a == "load" and b == "relay" then
-        st.relayed = true
-        st.remoteDead = true
-        msg(ply, "Relay redirected into the dummy load: the remote can't reach the detonator")
-        return false
-    end
-    if a == "det" and b == "relay" then return fail(bomb, "relaydet") end
-    local other = x == "det" and y or y == "det" and x or nil
-    if other then
-        local live = (isBattery(other) and not st.drained[other] and anySupply(st)) or (other == "cap" and capNow(st) >= 5)
-        if live then return fail(bomb, "jumpdet") end
-    end
-    msg(ply, "Jumper from " .. ((partOf(st, x) or {}).label or x) .. " to " .. ((partOf(st, y) or {}).label or y) .. ": no effect")
+    if addHeat(bomb, ply, E.Cfg("heatCut")) then return true end
     return false
 end
 
@@ -726,7 +274,7 @@ end
 
 -- Close enough to work on it: reach + 40 units of slack for movement.
 local function near(ply, bomb)
-    local r = E.Cfg("reach") or 130
+    local r = E.Cfg("reach")
     return IsValid(bomb) and bomb.eod and IsValid(ply) and ply:Alive() and ply:GetPos():DistToSqr(bomb:GetPos()) <= (r + 40) ^ 2
 end
 
@@ -774,7 +322,7 @@ OPS[0] = function(ply, bomb) ply.eodInspect = { bomb = bomb, t = CurTime() } end
 
 OPS[1] = function(ply, bomb)
     local st = bomb.eod
-    local need = (E.Cfg("inspectTime") or 2.5)
+    local need = E.Cfg("inspectTime")
     local ins = ply.eodInspect
     ply.eodInspect = nil
     if st.inspected or not ins or ins.bomb ~= bomb or CurTime() - ins.t < need * 0.9 then return end
@@ -832,8 +380,8 @@ OPS[5] = function(ply, bomb, i)
 end
 
 -- 6: jumper from part index pa (terminal pola: true = +) to part pb
--- (polb). Both parts need terminals. Same part = a short (shortPart),
--- two parts = jumpParts. Uses one jumper even if nothing happens.
+-- (polb). Both parts need terminals. Same part = a short (C.Short),
+-- two parts = C.Jump. Uses one jumper even if nothing happens.
 OPS[6] = function(ply, bomb, pa, pola, pb, polb)
     local st = bomb.eod
     if not boardReady(ply, st) then return end
@@ -842,11 +390,11 @@ OPS[6] = function(ply, bomb, pa, pola, pb, polb)
     if st.jumpers <= 0 then msg(ply, "No jumper wires left", true) return end
     st.jumpers = st.jumpers - 1
     st.jumps[#st.jumps + 1] = { a = pa, pa = pola, b = pb, pb = polb }
-    local boom
-    if pa == pb then boom = shortPart(bomb, ply, A.id) else boom = jumpParts(bomb, ply, A.id, B.id) end
-    if boom then return end
+    local o
+    if pa == pb then o = C.Short(st, A.id, CurTime()) else o = C.Jump(st, A.id, B.id, CurTime()) end
+    if apply(bomb, ply, o) then return end
     jolt(bomb, ply, 0.16)
-    addHeat(bomb, ply, E.Cfg("heatJumper") or 30)
+    addHeat(bomb, ply, E.Cfg("heatJumper"))
 end
 
 -- 7: nudge the tilt bubble (dx, dy each -1..1; 0.14 per nudge, offsets kept within ±3).
@@ -877,12 +425,7 @@ end
 OPS[9] = function(ply, bomb, sw)
     local st = bomb.eod
     if not (st.chip and st.open) or st.chip.ok or not E.HasKit(ply) then return end
-    if sw ~= E.CHIP_CODES[st.chip.code][2] then
-        st.chipWrong = sw
-        return fail(bomb, "chipwrong")
-    end
-    st.chip.ok = true
-    msg(ply, "Logic chip in safe mode")
+    if apply(bomb, ply, C.Chip(st, sw)) then return end
     addHeat(bomb, ply, 10)
 end
 
@@ -892,12 +435,9 @@ end
 OPS[10] = function(ply, bomb)
     local st = bomb.eod
     if not (st.liquid and st.open) or st.liquid.drained or not E.HasKit(ply) then return end
-    if powered(st) then return fail(bomb, "liquidpower") end
     -- (a little slack for latency: the needle moves ~10%/0.1 s at most)
-    local n = E.LiquidNeedle(st.liquid, CurTime() - math.min(0.25, ply:Ping() / 1000))
-    if n < st.liquid.band - 2 or n > st.liquid.band + 16 then return fail(bomb, "liquid") end
-    st.liquid.drained = true
-    msg(ply, "Liquid charge drained")
+    local now = CurTime()
+    apply(bomb, ply, C.Drain(st, now, now - math.min(0.25, ply:Ping() / 1000)))
 end
 
 -- 11: X-ray the fake board: eod.xray to this player only (the order is
@@ -906,7 +446,7 @@ OPS[11] = function(ply, bomb)
     local st = bomb.eod
     if not (st.fake and st.open) or st.fake.removed or st.fake.xrays <= 0 or not E.HasKit(ply) then return end
     st.fake.xrays = st.fake.xrays - 1
-    local secs = (E.Cfg("xrayTime") or 5)
+    local secs = E.Cfg("xrayTime")
     Net.Start("eod.xray")
     net.WriteEntity(bomb)
     for k = 1, 3 do net.WriteUInt(st.fake.order[k], 2) end
@@ -920,9 +460,7 @@ end
 OPS[12] = function(ply, bomb, m)
     local st = bomb.eod
     if not (st.fake and st.open) or st.fake.removed or not E.HasKit(ply) or st.fake.cut[m] == nil or st.fake.cut[m] then return end
-    if st.fake.order[st.fake.n + 1] ~= m then return fail(bomb, "fake") end
-    st.fake.cut[m] = true
-    st.fake.n = st.fake.n + 1
+    if apply(bomb, ply, C.Mount(st, m)) then return end
     jolt(bomb, ply, 0.1)
     if addHeat(bomb, ply, 20) then return end
     if st.fake.n >= 3 then
@@ -936,30 +474,28 @@ end
 OPS[13] = function(ply, bomb, q)
     local st = bomb.eod
     if not st.stab or not st.safe or st.stab.done or not E.HasKit(ply) then return end
-    local dose = q * 0.25
-    if math.abs(dose - st.stab.dose) > 0.01 then
-        st.stabSet = dose
-        return fail(bomb, "stab")
-    end
-    st.stab.done = true
-    msg(ply, "Charge stabilised")
+    apply(bomb, ply, C.Stab(st, q))
 end
 
 -- 14: seal the gas valve (gas / virus charges, after the detonator cut).
+-- Needs an EOD kit, like every other step on the board.
 OPS[14] = function(ply, bomb)
     local st = bomb.eod
     if not st.safe or st.f.charge == "he" or st.gasSealed then return end
+    if not E.HasKit(ply) then msg(ply, "You need an EOD kit", true) return end
     st.gasSealed = true
     st.leakEnd = nil
     msg(ply, "Valve sealed")
 end
 
 -- 15: Render safe skill (eod_render): take the charge from a finished
--- bomb as rhylib_he_charge items (1, or 2 from a big bomb), once.
+-- bomb as rhylib_he_charge items (1, or 2 from a big bomb), once; never
+-- from a training bomb.
 -- Needs rhylib_republic (the item) and rhylib_inventory.
 OPS[15] = function(ply, bomb)
     local st = bomb.eod
-    if not st.done or st.recovered or not E.Skill(ply, "eod_render") then return end
+    -- Never from training bombs (anyone can re-arm those: endless charges).
+    if not st.done or st.recovered or bomb.IsTrainingBomb or not E.Skill(ply, "eod_render") then return end
     local Inv = Rhylib.Inventory
     if not (Inv and Inv.AddOrDrop and Rhylib.Items and Rhylib.Items.Get("rhylib_he_charge")) then return end
     st.recovered = true

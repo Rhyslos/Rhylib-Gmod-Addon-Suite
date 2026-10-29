@@ -3,7 +3,7 @@
     until a character is saved. Clone number + nickname, with a live
     preview of the name: CC-1234 Nickname, and looks (hair, facial hair)
     with a preview (cl_15_look.lua).
-    Client only. Needs rhylib_menus (Rhylib.Menus.Kit); without it no
+    Client only. Needs the UI kit (Rhylib.UI.Kit, rhylib_core); without it no
     window opens. Sends roster.create (number, nickname, looks via
     R.WriteLook); the server answers roster.created (ok, message).
     Registers a Menus closer so Esc can't close it.
@@ -12,7 +12,7 @@
 local R = Rhylib.Roster
 local panel
 
-local function K() return Rhylib.Menus and Rhylib.Menus.Kit end
+local function K() return Rhylib.UI and Rhylib.UI.Kit end
 
 local function open()
     local k = K()
@@ -154,6 +154,8 @@ Rhylib.Net.Receive("roster.created", function()
     if not IsValid(panel) then return end
     if ok then
         panel:Remove()
+        -- (a new character: the getting-started card, cl_15_welcome.lua)
+        timer.Simple(0.6, function() if R.ShowWelcome then R.ShowWelcome() end end)
     else
         panel.err = msg
     end

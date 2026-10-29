@@ -20,7 +20,7 @@ end
 
 local function build(page)
     local Menus = Rhylib.Menus
-    local Kit = Menus.Kit
+    local Kit = Rhylib.UI.Kit
     local C, S = Kit.C, Kit.S
     local me = LocalPlayer()
     local cur = K.ClassOf(me)
@@ -126,7 +126,7 @@ end
 
 local function addPage()
     local Menus = Rhylib.Menus
-    if not (Menus and Menus.AddPage and Menus.Kit) then return end
+    if not (Menus and Menus.AddPage and Rhylib.UI and Rhylib.UI.Kit) then return end
     Menus.AddPage("class", {
         title = "Class",
         order = 23,   -- (right under Skills)

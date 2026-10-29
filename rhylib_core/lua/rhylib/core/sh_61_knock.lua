@@ -106,10 +106,9 @@ function L.Knock(ply, secs, push, soft)
     if ply:InVehicle() then ply:ExitVehicle() end
     if soft then
         -- Off a grapple rope or jetpack thrust first (they'd hold them up).
-        local G = Rhylib.Weapons and Rhylib.Weapons.Grapple
-        if G and G.Detach and G.Attached and G.Attached(ply) then G.Detach(ply) end
-        local J = Rhylib.Jetpack
-        if J and J.DT_THRUST and ply:GetDTBool(J.DT_THRUST) then ply:SetDTBool(J.DT_THRUST, false) end
+        -- Hook Rhylib.ForceRelease(ply, why): anything holding the player
+        -- up or moving them (grapple, jetpack, a future zipline) lets go.
+        hook.Run("Rhylib.ForceRelease", ply, "knock")
         ply:SetNW2Bool("rhylib_knockSoft", true)
         if ply:GetCollisionGroup() ~= COLLISION_GROUP_WEAPON then
             ply.rhylibKnockCG = ply:GetCollisionGroup()

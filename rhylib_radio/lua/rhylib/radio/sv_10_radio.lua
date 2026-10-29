@@ -17,7 +17,6 @@
                     (9 bits each, 0 = none)
       radio.pos     server -> squad members, every second: count (8), per
                     mate entindex (8) + x, y, z (Int 16 each)
-      radio.note    server -> player: a short message (string) for chat
       radio.txev    server -> everyone who hears the old or new target:
                     talker entindex (8), tx kind (2), id (9)
       radio.state   client: off, muted, deafened (3 bools). 6, 6
@@ -37,11 +36,18 @@
 
 local R = Rhylib.Radio
 local band, rshift = bit.band, bit.rshift
+-- (the radio state bit layout, R.SHIFT_* / R.MASK_* in sh_00_config, as
+-- upvalues for the voice hook, which runs for every pair of players)
+local SHIFT_TXKIND, MASK_TXKIND = R.SHIFT_TXKIND, R.MASK_TXKIND
+local SHIFT_TXID, MASK_TXID = R.SHIFT_TXID, R.MASK_TXID
+local SHIFT_SQUAD, MASK_SQUAD = R.SHIFT_SQUAD, R.MASK_SQUAD
+local TX_BLOCK = bit.bor(R.BIT_OFF, R.BIT_MUTED)   -- 3
+local RX_BLOCK = bit.bor(R.BIT_OFF, R.BIT_DEAF)    -- 5
 
 R.squads = R.squads or {}
 R.channels = R.channels or {}
 
-for _, n in ipairs({ "radio.dir", "radio.me", "radio.pos", "radio.note", "radio.txev" }) do Rhylib.Net.Register(n) end
+for _, n in ipairs({ "radio.dir", "radio.me", "radio.pos", "radio.txev" }) do Rhylib.Net.Register(n) end
 
 -- R.P(ply): the server-side radio table of a player (made on first use):
 -- { slots = { [1] = chanId, [2] = chanId }, call = callId }.
@@ -54,13 +60,12 @@ function R.P(ply)
     return p
 end
 
--- R.Note(ply, text): a "[Radio] text" chat line for one player. Server.
--- (The client has its own R.Note(text) in cl_10_client.lua.)
-function R.Note(ply, text)
+-- R.Note(ply, text, kind): a notice for one player, tagged [Rhy's Radio]
+-- (core Rhylib.Notify). Server. (The client has its own R.Note(text) in
+-- cl_10_client.lua.)
+function R.Note(ply, text, kind)
     if not IsValid(ply) then return end
-    Rhylib.Net.Start("radio.note")
-    net.WriteString(text)
-    net.Send(ply)
+    Rhylib.Notify(ply, text, kind or "info", "Radio")
 end
 
 -- R.Set(ply, fields): change some fields of a player's radio state
@@ -465,21 +470,22 @@ end
 -- listener is in, both radios on, talker not muted, listener not
 -- deafened, neither jammed; otherwise local 3D voice within localRange.
 -- Dead talkers are heard by nobody. Priority 10: after rhylib_admin's
--- gag (-50). The bit tests: band(tv, 3) == 0 = not off and not muted,
--- band(lv, 5) == 0 = not off and not deafened (see sh_00_config).
+-- gag (-50). The bit tests (layout in sh_00_config): TX_BLOCK = off or
+-- muted (the talker can't send), RX_BLOCK = off or deaf (the listener
+-- can't hear).
 Rhylib.Hook.Add("PlayerCanHearPlayersVoice", "radio.voice", function(listener, talker)
     if listener == talker then return end
     local ts = snap(talker)
     if not ts.alive then return false, false end
     local tv = ts.rv
-    local kind = band(rshift(tv, 3), 3)
-    if kind ~= 0 and band(tv, 3) == 0 and not ts.jam and not snap(listener).jam then   -- (comms jammer: local only)
+    local kind = band(rshift(tv, SHIFT_TXKIND), MASK_TXKIND)
+    if kind ~= 0 and band(tv, TX_BLOCK) == 0 and not ts.jam and not snap(listener).jam then   -- (comms jammer: local only)
         local lv = snap(listener).rv
-        if band(lv, 5) == 0 then
-            local id = band(rshift(tv, 5), 511)
+        if band(lv, RX_BLOCK) == 0 then
+            local id = band(rshift(tv, SHIFT_TXID), MASK_TXID)
             local hear
             if kind == 1 then
-                hear = band(rshift(lv, 14), 511) == id and band(rshift(tv, 14), 511) == id
+                hear = band(rshift(lv, SHIFT_SQUAD), MASK_SQUAD) == id and band(rshift(tv, SHIFT_SQUAD), MASK_SQUAD) == id
             elseif kind == 2 then
                 local c = R.channels[id]
                 hear = c and c.members[listener] and c.members[talker]
@@ -547,7 +553,7 @@ Rhylib.Hook.Add("PlayerDeath", "radio.death", function(ply)
 end)
 
 --------------------------------------------------------------------------
--- Comms jammers (2026-10-07): who is inside one, twice a second
+-- Comms jammers: who is inside one, twice a second
 --------------------------------------------------------------------------
 
 -- Every jammer entity: [ent] = true. Jammers add themselves in
@@ -607,25 +613,25 @@ timer.Create("Rhylib.Radio.Jam", 0.5, 0, function()
         end
         if inside then
             p.rhylibJamUntil = nil
-            if p:GetNW2Float("rhylib_jamUntil", 0) ~= 0 then p:SetNW2Float("rhylib_jamUntil", 0) end
+            if p:GetNW2Float(Rhylib.NW.JAM_UNTIL, 0) ~= 0 then p:SetNW2Float(Rhylib.NW.JAM_UNTIL, 0) end
             setJammed(p, true)
             setLevel(p, 1)
         elseif p.rhylibJammed and p:Alive() and reconnect > 0 then
             -- left the range: reconnecting, still jammed until it's done
             if not p.rhylibJamUntil then
                 p.rhylibJamUntil = now + reconnect
-                p:SetNW2Float("rhylib_jamUntil", p.rhylibJamUntil)
+                p:SetNW2Float(Rhylib.NW.JAM_UNTIL, p.rhylibJamUntil)
             end
             if now >= p.rhylibJamUntil then
                 p.rhylibJamUntil = nil
-                p:SetNW2Float("rhylib_jamUntil", 0)
+                p:SetNW2Float(Rhylib.NW.JAM_UNTIL, 0)
                 setJammed(p, false)
             end
             setLevel(p, lvl)
         else
             if p.rhylibJamUntil then
                 p.rhylibJamUntil = nil
-                p:SetNW2Float("rhylib_jamUntil", 0)
+                p:SetNW2Float(Rhylib.NW.JAM_UNTIL, 0)
             end
             setJammed(p, false)
             setLevel(p, lvl)
@@ -649,65 +655,36 @@ Rhylib.Hook.Add("Rhylib.Explosion", "radio.jammers", function(pos, reach, tier, 
     end
 end)
 
--- Saved per map with rhylib_radio_save (toolgun entries jammer*).
+-- The small jammer (rows saved before jammers had sizes are this one).
 local JAMMER = "rhylib_comms_jammer"
 
--- R.SaveJammers(): writes Data "radio_jammers" / <map> = list of
--- { pos = {x,y,z}, ang = {p,y,r}, on, class } for every jammer that is
--- permanent (rhylib_core Rhylib.Perma; without it, every jammer).
--- Returns how many were saved. Server.
-function R.SaveJammers()
-    local rows = {}
-    for _, j in ipairs(ents.FindByClass(JAMMER .. "*")) do
-        if R.JAMMER_SIZES[j:GetClass()] and (not Rhylib.Perma or Rhylib.Perma.Is(j)) then   -- (only permanent ones, 2026-10-09u)
-            local p, a = j:GetPos(), j:GetAngles()
-            -- (a shot-up jammer is saved as it was before: it's back next map)
-            local on = j.destroyed and j.wasOn or j:GetActive()
-            rows[#rows + 1] = { pos = { p.x, p.y, p.z }, ang = { a.p, a.y, a.r }, on = on, class = j:GetClass() }
-        end
-    end
-    Rhylib.Data.Set("radio_jammers", game.GetMap(), rows)
-    return #rows
-end
+-- Saving and loading go through core's per-map placement saver
+-- (Rhylib.Perma.Placements, module "radio"): Data "radio_jammers" / <map> =
+-- list of { class, pos, ang, on }, only permanent jammers (the toolgun's
+-- Permanent tool). Loaded 1 s after InitPostEntity and after every map
+-- cleanup; old rows without a class load as small jammers. A shot-up
+-- jammer is saved as it was before (on/off), so it's back next map.
+-- rhylib_radio_save (perm rhylib.radio.admin, or the server console)
+-- re-saves the permanent ones now.
+Rhylib.Perms.Register("rhylib.radio.admin", "admin", "Place, switch and save comms jammers")
+local JAMMER_CLASSES = {}
+for class in pairs(R.JAMMER_SIZES) do JAMMER_CLASSES[#JAMMER_CLASSES + 1] = class end
+table.sort(JAMMER_CLASSES)
+R.Placements = Rhylib.Perma.Placements("radio", {
+    classes = JAMMER_CLASSES,
+    dataModule = "radio_jammers",
+    defaultClass = JAMMER,
+    freeze = false,   -- (the jammer entity sets up its own physics)
+    save = function(j) return { on = j.destroyed and j.wasOn or j:GetActive() } end,
+    preSpawn = function(j, row) j.startOff = row.on == false end,
+    command = "rhylib_radio_save",
+    perm = "rhylib.radio.admin",
+})
 
--- R.SpawnJammers(): spawns the saved jammers for this map and marks them
--- permanent. Runs 1 s after InitPostEntity and after every map cleanup.
--- Old rows without a class load as small jammers. Server.
-function R.SpawnJammers()
-    local rows = Rhylib.Data.Get("radio_jammers", game.GetMap())
-    if not istable(rows) then return end
-    for _, row in ipairs(rows) do
-        local class = R.JAMMER_SIZES[row.class or ""] and row.class or JAMMER
-        local j = ents.Create(class)
-        if IsValid(j) then
-            j:SetPos(Vector(row.pos[1], row.pos[2], row.pos[3]))
-            j:SetAngles(Angle(row.ang[1], row.ang[2], row.ang[3]))
-            j.startOff = row.on == false
-            j:Spawn()
-            if Rhylib.Perma then Rhylib.Perma.Mark(j, true) end
-        end
-    end
-end
+-- R.SaveJammers() -> count saved; R.SpawnJammers(): load them again.
+function R.SaveJammers() return (R.Placements:Save()) end
+function R.SpawnJammers() return R.Placements:Load() end
 
-Rhylib.Hook.Add("InitPostEntity", "radio.jammers", function() timer.Simple(1, R.SpawnJammers) end)
-Rhylib.Hook.Add("PostCleanupMap", "radio.jammers", R.SpawnJammers)
--- Placement classes (rhylib_admin's !freezeprops leaves them alone), and
--- the Permanent tool's saver for these classes (rhylib_core Rhylib.Perma).
+-- Placement classes (rhylib_admin's !freezeprops leaves them alone).
 Rhylib.PLACEMENT_CLASSES = Rhylib.PLACEMENT_CLASSES or {}
 for class in pairs(R.JAMMER_SIZES) do Rhylib.PLACEMENT_CLASSES[class] = true end
-if Rhylib.Perma and Rhylib.Perma.Register then
-    local list = {}
-    for class in pairs(R.JAMMER_SIZES) do list[#list + 1] = class end
-    Rhylib.Perma.Register(list, R.SaveJammers)
-end
-
-Rhylib.Perms.Register("rhylib.radio.admin", "admin", "Place, switch and save comms jammers")
--- rhylib_radio_save: save the jammers now (perm rhylib.radio.admin, or the
--- server console).
-concommand.Add("rhylib_radio_save", function(ply)
-    local function reply(m) if IsValid(ply) then ply:ChatPrint(m) else print(m) end end
-    Rhylib.Perms.Check(ply, "rhylib.radio.admin", function(ok)
-        if not ok then return reply("You don't have permission for rhylib_radio_save") end
-        reply("Saved " .. R.SaveJammers() .. " comms jammers for " .. game.GetMap())
-    end)
-end)

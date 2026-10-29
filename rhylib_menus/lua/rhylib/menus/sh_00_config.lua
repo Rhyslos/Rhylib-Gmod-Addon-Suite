@@ -26,3 +26,5 @@ local Config = Rhylib.Config
 Config.Register("menus", "title", "", "Title on the pause menu and scoreboard (empty = the server name)")
 Config.Register("menus", "killfeedTime", 6, "Seconds a killfeed line stays")
 Config.Register("menus", "killfeedMax", 6, "Most killfeed lines at once")
+
+Config.Describe("menus", { name = "Menus", category = "Server & interface" })

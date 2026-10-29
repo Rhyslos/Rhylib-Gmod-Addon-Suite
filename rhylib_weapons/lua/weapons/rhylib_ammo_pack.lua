@@ -69,7 +69,7 @@ function SWEP:PrimaryAttack()
     local L = Rhylib.Lying
     if L and L.Owner and L.Owner(t) then t = L.Owner(t) end
     if not (IsValid(t) and t:IsPlayer() and t:Alive()) then
-        o:ChatPrint("Look at a teammate (right click: yourself)")
+        Rhylib.Notify(o, "Look at a teammate (right click: yourself)", "bad", "Weapons")
         return
     end
     self:Supply(t)
@@ -112,14 +112,14 @@ if SERVER then
         if not IsValid(o) then return end
         self:SetNextPrimaryFire(CurTime() + self.Cooldown)
         self:SetNextSecondaryFire(CurTime() + self.Cooldown)
-        if not self:SkillOK() then return o:ChatPrint("You need the Ammo pack skill to use this") end
+        if not self:SkillOK() then return Rhylib.Notify(o, "You need the Ammo pack skill to use this", "bad", "Weapons") end
         local Inv, W = Rhylib.Inventory, Rhylib.Weapons
-        if not (Inv and Inv.Get and W) then return o:ChatPrint("The ammo pack needs rhylib_inventory") end
-        if Inv.Locked and (Inv.Locked(t) or Inv.Locked(o)) then return o:ChatPrint("Can't resupply right now") end
+        if not (Inv and Inv.Get and W) then return Rhylib.Notify(o, "The ammo pack needs Rhy's Inventory", "bad", "Weapons") end
+        if Inv.Locked and (Inv.Locked(t) or Inv.Locked(o)) then return Rhylib.Notify(o, "Can't resupply right now", "bad", "Weapons") end
         local pack = packItem(Inv, o, self:GetClass())
         if not pack then return end
         local gun = gunOf(t)
-        if not gun then return o:ChatPrint((t == o and "You have" or t:Nick() .. " has") .. " no blaster to resupply") end
+        if not gun then return Rhylib.Notify(o, (t == o and "You have" or t:Nick() .. " has") .. " no blaster to resupply", "bad", "Weapons") end
 
         local POOL = cfg("ammoPackPool")
         local pool = (pack.data and pack.data.fill or 1) * POOL
@@ -178,7 +178,7 @@ if SERVER then
         end
 
         if spent < 0.5 then
-            return o:ChatPrint((t == o and "You're" or t:Nick() .. " is") .. " full (or the pack is empty)")
+            return Rhylib.Notify(o, (t == o and "You're" or t:Nick() .. " is") .. " full (or the pack is empty)", "bad", "Weapons")
         end
         local rest = pool - spent
         if rest < 1 then
@@ -191,9 +191,9 @@ if SERVER then
         o:EmitSound("items/ammo_pickup.wav", 65)
         if t ~= o then
             t:EmitSound("items/ammo_pickup.wav", 60)
-            t:ChatPrint(o:Nick() .. " resupplied you")
+            Rhylib.Notify(t, o:Nick() .. " resupplied you", "good", "Weapons")
         end
-        o:ChatPrint(string.format("Gave %d rounds · %d left in the pack", math.floor(spent + 0.5), math.floor(rest)))
+        Rhylib.Notify(o, string.format("Gave %d rounds · %d left in the pack", math.floor(spent + 0.5), math.floor(rest)), "good", "Weapons")
     end
 end
 
@@ -213,7 +213,7 @@ if SERVER then
     Rhylib.Net.Receive("wheel.supply", function(ply)
         local t = net.ReadEntity()
         local wep = ply:GetWeapon("rhylib_ammo_pack")
-        if not (IsValid(wep) and IsValid(t) and t:IsPlayer() and t:Alive() and ply:Alive()) or ply.rhylibDown then return end
+        if not (IsValid(wep) and IsValid(t) and t:IsPlayer() and t:Alive() and ply:Alive()) or Rhylib.State.IsDown(ply) then return end
         if util.TraceLine({ start = ply:EyePos(), endpos = t:WorldSpaceCenter(), mask = MASK_SOLID_BRUSHONLY }).Hit then return end
         if CurTime() < wep:GetNextPrimaryFire() then return end
         local r = wep.Range + 40

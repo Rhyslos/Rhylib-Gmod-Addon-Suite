@@ -118,7 +118,7 @@ end
 -- their lying ragdolls), soft-knocked players for everyone.
 local function visualPasses(e, owner)
     if e:IsPlayer() then
-        if e:GetNW2Bool("rhylib_knockSoft", false) then return true end
+        if e:GetNW2Bool(Rhylib.NW.KNOCK_SOFT, false) then return true end
         return owner ~= nil and owner.IsRhylibClone == true
     end
     if e.IsRhylibClone == true then return owner ~= nil and (owner:IsPlayer() or owner.IsRhylibClone == true) end
@@ -195,14 +195,14 @@ end
 -- show at once. Same speed rules as the server's Bolts.Speed.
 function Bolts.FireLocal(owner, weapon, origin, dir, opts)
     local speed = opts and opts.speed or weapon.BoltSpeed or 7000
-    if not weapon.Explosive and not (opts and opts.speed) then speed = speed * (Rhylib.Config.Get("weapons", "boltSpeedMult") or 1) end
+    if not weapon.Explosive and not (opts and opts.speed) then speed = speed * (Rhylib.Config.Get("weapons", "boltSpeedMult")) end
     Bolts.Spawn(owner, origin, dir, speed, opts and opts.color or weapon.BoltColor or 1)
 end
 
 Rhylib.Net.ReceiveBatch("wep.shot", function()
     return {
         shooter = net.ReadUInt(13),
-        origin = net.ReadVector(),
+        origin = Vector(net.ReadInt(16), net.ReadInt(16), net.ReadInt(16)),   -- (whole units, see sv_10_bolts writeShot)
         dir = net.ReadNormal(),
         speed = net.ReadUInt(15),
         color = net.ReadUInt(4),
@@ -217,7 +217,7 @@ end, function(s)
 end)
 
 -- Bolt hit sounds (Star Wars shared resources pack: effects/sw_impact,
--- 24 variants; owner 2026-10-09): only within IMPACT_RANGE, at most one
+-- 24 variants): only within IMPACT_RANGE, at most one
 -- every IMPACT_GAP s, so a big fight doesn't stack hundreds of them.
 local IMPACT_RANGE2, IMPACT_GAP = 1800 * 1800, 0.03
 local nextImpactSound = 0

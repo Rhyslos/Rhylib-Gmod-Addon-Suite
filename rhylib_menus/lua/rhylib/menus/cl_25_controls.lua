@@ -124,7 +124,7 @@ function Menus.ControlsTop(sp)
         surface.DrawRect(0, 0, K.S(3), h)
         draw.SimpleText(#lines > 0 and "KEY CLASHES" or "NO KEY CLASHES", K.Font(13, 700), K.S(14), K.S(16), #lines > 0 and C.bad or C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
         if #lines == 0 then
-            draw.SimpleText("Every Rhylib key has a key of its own. F1 opens this page.", K.Font(13), K.S(14), K.S(38), C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            draw.SimpleText("Every Rhy's action has a key of its own. F1 opens this page.", K.Font(13), K.S(14), K.S(38), C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
         end
         for i, l in ipairs(lines) do
             draw.SimpleText(l, K.Font(13), K.S(14), K.S(18) + i * K.S(20), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
@@ -223,7 +223,7 @@ A("Inventory", "{+attack} / {+attack2}", "Ammo pack: resupply who you look at / 
 
 A("Datapad", "{+attack}", "Open the datapad (while holding it)", has("Datapad"))
 
-A("Staff", "{+reload}", "Toolgun: spawn window (tap opens, hold keeps it open, double tap: the old Q menu)", function()
+A("Staff", "{+reload}", "Toolgun: spawn window (tap: open, stays open · hold: peek · double tap: old Q menu)", function()
     local me = LocalPlayer()
     return Rhylib.Tool ~= nil and IsValid(me) and me:IsAdmin()
 end)
