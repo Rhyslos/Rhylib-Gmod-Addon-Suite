@@ -4,7 +4,9 @@
 
     Static: no physics, no Think. Its points are network vars, so they
     reach every player who comes near, once. Press E on the hook to pick
-    it back up (not while anyone is climbing).
+    it back up (not while anyone is climbing). Shooting the hook (or a
+    blast on it) breaks the rope (ENT:OnTakeDamage): the hook is lost and
+    climbers drop.
 
     Looks: the hook is a small dark grey block sticking out
     of the surface, the rope a black line. Both are drawn directly, no
@@ -154,6 +156,17 @@ function ENT:GetRopeData()
 end
 
 if SERVER then
+    function ENT:OnTakeDamage(dmg)
+        if self.taken or dmg:GetDamage() <= 0 then return end
+        self.taken = true   -- (no pick-up or dropped hook this tick)
+        local fx = EffectData()
+        fx:SetOrigin(self:GetPos())
+        fx:SetNormal(self:GetAngles():Forward())
+        util.Effect("MetalSpark", fx, true, true)
+        self:EmitSound("physics/metal/metal_box_break1.wav", 75)
+        self:Remove()
+    end
+
     function ENT:Use(ply)
         if self.taken or not IsValid(ply) or not ply:IsPlayer() then return end
         local G = Rhylib.Weapons.Grapple

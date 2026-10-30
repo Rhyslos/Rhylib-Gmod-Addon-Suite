@@ -44,8 +44,8 @@ end
 Rhylib.Hook.Add("SetupMove", "jetpack.move", function(ply, mv)
     if not ply:GetDTBool(J.DT_HAS) then return end
     local now = CurTime()
-    if IsValid(ply:GetDTEntity(J.DT_ROPE)) or IsValid(ply:GetDTEntity(J.DT_ZIP)) then
-        -- On a grapple rope or zipline (rhylib_weapons): no thrust, flames off, fuel held.
+    if IsValid(ply:GetDTEntity(J.DT_ROPE)) or IsValid(ply:GetDTEntity(J.DT_ZIP)) or ply:GetDTInt(J.DT_PH) ~= 0 then
+        -- On a grapple rope, zipline or personal hook (rhylib_weapons): no thrust, flames off, fuel held.
         if ply:GetDTBool(J.DT_THRUST) then ply:SetDTBool(J.DT_THRUST, false) end
         setRate(ply, J.Fuel(ply, now), now, 0)
         return

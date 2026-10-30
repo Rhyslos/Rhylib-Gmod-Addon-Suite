@@ -74,7 +74,7 @@ end
 -- Never kept by the plain list: players, NPCs, carried weapons, vehicles
 -- (they need their vehicle script), loose inventory items (their data),
 -- hands/viewmodels, ropes and lying bodies.
-local SKIP = { gmod_hands = true, predicted_viewmodel = true, viewmodel = true, rhylib_rope = true, rhylib_zipline = true,
+local SKIP = { gmod_hands = true, predicted_viewmodel = true, viewmodel = true, rhylib_rope = true, rhylib_zipline = true, rhylib_zipline_end = true,
     rhylib_world_item = true, gmod_gamerules = true, physgun_beam = true,
     rhylib_grenade = true, rhylib_he_planted = true, rhylib_b2_rocket = true }   -- (live explosives)
 

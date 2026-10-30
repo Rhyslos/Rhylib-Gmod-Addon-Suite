@@ -1,6 +1,7 @@
 --[[
-    Mark target (Officer tier 1; the Marksman's Called shot marks by
-    headshot). Q (rhylib_menus turns +menu into hook Rhylib.MarkKey) sends
+    Marking (K.CanMark: Tactical visor, Commander, or Tactical marks,
+    Pistol command branch; the Marksman's Called shot marks by headshot).
+    Q (rhylib_menus turns +menu into hook Rhylib.MarkKey) sends
     skills.markreq (looking-through-optics bit + the view's fov); the
     server picks what to mark and marks it for markTime seconds:
       - normally: what the eyes' hull trace hits (lag compensated), or else
@@ -10,8 +11,8 @@
         the client's zoomed fov, capped by markOpticsCone), in sight.
       - sun visor down: the enemy the client rings (visor bit + its index),
         checked here (enemy, in sight, within markVisorCone of the aim).
-    Tactical visor (Commander) makes a Q mark a LOCK (markLockTime s): a
-    new Q replaces that player's older locks (spots stay); without it a Q
+    With the sun visor down a Q mark is a LOCK (markLockTime s): a new Q
+    replaces that player's older locks (spots stay); without the visor a Q
     mark is a plain mark (and also replaces the old ones). Locks give the marker's squad mates (not Marksmen) x
     markLockDamage on that target (K.LockMult, from K.DamageMult); the
     marker sees a red ring on it, the squad a red diamond. Spots (visor)
@@ -26,7 +27,8 @@
     line): every 0.5 s, holders mark themselves and radio squad mates within
     squadSkillRange (p.rhylibLogi; NW2Bool rhylib_steadyLine, read by the
     shared kick and stamina code). K.SquadMembers(ply) for Chain of command.
-    Sun visor (rhylib_gear) down + Tactical visor: every visorSpotEvery s up to
+    Sun visor (rhylib_gear) down + Spotter (Officer tier 1, id mark_target):
+    every visorSpotEvery s up to
     markMax enemies in sight within visorSpotCone of the view are spotted
     for visorSpotTime s (quiet, added to the player's marks).
     skills.markreq (client -> server): optics bool, zoomed fov x10 (UInt
@@ -115,7 +117,7 @@ Rhylib.Net.Receive("skills.markreq", function(ply)
     local opticsReq = net.ReadBool()
     local fov = net.ReadUInt(10) / 10
     local visorIdx = net.ReadBool() and net.ReadUInt(13) or nil
-    if not ply:Alive() or Rhylib.State.IsDown(ply) or not K.Has(ply, "mark_target") then return end
+    if not ply:Alive() or Rhylib.State.IsDown(ply) or not K.CanMark(ply) then return end
     local now = CurTime()
     if (ply.rhylibMarkNext or 0) > now then return end
     ply.rhylibMarkNext = now + K.Cfg("markCooldown")
@@ -123,7 +125,8 @@ Rhylib.Net.Receive("skills.markreq", function(ply)
     local G = Rhylib.Gear
     local optics = opticsReq and G and G.Looking and G.Looking(ply) or false
     local list
-    if visorIdx and ply:GetNW2Bool("rhylib_visorDown", false) and K.Has(ply, "tactical_visor") then
+    local visorDown = ply:GetNW2Bool("rhylib_visorDown", false)
+    if visorIdx and visorDown then
         -- The enemy the visor rings (the client picked it from the spots).
         local e = Entity(visorIdx)
         list = {}
@@ -159,8 +162,8 @@ Rhylib.Net.Receive("skills.markreq", function(ply)
         end
     end
     if #list == 0 then return end
-    -- Tactical visor: Q locks (longer, red, squad damage); else a plain mark.
-    local lock = K.Has(ply, "tactical_visor")
+    -- Sun visor down: Q locks (longer, red, squad damage); else a plain mark.
+    local lock = visorDown
     K.PlaceMarks(ply, list, lock and K.Cfg("markLockTime") or K.Cfg("markTime"), true, false, lock)
 end, { rate = 4, burst = 4 })
 
@@ -216,7 +219,7 @@ timer.Create("Rhylib.Skills.VisorSpot", 1, 0, function()
     local now = CurTime()
     for _, ply in ipairs(player.GetHumans()) do
         if ply:GetNW2Bool("rhylib_visorDown", false) and ply:Alive() and not Rhylib.State.IsDown(ply)
-            and (ply.rhylibVisorSpot or 0) <= now and K.Has(ply, "tactical_visor") then
+            and (ply.rhylibVisorSpot or 0) <= now and K.Has(ply, "mark_target") then   -- (Spotter)
             ply.rhylibVisorSpot = now + K.Cfg("visorSpotEvery")
             local list = inCone(ply, K.Cfg("visorSpotCone"), K.Cfg("markMax"))
             if #list > 0 then K.PlaceMarks(ply, list, K.Cfg("visorSpotTime"), false, true) end

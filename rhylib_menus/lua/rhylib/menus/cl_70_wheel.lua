@@ -99,6 +99,7 @@ local function canOpen(me)
     local G = Rhylib.Weapons and Rhylib.Weapons.Grapple
     if G and G.Attached and G.Attached(me) then return false end   -- (E lets go of the rope)
     if G and G.ZipOn and G.ZipOn(me) then return false end         -- (or the zipline)
+    if G and G.PhookOn and G.PhookOn(me) ~= 0 then return false end -- (or the personal hook)
     if IsValid(me:GetNW2Entity("rhylib_tank")) then return false end   -- (E gets out of the tank)
     if me:KeyDown(IN_RELOAD) then return false end   -- (E + R: fire mode)
     if rhyGun(me) and RealTime() - (W.lastReload or 0) < REPRESS then return false end

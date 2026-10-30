@@ -60,7 +60,7 @@ local Config = Rhylib.Config
 local MAIN, BACK, SLOT_BACK, RACK, BELT, HOLSTER = Items.MAIN, Items.BACK, Items.SLOT_BACK, Items.RACK, Items.BELT, Items.HOLSTER
 local IsWorn = Items.IsWorn
 
-Config.Register("inventory", "beltCells", 2, "Power cells every clone's belt cell pouch holds (under Combine munitions; 0-2, 0 = none). Takes effect for players who join after a change", { section = "Size & weight" })
+Config.Register("inventory", "beltCells", 1, "Power cells every clone's belt cell pouch holds (under Combine munitions; 0-2, 0 = none; one cell is a 1x2 slot). Takes effect for players who join after a change", { section = "Size & weight" })
 Config.Register("inventory", "width", 6, "Personal inventory width in cells (the long guns are 6 long)", { section = "Size & weight" })
 Config.Register("inventory", "height", 3, "Personal inventory height in cells", { section = "Size & weight" })
 Config.Register("inventory", "saveInterval", 2, "Seconds between saves of changed inventories", { section = "Rules" })
@@ -152,7 +152,16 @@ end
 
 -- Wearing or removing a backpack or holster adds or removes its grid
 -- (a worn item's `grid`, in container gridCid, default the backpack grid).
+-- The backpack grid's rows are multiplied by rhylib_skills
+-- K.BackpackMult(ply) (Load bearer: 2). A grid that gets smaller moves
+-- what no longer fits (Inv.SetGrid).
 local GRID_CIDS = { BACK, HOLSTER, Items.POUCH, Items.CELLPACK }
+local function packSize(ply, grid)
+    local K = Rhylib.Skills
+    local m = K and K.BackpackMult and K.BackpackMult(ply) or 1
+    if m == 1 then return grid end
+    return { grid[1], math.max(1, math.floor(grid[2] * m)) }
+end
 local function updateBackpack(ply, st, depth)
     local want = {}
     for wcid in pairs(Items.WORN) do
@@ -167,10 +176,15 @@ local function updateBackpack(ply, st, depth)
     end
     for _, gcid in ipairs(GRID_CIDS) do
         local grid, cur = want[gcid], st.cont[gcid]
+        if grid and gcid == BACK then grid = packSize(ply, grid) end
         if grid then
-            if not cur or cur.w ~= grid[1] or cur.h ~= grid[2] then
-                st.cont[gcid] = { w = grid[1], h = grid[2], items = cur and cur.items or {} }
+            if not cur then
+                st.cont[gcid] = { w = grid[1], h = grid[2], items = {} }
                 sendDims(ply, st, gcid)
+            elseif cur.w ~= grid[1] or cur.h ~= grid[2] then
+                Inv.SetGrid(ply, gcid, grid[1], grid[2])
+                -- (moving what didn't fit may have put something on: work it out again)
+                if (depth or 0) < 2 then return updateBackpack(ply, st, (depth or 0) + 1) end
             end
         elseif cur then
             if next(cur.items) ~= nil and Inv.SetGrid then
@@ -946,25 +960,10 @@ Rhylib.Hook.Add("ShutDown", "inventory.save", function()
     end
 end, -10)  -- before the data layer's final flush
 
--- Inv.SetGrid(ply, cid, w, h): adds or resizes a grid from a skill (the
--- cell rack, the ammo belt); w or h 0 removes it, and what was in it
--- moves to the other grids (or the ground).
--- Example: Rhylib.Inventory.SetGrid(ply, Rhylib.Items.RACK, 5, 2)
-function Inv.SetGrid(ply, cid, w, h)
-    local st = Inv.states[ply]
-    if not st then return end
-    local cur = st.cont[cid]
-    if w > 0 and h > 0 then
-        if cur and cur.w == w and cur.h == h then return end
-        st.cont[cid] = { w = w, h = h, items = cur and cur.items or {} }
-        sendDims(ply, st, cid)
-        return
-    end
-    if not cur then return end
-    local moved = {}
-    for _, inst in pairs(cur.items) do moved[#moved + 1] = inst end
-    st.cont[cid] = nil
-    sendDims(ply, st, cid)
+-- Moves instances that lost their place in grid cid (it was removed or
+-- made smaller) somewhere else in the inventory, else onto the ground.
+-- They're already out of that grid's items table.
+local function rehome(ply, st, cid, moved)
     for _, inst in ipairs(moved) do
         -- Somewhere else in the inventory: same item, so it keeps its uid,
         -- hotbar slot and weapon.
@@ -976,12 +975,55 @@ function Inv.SetGrid(ply, cid, w, h)
             -- No room: off the player (weapon stripped), onto the ground;
             -- job loadout gear just goes.
             I.captureWeapon(ply, inst)
+            local keep = st.cont[cid]
             st.cont[cid] = { w = 0, h = 0, items = { [inst.uid] = inst } }
+            inst.c = cid
             removeInst(ply, st, inst.uid)
-            st.cont[cid] = nil
+            st.cont[cid] = keep
             if not (inst.data and inst.data.loadout) then Inv.SpawnWorldItem(ply, inst.id, inst.count, inst.data) end
         end
     end
+end
+
+-- Inv.RefreshWornGrids(ply): works out the worn grids again (backpack,
+-- holster, pouches) after something that changes their size (a skill).
+function Inv.RefreshWornGrids(ply)
+    local st = Inv.states[ply]
+    if st then updateBackpack(ply, st) end
+end
+
+-- Inv.SetGrid(ply, cid, w, h): adds or resizes a grid (the ammo belt from
+-- a skill, the backpack when its size changes); w or h 0 removes it. What
+-- no longer fits moves to the other grids (or the ground).
+-- Example: Rhylib.Inventory.SetGrid(ply, Rhylib.Items.BELT, 5, 1)
+function Inv.SetGrid(ply, cid, w, h)
+    local st = Inv.states[ply]
+    if not st then return end
+    local cur = st.cont[cid]
+    if w > 0 and h > 0 then
+        if cur and cur.w == w and cur.h == h then return end
+        local items = cur and cur.items or {}
+        st.cont[cid] = { w = w, h = h, items = items }
+        sendDims(ply, st, cid)
+        -- Smaller than before: what sticks out moves.
+        local out = {}
+        for uid, inst in pairs(items) do
+            local iw, ih = Items.Size(inst.id, inst.rot)
+            if inst.x + iw > w or inst.y + ih > h then out[#out + 1] = inst end
+        end
+        if #out > 0 then
+            for _, inst in ipairs(out) do items[inst.uid] = nil end
+            rehome(ply, st, cid, out)
+            changed(ply)
+        end
+        return
+    end
+    if not cur then return end
+    local moved = {}
+    for _, inst in pairs(cur.items) do moved[#moved + 1] = inst end
+    st.cont[cid] = nil
+    sendDims(ply, st, cid)
+    rehome(ply, st, cid, moved)
     changed(ply)
 end
 

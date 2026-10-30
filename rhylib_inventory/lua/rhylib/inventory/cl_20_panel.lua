@@ -319,7 +319,7 @@ function PANEL:LayoutOnce()
         gridsH = gridsH + self:SpanPx(back.h)
         gridsW = math.max(gridsW, self:SpanPx(back.w))
     end
-    -- The cell rack (rhylib_skills Load bearer), under the backpack.
+    -- The old cell rack (only shown if a state still has one), under the backpack.
     local rack = Inv.cont[RACK]
     if rack then
         self.regions[#self.regions + 1] = { cid = RACK, x = gridX, y = top + gridsH + label, gw = rack.w, gh = rack.h, title = "Cell rack" }

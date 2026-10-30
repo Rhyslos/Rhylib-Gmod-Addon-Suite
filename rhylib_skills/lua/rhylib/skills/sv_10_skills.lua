@@ -1,6 +1,6 @@
 --[[
     Skills on the server: saving, learning, resetting, and the effects
-    that only the server works out (damage, Momentum, the cell rack).
+    that only the server works out (damage, Momentum, inventory grids).
 
     Data "skills" key "s"..SteamID64 = { n = { ids } } (sorted ids; a
     reset deletes the row). Class mode rows: sv_40_class.lua.
@@ -27,7 +27,8 @@
     Light rounds);
     returns mult, crit.
     K.ExtraGrids(ply) for rhylib_inventory: { [cid] = { w, h } } the
-    player's skills open (Load bearer: the cell rack; Ammo belt).
+    player's skills open (Ammo belt); K.BackpackMult(ply) (Load bearer
+    doubles the backpack).
     On a change: items the player may no longer carry are dropped
     (droid poppers without Droid popper), Hard landings jump power,
     Reinforced max health.
@@ -134,21 +135,25 @@ function K.Note(ply, text, bad)
 end
 
 -- K.ExtraGrids(ply): extra inventory grids the player's skills open:
--- { [containerId] = { w, h } } (Load bearer: Items.RACK cell rack, Ammo
--- belt: Items.BELT). rhylib_inventory calls it when it builds a state.
+-- { [containerId] = { w, h } } (Ammo belt: Items.BELT). rhylib_inventory
+-- calls it when it builds a state. (The old Load bearer cell rack,
+-- Items.RACK, is never opened now; what was in it moves on join.)
 function K.ExtraGrids(ply)
     local out = {}
     local Items = Rhylib.Items
     local set = K.GridSet and K.GridSet(ply) or K.Stored(ply)   -- (class mode: the class's)
-    if Items and Items.RACK and set.load_bearer then
-        local r = K.Cfg("cellRack") or { 5, 2 }
-        out[Items.RACK] = { r[1], r[2] }
-    end
     if Items and Items.BELT and set.ammo_belt then
         local b = K.Cfg("ammoBelt") or { 5, 1 }
         out[Items.BELT] = { b[1], b[2] }
     end
     return out
+end
+
+-- K.BackpackMult(ply): how many times the backpack grid's rows the
+-- player gets (Load bearer: loadBearerPack, else 1). rhylib_inventory.
+function K.BackpackMult(ply)
+    local set = K.GridSet and K.GridSet(ply) or K.Stored(ply)   -- (class mode: the class's)
+    return set.load_bearer and (K.Cfg("loadBearerPack") or 2) or 1
 end
 
 local function syncGrids(ply)
@@ -159,6 +164,8 @@ local function syncGrids(ply)
         local g = want[cid]
         Inv.SetGrid(ply, cid, g and g[1] or 0, g and g[2] or 0)
     end
+    -- Load bearer doubles the backpack (K.BackpackMult).
+    if Inv.RefreshWornGrids then Inv.RefreshWornGrids(ply) end
     if Inv.MarkChanged then Inv.MarkChanged(ply) end   -- carry limit
 end
 
@@ -199,13 +206,16 @@ local function applyHealth(ply, spawned)
     end
 end
 
--- Hard landings: jump power, applied on top of whatever the job set.
+-- Hard landings / ARC conditioning: jump power, applied on top of
+-- whatever the job set (the base is kept while any of them is learned).
 local function applyJump(ply)
-    local want = K.Has(ply, "hard_landings")   -- (Hard landings: jump higher)
-    if want and not ply.rhylibSpringBase then
-        ply.rhylibSpringBase = ply:GetJumpPower()
-        ply:SetJumpPower(ply.rhylibSpringBase * K.Cfg("springJump"))
-    elseif not want and ply.rhylibSpringBase then
+    local m = 1
+    if K.Has(ply, "hard_landings") then m = m * K.Cfg("springJump") end
+    if K.Has(ply, "arc_conditioning") then m = m * K.Cfg("arcJump") end
+    if m ~= 1 then
+        ply.rhylibSpringBase = ply.rhylibSpringBase or ply:GetJumpPower()
+        ply:SetJumpPower(ply.rhylibSpringBase * m)
+    elseif ply.rhylibSpringBase then
         ply:SetJumpPower(ply.rhylibSpringBase)
         ply.rhylibSpringBase = nil
     end
@@ -433,6 +443,7 @@ function K.DamageMult(ply, bolt, ent, tr, group)
     if next(set) == nil then return m, false end
     local wep = bolt.weapon
     if set.combat_veteran and K.IsCarbine(wep) then m = m * K.Cfg("vetCarbineDamage") end   -- (Combat veteran)
+    if set.arc_training and IsValid(wep) and K.GunClass(wep) == K.WESTAR then m = m * K.Cfg("arcWestarDamage") end   -- (ARC training)
     if set.carbine_sidearm and IsValid(wep) and wep.GetFireModeName and wep:GetFireModeName() == "sidearm" then
         m = m * K.Cfg("sidearmDamage")
     end
@@ -515,6 +526,7 @@ Rhylib.Hook.Add("EntityTakeDamage", "skills.resist", function(ent, dmg)
     if next(set) ~= nil then
         local t = dmg:GetDamageType()
         if set.hard_landings and bit.band(t, DMG_FALL) ~= 0 then m = m * K.Cfg("fallMult") end
+        if set.arc_conditioning and bit.band(t, DMG_FALL) ~= 0 then m = m * K.Cfg("arcFall") end
         if set.blast_hardened and bit.band(t, DMG_BLAST) ~= 0 then m = m * K.Cfg("blastMult") end
         if set.eod_blast and bit.band(t, DMG_BLAST) ~= 0 then m = m * K.Cfg("eodBlastMult") end
         if set.aerial_stability and bit.band(t, DMG_FALL) == 0 and not ent:OnGround()
@@ -617,7 +629,8 @@ Rhylib.Hook.Add("PlayerTick", "skills.combatdrop", function(ply)
     local J = Rhylib.Jetpack
     if ply:OnGround() or ply:GetMoveType() ~= MOVETYPE_WALK or ply:WaterLevel() >= 2 or not (J and J.Has and J.Has(ply))
         or IsValid(ply:GetDTEntity(Rhylib.DT and Rhylib.DT.Slot("Entity", "grapple.rope") or 31))   -- (on a grapple rope)
-        or IsValid(ply:GetDTEntity(Rhylib.DT and Rhylib.DT.Slot("Entity", "grapple.zip") or 30)) then   -- (on a zipline)
+        or IsValid(ply:GetDTEntity(Rhylib.DT and Rhylib.DT.Slot("Entity", "grapple.zip") or 30))   -- (on a zipline)
+        or ply:GetDTInt(Rhylib.DT and Rhylib.DT.Slot("Int", "grapple.phook") or 31) ~= 0 then   -- (personal grappling hook)
         ply.rhylibAirFrom, ply.rhylibAirJet = nil, nil
         return
     end

@@ -21,11 +21,19 @@
     then where the hook lands G.ZipFar picks the far end (a wall-type grip,
     or with the Zipline rigger skill a post on the floor), G.ZipCheck wants
     zipMin length, no steeper than zipMaxAngle and a clear line, and a
-    rhylib_zipline is made. Ropes and ziplines share maxRopes.
+    rhylib_zipline is made. The hook is used up by a line (no pick-up); a
+    failed rig drops it. Ropes and ziplines share maxRopes. Only
+    Autorifleman players fire it (G.CanZip). A rigger's lines go when they
+    leave the server.
+
+    Shot down: ropes and ziplines break when they take damage (any shot or
+    blast on the hook, or on a zipline's posts / far hook); the hook is
+    lost and anyone on them drops. A player hit grapple hitsToFall times
+    while on a rope or a line is knocked off (EntityTakeDamage below).
 
     Realm: server. Public: G.BuildRope, G.DropHook, G.Fire, G.ZipNear,
     G.ZipFar, G.ZipCheck. Listens to Rhylib.ForceRelease (lets go of the
-    rope or zipline).
+    rope or zipline), EntityTakeDamage, PlayerDisconnected.
 ]]
 
 local W = Rhylib.Weapons
@@ -43,7 +51,8 @@ end
 
 -- The rope lies on the map and on anything solid that isn't a person.
 local function notPeople(ent)
-    return not (ent:IsPlayer() or ent:IsNPC() or ent:IsNextBot() or ent:IsWeapon())
+    return not (ent:IsPlayer() or ent:IsNPC() or ent:IsNextBot() or ent:IsWeapon()
+        or ent:GetClass() == "rhylib_zipline_end")   -- (server-only box: clients can't see it)
 end
 
 local tr = {}
@@ -261,13 +270,23 @@ local function postClear(foot)
     return not trace(foot + UP * 2, foot + UP * G.POST_H).Hit
 end
 
--- G.ZipNear(ply): where the near post goes (on the ground under the
--- shooter) and the line's tie-on point on top of it, or nil + a message.
+-- G.ZipNear(ply): where the near post goes (on the ground just behind the
+-- shooter, else beside them: G.ZipSpots) and the line's tie-on point on
+-- top of it, or nil + a message. The spot must be reachable from where
+-- they stand (no post through a wall).
 function G.ZipNear(ply)
-    local foot = groundBelow(ply:GetPos() + UP * 8, 40)
-    if not foot then return nil, nil, "Stand on solid ground to rig a zipline" end
-    if not postClear(foot) then return nil, nil, "No room for the post here" end
-    return foot, foot + UP * G.POST_H
+    local any
+    for _, pos in ipairs(G.ZipSpots(ply)) do
+        local foot = groundBelow(pos + UP * 8, 40)
+        if foot then
+            any = true
+            if postClear(foot) and not trace(ply:GetPos() + UP * 40, foot + UP * 40).Hit then
+                return foot, foot + UP * G.POST_H
+            end
+        end
+    end
+    if any then return nil, nil, "No room for the post here" end
+    return nil, nil, "Stand on solid ground to rig a zipline"
 end
 
 -- G.ZipFar(t, ply): the far end for a hook that hit trace t: a hook in a
@@ -301,18 +320,18 @@ function G.ZipCheck(a, b)
     local dir = (b - a):GetNormalized()
     local t = trace(a + dir * 4, b - dir * 8)
     if t.Hit then return "Something is in the way of the line" end
-    -- Room for a rider hanging under it, end stop to end stop.
-    local m = G.ZipMargin(dir)
-    if len <= m * 2 then return "Too short for a zipline" end
-    local hang = UP * G.HANG
-    htd.start, htd.endpos = a + dir * m - hang + UP * 2, b - dir * m - hang + UP * 2
-    util.TraceHull(htd)
-    if htr.Hit or htr.StartSolid then return "Not enough room under the line" end
+    if len <= G.ZipMargin(dir) * 2 then return "Too short for a zipline" end
+    -- (no room check under the line: a rider stops where their body is
+    -- blocked, so uneven ground or a low far end only shortens the ride)
     return nil
 end
 
 local function onZipHit(bolt, t, issued, foot, a)
     local owner = bolt.owner
+    if not IsValid(owner) then   -- (the rigger left while it flew)
+        G.DropHook(Vector(t.HitPos) + Vector(t.HitNormal) * 6, issued)
+        return
+    end
     local hitPos, hitNormal, hitEnt = Vector(t.HitPos), Vector(t.HitNormal), t.Entity
     local b, postB, hookN, why = G.ZipFar(t, owner)
     if b and lineCount() >= cfg("maxRopes") then b, why = nil, "Too many ropes on the map" end
@@ -327,10 +346,11 @@ local function onZipHit(bolt, t, issued, foot, a)
         G.DropHook(hitPos + hitNormal * 6, issued)
         return
     end
-    zip.rhylibIssued = issued   -- (picked up again as the same kind of hook)
+    zip.rhylibOwner = owner   -- (its lines go when they leave)
     zip:SetPos(foot)
     zip:Spawn()
     zip:SetZip(a, b, postB, hookN)
+    zip:SolidWhenClear()   -- (someone may stand where the post went: not solid until they move)
     if not postB and IsValid(hitEnt) and not hitEnt:IsWorld() then zip:SetGripped(hitEnt) end
     zip:EmitSound("physics/metal/metal_box_impact_hard2.wav", 75)
     if IsValid(owner) then
@@ -348,6 +368,11 @@ function G.Fire(owner, wep, zipline)
     local foot, a
     if zipline then
         local why
+        if not G.CanZip(owner) then
+            tell(owner, "Only Autoriflemen can rig ziplines")
+            wep:LeaveGrappleMode()
+            return
+        end
         foot, a, why = G.ZipNear(owner)
         if not foot then
             tell(owner, why)
@@ -376,9 +401,37 @@ function G.Fire(owner, wep, zipline)
     wep:LeaveGrappleMode()
 end
 
+-- Shot while on a rope, a zipline or a personal hook: hitsToFall hits knock you off.
+-- (Fall, crush and drowning damage and hurting yourself don't count.)
+Rhylib.Hook.Add("EntityTakeDamage", "weapons.grapple", function(ply, dmg)
+    if not ply:IsPlayer() then return end
+    local line = G.ZipOn(ply) or (G.Attached(ply) and ply:GetDTEntity(G.DT_ROPE))
+        or (G.PhookOn and G.PhookOn(ply) ~= 0 and "phook") or nil
+    if not line then return end
+    local need = cfg("hitsToFall") or 0
+    if need <= 0 or dmg:GetDamage() <= 0 or dmg:IsFallDamage() then return end
+    if dmg:IsDamageType(DMG_CRUSH) or dmg:IsDamageType(DMG_DROWN) or dmg:GetAttacker() == ply then return end
+    local h = ply.rhylibLineHits
+    local now = CurTime()
+    -- (hits count while they come within hitsWindow of each other)
+    if not h or h.line ~= line or now - h.last > cfg("hitsWindow") then h = { line = line, n = 0 } ply.rhylibLineHits = h end
+    h.n, h.last = h.n + 1, now
+    if h.n < need then return end
+    if G.ZipOn(ply) then G.ZipDetach(ply) elseif line == "phook" then G.PhookRelease(ply) else G.Detach(ply) end
+    Rhylib.Notify(ply, "Knocked off the line", "bad", "Grapple")
+end, 50)   -- (late: damage that a shield, god mode or an order cancelled never gets here)
+
+-- A rigger's ziplines go when they leave.
+Rhylib.Hook.Add("PlayerDisconnected", "weapons.grapple", function(ply)
+    for z in pairs(G.zips) do
+        if IsValid(z) and z.rhylibOwner == ply then z:Remove() end
+    end
+end)
+
 -- Hook Rhylib.ForceRelease(ply, why) (rhylib_core knock, and anything else
 -- that throws a player about): let go of the rope.
 Rhylib.Hook.Add("Rhylib.ForceRelease", "weapons.grapple", function(ply)
     if IsValid(ply) and G.Attached(ply) then G.Detach(ply) end
     if IsValid(ply) and G.ZipOn(ply) then G.ZipDetach(ply) end
+    if IsValid(ply) and G.PhookRelease then G.PhookRelease(ply) end
 end)

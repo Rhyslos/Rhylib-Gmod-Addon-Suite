@@ -36,7 +36,8 @@ local function drawZipline(ply, start, x, y, s)
     local bad
     local foot
     local g = G.ZipGround(ply)
-    if g then foot = Vector(g) else bad = "Stand on solid ground" end
+    if not G.CanZip(ply) then bad = "Autoriflemen only"
+    elseif g then foot = Vector(g) else bad = "Stand on solid ground" end
     local b, post
     if not bad then
         if not tr.Hit or tr.HitSky then

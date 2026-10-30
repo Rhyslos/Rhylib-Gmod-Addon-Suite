@@ -419,7 +419,7 @@ local TAKE_PREFIX = { "prop_", "spawned_", "sent_", "gmod_wire_", "edit_", "rhyl
 local TAKE_CLASS = { gmod_button = true, gmod_lamp = true, gmod_light = true,
     gmod_balloon = true, gmod_thruster = true, gmod_wheel = true, gmod_hoverball = true, gmod_emitter = true,
     gmod_dynamite = true, gmod_cameraprop = true, gmod_turret = true }
-local KEEP_CLASS = { gmod_hands = true, gmod_gamerules = true, predicted_viewmodel = true, viewmodel = true, rhylib_rope = true, rhylib_zipline = true,
+local KEEP_CLASS = { gmod_hands = true, gmod_gamerules = true, predicted_viewmodel = true, viewmodel = true, rhylib_rope = true, rhylib_zipline = true, rhylib_zipline_end = true,
     physgun_beam = true }
 local function cleanable(e)
     -- (rhylibMapish: there when the map loaded, e.g. point_template spawns)

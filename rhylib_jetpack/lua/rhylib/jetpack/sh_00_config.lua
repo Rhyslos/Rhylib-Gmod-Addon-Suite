@@ -43,6 +43,7 @@ J.DT_RATE = DT.Claim("Float", "jetpack.rate", 23)
 -- (rhylib_weapons' grapple rope, read to hold thrust while on a rope)
 J.DT_ROPE = DT.Claim("Entity", "grapple.rope", 31)
 J.DT_ZIP = DT.Claim("Entity", "grapple.zip", 30)   -- (and its zipline)
+J.DT_PH = DT.Claim("Int", "grapple.phook", 31)     -- (and the personal grappling hook: 0 = off)
 
 local Config = Rhylib.Config
 Config.Describe("jetpack", { name = "Jetpack", category = "Soldiers", sections = { "Fuel", "Flight" } })

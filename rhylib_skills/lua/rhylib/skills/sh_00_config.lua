@@ -60,7 +60,8 @@ end
 K.Cfg = Config.For and Config.For("skills") or function(key) return Config.Get("skills", key) end
 
 -- Categories: the tabs of the Skills page. { id, name, desc, medicOnly,
--- mpOnly, specs = { { id, name, desc, branches = { { id, name, desc } } } } }.
+-- mpOnly, specs = { { id, name, desc, branches = { { id, name, desc, weight } } } } }
+-- (a branch's weight: its share of the spec's width in the menu, default 1).
 
 K.CATEGORIES = {
     { id = "trooper", name = "Trooper", desc = "Frontline riflemen",
@@ -79,7 +80,11 @@ K.CATEGORIES = {
       } },
     { id = "officer", name = "Officer", desc = "Leads from the front with pistols, or runs the squad with target locks and stronger orders",
       specs = {
-          { id = "pistol", name = "Pistol", desc = "Two DC-17s, fast hands and footwork for close fights" },
+          { id = "pistol", name = "Pistol", desc = "Two DC-17s, fast hands and footwork for close fights",
+            branches = {
+                { id = "command", name = "Command", desc = "Q marks and locks, a command order and Reinforcements", weight = 3 },   -- (six orders in a row)
+                { id = "arc", name = "ARC trooper", desc = "The Westar-M5 and all-round field training (no marking or orders)" },
+            } },
           { id = "commander", name = "Commander", desc = "Locks targets for the squad, buffs them nearby and gives stronger orders" },
       } },
     -- Airborne page : also holds the Field technician
@@ -139,7 +144,7 @@ K.NODES = {
     { id = "eff_cells", cat = "trooper", spec = "autorifleman", tier = 4, cost = 3, name = "Efficient cells",
       desc = "Power cells last 25% longer in your guns.", needs = { "droid_popper" } },
     { id = "load_bearer", cat = "trooper", spec = "autorifleman", tier = 4, cost = 3, name = "Load bearer",
-      desc = "+6 kg carry limit, 25% less stamina penalty from weight, and a cell rack (5 power cells).",
+      desc = "+6 kg carry limit, 25% less stamina penalty from weight, and twice the room in any backpack you wear.",
       needs = { "droid_popper" } },
     { id = "ammo_pack", cat = "trooper", spec = "autorifleman", tier = 5, cost = 4, name = "Ammo pack",
       desc = "Carry and use ammo packs: they top up a teammate's magazines and hand out full ones for any blaster.",
@@ -202,14 +207,18 @@ K.NODES = {
     { id = "suppression", cat = "support", spec = "heavy", tier = 6, cost = 4, name = "Suppression", icon = "barrels",
       desc = "Droids near one you hit with the Z-6 aim much worse for 3 s.", needs = { "juggernaut" } },
 
-    -- Officer: Mark target, then one of two specialisations: Pistol (Rex, the old tree) or Commander (Cody, Gree,
-    -- Fox). Both full paths cost 24. The command orders sit in both specs
-    -- (same orders: `order` names the base skill, K.ORDERS): Pistol at
-    -- tier 6, Commander at tier 3 so its order upgrades come after them.
-    { id = "mark_target", cat = "officer", tier = 1, cost = 1, name = "Mark target",
-      desc = "Q: mark what you aim at for 15 s, seen by you and your squad. Through macrobinoculars or a rangefinder, Q marks up to 5 enemies nearest the middle of the view." },
+    -- Officer: Spotter, then one of two specialisations: Pistol or Commander.
+    -- Pistol splits at tier 6 into Command (Tactical marks, an order,
+    -- Reinforcements) or ARC trooper. Every full path costs 24. Q marking
+    -- is Tactical visor (Commander) or Tactical marks (Pistol command): K.CanMark.
+    -- The command orders sit in both specs (same orders: `order` names the
+    -- base skill, K.ORDERS): Pistol at tier 6, Commander at tier 3 so its
+    -- order upgrades come after them.
+    -- (id kept from the old Mark target so saved trees stay valid)
+    { id = "mark_target", cat = "officer", tier = 1, cost = 1, name = "Spotter", icon = "eye",
+      desc = "With the sun visor down, enemies in view are spotted every 5 s for you and your squad, and the one you look at is ringed white. (Q marking comes with Tactical visor or Tactical marks.)" },
 
-    -- Pistol: 1-3-4-2 then the orders.
+    -- Pistol: 1-3-4-2, then the Command / ARC trooper split.
     { id = "dual_dc17", cat = "officer", spec = "pistol", tier = 2, cost = 2, name = "Dual DC-17",
       desc = "Draw a second DC-17 (E + R): two magazines loaded, shots alternate between hands.", needs = { "mark_target" } },
     { id = "pistol_prof", cat = "officer", spec = "pistol", tier = 3, cost = 2, name = "Pistol proficiency",
@@ -228,28 +237,43 @@ K.NODES = {
     { id = "carbine_sidearm", cat = "officer", spec = "pistol", tier = 4, cost = 1, name = "Carbine sidearm",
       desc = "DC-15S: semi-auto becomes Sidearm: held like a pistol in both hands, in first and third person, and 6% more damage.",
       needsGroups = { { "quick_draw" }, { "sidestep" } }, needsLabel = "Needs Quick draw or Sidestep" },
-    { id = "light_rounds", cat = "officer", spec = "pistol", tier = 5, cost = 3, name = "Light rounds",
+    { id = "light_rounds", cat = "officer", spec = "pistol", tier = 5, cost = 2, name = "Light rounds",
       desc = "Hits from a gun loaded with a small magazine: 15% chance to do 50% more damage. Doesn't stack with Critical hits (the better chance counts).",
       needs = { "light_mags" } },
     { id = "crits", cat = "officer", spec = "pistol", tier = 5, cost = 2, name = "Critical hits",
       desc = "10% of your hits with any gun do 50% more damage (with a small magazine, Light rounds' 15% counts instead).",
       needsGroups = { { "steady_grip" }, { "speed_loader" } }, needsLabel = "Needs Steady grip or Speed loader" },
-    { id = "cmd_wind", cat = "officer", spec = "pistol", tier = 6, cost = 2, name = "Second wind", exclusive = "command", rankCfg = "commandRank", order = "cmd_wind",
+    -- Pistol tier 6 splits: Command (an order at tier 6, then Tactical marks
+    -- and Reinforcements) or ARC trooper. Each full path is 24 (Light rounds is 2 to make room
+    -- for Tactical marks).
+    { id = "tactical_marks", cat = "officer", spec = "pistol", branch = "command", tier = 7, cost = 1, name = "Tactical marks", icon = "target",
+      desc = "Q: mark what you aim at for 15 s, seen by you and your squad (through macrobinoculars or a rangefinder, up to 5 enemies nearest the middle of the view). With the sun visor down, Q locks instead: 25 s, a red ring only you see, a red diamond for your squad, and your squad mates (not Marksmen) do 15% more damage to it.",
+      needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
+    { id = "arc_training", cat = "officer", spec = "pistol", branch = "arc", tier = 6, cost = 2, name = "ARC training", icon = "star",
+      desc = "Westar-M5: 15% less spread and kick, 15% faster reloads and 5% more damage.",
+      needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
+    { id = "arc_conditioning", cat = "officer", spec = "pistol", branch = "arc", tier = 7, cost = 2, name = "ARC conditioning", icon = "dodge",
+      desc = "15% higher jumps, 15% less fall damage, 10% less stamina penalty from weight and 5% faster sprinting.",
+      needs = { "arc_training" } },
+    { id = "arc_fieldcraft", cat = "officer", spec = "pistol", branch = "arc", tier = 7, cost = 1, name = "ARC fieldcraft", icon = "bolt",
+      desc = "Every gun: 5% faster reloads, 5% less spread and 5% faster draw. Stamina refills 5% faster.",
+      needs = { "arc_training" } },
+    { id = "cmd_wind", cat = "officer", spec = "pistol", branch = "command", tier = 6, cost = 2, name = "Second wind", exclusive = "command", rankCfg = "commandRank", order = "cmd_wind",
       desc = "No stamina drain while sprinting, and stamina refills fast. You and everyone near you, 6 s; 6 min cooldown.",
       needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
-    { id = "cmd_triage", cat = "officer", spec = "pistol", tier = 6, cost = 2, name = "Field triage", exclusive = "command", rankCfg = "commandRank", order = "cmd_triage",
+    { id = "cmd_triage", cat = "officer", spec = "pistol", branch = "command", tier = 6, cost = 2, name = "Field triage", exclusive = "command", rankCfg = "commandRank", order = "cmd_triage",
       desc = "Downed players nearby get up (at 25% health), everyone heals 8 health a second, and all afflictions are muted (bleeding, fractures, hurt limbs, illness). You and everyone near you, 6 s; 6 min cooldown.",
       needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
-    { id = "cmd_hold", cat = "officer", spec = "pistol", tier = 6, cost = 2, name = "Hold fast", exclusive = "command", rankCfg = "commandRank", order = "cmd_hold",
+    { id = "cmd_hold", cat = "officer", spec = "pistol", branch = "command", tier = 6, cost = 2, name = "Hold fast", exclusive = "command", rankCfg = "commandRank", order = "cmd_hold",
       desc = "Armour refilled (it stays) and no damage at all while it lasts, but nobody can sprint, dash or fly: hold the position. You and everyone near you, 6 s; 6 min cooldown.",
       needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
-    { id = "cmd_focus", cat = "officer", spec = "pistol", tier = 6, cost = 2, name = "Focus fire", exclusive = "command", rankCfg = "commandRank", order = "cmd_focus",
+    { id = "cmd_focus", cat = "officer", spec = "pistol", branch = "command", tier = 6, cost = 2, name = "Focus fire", exclusive = "command", rankCfg = "commandRank", order = "cmd_focus",
       desc = "+20% damage and half the kick on every gun. You and everyone near you, 6 s; 6 min cooldown.",
       needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
-    { id = "cmd_open", cat = "officer", spec = "pistol", tier = 6, cost = 2, name = "Open up", exclusive = "command", rankCfg = "commandRank", order = "cmd_open",
+    { id = "cmd_open", cat = "officer", spec = "pistol", branch = "command", tier = 6, cost = 2, name = "Open up", exclusive = "command", rankCfg = "commandRank", order = "cmd_open",
       desc = "Guns use no ammo or power cells. You and everyone near you, 6 s; 6 min cooldown.",
       needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
-    { id = "cmd_press", cat = "officer", spec = "pistol", tier = 6, cost = 2, name = "Press forward", exclusive = "command", rankCfg = "commandRank", order = "cmd_press",
+    { id = "cmd_press", cat = "officer", spec = "pistol", branch = "command", tier = 6, cost = 2, name = "Press forward", exclusive = "command", rankCfg = "commandRank", order = "cmd_press",
       desc = "No knockback from hits, no explosion knockdowns, and 20% faster sprinting. You and everyone near you, 6 s; 6 min cooldown.",
       needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
 
@@ -257,7 +281,7 @@ K.NODES = {
     -- 1-6-3-4-2. The orders alone at tier 3 (two sides next to them looked
     -- messy), then Rifle drill / Command presence / Field logistics.
     { id = "tactical_visor", cat = "officer", spec = "commander", tier = 2, cost = 2, name = "Tactical visor", icon = "scope", rankCfg = "commandRank",
-      desc = "Your Q marks become locks: 25 s instead of 15, a red ring only you see, a red diamond for your squad, and your squad mates (not Marksmen) do 15% more damage to them. With the sun visor down, enemies in view are spotted every 5 s and the one you look at is ringed white: Q locks it.",
+      desc = "Q: mark what you aim at for 15 s, seen by you and your squad (through macrobinoculars or a rangefinder, up to 5 enemies nearest the middle of the view). With the sun visor down, Q locks instead (the ringed enemy first): 25 s, a red ring only you see, a red diamond for your squad, and your squad mates (not Marksmen) do 15% more damage to it.",
       needs = { "mark_target" } },
     { id = "cmd_wind_c", cat = "officer", spec = "commander", tier = 3, cost = 2, name = "Second wind", exclusive = "command", rankCfg = "commandRank", order = "cmd_wind",
       desc = "No stamina drain while sprinting, and stamina refills fast. You and everyone near you, 6 s; 6 min cooldown.",
@@ -311,7 +335,7 @@ K.NODES = {
       needsGroups = { { "adapt_1" }, { "chain_command" } }, needsLabel = "Needs Adaptable or Chain of command" },
     -- The Pistol officer's copy (it's an officer path too).
     -- Path still 24: Pistol proficiency and Critical hits cost one less.
-    { id = "reinforcements_p", cat = "officer", spec = "pistol", tier = 7, cost = 2, name = "Reinforcements", icon = "stack", rankCfg = "commandRank",
+    { id = "reinforcements_p", cat = "officer", spec = "pistol", branch = "command", tier = 7, cost = 2, name = "Reinforcements", icon = "stack", rankCfg = "commandRank",
       reinforce = true,
       desc = "Right-click with the command comlink: a clone squad (a trooper, a medic, a rifleman and a heavy) arrives around you, steps toward the enemy and follows you, for 10 minutes. You lead them: clones near you aim better, react faster and pause less, and you can give them squad orders (hold R). 15 min cooldown.",
       needsGroups = { { "cmd_wind" }, { "cmd_triage" }, { "cmd_hold" }, { "cmd_focus" }, { "cmd_open" }, { "cmd_press" } },
@@ -567,6 +591,12 @@ end
 -- officer, or anyone who can call reinforcements (the Pistol officer's capstone).
 function K.CanCommandSquad(ply)
     return K.IsCommanderSpec(ply) or K.HasReinforcements(ply)
+end
+
+-- K.CanMark(ply): may ply mark with Q (Tactical visor or Tactical marks)?
+-- Spotter (mark_target) alone only spots through the sun visor.
+function K.CanMark(ply)
+    return K.Has(ply, "tactical_visor") or K.Has(ply, "tactical_marks")
 end
 
 -- K.IsCommanderSpec(ply): a Commander officer (any skill of the commander
@@ -830,7 +860,7 @@ end
 
 local PAGE_SECTIONS = {
     { "Points & rules", { "^freePoints$", "^startPoints$", "^commandRank$", "^onePath$", "^undoWindow$", "^resetCooldownDays$" } },
-    { "Trooper", { "^quickHands", "^runGun", "^pointBlank", "^lightKit", "^momentum", "^extMag", "^effCells", "^loadBearer", "^cellRack$", "^gunRunner", "^steadySpread$", "^steadyRecoil$", "^rapidFire", "^overcharge", "^sustain" } },
+    { "Trooper", { "^quickHands", "^runGun", "^pointBlank", "^lightKit", "^momentum", "^extMag", "^effCells", "^loadBearer", "^gunRunner", "^steadySpread$", "^steadyRecoil$", "^rapidFire", "^overcharge", "^sustain" } },
     { "Marksman", { "^stanceSpread$", "^steadyAimSpread$", "^headhunter", "^boltDrills", "^longGun", "^carbine", "^calledShot", "^priority", "^rhythm", "^firstShot" } },
     { "Heavy", { "^reinforcedHealth$", "^planted", "^ammoBelt$", "^shotgun", "^juggernaut", "^suppress" } },
     { "Officer: pistol", { "^pistolSpread$", "^steadyGrip", "^dualRate$", "^crit", "^lightRounds", "^quickDraw", "^speedLoader", "^sidearm", "^sidestep", "^lightMagBonus$" } },

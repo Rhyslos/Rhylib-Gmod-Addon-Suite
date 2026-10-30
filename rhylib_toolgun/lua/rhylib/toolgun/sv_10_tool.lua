@@ -354,7 +354,12 @@ local function removable(ent)
     local par = ent:GetParent()
     if IsValid(par) and par.rhylibToolSpawned then return { class = par:GetClass(), ent = par } end
     if ent.IsRhylibDroid or ent.IsRhylibClone or ent:GetClass() == "rhylib_b2_rocket" then return { class = ent:GetClass() } end
-    return Tool.ByClass(ent:GetClass())
+    -- Grapple ropes and ziplines (staff with the full toolgun only: no entry);
+    -- a zipline's far end stands for its line.
+    local cls = ent:GetClass()
+    if cls == "rhylib_rope" or cls == "rhylib_zipline" then return { class = cls } end
+    if cls == "rhylib_zipline_end" and IsValid(ent.zip) then return { class = "rhylib_zipline", ent = ent.zip } end
+    return Tool.ByClass(cls)
 end
 
 Rhylib.Net.Receive("tool.remove", function(ply)

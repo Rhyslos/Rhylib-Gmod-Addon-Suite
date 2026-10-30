@@ -5,17 +5,22 @@
     the grapple's zipline fire mode (sv_30_grapple.lua); ridden in
     SetupMove (sh_30_grapple.lua, "Zipline mode").
 
-    Static: no physics, no Think. The ends are network vars, so they reach
-    everyone who comes near, once. E on the near post picks the hook back
-    up (not while anyone is riding). The entity sits at the foot of the
-    near post; its use box is the post.
+    Static: no physics, no Think. The ends are network vars, sent to
+    everyone once. The hook is used up: there's no picking it back up. The
+    entity sits at the foot of the near post (planted just behind the
+    rigger); its box is the post, solid to players. The far
+    end has its own small server-only box (rhylib_zipline_end) so it can
+    be shot too. Any damage to either breaks the line (ENT:Break): riders
+    drop and the hook is gone. If what the hook gripped is removed, the
+    line goes the same way.
 
     Looks: the line is a dark cable; posts are config grapple zipPostModel
     (a model you make) or, while that's empty, a plain drawn pole; the
     hook end is the same small block as a grapple rope's hook.
 
-    Realm: shared. ENT:SetZip(a, b, postB, hookNormal) on the server;
-    ENT:GetZipData() on both realms: { a, b, dir, len, deg, twoWay }.
+    Realm: shared. ENT:SetZip(a, b, postB, hookNormal), ENT:Break() and
+    zip.rhylibOwner (the rigger) on the server; ENT:GetZipData() on both
+    realms: { a, b, dir, len, deg, twoWay, margin }.
 ]]
 
 AddCSLuaFile()
@@ -28,7 +33,7 @@ ENT.RenderGroup = RENDERGROUP_OPAQUE
 
 -- Only there so the engine renders the entity; never drawn.
 local MARKER_MODEL = "models/hunter/blocks/cube025x025x025.mdl"
-local USE_MINS, USE_MAXS = Vector(-3, -3, 0), Vector(3, 3, 88)   -- the near post (thin: it stops shots)
+local USE_MINS, USE_MAXS = Vector(-3, -3, 0), Vector(3, 3, 88)   -- the near post
 
 function ENT:SetupDataTables()
     self:NetworkVar("Vector", 0, "A")          -- top of the near post (where the line ties on)
@@ -50,13 +55,11 @@ end
 
 function ENT:Initialize()
     self:SetModel(MARKER_MODEL)
-    if SERVER then
-        self:SetMoveType(MOVETYPE_NONE)
-        self:SetSolid(SOLID_BBOX)
-        self:SetCollisionBounds(USE_MINS, USE_MAXS)
-        self:SetCollisionGroup(COLLISION_GROUP_WEAPON)  -- nobody bumps into it
-        self:SetUseType(SIMPLE_USE)
-    end
+    -- A solid pole on both realms (players bump into it, predicted), so
+    -- nobody stands inside it and shoots it from within.
+    self:SetMoveType(MOVETYPE_NONE)
+    self:SetSolid(SOLID_BBOX)
+    self:SetCollisionBounds(USE_MINS, USE_MAXS)
     Rhylib.Weapons.Grapple.zips[self] = true
     if CLIENT then self:OnReadyChanged() end
 end
@@ -69,8 +72,10 @@ end
 
 function ENT:OnRemove()
     Rhylib.Weapons.Grapple.zips[self] = nil
-    if SERVER and IsValid(self.gripped) then
-        self.gripped:RemoveCallOnRemove("rhylib_zip_" .. self:EntIndex())
+    if SERVER then
+        if IsValid(self.gripped) then self.gripped:RemoveCallOnRemove("rhylib_zip_" .. self:EntIndex()) end
+        if IsValid(self.farEnd) then self.farEnd:Remove() end
+        timer.Remove("rhylib_zip_solid_" .. self:EntIndex())
     end
 end
 
@@ -82,19 +87,23 @@ function ENT:SetZip(a, b, postB, hookNormal)
     self:SetPostB(postB and true or false)
     self:SetHookAng((hookNormal or Vector(0, 0, 1)):Angle())
     self:SetReady(true)
+    -- The far end's own box, so shots there break the line too.
+    local e = ents.Create("rhylib_zipline_end")
+    if IsValid(e) then
+        e:SetPos(postB and (b - Vector(0, 0, Rhylib.Weapons.Grapple.POST_H)) or b)
+        e.zip, e.post = self, postB and true or false
+        e:Spawn()
+        self.farEnd = e
+    end
 end
 
--- Server: what the hook gripped (non-world). If that goes, the line goes
--- and the hook drops at the near post.
+-- Server: what the hook gripped (non-world). If that goes, the line goes.
 function ENT:SetGripped(ent)
     if not IsValid(ent) then return end
     self.gripped = ent
     local zip = self
     ent:CallOnRemove("rhylib_zip_" .. self:EntIndex(), function()
-        if not IsValid(zip) or zip.taken then return end
-        zip.taken = true   -- (Remove is deferred: no second hook from Use this tick)
-        Rhylib.Weapons.Grapple.DropHook(zip:GetPos() + Vector(0, 0, 8), zip.rhylibIssued)
-        zip:Remove()
+        if IsValid(zip) then zip:Remove() end
     end)
 end
 
@@ -120,21 +129,44 @@ function ENT:GetZipData()
 end
 
 if SERVER then
-    function ENT:Use(ply)
-        if self.taken or not IsValid(ply) or not ply:IsPlayer() then return end
-        local G = Rhylib.Weapons.Grapple
-        if G.ZipRiders(self) > 0 then
-            Rhylib.Notify(ply, "Someone is on the zipline", "bad", "Grapple")
-            return
+    -- Solid to players only once nobody stands inside the post (checked
+    -- every 0.5 s until then), so nobody gets stuck in a new post.
+    function ENT:SolidWhenClear()
+        local mins, maxs = self:GetPos() + USE_MINS - Vector(17, 17, 0), self:GetPos() + USE_MAXS + Vector(17, 17, 0)
+        for _, e in ipairs(ents.FindInBox(mins, maxs)) do
+            if e:IsPlayer() and e:Alive() then
+                self:SetCollisionGroup(COLLISION_GROUP_WEAPON)
+                local id = "rhylib_zip_solid_" .. self:EntIndex()
+                timer.Create(id, 0.5, 1, function()
+                    if IsValid(self) then self:SolidWhenClear() end
+                end)
+                return
+            end
         end
-        -- (an armoury hook stays issued; taken: Remove() is deferred to the tick's end)
-        if Rhylib.Weapons.Pouch.Add(ply, G.ITEM, 1, false, self.rhylibIssued) then
-            self.taken = true
-            ply:EmitSound("physics/metal/metal_solid_impact_soft1.wav", 60)
-            self:Remove()
-        else
-            Rhylib.Notify(ply, "No room for the grapple hook", "bad", "Grapple")
+        self:SetCollisionGroup(COLLISION_GROUP_NONE)
+    end
+
+    -- Shot (or caught in a blast): the line snaps. Riders drop, the hook is
+    -- gone, and the rigger hears about it.
+    function ENT:Break()
+        if self.broken then return end
+        self.broken = true
+        local d = self:GetZipData()
+        for _, pos in ipairs({ d and d.a or self:GetPos(), d and d.b }) do
+            local fx = EffectData()
+            fx:SetOrigin(pos)
+            fx:SetNormal(Vector(0, 0, 1))
+            util.Effect("MetalSpark", fx, true, true)
         end
+        self:EmitSound("physics/metal/metal_box_break1.wav", 75)
+        if IsValid(self.rhylibOwner) then
+            Rhylib.Notify(self.rhylibOwner, "Your zipline was shot down", "bad", "Grapple")
+        end
+        self:Remove()
+    end
+
+    function ENT:OnTakeDamage(dmg)
+        if dmg:GetDamage() > 0 then self:Break() end
     end
 end
 

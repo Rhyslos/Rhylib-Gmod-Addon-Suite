@@ -102,7 +102,7 @@ A.CRATES = { "rhylib_crate_small", "rhylib_crate_medium", "rhylib_crate_large", 
 -- A.AMMO_STOCK before a cabinet is first opened (rhylib_eod adds its kits).
 -- Example: table.insert(Rhylib.Armoury.AMMO_STOCK, "my_item")
 A.TRAINING_AMMO_STOCK = { "mag_small_t", "mag_medium_t", "mag_large_t", "cell", "rocket_t", "rhylib_thermal_training", "rhylib_droidpopper_training" }
-A.AMMO_STOCK = { "mag_small", "mag_medium", "mag_large", "cell", "rocket", "grapple", "rhylib_thermal", "rhylib_droidpopper", "rhylib_ammo_pack", "rhylib_he_charge" }
+A.AMMO_STOCK = { "mag_small", "mag_medium", "mag_large", "cell", "rocket", "grapple", "rhylib_grapple_personal", "rhylib_thermal", "rhylib_droidpopper", "rhylib_ammo_pack", "rhylib_he_charge" }
 
 -- Settings (module "armoury"). Lists are read when a storage is first
 -- opened after a map start, so changes show after a map change.

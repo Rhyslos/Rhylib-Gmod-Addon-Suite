@@ -328,9 +328,15 @@ local function columns(cat)
     for i, s in ipairs(specs) do
         local a, b = (i - 1) / math.max(n, 1), i / math.max(n, 1)
         cols.spec[s.id] = { a, b }
+        -- (a branch's share of its spec's width: its `weight`, default 1)
         local br = s.branches or {}
-        for j, x in ipairs(br) do
-            cols.branch[x.id] = { a + (b - a) * (j - 1) / #br, a + (b - a) * j / #br }
+        local total = 0
+        for _, x in ipairs(br) do total = total + (x.weight or 1) end
+        local at = 0
+        for _, x in ipairs(br) do
+            local w = x.weight or 1
+            cols.branch[x.id] = { a + (b - a) * at / total, a + (b - a) * (at + w) / total }
+            at = at + w
         end
     end
     return cols
@@ -426,7 +432,7 @@ local function build(page)
             return
         end
         -- (the first skill of a category commits you to it while onePath is on)
-        if K.Cfg("onePath") and next(K.Commitments(set)) == nil then
+        if K.Cfg("onePath") and next((K.Commitments(set))) == nil then   -- (parens: only the first of its three results)
             local cat = K.catById[n.cat]
             confirm("Choose " .. (cat and cat.name or n.cat), "Learning " .. n.name .. " commits you to the " .. (cat and cat.name or n.cat)
                 .. " path: the other paths close until you reset your skills.", "Learn it", function() learn(n) end)

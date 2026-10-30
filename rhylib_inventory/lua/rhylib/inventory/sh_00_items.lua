@@ -210,7 +210,7 @@ Items.Register("backpack", {
     w = 2, h = 2,
     category = "gear",
     slot = "back",
-    grid = { 5, 2 },
+    grid = { 6, 2 },   -- (as wide as the main grid)
     weight = 1.5,
     carry = 6,
     model = "models/props_c17/suitcase001a.mdl",
@@ -389,7 +389,7 @@ end
 --   3  back slot: holds one item with slot = "back"
 --   4  an outside container the player has open (locker, armoury, crate),
 --      see sv_30_storage.lua. Its items have their own uids.
---   5  cell rack: only power cells, opened by a skill (rhylib_skills)
+--   5  cell rack: only power cells (no longer opened; old saves move out)
 --   6  ammo belt (rhylib_skills)
 --   7  holster: pistols, while a holster is worn
 --   8-17 worn gear slots (kama, pauldron, binoculars, rangefinder, helmet
@@ -409,7 +409,7 @@ Items.MAIN = 1
 Items.BACK = 2
 Items.SLOT_BACK = 3
 Items.EXT = 4
-Items.RACK = 5       -- cell rack (rhylib_skills Load bearer): power cells only
+Items.RACK = 5       -- old cell rack (never opened now): power cells only
 Items.BELT = 6       -- ammo belt (rhylib_skills Ammo belt): no worn items, no long guns (5+ cells)
 Items.HOLSTER = 7    -- pistols (def.holster), while a holster is worn (2x2: both holsters)
 Items.POUCH = 18     -- belt pouches (worn belt pouches): like the ammo belt

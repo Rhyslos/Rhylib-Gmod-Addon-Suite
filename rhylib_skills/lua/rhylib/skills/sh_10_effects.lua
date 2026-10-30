@@ -55,7 +55,7 @@ reg("extMagBonus", 10, "Extended mags: extra rounds in a medium magazine")
 reg("effCellsMult", 1.25, "Efficient cells: power cell shots multiplier")
 reg("loadBearerCarry", 6, "Load bearer: extra carry limit (kg)")
 reg("loadBearerPenalty", 0.75, "Load bearer: weight stamina penalty multiplier")
-reg("cellRack", { 5, 2 }, "Load bearer: cell rack size in inventory cells (cells are 1x2, so 5x2 = 5 cells)")
+reg("loadBearerPack", 2, "Load bearer: backpack size multiplier (2 = twice the rows of any backpack worn)")
 reg("gunRunnerSpin", 0.9, "Gun runner: walk speed while the Z-6 spins (normally 0.6)")
 reg("gunRunnerWeight", 0.5, "Gun runner: Z-6 weight multiplier")
 reg("steadySpread", 0.45, "Steady barrels: Z-6 spread multiplier")
@@ -160,6 +160,14 @@ reg("holdLineRange", 200, "Hold the line: how close the other MP must be (units)
 reg("bashDamage", 30, "Shield bash: damage to droids")
 reg("searchMult", 1.2, "Thorough search: search roll multiplier")
 -- EOD (Field technician)
+reg("arcWestar", 0.85, "ARC training: Westar-M5 spread, kick and reload time multiplier")
+reg("arcWestarDamage", 1.05, "ARC training: Westar-M5 damage multiplier")
+reg("arcJump", 1.15, "ARC conditioning: jump power multiplier")
+reg("arcFall", 0.85, "ARC conditioning: fall damage multiplier")
+reg("arcWeight", 0.9, "ARC conditioning: weight stamina penalty multiplier")
+reg("arcSprint", 1.05, "ARC conditioning: sprint speed multiplier")
+reg("arcAll", 0.95, "ARC fieldcraft: reload time, spread and draw time multiplier on every gun")
+reg("arcRegen", 1.05, "ARC fieldcraft: stamina refill multiplier")
 reg("eodBlastMult", 0.7, "EOD Blast hardened: explosion damage multiplier")
 reg("eodPackWeight", 0.5, "EOD Explosives pack: weight multiplier of grenades, charges, rockets and mines")
 reg("eodPackStack", 1, "EOD Explosives pack: extra per stack of grenades, charges and mines")
@@ -175,6 +183,7 @@ K.DC15X = "rhylib_dc15x"
 K.DP24 = "rhylib_dp24"
 K.DC15S = "rhylib_dc15s"
 K.DC15A = "rhylib_dc15a"
+K.WESTAR = "rhylib_westarm5"
 
 -- K.GunClass(wep): the gun a weapon counts as for skills (training copies
 -- count as the real one, via SWEP.TrainingOf).
@@ -251,6 +260,8 @@ function K.SpreadMult(ply, wep)
     if set.combat_veteran and K.IsRifle(wep) then m = m * cfg("vetRifle") end
     if set.hover and K.Hovering(ply) then m = m * cfg("hoverSpread") end
     if set.first_shot and K.FirstShotReady(ply, wep) then m = m * cfg("firstShotSpread") end
+    if set.arc_training and class == K.WESTAR then m = m * cfg("arcWestar") end
+    if set.arc_fieldcraft then m = m * cfg("arcAll") end
     return m
 end
 
@@ -269,6 +280,7 @@ function K.RecoilMult(ply, wep)
     if K.GunClass(wep) == K.DC15S and K.Has(ply, "carbine_disc") then m = m * cfg("carbineRecoil") end
     if K.Has(ply, "hover") and K.Hovering(ply) then m = m * cfg("hoverRecoil") end
     if K.Has(ply, "combat_veteran") and K.IsRifle(wep) then m = m * cfg("vetRifle") end
+    if K.Has(ply, "arc_training") and K.GunClass(wep) == K.WESTAR then m = m * cfg("arcWestar") end
     if ply:GetNW2Bool("rhylib_steadyLine", false) then m = m * cfg("lineKick") end   -- (Steady the line)
     local mode = wep.GetFireModeName and wep:GetFireModeName()
     if mode == "overcharge" then m = m * cfg("overchargeKick") end
@@ -353,6 +365,8 @@ function K.ReloadMult(ply, wep, cell)
     if not cell and K.Has(ply, "quick_hands") then m = m * cfg("quickHandsMult") end
     if K.Has(ply, "speed_loader") and K.PISTOLS[K.GunClass(wep)] then m = m * cfg("speedLoaderMult") end
     if K.Has(ply, "combat_veteran") and K.IsRifle(wep) then m = m * cfg("vetRifle") end
+    if K.Has(ply, "arc_training") and K.GunClass(wep) == K.WESTAR then m = m * cfg("arcWestar") end
+    if K.Has(ply, "arc_fieldcraft") then m = m * cfg("arcAll") end
     if ply.rhylibLogi then m = m * cfg("logiReload") end   -- (Field logistics, server)
     if (ply.rhylibMomentumReload or 0) > CurTime() then
         m = m * cfg("momentumReload")
@@ -368,6 +382,7 @@ function K.DrawMult(ply, wep)
     local m = 1
     if K.Has(ply, "quick_draw") then m = cfg("quickDrawMult") end
     if K.Has(ply, "carbine_disc") and K.GunClass(wep) == K.DC15S then m = math.min(m, cfg("carbineDraw")) end
+    if K.Has(ply, "arc_fieldcraft") then m = m * cfg("arcAll") end
     return m
 end
 
@@ -397,10 +412,14 @@ function K.SpinMoveMult(ply, wep, base)
     return base
 end
 
--- K.WeightPenaltyMult(ply): multiplier on rhylib_stamina's weight penalty (Load bearer).
+-- K.WeightPenaltyMult(ply): multiplier on rhylib_stamina's weight penalty
+-- (Load bearer, ARC conditioning).
 function K.WeightPenaltyMult(ply)
-    if isPly(ply) and K.Has(ply, "load_bearer") then return cfg("loadBearerPenalty") end
-    return 1
+    if not isPly(ply) then return 1 end
+    local m = 1
+    if K.Has(ply, "load_bearer") then m = m * cfg("loadBearerPenalty") end
+    if K.Has(ply, "arc_conditioning") then m = m * cfg("arcWeight") end
+    return m
 end
 
 -- Rhylib blasters only (not kits, grenades, tools); cached per class.
@@ -505,22 +524,28 @@ function K.FreeSprint(ply)
     return ply:GetNW2Float("rhylib_momentum", 0) > CurTime() or K.OrderIs(ply, "wind")
 end
 
--- K.RegenMult(ply): stamina refill multiplier (Second wind order, Steady the line).
+-- K.RegenMult(ply): stamina refill multiplier (Second wind order, Steady
+-- the line, ARC fieldcraft).
 function K.RegenMult(ply)
     local m = 1
     if K.OrderIs(ply, "wind") then m = cfg("windRegen") end
     if isPly(ply) and ply:GetNW2Bool("rhylib_steadyLine", false) then m = m * cfg("lineRegen") end   -- (Steady the line)
+    if isPly(ply) and K.Has(ply, "arc_fieldcraft") then m = m * cfg("arcRegen") end
     return m
 end
 
--- Light kit: a little faster while lightly loaded. Before every limiter
--- (medical legs -90, MP cuffs -95, stamina 0), which only ever lower it.
+-- Light kit: a little faster while lightly loaded; ARC conditioning: a
+-- little faster while sprinting. Before every limiter (medical legs -90,
+-- MP cuffs -95, stamina 0), which only ever lower it.
 Rhylib.Hook.Add("SetupMove", "skills.move", function(ply, mv)
-    if not K.Has(ply, "light_kit") then return end
-    local w = ply:GetNW2Float(Rhylib.NW.WEIGHT, 0)
-    local cap = ply:GetNW2Float(Rhylib.NW.CARRY, 20)
-    if cap > 0 and w / cap >= cfg("lightKitLoad") then return end
-    local m = cfg("lightKitSpeed")
+    local m = 1
+    if K.Has(ply, "light_kit") then
+        local w = ply:GetNW2Float(Rhylib.NW.WEIGHT, 0)
+        local cap = ply:GetNW2Float(Rhylib.NW.CARRY, 20)
+        if not (cap > 0 and w / cap >= cfg("lightKitLoad")) then m = cfg("lightKitSpeed") end
+    end
+    if mv:KeyDown(IN_SPEED) and K.Has(ply, "arc_conditioning") then m = m * cfg("arcSprint") end
+    if m == 1 then return end
     mv:SetMaxClientSpeed(mv:GetMaxClientSpeed() * m)
     mv:SetMaxSpeed(mv:GetMaxSpeed() * m)
 end, -200)
@@ -588,6 +613,7 @@ local DT_DODGE = DT and DT.Claim("Float", "skills.dodge", 25) or 25
 local DT_STEP = DT and DT.Claim("Float", "skills.step", 24) or 24
 local DT_ROPE = DT and DT.Slot("Entity", "grapple.rope") or 31
 local DT_ZIP = DT and DT.Slot("Entity", "grapple.zip") or 30
+local DT_PH = DT and DT.Slot("Int", "grapple.phook") or 31
 local IN_DODGE = IN_GRENADE2   -- (unused by GMod and the suite: the dodge key)
 
 if CLIENT then
@@ -636,7 +662,7 @@ Rhylib.Hook.Add("SetupMove", "skills.dodge", function(ply, mv)
     local Med = Rhylib.Medical
     if Med and Med.IsDown and (Med.IsDown(ply) or (Med.Dragging and Med.Dragging(ply))) then return end
     if Med and Med.InTank and (Med.InTank(ply) or ply:GetNW2Int("rhylib_medAct", 0) ~= 0) then return end
-    if IsValid(ply:GetDTEntity(DT_ROPE)) or IsValid(ply:GetDTEntity(DT_ZIP)) then return end   -- (on a grapple rope or zipline)
+    if IsValid(ply:GetDTEntity(DT_ROPE)) or IsValid(ply:GetDTEntity(DT_ZIP)) or ply:GetDTInt(DT_PH) ~= 0 then return end   -- (on a grapple rope, zipline or personal hook)
     local MP = Rhylib.MP
     if MP and MP.IsCuffed and (MP.IsCuffed(ply) or MP.IsStunned(ply) or MP.EscortedBy(ply)) then return end
     if ply:GetDTFloat(DT_DODGE) > now then return end

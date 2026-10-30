@@ -527,7 +527,8 @@ function SWEP:Initialize()
 end
 
 -- The grapple modes sit after the weapon's own modes: "grapple" at index
--- #FireModes + 1, "zipline" at #FireModes + 2.
+-- #FireModes + 1, "zipline" at #FireModes + 2 (E + R only offers it to
+-- Autoriflemen: Grapple.CanZip).
 -- The mode name used at index i: a grapple slot, the mode itself if
 -- allowed, the mode that replaces it (sidearm for semi), else the first
 -- allowed one (a skill since lost or gained).
@@ -732,9 +733,14 @@ if SERVER then
         if cur < 1 or cur > total then cur = 1 end
         -- Next mode the owner may use (skill-gated modes are skipped).
         local nextMode = cur
+        local canZip = grapple and G.CanZip(owner)   -- (zipline: Autoriflemen only)
         for _ = 1, total do
             nextMode = nextMode % total + 1
-            if nextMode > n or self:ModeAllowed(nextMode) then break end
+            if nextMode == n + 2 and not canZip then
+                -- skip the zipline slot
+            elseif nextMode > n or self:ModeAllowed(nextMode) then
+                break
+            end
         end
         if nextMode == cur then
             self:EmitSound("weapons/2misc_non_guns/sw_noammo.ogg", 60)
@@ -1018,7 +1024,7 @@ function SWEP:FireGrapple(zipline)
         owner:SetAnimation(PLAYER_ATTACK1)
         -- Your own client draws the hook flying out straight away.
         -- (zipline mode: only when standing where the server will rig one)
-        if CLIENT and owner:GetAmmoCount(G.AMMO) > 0 and (not zipline or G.ZipGround(owner)) then
+        if CLIENT and owner:GetAmmoCount(G.AMMO) > 0 and (not zipline or (G.CanZip(owner) and G.ZipGround(owner))) then
             Rhylib.Weapons.Bolts.Spawn(owner, owner:GetShootPos(), owner:GetAimVector(),
                 Rhylib.Config.Get("grapple", "hookSpeed"), 5)
         end

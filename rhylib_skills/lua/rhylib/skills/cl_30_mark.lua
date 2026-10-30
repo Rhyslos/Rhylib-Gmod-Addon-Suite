@@ -3,13 +3,14 @@
     Rhylib.MarkKey from rhylib_menus), and marks sent to us (ours or a
     squad mate's) are drawn over the target until they run out or the
     target dies. Through optics, one Q marks several (sv_30_mark).
-    Without the Mark target skill, the first Q of a session prints a quiet
-    chat line saying it needs the Officer skill.
-    A Commander's (Tactical visor) Q marks are locks: red diamonds for
+    Without a marking skill (K.CanMark), the first Q of a session prints a
+    quiet chat line saying which skills mark.
+    Q marks made with the sun visor down are locks: red diamonds for
     everyone who sees them (the squad hits locked targets harder); other
     marks, spots and Called shot marks orange.
-    Sun visor down: a white ring on the spotted enemy nearest the aim; Q
-    locks that one. Your own locks get a red ring (only you see rings).
+    Spotter + sun visor down: a white ring on the spotted enemy nearest the
+    aim; Q (with a marking skill) locks that one. Your own locks get a red
+    ring (only you see rings).
     Client only. K.visorTarget = the ringed enemy this frame (sent with Q).
     Distances on the diamonds use 0.019 m per unit.
 ]]
@@ -29,10 +30,10 @@ local toldMark = false
 Rhylib.Hook.Add("Rhylib.MarkKey", "skills.mark", function()
     local me = LocalPlayer()
     if not (IsValid(me) and me:Alive()) then return end
-    if not K.Has(me, "mark_target") then
+    if not K.CanMark(me) then
         if not toldMark then
             toldMark = true
-            chat.AddText(Color(133, 183, 235), "[Skills] ", Color(200, 200, 200), "Q: Mark target needs the Officer skill")
+            Rhylib.Notify(nil, "Q marking needs Tactical visor (Commander) or Tactical marks (Pistol officer)", "info", "Skills")
         end
         return
     end
@@ -179,7 +180,7 @@ Rhylib.Hook.Add("HUDPaint", "skills.visorring", function()
     K.visorTarget = nil
     if next(K.clientMarks) == nil then return end
     local me = LocalPlayer()
-    if not (IsValid(me) and me:Alive() and K.Has(me, "tactical_visor")) then return end
+    if not (IsValid(me) and me:Alive() and K.Has(me, "mark_target")) then return end   -- (Spotter)
     local myIdx = me:EntIndex()
     local now = CurTime()
     local s = ScrH() / 1080
