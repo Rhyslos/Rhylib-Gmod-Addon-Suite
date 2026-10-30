@@ -421,6 +421,14 @@ Rhylib.Hook.Add("EntityTakeDamage", "weapons.grapple", function(ply, dmg)
     Rhylib.Notify(ply, "Knocked off the line", "bad", "Grapple")
 end, 50)   -- (late: damage that a shield, god mode or an order cancelled never gets here)
 
+-- No fall damage while on a rope, a zipline or held up by a personal hook (the
+-- movement there is set every tick; touching the ground isn't a fall), nor
+-- in the half second after letting go of a zipline.
+Rhylib.Hook.Add("GetFallDamage", "weapons.grapple", function(ply)
+    if G.ZipOn(ply) or G.Attached(ply) or (G.PhookHeld and G.PhookHeld(ply)) then return 0 end
+    if (ply.rhylibZipLeft or 0) > CurTime() then return 0 end
+end, -10)
+
 -- A rigger's ziplines go when they leave.
 Rhylib.Hook.Add("PlayerDisconnected", "weapons.grapple", function(ply)
     for z in pairs(G.zips) do

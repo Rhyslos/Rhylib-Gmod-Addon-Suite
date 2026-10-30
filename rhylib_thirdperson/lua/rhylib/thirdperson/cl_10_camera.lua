@@ -22,6 +22,8 @@
     SwapShoulder, and the live camera state (camAng, camPos, aimPoint,
     aimFrac, side, camHeight). Other addons read TP.Wanted() / TP.Active()
     (e.g. the body camera) and turn TP.camAng (rhylib_weapons view recoil).
+    Freelook (middle mouse, cl_20_freelook.lua) is in this addon too.
+
     Hooks: InputMouseApply "thirdperson.mouse" (10, after the reload
     menu), CreateMove "thirdperson.aim", CalcView "thirdperson.camera" (0;
     the body camera at -50 runs first and returns nothing while this is
@@ -93,13 +95,29 @@ end
 -- Mouse: turn the camera, not the player
 --------------------------------------------------------------------------
 
+-- TP.InitCam(ang): the camera angle when third person starts: where you
+-- aim (ang), or, mid freelook (cl_20_freelook.lua), where the first-person
+-- view was looking; the freelook then carries on in third person and ends
+-- back on the aim.
+function TP.InitCam(ang)
+    if TP.freeLook and TP.freeAim then
+        local o = TP.freeOff or Angle(0, 0, 0)
+        TP.camAng = Angle(math.Clamp(TP.freeAim.p + o.p, -89, 89), TP.freeAim.y + o.y, 0)
+        TP.freeSaveCam = Angle(TP.freeAim.p, TP.freeAim.y, 0)
+        if TP.freeOff then TP.freeOff:Zero() end
+    else
+        TP.camAng = Angle(ang.p, ang.y, 0)
+    end
+end
+
 -- Runs after the reload menu's handler (priority 10), which takes the
 -- mouse while that menu is open.
 Rhylib.Hook.Add("InputMouseApply", "thirdperson.mouse", function(cmd, x, y, ang)
     if not TP.Active() then return end
-    if not TP.camAng then TP.camAng = Angle(ang.p, ang.y, 0) end
+    if not TP.camAng then TP.InitCam(ang) end
 
     local scale = sensitivity:GetFloat()
+    if TP.freeLook and TP.FreelookSens then scale = scale * TP.FreelookSens() end   -- (freelook: its own speed)
     local wep = LocalPlayer():GetActiveWeapon()
     if IsValid(wep) and wep.AdjustMouseSensitivity then
         scale = scale * (wep:AdjustMouseSensitivity() or 1)
@@ -142,16 +160,26 @@ end
 Rhylib.Hook.Add("CreateMove", "thirdperson.aim", function(cmd)
     local ply = LocalPlayer()
     if not TP.Active() then
-        -- Just switched off: face where the camera was looking.
+        -- Just switched off: face where the camera was looking; mid
+        -- freelook, keep the aim and carry the look on in first person.
         if TP.camAng then
-            cmd:SetViewAngles(Angle(TP.camAng.p, TP.camAng.y, 0))
-            TP.camAng, TP.camPos, TP.aimPoint = nil, nil, nil
+            if TP.freeLook and TP.freeAim then
+                cmd:SetViewAngles(TP.freeAim)
+                if TP.FreelookCarry then TP.FreelookCarry(TP.camAng) end
+            else
+                cmd:SetViewAngles(Angle(TP.camAng.p, TP.camAng.y, 0))
+            end
+            TP.camAng, TP.camPos, TP.aimPoint, TP.freeSaveCam = nil, nil, nil, nil
         end
         return
     end
-    if not TP.camAng then
-        local va = cmd:GetViewAngles()
-        TP.camAng = Angle(va.p, va.y, 0)
+    if not TP.camAng then TP.InitCam(cmd:GetViewAngles()) end
+
+    -- Freelook (cl_20_freelook.lua): the camera turns, the aim and the
+    -- movement stay where the body faces.
+    if TP.freeLook and TP.freeAim then
+        cmd:SetViewAngles(TP.freeAim)
+        return
     end
 
     local aimAng = updateAimPoint(ply)
@@ -269,7 +297,7 @@ local COL_BLOCK = Color(255, 90, 80)
 local COL_BLOCK_OUT = Color(0, 0, 0, 160)
 
 Rhylib.Hook.Add("HUDPaint", "thirdperson.hud", function()
-    if not TP.Active() or not TP.aimPoint then return end
+    if not TP.Active() or not TP.aimPoint or TP.freeLook then return end   -- (freelook: the middle of the screen isn't where you aim)
     local ply = LocalPlayer()
     local wep = ply:GetActiveWeapon()
 

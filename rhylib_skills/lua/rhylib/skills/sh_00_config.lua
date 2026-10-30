@@ -83,7 +83,7 @@ K.CATEGORIES = {
           { id = "pistol", name = "Pistol", desc = "Two DC-17s, fast hands and footwork for close fights",
             branches = {
                 { id = "command", name = "Command", desc = "Q marks and locks, a command order and Reinforcements", weight = 3 },   -- (six orders in a row)
-                { id = "arc", name = "ARC trooper", desc = "The Westar-M5 and all-round field training (no marking or orders)" },
+                { id = "arc", name = "ARC trooper", desc = "From tier 1: Q marks, the Westar-M5 and all-round field training (no Spotter, Commander or orders)" },
             } },
           { id = "commander", name = "Commander", desc = "Locks targets for the squad, buffs them nearby and gives stronger orders" },
       } },
@@ -207,20 +207,27 @@ K.NODES = {
     { id = "suppression", cat = "support", spec = "heavy", tier = 6, cost = 4, name = "Suppression", icon = "barrels",
       desc = "Droids near one you hit with the Z-6 aim much worse for 3 s.", needs = { "juggernaut" } },
 
-    -- Officer: Spotter, then one of two specialisations: Pistol or Commander.
-    -- Pistol splits at tier 6 into Command (Tactical marks, an order,
-    -- Reinforcements) or ARC trooper. Every full path costs 24. Q marking
-    -- is Tactical visor (Commander) or Tactical marks (Pistol command): K.CanMark.
+    -- Officer: tier 1 is a choice (exclusive group "officer_start"): Spotter
+    -- (then Pistol with the Command branch, or Commander) or ARC training
+    -- (Pistol spec, ARC branch: no Commander, no command skills). Every
+    -- full path costs 24. Q marking is Tactical visor (Commander), Tactical
+    -- marks (Pistol command) or ARC training (plain marks): K.CanMark.
     -- The command orders sit in both specs (same orders: `order` names the
     -- base skill, K.ORDERS): Pistol at tier 6, Commander at tier 3 so its
     -- order upgrades come after them.
     -- (id kept from the old Mark target so saved trees stay valid)
-    { id = "mark_target", cat = "officer", tier = 1, cost = 1, name = "Spotter", icon = "eye",
-      desc = "With the sun visor down, enemies in view are spotted every 5 s for you and your squad, and the one you look at is ringed white. (Q marking comes with Tactical visor or Tactical marks.)" },
+    { id = "mark_target", cat = "officer", tier = 1, cost = 1, name = "Spotter", icon = "eye", exclusive = "officer_start",
+      desc = "Enemies in view are spotted every 5 s for you and your squad, and the one you look at is ringed white: with the sun visor down or through macrobinoculars or a rangefinder, and always for a Commander (no gear needed). (Q marking comes with Tactical visor or Tactical marks.) Rules out ARC trooper." },
+    -- The other way in: ARC trooper (Pistol spec, ARC branch) from tier 1.
+    -- Rules out Spotter (exclusive group), and with it the Commander
+    -- specialisation and the Pistol Command branch (spec / branch rules).
+    { id = "arc_training", cat = "officer", spec = "pistol", branch = "arc", tier = 1, cost = 3, name = "ARC training", icon = "star", exclusive = "officer_start",
+      desc = "Q: mark what you aim at for 15 s, seen by you and your squad (no locks, no automatic spotting). Westar-M5: 15% less spread and kick, 15% faster reloads and 5% more damage. Rules out Spotter, the Commander and the Pistol command skills." },
 
     -- Pistol: 1-3-4-2, then the Command / ARC trooper split.
     { id = "dual_dc17", cat = "officer", spec = "pistol", tier = 2, cost = 2, name = "Dual DC-17",
-      desc = "Draw a second DC-17 (E + R): two magazines loaded, shots alternate between hands.", needs = { "mark_target" } },
+      desc = "Draw a second DC-17 (E + R): two magazines loaded, shots alternate between hands.",
+      needsGroups = { { "mark_target" }, { "arc_training" } }, needsLabel = "Needs Spotter or ARC training" },
     { id = "pistol_prof", cat = "officer", spec = "pistol", tier = 3, cost = 2, name = "Pistol proficiency",
       desc = "DC-17: 20% less spread.", needs = { "dual_dc17" } },
     { id = "quick_draw", cat = "officer", spec = "pistol", tier = 3, cost = 1, name = "Quick draw",
@@ -243,21 +250,19 @@ K.NODES = {
     { id = "crits", cat = "officer", spec = "pistol", tier = 5, cost = 2, name = "Critical hits",
       desc = "10% of your hits with any gun do 50% more damage (with a small magazine, Light rounds' 15% counts instead).",
       needsGroups = { { "steady_grip" }, { "speed_loader" } }, needsLabel = "Needs Steady grip or Speed loader" },
-    -- Pistol tier 6 splits: Command (an order at tier 6, then Tactical marks
-    -- and Reinforcements) or ARC trooper. Each full path is 24 (Light rounds is 2 to make room
+    -- Pistol tier 6: Command (an order at tier 6, then Tactical marks and
+    -- Reinforcements; Spotter players) or the ARC trooper's last two skills
+    -- (ARC training players). Each full path is 24 (Light rounds is 2 to make room
     -- for Tactical marks).
     { id = "tactical_marks", cat = "officer", spec = "pistol", branch = "command", tier = 7, cost = 1, name = "Tactical marks", icon = "target",
-      desc = "Q: mark what you aim at for 15 s, seen by you and your squad (through macrobinoculars or a rangefinder, up to 5 enemies nearest the middle of the view). With the sun visor down, Q locks instead: 25 s, a red ring only you see, a red diamond for your squad, and your squad mates (not Marksmen) do 15% more damage to it.",
+      desc = "Q: mark what you aim at for 15 s, seen by you and your squad (through macrobinoculars or a rangefinder, up to 5 enemies nearest the middle of the view). With the sun visor down or through macrobinoculars or a rangefinder, Q locks instead: 25 s, a red ring only you see, a red diamond for your squad, and your squad mates (not Marksmen) do 15% more damage to it.",
       needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
-    { id = "arc_training", cat = "officer", spec = "pistol", branch = "arc", tier = 6, cost = 2, name = "ARC training", icon = "star",
-      desc = "Westar-M5: 15% less spread and kick, 15% faster reloads and 5% more damage.",
-      needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
-    { id = "arc_conditioning", cat = "officer", spec = "pistol", branch = "arc", tier = 7, cost = 2, name = "ARC conditioning", icon = "dodge",
+    { id = "arc_conditioning", cat = "officer", spec = "pistol", branch = "arc", tier = 6, cost = 2, name = "ARC conditioning", icon = "dodge",
       desc = "15% higher jumps, 15% less fall damage, 10% less stamina penalty from weight and 5% faster sprinting.",
-      needs = { "arc_training" } },
-    { id = "arc_fieldcraft", cat = "officer", spec = "pistol", branch = "arc", tier = 7, cost = 1, name = "ARC fieldcraft", icon = "bolt",
+      needs = { "arc_training" }, needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
+    { id = "arc_fieldcraft", cat = "officer", spec = "pistol", branch = "arc", tier = 6, cost = 1, name = "ARC fieldcraft", icon = "bolt",
       desc = "Every gun: 5% faster reloads, 5% less spread and 5% faster draw. Stamina refills 5% faster.",
-      needs = { "arc_training" } },
+      needs = { "arc_training" }, needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
     { id = "cmd_wind", cat = "officer", spec = "pistol", branch = "command", tier = 6, cost = 2, name = "Second wind", exclusive = "command", rankCfg = "commandRank", order = "cmd_wind",
       desc = "No stamina drain while sprinting, and stamina refills fast. You and everyone near you, 6 s; 6 min cooldown.",
       needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
@@ -281,7 +286,7 @@ K.NODES = {
     -- 1-6-3-4-2. The orders alone at tier 3 (two sides next to them looked
     -- messy), then Rifle drill / Command presence / Field logistics.
     { id = "tactical_visor", cat = "officer", spec = "commander", tier = 2, cost = 2, name = "Tactical visor", icon = "scope", rankCfg = "commandRank",
-      desc = "Q: mark what you aim at for 15 s, seen by you and your squad (through macrobinoculars or a rangefinder, up to 5 enemies nearest the middle of the view). With the sun visor down, Q locks instead (the ringed enemy first): 25 s, a red ring only you see, a red diamond for your squad, and your squad mates (not Marksmen) do 15% more damage to it.",
+      desc = "Q locks what you aim at (the ringed enemy first; through macrobinoculars or a rangefinder up to 5 enemies nearest the middle of the view): 25 s, a red ring only you see, a red diamond for your squad, and your squad mates (not Marksmen) do 15% more damage to it. No helmet gear needed.",
       needs = { "mark_target" } },
     { id = "cmd_wind_c", cat = "officer", spec = "commander", tier = 3, cost = 2, name = "Second wind", exclusive = "command", rankCfg = "commandRank", order = "cmd_wind",
       desc = "No stamina drain while sprinting, and stamina refills fast. You and everyone near you, 6 s; 6 min cooldown.",
@@ -593,10 +598,35 @@ function K.CanCommandSquad(ply)
     return K.IsCommanderSpec(ply) or K.HasReinforcements(ply)
 end
 
--- K.CanMark(ply): may ply mark with Q (Tactical visor or Tactical marks)?
+-- K.OpticsOn(ply): helmet optics in use: the sun visor down, or looking
+-- through macrobinoculars / a rangefinder (rhylib_gear). false without it.
+function K.OpticsOn(ply)
+    if ply:GetNW2Bool("rhylib_visorDown", false) then return true end
+    local Gear = Rhylib.Gear
+    return Gear and Gear.Looking and Gear.Looking(ply) or false
+end
+
+-- K.SpotsNow(ply): Spotter is spotting right now: always for a Commander
+-- (no gear needed: not every model has the helmet parts), else while
+-- K.OpticsOn.
+function K.SpotsNow(ply)
+    if not K.Has(ply, "mark_target") then return false end
+    return K.IsCommanderSpec(ply) or K.OpticsOn(ply)
+end
+
+-- K.LocksNow(ply): a Q from ply now is a lock (the squad damage bonus):
+-- always for a Commander (Tactical visor), else (Tactical marks) while
+-- K.OpticsOn.
+function K.LocksNow(ply)
+    if K.Has(ply, "tactical_visor") then return true end
+    return K.Has(ply, "tactical_marks") and K.OpticsOn(ply)
+end
+
+-- K.CanMark(ply): may ply mark with Q (Tactical visor, Tactical marks or
+-- ARC training; ARC marks are never locks, K.LocksNow)?
 -- Spotter (mark_target) alone only spots through the sun visor.
 function K.CanMark(ply)
-    return K.Has(ply, "tactical_visor") or K.Has(ply, "tactical_marks")
+    return K.Has(ply, "tactical_visor") or K.Has(ply, "tactical_marks") or K.Has(ply, "arc_training")
 end
 
 -- K.IsCommanderSpec(ply): a Commander officer (any skill of the commander

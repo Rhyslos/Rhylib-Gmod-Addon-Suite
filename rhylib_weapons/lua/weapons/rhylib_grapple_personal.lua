@@ -1,11 +1,12 @@
 --[[
-    Personal grappling hook: fires a short hook (15 m) where you look and
-    reels only you up to it (rhylib/weapons/sh_32_phook.lua has the rules
-    and the movement). Reusable; from the ammo cabinet (rhylib_armoury
-    AMMO_STOCK), anyone may carry one.
+    Personal grappling hook: fires a short hook (15 m) where you look, then
+    you reel yourself in or pay out line (rhylib/weapons/sh_32_phook.lua has
+    the rules and the movement). Reusable; from the ammo cabinet
+    (rhylib_armoury AMMO_STOCK), anyone may carry one.
 
-    LMB (from the ground): fire. While hooked: W climbs over a ledge, Jump
-    / E / S let go. Switching weapons lets go.
+    LMB (ground or air): fire. While hooked: hold LMB to reel in, hold RMB
+    to go down, W at the top climbs over a ledge, Jump / E let go.
+    Switching weapons lets go.
 
     Realm: shared SWEP (predicted). Placeholder models (the HL2 pistol).
 ]]
@@ -65,7 +66,13 @@ if CLIENT then
     function SWEP:DrawHUD()
         local owner = self:GetOwner()
         local G = Rhylib.Weapons.Grapple
-        if not (IsValid(owner) and G and G.PhookAim) or G.PhookOn(owner) ~= 0 then return end
+        if not (IsValid(owner) and G and G.PhookAim) then return end
+        local UI0 = Rhylib.UI
+        local font0 = UI0 and UI0.Font and UI0.Font(14) or "DermaDefault"
+        if G.PhookOn(owner) ~= 0 then
+            draw.SimpleText("LMB reel in  ·  RMB down  ·  Jump / E let go", font0, ScrW() * 0.5, ScrH() * 0.5 + 26, COL_OK, TEXT_ALIGN_CENTER)
+            return
+        end
         -- (worked out 10 times a second, not every frame: it's a few traces)
         local now = RealTime()
         if not self.aimAt or now >= self.aimAt then
@@ -79,7 +86,7 @@ if CLIENT then
         local font = UI and UI.Font and UI.Font(14) or "DermaDefault"
         local x, y = ScrW() * 0.5, ScrH() * 0.5 + 26
         if at then
-            draw.SimpleText(ledge and "Hook: up and over" or "Hook: hang", font, x, y, COL_OK, TEXT_ALIGN_CENTER)
+            draw.SimpleText(ledge and "Hook: ledge (reel up, W to climb over)" or "Hook", font, x, y, COL_OK, TEXT_ALIGN_CENTER)
         else
             draw.SimpleText(why or "", font, x, y, COL_BAD, TEXT_ALIGN_CENTER)
         end

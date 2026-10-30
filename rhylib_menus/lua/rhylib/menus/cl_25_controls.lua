@@ -70,7 +70,7 @@ local function keyRows()
         for _, st in ipairs(Menus.settings[section]) do
             if st.kind == "key" and st.convar and ConVarExists(st.convar) then
                 local cv = GetConVar(st.convar)
-                out[#out + 1] = { title = st.title, convar = st.convar, key = string.lower(cv and cv:GetString() or "") }
+                out[#out + 1] = { title = st.title, convar = st.convar, key = string.lower(cv and cv:GetString() or ""), share = st.shareWith }
             end
         end
     end
@@ -87,8 +87,17 @@ local function conflicts()
             table.insert(byKey[row.key], row)
         end
     end
+    -- (a setting's shareWith = { [convar] = true } names keys it may share on purpose)
+    local function allowed(rows)
+        for _, a in ipairs(rows) do
+            for _, b in ipairs(rows) do
+                if a ~= b and not ((a.share and a.share[b.convar]) or (b.share and b.share[a.convar])) then return false end
+            end
+        end
+        return true
+    end
     for key, rows in SortedPairs(byKey) do
-        if #rows > 1 then
+        if #rows > 1 and not allowed(rows) then
             local names = {}
             for _, r in ipairs(rows) do
                 names[#names + 1] = r.title

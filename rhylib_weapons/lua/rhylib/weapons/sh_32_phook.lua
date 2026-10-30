@@ -1,38 +1,48 @@
 --[[
     Personal grappling hook (SWEP rhylib_grapple_personal): a short hook
-    that only lifts its user up. Shared and predicted, like rope climbing.
+    on a line you reel in and pay out. Shared and predicted, like rope
+    climbing.
 
-    Fire (LMB, from the ground): the hook grips where you look, within
-    phookRange (15 m), if that's somewhere a grapple hook can grip
-    (Grapple.CanGrip) and at least phookMinRise above your feet:
+    Fire (LMB, on the ground or in the air): the hook grips where you look,
+    within phookRange (15 m), if that's somewhere a grapple hook can grip
+    (Grapple.CanGrip) and its hang point is at least phookMinRise above
+    your feet:
       - a wall: you hang just below the hook, facing the wall;
       - a ceiling or overhang: you hang straight under it;
       - the top of something (a roof, a ledge): you hang at its edge on
         the side you came from (the edge is found like a rope's).
-    Then you're reeled straight there at phookSpeed and hang. While hanging:
-      W      over the top, if there's room to stand up there (a ledge)
-      Jump   let go (a small push off the wall)
-      E / S  let go
-    Switching weapons (the next movement tick sees it, on both realms),
-    getting downed or knocked, and taking grapple hitsToFall hits also let
-    go (sv_30_grapple.lua).
+    You stop where you are (a fall is caught; nothing springs back). Then,
+    once you've let go of the fire button:
+      LMB (hold)  reel in: up toward the hang point at phookSpeed
+      RMB (hold)  pay out: down, at phookSpeed, up to phookRange of line
+      W           at the top, over the edge if there's room to stand
+      Jump        let go (a small push off the wall)
+      E           let go
+    The line only holds you up within phookReach of the spot under the
+    hang point (a little room for ledges and walls). Further out you're on
+    your own feet or falling, and holding LMB drags you along the ground
+    toward that spot; once there it lifts you. Within it your body is drawn
+    in under the hang point at a capped speed (no pendulum). Switching weapons (the next movement tick sees it, on both
+    realms), getting downed or knocked, and taking grapple hitsToFall hits
+    also let go (sv_30_grapple.lua).
 
-    Why it can't be a bungee: the reel sets your speed directly each tick
-    (no spring, nothing stored), letting go keeps no upward or sideways
-    speed (you drop), it only fires from the ground (no chaining in the
-    air), and after letting go it waits phookCooldown seconds (and, as
-    always, fires only from the ground). Reeling longer than the distance needs
-    (something in the way) lets go.
+    Why it can't be a bungee: the line length only changes at phookSpeed
+    while you hold a button; your speed is set straight to the point that
+    length gives (no spring, nothing stored); letting go keeps no upward or
+    sideways speed (you drop); and after letting go it waits phookCooldown
+    seconds before it fires again.
 
-    Player state (core DT seeds): Int grapple.phook (0 off, 1 reeling,
-    2 hanging, 3 climbing over), Vector grapple.phookAt (where your feet
-    go), grapple.phookHook (the hook, drawn), grapple.phookLedge (where you
-    stand after climbing over; zero = none), Float grapple.phookT (when the
-    reel must be done by).
+    Player state (core DT seeds): Int grapple.phook (0 off, 1 hooked and the
+    fire button still held, 2 hooked, 3 climbing over), Vector
+    grapple.phookAt (the hang point: your feet when fully reeled in),
+    grapple.phookHook (the hook, drawn), grapple.phookLedge (where you stand
+    after climbing over; zero = none), Float grapple.phookLen (line paid out
+    below the hang point), grapple.phookT (climbing over must be done by).
 
     Realm: shared (client draws the line). Config module "grapple"
-    (phook* keys). Public: G.PhookOn(ply), G.PhookRelease(ply, mv, push),
-    G.PhookAim(ply) -> foot target, hook, ledge or nil + why.
+    (phook* keys). Public: G.PhookOn(ply), G.PhookStart(ply),
+    G.PhookRelease(ply, mv, push), G.PhookAim(ply) -> hang point, hook,
+    ledge or nil + why.
 ]]
 
 local W = Rhylib.Weapons
@@ -45,11 +55,13 @@ G.DT_PH_AT = DT and DT.Claim("Vector", "grapple.phookAt", 31) or 31
 G.DT_PH_HOOK = DT and DT.Claim("Vector", "grapple.phookHook", 30) or 30
 G.DT_PH_LEDGE = DT and DT.Claim("Vector", "grapple.phookLedge", 29) or 29
 G.DT_PH_T = DT and DT.Claim("Float", "grapple.phookT", 21) or 21
+G.DT_PH_LEN = DT and DT.Claim("Float", "grapple.phookLen", 20) or 20
 G.PH_CLASS = "rhylib_grapple_personal"
 
 Config.Register("grapple", "phookRange", 787, "Personal grappling hook: reach (units, 787 = 15 m)")
-Config.Register("grapple", "phookSpeed", 420, "Personal grappling hook: how fast it reels you up (units/s)")
-Config.Register("grapple", "phookMinRise", 48, "Personal grappling hook: how far above your feet the hang point must be (it only lifts)")
+Config.Register("grapple", "phookSpeed", 140, "Personal grappling hook: how fast it reels you in and pays out (units/s)")
+Config.Register("grapple", "phookMinRise", 16, "Personal grappling hook: how far above your feet the hang point must be (the hook goes up, not down)")
+Config.Register("grapple", "phookReach", 56, "Personal grappling hook: how far out from under the hang point the line still holds you up (units); further out it only drags you along the ground")
 Config.Register("grapple", "phookCooldown", 2, "Personal grappling hook: seconds after letting go before it fires again")
 
 local UP = Vector(0, 0, 1)
@@ -86,13 +98,24 @@ local function flat(v)
     return f
 end
 
--- G.PhookOn(ply): 0 off, 1 reeling, 2 hanging, 3 climbing over.
+-- G.PhookHeld(ply): hooked and held up by the line (close enough to the
+-- spot under the hang point). sv_30_grapple: no fall damage only then.
+function G.PhookHeld(ply)
+    local st = ply:GetDTInt(G.DT_PH)
+    if st == 0 then return false end
+    if st == 3 then return true end
+    local at, pos = ply:GetDTVector(G.DT_PH_AT), ply:GetPos()
+    local dx, dy = at.x - pos.x, at.y - pos.y
+    return dx * dx + dy * dy <= cfg("phookReach") ^ 2
+end
+
+-- G.PhookOn(ply): 0 off, 1 hooked (fire still held), 2 hooked, 3 climbing over.
 function G.PhookOn(ply)
     return ply:GetDTInt(G.DT_PH)
 end
 
--- G.PhookAim(ply): where a shot now would take ply. Returns at (feet),
--- hook, ledge (or nil) - or nil and a message.
+-- G.PhookAim(ply): where a shot now would hook. Returns the hang point (your
+-- feet when fully reeled in), hook, ledge (or nil) - or nil and a message.
 function G.PhookAim(ply)
     local eye = ply:GetShootPos()
     local t = trace(eye, eye + ply:GetAimVector() * cfg("phookRange"), ply)
@@ -128,7 +151,7 @@ function G.PhookAim(ply)
             if roomToStand(stand, ply) then ledge = stand + UP * 2 end
         end
     end
-    if at.z - ply:GetPos().z < cfg("phookMinRise") then return nil, nil, nil, "Aim higher: it only lifts you up" end
+    if at.z - ply:GetPos().z < cfg("phookMinRise") then return nil, nil, nil, "Aim higher: the hook has to be above you" end
     return at, h, ledge
 end
 
@@ -136,13 +159,12 @@ end
 function G.PhookStart(ply)
     if G.PhookOn(ply) ~= 0 then return false end
     if G.Attached(ply) or G.ZipOn(ply) then return false, "Not while on a rope or zipline" end
-    if not ply:OnGround() then return false, "Only from the ground" end
     local at, hook, ledge, why = G.PhookAim(ply)
     if not at then return false, why end
     ply:SetDTVector(G.DT_PH_AT, at)
     ply:SetDTVector(G.DT_PH_HOOK, hook)
     ply:SetDTVector(G.DT_PH_LEDGE, ledge or ZERO)
-    ply:SetDTFloat(G.DT_PH_T, CurTime() + ply:GetPos():Distance(at) / cfg("phookSpeed") + 1)
+    ply:SetDTFloat(G.DT_PH_LEN, math.max(0, at.z - ply:GetPos().z))   -- (you stop where you are)
     ply:SetDTInt(G.DT_PH, 1)
     return true
 end
@@ -168,6 +190,8 @@ function G.PhookRelease(ply, mv, push)
     end
 end
 
+local SIDE_SPEED = 200   -- how fast you're drawn in under the hang point sideways
+
 Rhylib.Hook.Add("SetupMove", "weapons.phook", function(ply, mv)
     local st = ply:GetDTInt(G.DT_PH)
     if st == 0 then return end
@@ -183,7 +207,7 @@ Rhylib.Hook.Add("SetupMove", "weapons.phook", function(ply, mv)
         G.PhookRelease(ply, mv, -wall * 100)
         return
     end
-    if mv:KeyPressed(IN_USE) or (st == 2 and mv:GetForwardSpeed() < 0) then
+    if mv:KeyPressed(IN_USE) then
         G.PhookRelease(ply, mv)
         return
     end
@@ -211,24 +235,61 @@ Rhylib.Hook.Add("SetupMove", "weapons.phook", function(ply, mv)
             return
         end
     else
-        local to = at - origin
-        local dist = to:Length()
-        if st == 1 then
-            if dist < 8 then
-                ply:SetDTInt(G.DT_PH, 2)
-                st = 2
-            elseif CurTime() > ply:GetDTFloat(G.DT_PH_T) then
-                G.PhookRelease(ply, mv)   -- (something was in the way)
-                return
+        -- The fire click doesn't also reel: controls start once it's let go.
+        if st == 1 and not mv:KeyDown(IN_ATTACK) then
+            st = 2
+            ply:SetDTInt(G.DT_PH, 2)
+        end
+        local speed = cfg("phookSpeed")
+        local len = ply:GetDTFloat(G.DT_PH_LEN)
+
+        -- Not under the hang point (more than phookReach sideways): the line
+        -- can't hold you up. You're on your own feet (or falling); holding
+        -- LMB drags you along toward the spot under it, and the line keeps
+        -- no length to yank you with later.
+        local flatTo = Vector(at.x - origin.x, at.y - origin.y, 0)
+        local fd = flatTo:Length()
+        if fd > cfg("phookReach") then
+            ply:SetDTFloat(G.DT_PH_LEN, math.Clamp(at.z - origin.z, 0, cfg("phookRange")))
+            if st == 2 and mv:KeyDown(IN_ATTACK) then
+                local v = mv:GetVelocity()
+                local pull = flatTo * (speed / fd)
+                mv:SetVelocity(Vector(pull.x, pull.y, v.z))
+            end
+            mv:SetButtons(bit.band(mv:GetButtons(), bit.bnot(bit.bor(IN_JUMP, IN_SPEED))))
+            return
+        end
+        if st == 2 then
+            if mv:KeyDown(IN_ATTACK) then
+                len = len - speed * dt
+            elseif mv:KeyDown(IN_ATTACK2) then
+                len = len + speed * dt
             end
         end
-        if st == 2 and mv:GetForwardSpeed() > 0 and ply:GetDTVector(G.DT_PH_LEDGE) ~= ZERO then
+        -- (standing on something: no slack piles up under your feet; blocked
+        -- going up: the line never gets far ahead of you, so nothing yanks later)
+        if ply:OnGround() then len = math.min(len, math.max(0, at.z - origin.z)) end
+        len = math.max(len, at.z - origin.z - 16)
+        len = math.Clamp(len, 0, cfg("phookRange"))
+        ply:SetDTFloat(G.DT_PH_LEN, len)
+
+        if st == 2 and len <= 1 and mv:GetForwardSpeed() > 0 and ply:GetDTVector(G.DT_PH_LEDGE) ~= ZERO then
             ply:SetDTInt(G.DT_PH, 3)
             ply:SetDTFloat(G.DT_PH_T, CurTime() + 2)
         end
-        -- Straight at the hang point at a fixed speed: nothing stored, no bounce.
-        local speed = st == 1 and cfg("phookSpeed") or 200
-        vel = dist > 0.5 and to * (math.min(dist / dt, speed) / dist) or Vector(0, 0, 0)
+
+        -- Straight at the point the line length gives, capped: nothing stored.
+        local target = Vector(at.x, at.y, at.z - len)
+        local to = target - origin
+        local side = Vector(to.x, to.y, 0)
+        local sd = side:Length()
+        vel = sd > 0.5 and side * (math.min(sd / dt, SIDE_SPEED) / sd) or Vector(0, 0, 0)
+        vel.z = math.Clamp(to.z / dt, -math.max(speed, 300), speed)
+        -- (reeled up off the ground: let go of it, or the engine keeps you on it)
+        if vel.z > 0 and ply:OnGround() then
+            ply:SetGroundEntity(NULL)
+            mv:SetOrigin(origin + Vector(0, 0, 1))
+        end
     end
     local g = gravityVar:GetFloat() * (ply:GetGravity() ~= 0 and ply:GetGravity() or 1)
     vel.z = vel.z + g * dt   -- cancel this tick's gravity
@@ -236,9 +297,10 @@ Rhylib.Hook.Add("SetupMove", "weapons.phook", function(ply, mv)
     mv:SetButtons(bit.band(mv:GetButtons(), bit.bnot(bit.bor(IN_JUMP, IN_SPEED, IN_DUCK))))
 end, -5)
 
--- Hanging pose: the jump pose (legs off the ground).
+-- Hanging pose: the jump pose (legs off the ground), only while the line
+-- holds you up (dragged along the ground you walk as usual).
 Rhylib.Hook.Add("CalcMainActivity", "weapons.phook", function(ply)
-    if ply:GetDTInt(G.DT_PH) ~= 0 then return ACT_MP_JUMP, -1 end
+    if G.PhookHeld(ply) and not ply:OnGround() then return ACT_MP_JUMP, -1 end
 end)
 
 if CLIENT then

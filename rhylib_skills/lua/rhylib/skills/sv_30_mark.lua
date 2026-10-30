@@ -11,9 +11,11 @@
         the client's zoomed fov, capped by markOpticsCone), in sight.
       - sun visor down: the enemy the client rings (visor bit + its index),
         checked here (enemy, in sight, within markVisorCone of the aim).
-    With the sun visor down a Q mark is a LOCK (markLockTime s): a new Q
-    replaces that player's older locks (spots stay); without the visor a Q
-    mark is a plain mark (and also replaces the old ones). Locks give the marker's squad mates (not Marksmen) x
+    K.LocksNow: a Commander's Q (Tactical visor) is always a LOCK
+    (markLockTime s); with Tactical marks only while helmet optics are in
+    use (sun visor down, macrobinoculars, rangefinder). A new Q replaces
+    that player's older locks (spots stay); otherwise a Q mark is a plain
+    mark (and also replaces the old ones). Locks give the marker's squad mates (not Marksmen) x
     markLockDamage on that target (K.LockMult, from K.DamageMult); the
     marker sees a red ring on it, the squad a red diamond. Spots (visor)
     and Called shot marks only show the target. Any live mark feeds
@@ -27,8 +29,8 @@
     line): every 0.5 s, holders mark themselves and radio squad mates within
     squadSkillRange (p.rhylibLogi; NW2Bool rhylib_steadyLine, read by the
     shared kick and stamina code). K.SquadMembers(ply) for Chain of command.
-    Sun visor (rhylib_gear) down + Spotter (Officer tier 1, id mark_target):
-    every visorSpotEvery s up to
+    Spotter (Officer tier 1, id mark_target), K.SpotsNow (Commanders always,
+    others with helmet optics in use): every visorSpotEvery s up to
     markMax enemies in sight within visorSpotCone of the view are spotted
     for visorSpotTime s (quiet, added to the player's marks).
     skills.markreq (client -> server): optics bool, zoomed fov x10 (UInt
@@ -125,8 +127,7 @@ Rhylib.Net.Receive("skills.markreq", function(ply)
     local G = Rhylib.Gear
     local optics = opticsReq and G and G.Looking and G.Looking(ply) or false
     local list
-    local visorDown = ply:GetNW2Bool("rhylib_visorDown", false)
-    if visorIdx and visorDown then
+    if visorIdx and K.SpotsNow(ply) then
         -- The enemy the visor rings (the client picked it from the spots).
         local e = Entity(visorIdx)
         list = {}
@@ -162,8 +163,9 @@ Rhylib.Net.Receive("skills.markreq", function(ply)
         end
     end
     if #list == 0 then return end
-    -- Sun visor down: Q locks (longer, red, squad damage); else a plain mark.
-    local lock = visorDown
+    -- Locks (longer, red, squad damage): a Commander always, Tactical marks
+    -- with helmet optics in use (K.LocksNow); else a plain mark.
+    local lock = K.LocksNow(ply)
     K.PlaceMarks(ply, list, lock and K.Cfg("markLockTime") or K.Cfg("markTime"), true, false, lock)
 end, { rate = 4, burst = 4 })
 
@@ -214,12 +216,13 @@ function K.PlaceMarks(ply, list, secs, replace, quiet, lock)
     net.Send(viewers(ply))
 end
 
--- Sun visor auto spot (checked once a second, only for visor wearers).
+-- Spotter auto spot (checked once a second): Commanders always, others
+-- with helmet optics in use (K.SpotsNow).
 timer.Create("Rhylib.Skills.VisorSpot", 1, 0, function()
     local now = CurTime()
     for _, ply in ipairs(player.GetHumans()) do
-        if ply:GetNW2Bool("rhylib_visorDown", false) and ply:Alive() and not Rhylib.State.IsDown(ply)
-            and (ply.rhylibVisorSpot or 0) <= now and K.Has(ply, "mark_target") then   -- (Spotter)
+        if (ply.rhylibVisorSpot or 0) <= now and ply:Alive() and not Rhylib.State.IsDown(ply)
+            and K.SpotsNow(ply) then
             ply.rhylibVisorSpot = now + K.Cfg("visorSpotEvery")
             local list = inCone(ply, K.Cfg("visorSpotCone"), K.Cfg("markMax"))
             if #list > 0 then K.PlaceMarks(ply, list, K.Cfg("visorSpotTime"), false, true) end

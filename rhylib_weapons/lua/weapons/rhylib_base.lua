@@ -1426,6 +1426,8 @@ if CLIENT then
         if IsValid(o) and o:GetNW2Int("rhylib_optics", 0) ~= 0 and not o:GetNW2Bool("rhylib_opticsFire", false) then return true end   -- (rhylib_gear: looking through binoculars)
         -- In Rhylib third person, rhylib_thirdperson draws it instead.
         local tp = Rhylib.ThirdPerson
+        -- (freelook: the middle of the screen isn't where you aim)
+        if tp and tp.freeOff and (tp.freeOff.p ~= 0 or tp.freeOff.y ~= 0) then return true end
         if not (tp and tp.Active and tp.Active()) then
             Rhylib.Weapons.Crosshair.Draw(self, x, y)
         end

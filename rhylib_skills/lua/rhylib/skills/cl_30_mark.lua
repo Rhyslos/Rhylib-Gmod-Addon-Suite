@@ -5,11 +5,13 @@
     target dies. Through optics, one Q marks several (sv_30_mark).
     Without a marking skill (K.CanMark), the first Q of a session prints a
     quiet chat line saying which skills mark.
-    Q marks made with the sun visor down are locks: red diamonds for
+    Locks (K.LocksNow: a Commander always, Tactical marks with helmet
+    optics in use) are red diamonds for
     everyone who sees them (the squad hits locked targets harder); other
     marks, spots and Called shot marks orange.
-    Spotter + sun visor down: a white ring on the spotted enemy nearest the
-    aim; Q (with a marking skill) locks that one. Your own locks get a red
+    Spotter (K.SpotsNow: a Commander always, others with the sun visor down
+    or through macrobinoculars / a rangefinder): a white ring on the
+    spotted enemy nearest the aim; Q (with a marking skill) locks that one. Your own locks get a red
     ring (only you see rings).
     Client only. K.visorTarget = the ringed enemy this frame (sent with Q).
     Distances on the diamonds use 0.019 m per unit.
@@ -33,7 +35,7 @@ Rhylib.Hook.Add("Rhylib.MarkKey", "skills.mark", function()
     if not K.CanMark(me) then
         if not toldMark then
             toldMark = true
-            Rhylib.Notify(nil, "Q marking needs Tactical visor (Commander) or Tactical marks (Pistol officer)", "info", "Skills")
+            Rhylib.Notify(nil, "Q marking needs Tactical visor (Commander), Tactical marks (Pistol officer) or ARC training", "info", "Skills")
         end
         return
     end
@@ -197,7 +199,7 @@ Rhylib.Hook.Add("HUDPaint", "skills.visorring", function()
         end
     end
     -- The visor's pick: the nearest spot to the aim that you haven't locked.
-    if not me:GetNW2Bool("rhylib_visorDown", false) then return end
+    if not K.SpotsNow(me) then return end
     local eye, aim = me:EyePos(), me:GetAimVector()
     local best, bestDot = nil, math.cos(math.rad(6))
     for idx, per in pairs(K.clientMarks) do

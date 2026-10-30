@@ -34,7 +34,7 @@ K.CLASSES = {
     { id = "officer", name = "Pistol officer", cat = "officer", spec = "pistol", branch = "command", who = "Anyone", orders = true,
       desc = "Two DC-17s and quick footwork for close fights, spotting and marking targets for the squad. Leads with one command order of your choice." },
     { id = "arc", name = "ARC trooper", cat = "officer", spec = "pistol", branch = "arc", who = "Anyone",
-      desc = "The Westar-M5 and two DC-17s, sun visor spotting, and all-round field training: higher jumps, softer landings, lighter loads." },
+      desc = "The Westar-M5 and two DC-17s, Q marks for the squad, and all-round field training: higher jumps, softer landings, lighter loads." },
     { id = "commander", name = "Commander", cat = "officer", spec = "commander", who = "LT and up", orders = true,
       desc = "Locks targets for the squad through the sun visor, steadies everyone nearby and gives a stronger command order of your choice." },
     { id = "airborne", name = "Airborne", cat = "airborne", spec = "airborne", who = "Anyone",
@@ -78,7 +78,9 @@ function K.ClassSet(cls, orderId)
     local set = {}
     for _, n in ipairs(K.NODES) do
         if n.cat == cls.cat and (not n.spec or n.spec == cls.spec) and (not n.branch or n.branch == cls.branch)
-            and n.id ~= "adapt_1" and n.exclusive ~= "command" then
+            and n.id ~= "adapt_1" and n.exclusive ~= "command"
+            -- (the officer's way in: Spotter, or ARC training for the ARC class)
+            and not (n.exclusive == "officer_start" and (cls.branch == "arc") ~= (n.branch == "arc")) then
             set[n.id] = true
         end
     end

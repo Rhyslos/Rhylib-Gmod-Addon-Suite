@@ -80,10 +80,10 @@ Config.Register("grapple", "skillRange", 862, "Zipline rigger skill (Autoriflema
 Config.Register("grapple", "zipMin", 150, "Zipline: shortest line (units)")
 Config.Register("grapple", "zipTwoWayAngle", 5, "Zipline: steepest slope you can still ride uphill (degrees); steeper lines only take you down")
 Config.Register("grapple", "zipMaxAngle", 60, "Zipline: steepest line it will rig at all (degrees)")
-Config.Register("grapple", "zipAccel", 520, "Zipline: how hard W / S push you along (units/s²)")
-Config.Register("grapple", "zipGravity", 1, "Zipline: how much the slope speeds you up downhill (1 = full gravity along the line)")
+Config.Register("grapple", "zipAccel", 260, "Zipline: how hard W / S push you along (units/s²)")
+Config.Register("grapple", "zipGravity", 0.5, "Zipline: how much the slope speeds you up downhill (1 = full gravity along the line)")
 Config.Register("grapple", "zipDrag", 0.7, "Zipline: drag (share of your speed lost per second)")
-Config.Register("grapple", "zipMaxSpeed", 950, "Zipline: top speed (units/s)")
+Config.Register("grapple", "zipMaxSpeed", 475, "Zipline: top speed (units/s)")
 Config.Register("grapple", "zipMaxRiders", 4, "Zipline: players on one line at once")
 Config.Register("grapple", "zipAttachDist", 52, "Zipline: how close your hands must be to the line to grab on (units)")
 Config.Register("grapple", "hitsToFall", 2, "Hits that knock a player off a rope, zipline or personal hook (0 = never)")
@@ -332,7 +332,10 @@ function G.ZipRiders(zip, except)
 end
 
 local function zipDetach(ply, mv, vel)
-    if SERVER then ply.rhylibLineHits = nil end
+    if SERVER then
+        ply.rhylibLineHits = nil
+        ply.rhylibZipLeft = CurTime() + 0.5   -- (no fall damage just after: sv_30_grapple)
+    end
     ply:SetDTEntity(G.DT_ZIP, NULL)
     ply:SetDTFloat(G.DT_ZIPV, 0)
     if mv then mv:SetVelocity(vel or Vector(0, 0, 0)) end
@@ -378,6 +381,26 @@ function G.ZipMargin(dir)
     return 20 / math.max(0.3, horiz)
 end
 
+-- G.ZipHang(pt, ply): how far below the line point pt a rider's feet
+-- hang: G.HANG, or less where the ground is closer (a ledge the line
+-- leaves from, a slope under it), so the body glides over it instead of
+-- catching on it. One hull trace (players and ziplines skipped), the same
+-- on both realms (predicted).
+local hangTr = {}
+local hangTd = { output = hangTr, mask = MASK_PLAYERSOLID, mins = Vector(-14, -14, 0), maxs = Vector(14, 14, 70),
+    filter = function(e)
+        if e:IsPlayer() then return false end
+        local c = e:GetClass()
+        return c ~= "rhylib_zipline" and c ~= "rhylib_zipline_end"
+    end }
+local HANG_MIN = 20   -- (over a ledge the rider holds the line at the chest, then drops to G.HANG past the edge)
+function G.ZipHang(pt)
+    hangTd.start, hangTd.endpos = pt - UP * HANG_MIN, pt - UP * G.HANG
+    util.TraceHull(hangTd)
+    if hangTr.StartSolid or not hangTr.Hit then return G.HANG end
+    return math.max(HANG_MIN, pt.z - hangTr.HitPos.z - 4)   -- (feet just clear of the ground: no friction)
+end
+
 -- E near a zipline: grab on where your hands are closest to it.
 local function tryZip(ply, mv)
     if next(G.zips) == nil then return false end
@@ -413,7 +436,11 @@ local function rideZip(ply, mv, zip)
     -- Where the body really is along the line: something in the way (another
     -- rider) holds you there instead of the line running on without you.
     local origin = mv:GetOrigin()
-    local real = (origin + UP * G.HANG - d.a):Dot(dir)
+    -- (measured flat, so how far below the line you hang doesn't matter;
+    -- lines are never steeper than zipMaxAngle, so horiz is never tiny)
+    local off = origin - d.a
+    local horiz = math.max(0.3, math.sqrt(dir.x * dir.x + dir.y * dir.y))
+    local real = (off.x * dir.x + off.y * dir.y) / (horiz * horiz)
     if math.abs(real - s) > 12 then s, v = real, 0 end
 
     if mv:KeyPressed(IN_JUMP) then
@@ -449,7 +476,8 @@ local function rideZip(ply, mv, zip)
     if s >= d.len - m then s, v = d.len - m, math.min(v, 0) end
 
     -- Head for the hanging point at a capped speed (no spring, like climbing).
-    local target = d.a + dir * s - UP * G.HANG
+    local linePt = d.a + dir * s
+    local target = linePt - UP * G.ZipHang(linePt)
     if origin:DistToSqr(target) > 96 * 96 then   -- (something blocked you: let go)
         zipDetach(ply, mv)
         return
@@ -457,6 +485,11 @@ local function rideZip(ply, mv, zip)
     local vel = (target - origin) / dt
     local speed = vel:Length()
     if speed > 1600 then vel = vel * (1600 / speed) end
+    -- Dropping to full hang past a ledge eases down (never much faster than
+    -- the line itself goes down), so landing isn't a deadly fall.
+    vel.z = math.max(vel.z, math.min(0, dir.z * v) - 250)
+    -- (pulled up off the ground: let go of it, or the engine keeps you on it)
+    if vel.z > 0 and ply:OnGround() then ply:SetGroundEntity(NULL) end
     vel.z = vel.z + g * dt   -- cancel this tick's gravity
 
     mv:SetVelocity(vel)

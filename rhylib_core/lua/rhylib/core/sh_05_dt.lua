@@ -32,7 +32,8 @@
              30 jetpack.locked   31 jetpack.has
       Entity 31 grapple.rope
     Added since: Float 22 grapple.zipv, Entity 30 grapple.zip (ziplines);
-    Int 31 grapple.phook, Float 21 grapple.phookT, Vector 31 grapple.phookAt,
+    Int 31 grapple.phook, Float 21 grapple.phookT, 20 grapple.phookLen,
+    Vector 31 grapple.phookAt,
     30 grapple.phookHook, 29 grapple.phookLedge (personal grappling hook).
 
     Rhylib.NW: names of NW2 vars that several addons read, so a rename is
@@ -49,7 +50,7 @@ DT.names = DT.names or {}   -- [kind] = { [name] = slot }
 local SEED = {
     Float = { [23] = "jetpack.rate", [24] = "skills.step", [25] = "skills.dodge", [26] = "stamina.rate",
               [27] = "grapple.s", [28] = "stamina.value", [29] = "stamina.from", [30] = "jetpack.fuel",
-              [31] = "jetpack.from", [22] = "grapple.zipv", [21] = "grapple.phookT" },
+              [31] = "jetpack.from", [22] = "grapple.zipv", [21] = "grapple.phookT", [20] = "grapple.phookLen" },
     Bool = { [27] = "grapple.mantle", [28] = "stamina.exhausted", [29] = "jetpack.thrust",
              [30] = "jetpack.locked", [31] = "jetpack.has" },
     Entity = { [31] = "grapple.rope", [30] = "grapple.zip" },

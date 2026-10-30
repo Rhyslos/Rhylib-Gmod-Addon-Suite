@@ -18,7 +18,8 @@
     More setting fields: get() / set(v) instead of the convar (then
     convar may be left out), wide (px at 1080p for a choice row's right
     side, default 460), short (key-cap label on Settings > Layout, key
-    rows only). Same id again = replaces the old row (refresh-safe).
+    rows only), shareWith (key rows: { [convar] = true } of key settings
+    it may share a key with on purpose, so Controls doesn't warn). Same id again = replaces the old row (refresh-safe).
     The order of sections is the order they were first added.
 
     Settings > Interface / Camera & motion / Audio / Controls are four
