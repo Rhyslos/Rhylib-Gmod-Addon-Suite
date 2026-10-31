@@ -1,6 +1,7 @@
 --[[
     Optics (server): gear.optics (kind 2 bits, 0 = down) raises or lowers
-    them if that part is worn and you can use your hands.
+    them if that part is worn (kind 3: the handheld binoculars are in hand)
+    and you can use your hands (G.OpticsAllowed).
     Server only. Nets (client -> server):
       rhylib.gear.optics  UInt 2 kind (0 = down), Bool weapon mode; rate 8/s
       rhylib.gear.visor   Bool down; rate 6/s
@@ -31,7 +32,8 @@ function G.SetVisor(ply, on)
     ply:EmitSound("buttons/lightswitch2.wav", 50, on and 95 or 80)
 end
 
--- G.SetOptics(ply, kind, fire): optics up (kind 1 / 2) or down (0); fire =
+-- G.SetOptics(ply, kind, fire): optics up (kind 1 macrobinoculars, 2
+-- rangefinder, 3 handheld binoculars) or down (0); fire =
 -- weapon mode. Doesn't check the gear: the net handler does. Server.
 -- Example: Rhylib.Gear.SetOptics(ply, 0)   -- put them away
 function G.SetOptics(ply, kind, fire)
@@ -59,7 +61,8 @@ end, { rate = 6, burst = 6 })
 -- Put down when you go down, lie down or die (the visor goes up).
 timer.Create("Rhylib.Gear.Optics", 0.5, 0, function()
     for _, ply in ipairs(player.GetAll()) do
-        if ply:GetNW2Int("rhylib_optics", 0) ~= 0 and busy(ply) then G.SetOptics(ply, 0) end
+        local o = ply:GetNW2Int("rhylib_optics", 0)
+        if o ~= 0 and (busy(ply) or not G.OpticsAllowed(ply, o)) then G.SetOptics(ply, 0) end   -- (also: binoculars put away)
         if ply:GetNW2Bool("rhylib_visorDown", false) and (busy(ply) or not G.Active(ply, "visor")) then G.SetVisor(ply, false) end
     end
 end)

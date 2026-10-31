@@ -41,12 +41,15 @@
       artillery  FireDirectRocket, FireRocket, ArtilleryShot, LobAtLastSeen
       roam       Idle, GoOrWait, FollowLeader, UpdateHome
       medic      DoRevive
+      smoke      SuppressSmoke (firing into smoke near a commander)
+      squad      InSquadFollow, FollowSquad, StepFormation, SquadLateral,
+                 LeaderPace (squads: sv_40_squads.lua)
     The module loader only reads lua/rhylib/droids/*.lua, not brain/.
 
     The brain is one coroutine, ENT:RunBehaviour: each loop picks one
     job in this order: revive (medics) > cover > fight (Look finds a
     target -> Engage) > retreat > answer a call for help > reinforcement
-    steps > fall back > chase the last seen spot > attack mode > roam >
+    steps > keep its squad slot (members) > fall back > chase the last seen spot > attack mode > roam >
     back to home > artillery > idle / patrol / shuffle. Functions that
     wait (Go, Face, Idle, TakeCover, Engage) yield, so only call them from
     inside the coroutine.
@@ -221,13 +224,29 @@ if SERVER then
     end
 
     -- ENT:CanSee(t) -> one trace from its eye to t's eye / chest.
-    -- Clones' seeFilter ignores players and clones.
+    -- Clones' seeFilter ignores players and clones. Droids (not clones)
+    -- can't see through smoke (rhylib_republic smoke grenades,
+    -- Rhylib.Weapons.SmokeBlocks: maths only, no extra trace); a target
+    -- hidden that way is noted in self.smokeHid for brain/smoke.lua.
     function ENT:CanSee(t)
-        trData.start = self:Eye()
-        trData.endpos = seePoint(t)
+        local eye, at = self:Eye(), seePoint(t)
+        trData.start = eye
+        trData.endpos = at
         trData.filter = self.seeFilter or self
         util.TraceLine(trData)
-        return not tr.Hit or tr.Entity == t
+        if tr.Hit and tr.Entity ~= t then return false end
+        if not self.IsRhylibClone then
+            local W = Rhylib.Weapons
+            if W and W.SmokeBlocks and W.SmokeBlocks(eye, at) then
+                if t == self.target then   -- (only the one it's fighting)
+                    local h = self.smokeHid or {}
+                    h.t, h.at = t, CurTime()
+                    self.smokeHid = h
+                end
+                return false
+            end
+        end
+        return true
     end
 
     -- Clones: a friendly player in the line of fire (reinforcements
@@ -263,8 +282,12 @@ if SERVER then
         return e:IsPlayer() or e.IsRhylibClone == true
     end
 
-    -- Aggression 1-5: droids follow the GMs' live level, clones their config.
+    -- Aggression 1-5: a squad's own level (toolgun Command mode) first;
+    -- droids follow the GMs' live level, clones their config.
     function ENT:Aggro()
+        local sq = self.squad
+        if sq and sq.aggro then return sq.aggro end
+        if self.ownAggro then return self.ownAggro end   -- (one NPC given its own level)
         if self.IsRhylibClone then
             if self.orderAggro then return self.orderAggro end   -- (their commander's aggression, command wheel)
             if self.doctrine then return self.doctrine end   -- (the odds decide: fall back / hold / charge)
@@ -614,6 +637,9 @@ if SERVER then
             end
             local now = CurTime()
             if now - (self.lastSeenAt or 0) > 1.5 then   -- lost sight
+                -- Into smoke, near a commander: fire into it a while (brain/smoke).
+                local h = self.smokeHid
+                if h and h.t == t and now - h.at < 2 and self:SuppressSmoke(t) then break end
                 self:LobAtLastSeen()
                 break
             end
@@ -745,6 +771,17 @@ if SERVER then
                 self.advanceTo = nil
                 self:SetPace(false)
                 self:GoOrWait(to, 4, true)
+            elseif self:InSquadFollow() then
+                -- In a squad: keep its slot by the leader (brain/squad). A
+                -- spot where it lost an enemy goes to the leader, so the
+                -- squad goes there together.
+                local lead = self.squad.leader
+                if self.lastSeen and CurTime() - (self.lastSeenAt or 0) < 20 and not lead.lastSeen and not IsValid(lead.target) then
+                    lead.lastSeen, lead.lastSeenAt = self.lastSeen, self.lastSeenAt
+                    lead.woken = true
+                end
+                self.lastSeen = nil
+                self:FollowSquad()
             elseif L == 2 and fb and self:GetPos():DistToSqr(fb) > 200 * 200 then
                 self:SetPace(false)
                 self:GoOrWait(fb, 8, true)
@@ -782,8 +819,8 @@ if SERVER then
                 else
                     self:Idle(math.Rand(2, 4))
                 end
-            elseif self.mode ~= "attack" and self.home
-                and self:GetPos():DistToSqr(self.home) > (self.guarding and 60 or self.mode == "patrol" and D.Cfg("patrolRadius") or follow and 150 or 250) ^ 2 then
+            elseif self.mode ~= "attack" and self.home and not self.route
+                and self:GetPos():DistToSqr(self.home) > ((self.guarding or self.posted) and 60 or self.mode == "patrol" and self:AreaRadius() or follow and 150 or 250) ^ 2 then
                 -- Back to its post / patrol area / the officer / a downed
                 -- player (runs to catch up).
                 self:SetPace((follow or self.guarding) and self:GetPos():DistToSqr(self.home) > (self.guarding and 250 or 500) ^ 2)
@@ -798,18 +835,34 @@ if SERVER then
             elseif follow then
                 -- With the officer: stand ready, check again soon.
                 self:Idle(math.Rand(0.5, 1))
+            elseif self.mode == "patrol" and self.route and #self.route > 0 then
+                -- A patrol route (Command mode): point to point, round and round.
+                self:SetPace(false)
+                local rt = self.route
+                local i = math.Clamp(self.routeIdx or 1, 1, #rt)
+                self.home = rt[i]
+                if self:GetPos():DistToSqr(rt[i]) < 100 * 100 then
+                    self.routeIdx = i % #rt + 1
+                    self.home = rt[self.routeIdx]
+                    if not self.target then self:Idle(math.Rand(0.5, 1.5)) end
+                elseif self:Go(rt[i], 10, true) == false then
+                    -- (no way there: on to the next point)
+                    self.routeIdx = i % #rt + 1
+                    if not self.target then self:Idle(1) end
+                end
             elseif self.mode == "patrol" then
                 -- Walk around the patrol area.
                 self:SetPace(false)
                 -- (a point inside the circle, not the square around it)
-                local a, r = math.Rand(0, math.pi * 2), D.Cfg("patrolRadius") * math.sqrt(math.Rand(0, 0.9))
+                local a, r = math.Rand(0, math.pi * 2), (self:AreaRadius() or D.Cfg("patrolRadius")) * math.sqrt(math.Rand(0, 0.9))
                 self:GoOrWait(self.home + Vector(math.cos(a) * r, math.sin(a) * r, 0), 8, true)
                 if not self.target then self:Idle(math.Rand(1, 3)) end
             elseif not self:AnyoneNear() then
                 -- Nobody anywhere near: stand still a while.
                 self:Idle(math.Rand(3, 5))
-            elseif math.random() < 0.25 then
-                -- Guard: shift a little around the post.
+            elseif not self.squad and not self.posted and math.random() < 0.25 then
+                -- Guard: shift a little around the post (not a squad leader:
+                -- its squad would keep re-forming).
                 self:SetPace(false)
                 self:GoOrWait((self.home or self:GetPos()) + Vector(math.Rand(-200, 200), math.Rand(-200, 200), 0), 4, true)
                 if not self.target then self:Idle(math.Rand(2, 4)) end
@@ -870,7 +923,7 @@ if SERVER then
     --------------------------------------------------------------------------
 
     local env = { D = D, alive = alive, valid = valid, lob = lob, ADVANCE_DIST = ADVANCE_DIST }
-    for _, part in ipairs({ "doors", "cover", "orders", "retreat", "artillery", "roam", "medic" }) do
+    for _, part in ipairs({ "doors", "cover", "orders", "retreat", "artillery", "roam", "medic", "smoke", "squad" }) do
         include("rhylib/droids/brain/" .. part .. ".lua")(ENT, env)
     end
 end

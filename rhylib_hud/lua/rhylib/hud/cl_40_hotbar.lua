@@ -15,7 +15,8 @@
 
     Without rhylib_inventory: one box per weapon you hold, by weapon slot.
 
-    Number keys pick a slot. An empty slot, or the slot you're already
+    Number keys pick a slot (7-9 work even when the game hasn't bound
+    those keys to slot7-9). An empty slot, or the slot you're already
     holding, puts your gun away (the empty "Stowed" weapon). The scroll
     wheel steps through every weapon on the bar, the "lastinv" bind swaps
     to the previous one. The bar
@@ -160,6 +161,53 @@ local function busy()
     return (Inv and IsValid(Inv.panel)) or (Rhylib.Weapons and Rhylib.Weapons.Radial and Rhylib.Weapons.Radial.open)
 end
 
+-- Pick hotbar entry n (a slot key): select it, cycle the overflow, hold
+-- an item, or put the gun away (empty slot / the one already held).
+local function pickSlot(ply, n)
+    local active = ply:GetActiveWeapon()
+    local e = entries[n]
+    if not e then return end
+    if e.hold and e.wep ~= active then
+        -- An item you hold in your hand (magazines, cells).
+        Rhylib.Inventory.RequestHold(e.hold)
+        previous = active
+    elseif e.overflow then
+        -- Cycle through the overflow weapons.
+        local pick = e.overflow[1]
+        for i, w in ipairs(e.overflow) do
+            if w == active then pick = e.overflow[i % #e.overflow + 1] end
+        end
+        selectWeapon(pick)
+    elseif e.wep and e.wep ~= active then
+        selectWeapon(e.wep)
+    elseif inventory() and (e.empty or e.wep == active) then
+        -- Empty slot, or the gun you're already holding: put it away.
+        -- (Non-weapon items do nothing yet.)
+        stow(ply)
+    end
+end
+
+-- Number keys 7-9 left unbound (the default config only binds 1-6) still
+-- pick slots 7-9: with a backpack the overflow (toolgun, physgun) is 7.
+local NUM_KEYS = { [7] = KEY_7, [8] = KEY_8, [9] = KEY_9 }
+local numWas = {}
+Rhylib.Hook.Add("Think", "hud.hotbar.numkeys", function()
+    for n, key in pairs(NUM_KEYS) do
+        local down = input.IsKeyDown(key)
+        if down and not numWas[n] then
+            local ply = LocalPlayer()
+            local b = input.LookupKeyBinding(key)
+            if (not b or b == "") and IsValid(ply) and ply:Alive() and not ply:InVehicle() and not busy()
+                and not vgui.GetKeyboardFocus() and not gui.IsGameUIVisible() and not gui.IsConsoleVisible() then
+                rebuild(ply)
+                lastSwitch = RealTime()
+                pickSlot(ply, n)
+            end
+        end
+        numWas[n] = down
+    end
+end)
+
 -- Slot keys (slot1..), the scroll wheel (invnext/invprev) and lastinv.
 -- Returning true swallows the bind so the default weapon selection
 -- never runs.
@@ -181,26 +229,7 @@ Rhylib.Hook.Add("PlayerBindPress", "hud.hotbar", function(ply, bind, pressed)
     lastSwitch = RealTime()
 
     if slot then
-        local e = entries[tonumber(slot)]
-        if not e then return true end
-        if e.hold and e.wep ~= active then
-            -- An item you hold in your hand (magazines, cells).
-            Rhylib.Inventory.RequestHold(e.hold)
-            previous = active
-        elseif e.overflow then
-            -- Cycle through the overflow weapons.
-            local pick = e.overflow[1]
-            for i, w in ipairs(e.overflow) do
-                if w == active then pick = e.overflow[i % #e.overflow + 1] end
-            end
-            selectWeapon(pick)
-        elseif e.wep and e.wep ~= active then
-            selectWeapon(e.wep)
-        elseif inventory() and (e.empty or e.wep == active) then
-            -- Empty slot, or the gun you're already holding: put it away.
-            -- (Non-weapon items do nothing yet.)
-            stow(ply)
-        end
+        pickSlot(ply, tonumber(slot))
     elseif isLast then
         if IsValid(previous) and previous:GetOwner() == ply then selectWeapon(previous) end
     else

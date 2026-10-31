@@ -1,6 +1,7 @@
 --[[
     Optics: macrobinoculars (kind 1) and the rangefinder (kind 2), worn on
-    the helmet. The optics key raises them (they flip down on the model):
+    the helmet, and handheld binoculars (kind 3, the rhylib_binoculars
+    weapon: right or left click raises / lowers them, zoom to 20x). The optics key raises them (they flip down on the model):
     zoom (mouse wheel), the range to what you look at, night vision (the
     flashlight key). No shooting or sprinting while you look through them;
     weapon mode (mode key) keeps them down with night vision but gives the
@@ -14,11 +15,20 @@
 local G = Rhylib.Gear
 
 G.OPTICS_SLOT = { [1] = "binos", [2] = "rangefinder" }
--- Zoom per kind: { min, max, start }. The rangefinder is a weaker module: half the binoculars'.
-G.ZOOM_RANGE = { [1] = { 2, 12, 4 }, [2] = { 1, 6, 2 } }
+-- Kind 3: handheld binoculars (SWEP rhylib_binoculars), held in the hands
+-- instead of worn: allowed while they're the weapon out.
+G.HELD_BINOCS = "rhylib_binoculars"
+-- Zoom per kind: { min, max, start }. The rangefinder is a weaker module:
+-- half the macrobinoculars'. The handheld binoculars go furthest.
+G.ZOOM_RANGE = { [1] = { 2, 12, 4 }, [2] = { 1, 6, 2 }, [3] = { 2, 20, 4 } }
 
--- G.OpticsAllowed(ply, kind): the part for that kind is worn and active.
+-- G.OpticsAllowed(ply, kind): the part for that kind is worn and active
+-- (kind 3: the handheld binoculars are the weapon out).
 function G.OpticsAllowed(ply, kind)
+    if kind == 3 then
+        local w = ply:GetActiveWeapon()
+        return IsValid(w) and w:GetClass() == G.HELD_BINOCS
+    end
     local slot = G.OPTICS_SLOT[kind]
     return slot ~= nil and G.Active(ply, slot)
 end

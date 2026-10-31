@@ -179,6 +179,42 @@ function D.Boosted(droid)
     return boost
 end
 
+-- D.SmokeSlot(droid): may this droid fire into smoke (smoke grenades,
+-- rhylib_republic)? Only near a living commander of its side (within
+-- cmdRadius, not blacked out), and only smokeSuppressors droids per
+-- commander at once. Takes the slot for smokeSuppressTime. Server.
+function D.SmokeSlot(droid)
+    local cap = D.Cfg("smokeSuppressors")
+    if cap <= 0 or not next(D.commanders) or D.BlackedOut(droid) then return false end
+    local now, r = CurTime(), D.Cfg("cmdRadius")
+    local pos = droid:GetPos()
+    local clone = droid.IsRhylibClone == true
+    for c in pairs(D.commanders) do
+        if IsValid(c) and c ~= droid and (c.IsRhylibClone == true) == clone and c:Health() > 0
+            and c:GetPos():DistToSqr(pos) < r * r and not D.BlackedOut(c) then
+            local slots = c.rhylibSmokeSlots or {}
+            c.rhylibSmokeSlots = slots
+            local n = 0
+            for d, untilT in pairs(slots) do
+                if not IsValid(d) or untilT < now then slots[d] = nil else n = n + 1 end
+            end
+            if slots[droid] then return true end
+            if n < cap then
+                slots[droid] = now + D.Cfg("smokeSuppressTime")
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- D.SmokeSlotFree(droid): done firing into smoke: give its slot back.
+function D.SmokeSlotFree(droid)
+    for c in pairs(D.commanders) do
+        if IsValid(c) and c.rhylibSmokeSlots then c.rhylibSmokeSlots[droid] = nil end
+    end
+end
+
 -- D.Rattle(cmd): a commander was destroyed: same-side NPCs within
 -- cmdRadius aim worse (x cmdDeathMult) for cmdDeathTime s. Called from
 -- ENT:OnKilled.

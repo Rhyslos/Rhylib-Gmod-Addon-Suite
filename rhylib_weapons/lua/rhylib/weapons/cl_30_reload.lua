@@ -4,7 +4,8 @@
     Tap R:  reload the best magazine (same type if you have one).
     E + R:  next fire mode.   Shift + E + R: safety on/off.
     Hold R: the radial menu opens and the view stops turning. Move the
-            mouse toward an option and let go of R to pick it.
+            mouse toward an option and let go of R to pick it. It only
+            shows ammo you carry (and the type loaded now).
             Let go in the middle to cancel.
 
     Optional keys of their own (client convars, "" = off; Settings >
@@ -76,6 +77,30 @@ local function options(wep)
         opt.loaded = opt.mag and opt.mag.index == loaded
     end
     return list
+end
+
+-- The options the wheel shows: only ammo you have (or the loaded type),
+-- the magazines spread over the left half again. Rebuilt each frame from
+-- options() (a few entries).
+local shownList = {}
+local function shown(wep)
+    for i = #shownList, 1, -1 do shownList[i] = nil end
+    local mags = {}
+    for _, opt in ipairs(options(wep)) do
+        if opt.count > 0 or opt.loaded then
+            if opt.mag then mags[#mags + 1] = opt else shownList[#shownList + 1] = opt end
+        end
+    end
+    local n = #mags
+    for i, opt in ipairs(mags) do
+        local spread = n > 1 and (i - 1) / (n - 1) - 0.5 or 0
+        opt.shownAngle = 180 - spread * 70
+        shownList[#shownList + 1] = opt
+    end
+    for _, opt in ipairs(shownList) do
+        if not opt.mag then opt.shownAngle = opt.angle end
+    end
+    return shownList
 end
 
 local function sendReload(req)
@@ -179,7 +204,7 @@ local function pickOption(list, s)
     local ang = math.deg(math.atan2(R.cy, R.cx))
     local best, bestD = nil, math.huge
     for _, opt in ipairs(list) do
-        local d = math.abs(math.NormalizeAngle(ang - opt.angle))
+        local d = math.abs(math.NormalizeAngle(ang - (opt.shownAngle or opt.angle)))
         if d < bestD then
             best, bestD = opt, d
         end
@@ -197,18 +222,18 @@ Rhylib.Hook.Add("HUDPaint", "weapons.reload", function()
 
     local s = ScrH() / 1080
     local cx, cy = ScrW() * 0.5, ScrH() * 0.5
-    local list = options(wep)
+    local list = shown(wep)
     local pick = pickOption(list, s)
     R.selected = pick and pick.count > 0 and pick.req or nil
 
     -- Centre: cancel zone.
     local dz = DEADZONE * s
     draw.RoundedBox(dz, cx - dz, cy - dz, dz * 2, dz * 2, COL_DEADZONE)
-    draw.SimpleText(pick and "" or "Cancel", UI.Font(15), cx, cy, UI.Colors.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    draw.SimpleText(pick and "" or (#list == 0 and "No ammo" or "Cancel"), UI.Font(15), cx, cy, UI.Colors.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 
     local w, h = 200 * s, 64 * s
     for _, opt in ipairs(list) do
-        local a = math.rad(opt.angle)
+        local a = math.rad(opt.shownAngle or opt.angle)
         local ox, oy = cx + math.cos(a) * RING * s, cy + math.sin(a) * RING * s
         local isPick = pick == opt
         local empty = opt.count <= 0

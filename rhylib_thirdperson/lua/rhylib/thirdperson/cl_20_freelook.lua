@@ -4,7 +4,10 @@
     without turning your body or your aim, at rhylib_freelook_sens (0.5) of
     the normal mouse speed. rhylib_freelook_hold: 0 (the
     default) = click once to start, click again to stop; 1 = only while
-    held. When it stops the view goes back. Console: rhylib_freelook_toggle.
+    held. When it stops the view eases back to your aim over
+    rhylib_freelook_return (0.045) seconds (smooth start and end; in third
+    person your aim stays put until the camera is back). Console:
+    rhylib_freelook_toggle.
 
       First person: up to freelookYaw (100) degrees left or right of where
       you face, and up and down as far as normal. The arms and gun
@@ -39,6 +42,10 @@ local keyVar = CreateClientConVar("rhylib_freelook_key", "mouse3", true, false, 
 local yawVar = CreateClientConVar("rhylib_freelook_yaw", "100", true, false, "First person freelook: how far left / right you can look (degrees)")
 local sensVar = CreateClientConVar("rhylib_freelook_sens", "0.5", true, false, "Freelook mouse speed (1 = the same as normal looking)")
 local holdVar = CreateClientConVar("rhylib_freelook_hold", "0", true, false, "Freelook: 0 = click to switch on / off, 1 = only while the key is held")
+local returnVar = CreateClientConVar("rhylib_freelook_return", "0.045", true, false, "Freelook: seconds the view takes to ease back to your aim when it stops (0 = at once)")
+
+-- (0-1 -> 0-1, slow at both ends)
+local function smooth(f) return f * f * (3 - 2 * f) end
 
 local sensitivity = GetConVar("sensitivity")
 local mYaw = GetConVar("m_yaw")
@@ -121,24 +128,59 @@ end
 Rhylib.Hook.Add("Think", "thirdperson.freelook", function()
     local ply = LocalPlayer()
     local want = wanted(ply)
+    local now = RealTime()
+    local dur = math.max(returnVar:GetFloat(), 0)
     if want and not TP.freeLook then
         TP.freeLook = true
-        TP.freeOff:Zero()
-        TP.freeAim = ply:EyeAngles()   -- (held in both views; switching views keeps freelook)
+        -- (started again while easing back: carry on from where the view is)
+        if not TP.freeBack then TP.freeOff:Zero() end
+        TP.freeBack = nil
+        local ret = TP.freeReturn
+        TP.freeReturn = nil
+        TP.freeAim = ret and ret.aim or ply:EyeAngles()   -- (held in both views; switching views keeps freelook)
         if TP.Active() and TP.camAng then
-            TP.freeSaveCam = Angle(TP.camAng.p, TP.camAng.y, 0)
+            TP.freeSaveCam = ret and ret.to or Angle(TP.camAng.p, TP.camAng.y, 0)
         end
     elseif not want and TP.freeLook then
         TP.freeLook = false
-        -- Third person: the camera goes back where it was.
-        if TP.freeSaveCam and TP.camAng then TP.camAng = TP.freeSaveCam end
+        -- Third person: the camera eases back where it was (the aim held
+        -- until it's there).
+        if TP.freeSaveCam and TP.camAng then
+            if dur > 0 and TP.freeAim then
+                TP.freeReturn = { from = Angle(TP.camAng.p, TP.camAng.y, 0), to = TP.freeSaveCam, t = now, aim = TP.freeAim }
+            else
+                TP.camAng = TP.freeSaveCam
+            end
+        end
         TP.freeSaveCam, TP.freeAim = nil, nil
+        -- First person: the look offset eases back to straight ahead.
+        if TP.freeOff.p ~= 0 or TP.freeOff.y ~= 0 then
+            TP.freeBack = { p = TP.freeOff.p, y = TP.freeOff.y, t = now }
+        end
     end
-    -- First person: ease back to straight ahead after letting go.
-    if not TP.freeLook and (TP.freeOff.p ~= 0 or TP.freeOff.y ~= 0) then
-        local k = math.min(1, FrameTime() * 14)
-        TP.freeOff.p = math.abs(TP.freeOff.p) < 0.5 and 0 or TP.freeOff.p * (1 - k)
-        TP.freeOff.y = math.abs(TP.freeOff.y) < 0.5 and 0 or TP.freeOff.y * (1 - k)
+    local back = TP.freeBack
+    if back and not TP.freeLook then
+        local f = dur > 0 and math.Clamp((now - back.t) / dur, 0, 1) or 1
+        local k = 1 - smooth(f)
+        TP.freeOff.p, TP.freeOff.y = back.p * k, back.y * k
+        if f >= 1 then TP.freeBack = nil end
+    elseif not TP.freeLook and not back and (TP.freeOff.p ~= 0 or TP.freeOff.y ~= 0) then
+        TP.freeOff:Zero()
+    end
+    local ret = TP.freeReturn
+    if ret then
+        if not TP.Active() or not TP.camAng then
+            TP.freeReturn = nil
+        else
+            local f = math.Clamp((now - ret.t) / math.max(dur, 0.001), 0, 1)
+            local e = smooth(f)
+            local dy = math.NormalizeAngle(ret.to.y - ret.from.y)
+            TP.camAng = Angle(ret.from.p + (ret.to.p - ret.from.p) * e, ret.from.y + dy * e, 0)
+            if f >= 1 then
+                TP.camAng = Angle(ret.to.p, ret.to.y, 0)
+                TP.freeReturn = nil
+            end
+        end
     end
 end)
 

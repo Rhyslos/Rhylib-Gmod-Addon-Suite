@@ -13,12 +13,16 @@
               nearby open and holds them open for a while
       flash   fuse; players in range and in sight are stunned (rhylib_mp),
               droids aim worse for a few seconds (Rhylib.Droids.Suppress)
+      smoke   fuse; a dark grey smoke cloud (rhylib_smoke_cloud) that
+              droids can't see through
+      bacta   fuse; a low bacta mist (rhylib_smoke_cloud) that heals and
+              stabilises (rhylib_medical)
     Blinks (red, blue for EMP) faster as the fuse runs down.
 
     Shared (AddCSLuaFile): the server does physics and the blast, the
     client draws the model, the blinking light and the debug view.
     Not spawnable. Set these fields after ents.Create and before Spawn:
-      kind      "fuse" / "impact" / "emp" / "emp_impact" / "breach" / "flash"
+      kind      "fuse" / "impact" / "emp" / "emp_impact" / "breach" / "flash" / "smoke" / "bacta"
       fuse      seconds (timed kinds; default 3, breach 6)
       thrower   who gets the kill (player or NPC)
       training  true = the blast only takes sim health (rhylib_training)
@@ -48,7 +52,7 @@ ENT.Model = "models/jajoff/sps/cgiweapons/tc13j/thermalgrenade.mdl"
 ENT.Spawnable = false
 
 -- Kind names -> the Int in the Kind network var (clients only see the number).
-local KIND = { fuse = 1, impact = 2, emp = 3, emp_impact = 4, breach = 5, flash = 6 }   -- (4: EMP on impact)
+local KIND = { fuse = 1, impact = 2, emp = 3, emp_impact = 4, breach = 5, flash = 6, smoke = 7, bacta = 8 }   -- (4: EMP on impact)
 ENT.KIND_BREACH = 5
 
 ENT.FlashRadius = 450   -- flash charge: players and droids within this
@@ -181,6 +185,18 @@ if SERVER then
             self:Breach(pos, attacker)
         elseif k == 6 then
             self:Flash(pos, attacker)
+        elseif k == 7 or k == 8 then
+            -- Smoke / bacta: a cloud where it lies (rhylib_smoke_cloud); no blast.
+            local c = ents.Create("rhylib_smoke_cloud")
+            if IsValid(c) then
+                c:SetPos(pos)
+                c.cloudKind = k == 7 and 1 or 2
+                c.thrower = self.thrower
+                c:Spawn()
+            end
+            sound.Play((file.Exists("sound/weapons/smokegrenade/sg_explode.wav", "GAME") and "weapons/smokegrenade/sg_explode.wav" or "ambient/gas/steam2.wav"), pos, 75, k == 8 and 125 or 100)
+            self:Remove()
+            return
         else
             -- (thermal detonator blast sound from the shared resources pack;
             -- training grenades, e.g. from training droids: sim health only;
@@ -422,7 +438,8 @@ if CLIENT then
         local rate = boom > 0 and Lerp(math.Clamp(left / 3, 0, 1), 12, 3) or 4
         if math.sin(CurTime() * rate * math.pi) > 0 then
             local k = self:GetKind()
-            local col = (k == 3 or k == 4) and Color(90, 170, 255) or k == 6 and Color(255, 255, 220) or Color(255, 60, 40)
+            local col = (k == 3 or k == 4) and Color(90, 170, 255) or k == 6 and Color(255, 255, 220)
+                or k == 7 and Color(190, 190, 190) or k == 8 and Color(90, 200, 255) or Color(255, 60, 40)
             render.SetMaterial(GLOW)
             render.DrawSprite(self:Centre(), 14, 14, col)
         end

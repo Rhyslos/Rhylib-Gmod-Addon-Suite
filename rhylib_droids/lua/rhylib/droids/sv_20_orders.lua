@@ -52,6 +52,9 @@ function D.SetMode(droid, mode, center)
     droid.holdAt, droid.orderAggro = nil, nil   -- (command wheel orders end with the follow)
     droid.rt, droid.lastStand, droid.retreatDir = nil, nil, nil   -- (a retreat starts over)
     droid.buddyRoam = nil
+    -- (Command mode extras: a patrol route or area, a post with a facing)
+    droid.route, droid.routeIdx, droid.areaRadius = nil, nil, nil
+    droid.posted, droid.holdYaw, droid.defending = nil, nil, nil
     if droid.IsRhylibClone then droid:SetNW2Entity("rhylib_lead", NULL) end
     droid.mode = mode
     if center then droid.home = center end
@@ -146,6 +149,17 @@ D.roamSolo = D.roamSolo or {}
 -- placements pair up (D.roamSolo). Called by rhylib_toolgun.
 function D.ToolPlaced(droid, mode)
     if not (IsValid(droid) and (droid.IsRhylibDroid or droid.IsRhylibClone)) then return end
+    -- Assault: at the side's assault point (Command mode's Assault here),
+    -- else guard. Markers don't pull them elsewhere.
+    if mode == "assault" then
+        local ap = D.assault and D.assault[droid.IsRhylibClone and 1 or 2]
+        D.SetMode(droid, ap and "attack" or "guard", droid:GetPos())
+        if ap then
+            droid.objective = D.SnapNav(ap + Vector(math.Rand(-1, 1), math.Rand(-1, 1), 0) * 180)
+            droid.woken, droid.nextLook = true, 0
+        end
+        return
+    end
     D.SetMode(droid, mode or "guard", droid:GetPos())
     if mode == "roam" and D.Buddy then
         local side = droid.IsRhylibClone and 1 or 2
@@ -189,10 +203,38 @@ function D.PaintMode(pos, mode, side)
             end
         end
     end
-    -- Retreat: one shared way out for the group, away from the enemies
-    -- around it (so they stay roughly together), and the alarm raised so
-    -- they start moving even if nobody is shooting yet.
-    if mode == "retreat" and #picked > 0 then
+    -- Squads (sv_40_squads): roam breaks them up (it pairs NPCs); any
+    -- other mode goes to the whole squad, led by its leader, so members
+    -- the brush missed don't stay behind.
+    if D.LeaveSquad then
+        if mode == "roam" then
+            for _, d in ipairs(picked) do D.LeaveSquad(d) end
+        elseif mode ~= "retreat" and D.SquadMode then
+            local done = {}
+            for _, d in ipairs(picked) do
+                local sq = d.squad
+                if sq and not done[sq] and IsValid(sq.leader) then
+                    done[sq] = true
+                    D.SquadMode(sq, mode, sq.leader:GetPos())
+                end
+            end
+        end
+    end
+    if mode == "retreat" and #picked > 0 then D.RetreatGroup(picked, side) end
+    -- Spread out (alone or two and two): pair them up; the second
+    -- of each pair walks beside the first (D.Buddy).
+    if mode == "roam" and D.Buddy then
+        table.sort(picked, function(a, b) return a:EntIndex() < b:EntIndex() end)
+        for i = 2, #picked, 2 do D.Buddy(picked[i], picked[i - 1]) end
+    end
+    return n
+end
+
+-- D.RetreatGroup(list, side): one shared way out for the group, away from
+-- the enemies around it (so they stay roughly together), and the alarm
+-- raised so they start moving even if nobody is shooting yet.
+function D.RetreatGroup(picked, side)
+    do
         local centre = Vector(0, 0, 0)
         for _, d in ipairs(picked) do centre = centre + d:GetPos() end
         centre = centre / #picked
@@ -225,13 +267,26 @@ function D.PaintMode(pos, mode, side)
             d.woken, d.redirect, d.planAt = true, true, 0
         end
     end
-    -- Spread out (alone or two and two): pair them up; the second
-    -- of each pair walks beside the first (D.Buddy).
-    if mode == "roam" and D.Buddy then
-        table.sort(picked, function(a, b) return a:EntIndex() < b:EntIndex() end)
-        for i = 2, #picked, 2 do D.Buddy(picked[i], picked[i - 1]) end
+end
+
+-- D.SetGroupMode(list, mode): every NPC in list gets the mode where it
+-- stands (retreat: one shared way out per side, D.RetreatGroup).
+function D.SetGroupMode(list, mode)
+    local bySide = { {}, {} }
+    for _, d in ipairs(list) do
+        if IsValid(d) then
+            d.objectiveMarker, d.homeMarker = nil, nil
+            D.SetMode(d, mode, d:GetPos())
+            d.nextLook = 0
+            local s = d.IsRhylibClone and 1 or 2
+            bySide[s][#bySide[s] + 1] = d
+        end
     end
-    return n
+    if mode == "retreat" then
+        for side = 1, 2 do
+            if #bySide[side] > 0 then D.RetreatGroup(bySide[side], side) end
+        end
+    end
 end
 
 -- Aggression: live, for every droid.

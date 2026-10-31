@@ -63,7 +63,7 @@ SWEP.FireRate = 50          -- 1.2 s between shots
 -- side = random sideways, bias = lean -1 (left) .. 1 (right), recover = share
 -- of the climb that settles back, aimMult = multiplier while aiming.
 SWEP.Recoil = { up = 3.2, side = 0.5, bias = 0.1, recover = 0.8, aimMult = 0.7 }
-SWEP.Damage = 120
+SWEP.Damage = 115
 SWEP.BoltSpeed = 16000
 SWEP.BoltColor = 1
 SWEP.FireSound = "weapons/shared/shared_clonesniper_fire.ogg"

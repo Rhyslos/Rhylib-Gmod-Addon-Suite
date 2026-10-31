@@ -20,7 +20,12 @@
     drawn under the normal HUD, in third person only the night vision
     shows. Back to looking: zoomed all the way out (no sudden zoom).
 
-    Zoom: macrobinoculars x2 to x12, the rangefinder half that (G.ZOOM_RANGE).
+    Handheld binoculars (the rhylib_binoculars weapon, kind 3): the same
+    viewer, raised and lowered by clicking with them in hand; the optics key
+    only lowers them.
+
+    Zoom: macrobinoculars x2 to x12, the rangefinder half that, handheld
+    binoculars x2 to x20 (G.ZOOM_RANGE).
 
     Sun visor (worn and the helmet on): the same key lowers it (off ->
     binoculars -> visor -> off). Down: red night vision always on, a grid
@@ -86,6 +91,10 @@ local function send(kind, fire)
     net.SendToServer()
 end
 
+-- G.SendOptics(kind, fire): ask the server to raise optics kind (0 = down).
+-- Client. (The handheld binoculars weapon uses it.)
+G.SendOptics = send
+
 local function free()
     return not vgui.GetKeyboardFocus() and not gui.IsGameUIVisible() and not gui.IsConsoleVisible()
 end
@@ -100,7 +109,9 @@ Rhylib.Hook.Add("Think", "gear.optics.key", function()
     local down = keyDown(keyVar)
     if down and not wasDown and free() then
         -- (worn with binoculars too: off -> binoculars -> visor -> off)
-        if kindUp() ~= 0 then
+        if kindUp() == 3 then
+            send(0)   -- (handheld binoculars: just lowered)
+        elseif kindUp() ~= 0 then
             send(0)
             if G.Active(me, "visor") then sendVisor(true) end
         elseif visorDown() then
@@ -658,7 +669,7 @@ local function drawViewer(fire)
 
     -- Red markings.
     local mark = UI.Font(S(17, h), 800)
-    draw.SimpleText(kind == 1 and "MACROBINOCULARS · GAR ISSUE" or "RANGEFINDER · HELMET MODULE", mark,
+    draw.SimpleText(kind == 1 and "MACROBINOCULARS · GAR ISSUE" or kind == 3 and "BINOCULARS · FIELD ISSUE" or "RANGEFINDER · HELMET MODULE", mark,
         sh.L + S(70, h), sh.T - S(22, h), RED, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
     draw.SimpleText("ELEVATION · BEARING · TARGET RANGE", mark, sh.R - S(70, h), sh.B + S(28, h), RED, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
 

@@ -60,12 +60,12 @@ SWEP.Secondary = {
     Ammo = "rhylib_cell",
 }
 
-SWEP.FireRate = 900
+SWEP.FireRate = 704
 -- Recoil: view kick per shot (rhylib_weapons cl_50_recoil): up = degrees up,
 -- side = random sideways, bias = lean -1 (left) .. 1 (right), recover = share
 -- of the climb that settles back, aimMult = multiplier while aiming.
 SWEP.Recoil = { up = 0.32, side = 0.4, bias = 0.25, recover = 0.4, aimMult = 0.7 }  -- view kick per shot
-SWEP.Damage = 18
+SWEP.Damage = 23
 SWEP.BoltSpeed = 7500
 SWEP.BoltColor = 1
 SWEP.FireSound = "weapons/airboat/airboat_gun_energy2.wav"   -- (the pack sound reverted)

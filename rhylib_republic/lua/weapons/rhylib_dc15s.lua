@@ -54,12 +54,12 @@ SWEP.Primary = {
     Ammo = "rhylib_mag_medium",
 }
 
-SWEP.FireRate = 540
+SWEP.FireRate = 440
 -- Recoil: view kick per shot (rhylib_weapons cl_50_recoil): up = degrees up,
 -- side = random sideways, bias = lean -1 (left) .. 1 (right), recover = share
 -- of the climb that settles back, aimMult = multiplier while aiming.
 SWEP.Recoil = { up = 0.55, side = 0.3, bias = -0.1, recover = 0.55, aimMult = 0.65 }  -- view kick per shot
-SWEP.Damage = 22
+SWEP.Damage = 27
 SWEP.BoltSpeed = 7000
 SWEP.BoltColor = 1
 SWEP.FireSound = "weapons/dc15a/dc15a_fire.ogg"   -- (the DC-15A sound, a bit brighter)

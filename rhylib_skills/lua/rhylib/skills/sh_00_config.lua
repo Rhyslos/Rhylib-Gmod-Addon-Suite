@@ -14,7 +14,11 @@
           icon = glyph name for the menu (cl_10_menu GLYPHS; else ICONS),
           order = base command order id (cmd_x) for order skills,
           redundantWith / redundantWhy = refused while you have that skill,
-          reinforce = marks a Reinforcements capstone }
+          reinforce = marks a Reinforcements capstone,
+          layoutCol = "shared": the menu draws it across the whole width
+          (not in its branch's column or frame),
+          menuHide = { ids }: needs the menu draws no line from (still
+          needed; for a long line a shorter chain already shows) }
     A node's position in K.NODES is its index (n.index): skills.learn and
     skills.unlearn send it in 8 bits, so keep the list at 255 or fewer and
     add new nodes anywhere (saves store ids, not indexes).
@@ -82,8 +86,8 @@ K.CATEGORIES = {
       specs = {
           { id = "pistol", name = "Pistol", desc = "Two DC-17s, fast hands and footwork for close fights",
             branches = {
-                { id = "command", name = "Command", desc = "Q marks and locks, a command order and Reinforcements", weight = 3 },   -- (six orders in a row)
-                { id = "arc", name = "ARC trooper", desc = "From tier 1: Q marks, the Westar-M5 and all-round field training (no Spotter, Commander or orders)" },
+                { id = "command", name = "Command", desc = "Q marks and locks, a command order and Reinforcements", weight = 2 },   -- (six orders: wrap onto lines in a narrow menu)
+                { id = "arc", name = "ARC trooper", desc = "From tier 1: Q marks, the Westar-M5 and all-round field training (no Tactical visor, Commander or orders)" },
             } },
           { id = "commander", name = "Commander", desc = "Locks targets for the squad, buffs them nearby and gives stronger orders" },
       } },
@@ -207,27 +211,33 @@ K.NODES = {
     { id = "suppression", cat = "support", spec = "heavy", tier = 6, cost = 4, name = "Suppression", icon = "barrels",
       desc = "Droids near one you hit with the Z-6 aim much worse for 3 s.", needs = { "juggernaut" } },
 
-    -- Officer: tier 1 is a choice (exclusive group "officer_start"): Spotter
-    -- (then Pistol with the Command branch, or Commander) or ARC training
-    -- (Pistol spec, ARC branch: no Commander, no command skills). Every
-    -- full path costs 24. Q marking is Tactical visor (Commander), Tactical
-    -- marks (Pistol command) or ARC training (plain marks): K.CanMark.
+    -- Officer: tier 1 is a choice (exclusive group "officer_start"):
+    -- Tactical visor (id mark_target; then Pistol with the Command branch,
+    -- or Commander) or ARC training (Pistol spec, ARC branch: no Commander,
+    -- no command skills). Every full path costs 24. Q marking is Tactical
+    -- visor as a Commander (locks), Tactical marks (Pistol command) or ARC
+    -- training (plain marks): K.CanMark.
     -- The command orders sit in both specs (same orders: `order` names the
-    -- base skill, K.ORDERS): Pistol at tier 6, Commander at tier 3 so its
+    -- base skill, K.ORDERS): Pistol at tier 6, Commander at tier 2 so its
     -- order upgrades come after them.
-    -- (id kept from the old Mark target so saved trees stay valid)
-    { id = "mark_target", cat = "officer", tier = 1, cost = 1, name = "Spotter", icon = "eye", exclusive = "officer_start",
-      desc = "Enemies in view are spotted every 5 s for you and your squad, and the one you look at is ringed white: with the sun visor down or through macrobinoculars or a rangefinder, and always for a Commander (no gear needed). (Q marking comes with Tactical visor or Tactical marks.) Rules out ARC trooper." },
-    -- The other way in: ARC trooper (Pistol spec, ARC branch) from tier 1.
-    -- Rules out Spotter (exclusive group), and with it the Commander
+    -- One way in: ARC trooper (Pistol spec, ARC branch) from tier 1; listed
+    -- before Tactical visor so the menu puts it on the Pistol (left) side.
+    -- Rules out Tactical visor (exclusive group), and with it the Commander
     -- specialisation and the Pistol Command branch (spec / branch rules).
-    { id = "arc_training", cat = "officer", spec = "pistol", branch = "arc", tier = 1, cost = 3, name = "ARC training", icon = "star", exclusive = "officer_start",
-      desc = "Q: mark what you aim at for 15 s, seen by you and your squad (no locks, no automatic spotting). Westar-M5: 15% less spread and kick, 15% faster reloads and 5% more damage. Rules out Spotter, the Commander and the Pistol command skills." },
+    { id = "arc_training", cat = "officer", spec = "pistol", branch = "arc", tier = 1, cost = 3, name = "ARC training", icon = "star", exclusive = "officer_start", layoutCol = "shared",
+      desc = "Q: mark what you aim at for 15 s, seen by you and your squad (no locks, no automatic spotting). Westar-M5: 15% less spread and kick, 15% faster reloads and 5% more damage. Rules out Tactical visor, the Commander and the Pistol command skills." },
+    -- Tactical visor (was Spotter + the Commander's Tactical visor; id kept
+    -- from the old Mark target so saved trees stay valid; rank gated like
+    -- the command skills: below commandRank only ARC training opens the
+    -- Officer tree). Spots for everyone who has it; locks only as a
+    -- Commander (K.LocksNow).
+    { id = "mark_target", cat = "officer", tier = 1, cost = 1, name = "Tactical visor", icon = "scope", exclusive = "officer_start", rankCfg = "commandRank",
+      desc = "Enemies in view are spotted every 5 s for you and your squad, and the one you look at is ringed white: with the sun visor down or through macrobinoculars, a rangefinder or handheld binoculars (up to 10 at once through those). As a Commander it spots all the time (no helmet gear needed) and Q locks what you aim at (the ringed enemy first; through macrobinoculars or a rangefinder up to 5 enemies nearest the middle of the view): 25 s, a red ring only you see, a red diamond for your squad, and your squad mates (not Marksmen) do 15% more damage to it. Pistol officers mark with Q through Tactical marks. Officer ranks only (commandRank). Rules out ARC trooper." },
 
     -- Pistol: 1-3-4-2, then the Command / ARC trooper split.
     { id = "dual_dc17", cat = "officer", spec = "pistol", tier = 2, cost = 2, name = "Dual DC-17",
       desc = "Draw a second DC-17 (E + R): two magazines loaded, shots alternate between hands.",
-      needsGroups = { { "mark_target" }, { "arc_training" } }, needsLabel = "Needs Spotter or ARC training" },
+      needsGroups = { { "mark_target" }, { "arc_training" } }, needsLabel = "Needs Tactical visor or ARC training" },
     { id = "pistol_prof", cat = "officer", spec = "pistol", tier = 3, cost = 2, name = "Pistol proficiency",
       desc = "DC-17: 20% less spread.", needs = { "dual_dc17" } },
     { id = "quick_draw", cat = "officer", spec = "pistol", tier = 3, cost = 1, name = "Quick draw",
@@ -251,16 +261,16 @@ K.NODES = {
       desc = "10% of your hits with any gun do 50% more damage (with a small magazine, Light rounds' 15% counts instead).",
       needsGroups = { { "steady_grip" }, { "speed_loader" } }, needsLabel = "Needs Steady grip or Speed loader" },
     -- Pistol tier 6: Command (an order at tier 6, then Tactical marks and
-    -- Reinforcements; Spotter players) or the ARC trooper's last two skills
+    -- Reinforcements; Tactical visor players) or the ARC trooper's last two skills
     -- (ARC training players). Each full path is 24 (Light rounds is 2 to make room
     -- for Tactical marks).
     { id = "tactical_marks", cat = "officer", spec = "pistol", branch = "command", tier = 7, cost = 1, name = "Tactical marks", icon = "target",
       desc = "Q: mark what you aim at for 15 s, seen by you and your squad (through macrobinoculars or a rangefinder, up to 5 enemies nearest the middle of the view). With the sun visor down or through macrobinoculars or a rangefinder, Q locks instead: 25 s, a red ring only you see, a red diamond for your squad, and your squad mates (not Marksmen) do 15% more damage to it.",
       needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
-    { id = "arc_conditioning", cat = "officer", spec = "pistol", branch = "arc", tier = 6, cost = 2, name = "ARC conditioning", icon = "dodge",
+    { id = "arc_conditioning", cat = "officer", spec = "pistol", branch = "arc", menuHide = { "arc_training" }, tier = 6, cost = 2, name = "ARC conditioning", icon = "dodge",
       desc = "15% higher jumps, 15% less fall damage, 10% less stamina penalty from weight and 5% faster sprinting.",
       needs = { "arc_training" }, needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
-    { id = "arc_fieldcraft", cat = "officer", spec = "pistol", branch = "arc", tier = 6, cost = 1, name = "ARC fieldcraft", icon = "bolt",
+    { id = "arc_fieldcraft", cat = "officer", spec = "pistol", branch = "arc", menuHide = { "arc_training" }, tier = 6, cost = 1, name = "ARC fieldcraft", icon = "bolt",
       desc = "Every gun: 5% faster reloads, 5% less spread and 5% faster draw. Stamina refills 5% faster.",
       needs = { "arc_training" }, needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
     { id = "cmd_wind", cat = "officer", spec = "pistol", branch = "command", tier = 6, cost = 2, name = "Second wind", exclusive = "command", rankCfg = "commandRank", order = "cmd_wind",
@@ -285,57 +295,54 @@ K.NODES = {
     -- Commander (LT and up from the first skill, rankCfg on all):
     -- 1-6-3-4-2. The orders alone at tier 3 (two sides next to them looked
     -- messy), then Rifle drill / Command presence / Field logistics.
-    { id = "tactical_visor", cat = "officer", spec = "commander", tier = 2, cost = 2, name = "Tactical visor", icon = "scope", rankCfg = "commandRank",
-      desc = "Q locks what you aim at (the ringed enemy first; through macrobinoculars or a rangefinder up to 5 enemies nearest the middle of the view): 25 s, a red ring only you see, a red diamond for your squad, and your squad mates (not Marksmen) do 15% more damage to it. No helmet gear needed.",
-      needs = { "mark_target" } },
-    { id = "cmd_wind_c", cat = "officer", spec = "commander", tier = 3, cost = 2, name = "Second wind", exclusive = "command", rankCfg = "commandRank", order = "cmd_wind",
+    { id = "cmd_wind_c", cat = "officer", spec = "commander", tier = 2, cost = 2, name = "Second wind", exclusive = "command", rankCfg = "commandRank", order = "cmd_wind",
       desc = "No stamina drain while sprinting, and stamina refills fast. You and everyone near you, 6 s; 6 min cooldown.",
-      needsGroups = { { "tactical_visor" } }, needsLabel = "Needs Tactical visor" },
-    { id = "cmd_triage_c", cat = "officer", spec = "commander", tier = 3, cost = 2, name = "Field triage", exclusive = "command", rankCfg = "commandRank", order = "cmd_triage",
+      needs = { "mark_target" } },
+    { id = "cmd_triage_c", cat = "officer", spec = "commander", tier = 2, cost = 2, name = "Field triage", exclusive = "command", rankCfg = "commandRank", order = "cmd_triage",
       desc = "Downed players nearby get up (at 25% health), everyone heals 8 health a second, and all afflictions are muted (bleeding, fractures, hurt limbs, illness). You and everyone near you, 6 s; 6 min cooldown.",
-      needsGroups = { { "tactical_visor" } }, needsLabel = "Needs Tactical visor" },
-    { id = "cmd_hold_c", cat = "officer", spec = "commander", tier = 3, cost = 2, name = "Hold fast", exclusive = "command", rankCfg = "commandRank", order = "cmd_hold",
+      needs = { "mark_target" } },
+    { id = "cmd_hold_c", cat = "officer", spec = "commander", tier = 2, cost = 2, name = "Hold fast", exclusive = "command", rankCfg = "commandRank", order = "cmd_hold",
       desc = "Armour refilled (it stays) and no damage at all while it lasts, but nobody can sprint, dash or fly: hold the position. You and everyone near you, 6 s; 6 min cooldown.",
-      needsGroups = { { "tactical_visor" } }, needsLabel = "Needs Tactical visor" },
-    { id = "cmd_focus_c", cat = "officer", spec = "commander", tier = 3, cost = 2, name = "Focus fire", exclusive = "command", rankCfg = "commandRank", order = "cmd_focus",
+      needs = { "mark_target" } },
+    { id = "cmd_focus_c", cat = "officer", spec = "commander", tier = 2, cost = 2, name = "Focus fire", exclusive = "command", rankCfg = "commandRank", order = "cmd_focus",
       desc = "+20% damage and half the kick on every gun. You and everyone near you, 6 s; 6 min cooldown.",
-      needsGroups = { { "tactical_visor" } }, needsLabel = "Needs Tactical visor" },
-    { id = "cmd_open_c", cat = "officer", spec = "commander", tier = 3, cost = 2, name = "Open up", exclusive = "command", rankCfg = "commandRank", order = "cmd_open",
+      needs = { "mark_target" } },
+    { id = "cmd_open_c", cat = "officer", spec = "commander", tier = 2, cost = 2, name = "Open up", exclusive = "command", rankCfg = "commandRank", order = "cmd_open",
       desc = "Guns use no ammo or power cells. You and everyone near you, 6 s; 6 min cooldown.",
-      needsGroups = { { "tactical_visor" } }, needsLabel = "Needs Tactical visor" },
-    { id = "cmd_press_c", cat = "officer", spec = "commander", tier = 3, cost = 2, name = "Press forward", exclusive = "command", rankCfg = "commandRank", order = "cmd_press",
+      needs = { "mark_target" } },
+    { id = "cmd_press_c", cat = "officer", spec = "commander", tier = 2, cost = 2, name = "Press forward", exclusive = "command", rankCfg = "commandRank", order = "cmd_press",
       desc = "No knockback from hits, no explosion knockdowns, and 20% faster sprinting. You and everyone near you, 6 s; 6 min cooldown.",
-      needsGroups = { { "tactical_visor" } }, needsLabel = "Needs Tactical visor" },
-    { id = "rifle_drill", cat = "officer", spec = "commander", tier = 4, cost = 2, name = "Rifle drill", rankCfg = "commandRank",
+      needs = { "mark_target" } },
+    { id = "rifle_drill", cat = "officer", spec = "commander", tier = 3, cost = 2, name = "Rifle drill", rankCfg = "commandRank",
       desc = "Rifles and carbines (DC-15A, Westar-M5, DC-15S, DP-23): 20% less spread while aiming.",
       needsGroups = { { "cmd_wind_c" }, { "cmd_triage_c" }, { "cmd_hold_c" }, { "cmd_focus_c" }, { "cmd_open_c" }, { "cmd_press_c" } },
       needsLabel = "Needs a command order" },
-    { id = "cmd_presence", cat = "officer", spec = "commander", tier = 4, cost = 2, name = "Command presence", rankCfg = "commandRank",
+    { id = "cmd_presence", cat = "officer", spec = "commander", tier = 3, cost = 3, name = "Command presence", rankCfg = "commandRank",
       desc = "Your orders reach 50% further.",
       needsGroups = { { "cmd_wind_c" }, { "cmd_triage_c" }, { "cmd_hold_c" }, { "cmd_focus_c" }, { "cmd_open_c" }, { "cmd_press_c" } },
       needsLabel = "Needs a command order" },
-    { id = "field_logistics", cat = "officer", spec = "commander", tier = 4, cost = 2, name = "Field logistics", icon = "box", rankCfg = "commandRank",
+    { id = "field_logistics", cat = "officer", spec = "commander", tier = 3, cost = 2, name = "Field logistics", icon = "box", rankCfg = "commandRank",
       desc = "You and your radio squad mates within 15 m of you reload 15% faster.",
       needsGroups = { { "cmd_wind_c" }, { "cmd_triage_c" }, { "cmd_hold_c" }, { "cmd_focus_c" }, { "cmd_open_c" }, { "cmd_press_c" } },
       needsLabel = "Needs a command order" },
-    { id = "steady_line", cat = "officer", spec = "commander", tier = 5, cost = 2, name = "Steady the line", icon = "shield", rankCfg = "commandRank",
+    { id = "steady_line", cat = "officer", spec = "commander", tier = 4, cost = 2, name = "Steady the line", icon = "shield", rankCfg = "commandRank",
       desc = "You and your radio squad mates within 15 m of you: 15% less kick and stamina refills 25% faster.", needs = { "rifle_drill" } },
-    { id = "seasoned_cmd", cat = "officer", spec = "commander", tier = 5, cost = 1, name = "Seasoned command", rankCfg = "commandRank",
+    { id = "seasoned_cmd", cat = "officer", spec = "commander", tier = 4, cost = 1, name = "Seasoned command", rankCfg = "commandRank",
       desc = "Your order cooldown is 4 minutes instead of 6.", needs = { "cmd_presence" } },
-    { id = "standing_orders", cat = "officer", spec = "commander", tier = 5, cost = 2, name = "Standing orders", rankCfg = "commandRank",
+    { id = "standing_orders", cat = "officer", spec = "commander", tier = 4, cost = 2, name = "Standing orders", rankCfg = "commandRank",
       desc = "Your orders last 10 s instead of 6.", needs = { "cmd_presence" } },
-    { id = "combat_veteran", cat = "officer", spec = "commander", tier = 5, cost = 2, name = "Combat veteran", icon = "star", rankCfg = "commandRank",
+    { id = "combat_veteran", cat = "officer", spec = "commander", tier = 4, cost = 2, name = "Combat veteran", icon = "star", rankCfg = "commandRank",
       desc = "Rifles (DC-15A, Westar-M5): 10% less spread and kick, 10% faster reloads, and the DC-15A full-auto mode. Carbines (DC-15S, DP-23): 8% more damage. With the Z-6 in your hands: 10% less damage taken.",
       needs = { "field_logistics" } },
-    { id = "adapt_1", cat = "officer", spec = "commander", tier = 6, cost = 2, name = "Adaptable", rankCfg = "commandRank",
+    { id = "adapt_1", cat = "officer", spec = "commander", tier = 5, cost = 2, name = "Adaptable", rankCfg = "commandRank",
       desc = "Learn one skill of tier 4 or lower from any other tree, or from the Pistol officer side of this one. It skips that skill's requirements, but you still need the job (medic, MP) and pay its points.",
       needs = { "combat_veteran" } },
-    { id = "chain_command", cat = "officer", spec = "commander", tier = 6, cost = 2, name = "Chain of command", rankCfg = "commandRank",
+    { id = "chain_command", cat = "officer", spec = "commander", tier = 5, cost = 2, name = "Chain of command", rankCfg = "commandRank",
       desc = "Your orders also reach every radio squad mate, however far away (alive and not downed).",
       needsGroups = { { "seasoned_cmd" }, { "standing_orders" } }, needsLabel = "Needs Seasoned command or Standing orders" },
     -- Capstone . Path still 24: Adaptable and
     -- Seasoned command each cost one point less to make room.
-    { id = "reinforcements", cat = "officer", spec = "commander", tier = 7, cost = 2, name = "Reinforcements", icon = "stack", rankCfg = "commandRank",
+    { id = "reinforcements", cat = "officer", spec = "commander", tier = 6, cost = 3, name = "Reinforcements", icon = "stack", rankCfg = "commandRank",
       desc = "Right-click with the command comlink: a clone squad (a trooper, a medic, a rifleman and a heavy) arrives around you, steps toward the enemy and follows you, for 10 minutes. You lead them: clones near you aim better, react faster and pause less. 15 min cooldown.",
       needsGroups = { { "adapt_1" }, { "chain_command" } }, needsLabel = "Needs Adaptable or Chain of command" },
     -- The Pistol officer's copy (it's an officer path too).
@@ -422,19 +429,25 @@ K.NODES = {
       desc = "Up to 6 Republic mines at a time, and their blast is 30% wider.",
       needs = { "eod_blackout" } },
 
-    -- Medic (medic jobs only)
+    -- Medic (medic jobs only). Tier 1 also has the weapon choice (exclusive
+    -- group "medic_gun": one or the other).
     { id = "field_drag", cat = "medic", tier = 1, cost = 1, name = "Field drag",
       desc = "Drag bodies at a jog instead of a crawl." },
+    { id = "med_carbine", cat = "medic", tier = 1, cost = 2, name = "Medic's carbine", icon = "rounds", exclusive = "medic_gun",
+      desc = "DC-15S: 12% more damage, and it weighs half as much. Rules out Medic's scattergun." },
+    { id = "med_shotgun", cat = "medic", tier = 1, cost = 2, name = "Medic's scattergun", icon = "rounds", exclusive = "medic_gun",
+      desc = "DP-23: 12% more damage, and it weighs half as much. Rules out Medic's carbine." },
     { id = "hands_on", cat = "medic", tier = 2, cost = 1, name = "Hands-on revive",
       desc = "Revive with no kit at all (E menu). Very slow, and they get up with 15 health.", needs = { "field_drag" } },
     { id = "steady_hands", cat = "medic", tier = 2, cost = 1, name = "Steady hands",
       desc = "Treatments (not revives) are 15% faster.", needs = { "field_drag" } },
-    -- (both medic paths; Hands-on and Steady hands went 2 -> 1 so paths stay 24)
-    { id = "recovery", cat = "medic", tier = 2, cost = 2, name = "Recovery",
+    -- (both medic paths stay 24: Hands-on and Steady hands 1, Recovery 1,
+    -- Quick revive and Chemistry 2, with the 2-point weapon choice at tier 1)
+    { id = "recovery", cat = "medic", tier = 2, cost = 1, name = "Recovery",
       desc = "You heal 4 health every 6 seconds, and your own injuries heal at the same pace: bleeding eases a step each time (heavy, then light, then stopped), damage and burns drop by 4, and a broken bone knits once its damage is gone.",
       needs = { "field_drag" } },
 
-    { id = "quick_revive", cat = "medic", spec = "combat_medic", tier = 3, cost = 3, name = "Quick revive",
+    { id = "quick_revive", cat = "medic", spec = "combat_medic", tier = 3, cost = 2, name = "Quick revive",
       desc = "Revives take 20% less time.", needs = { "hands_on", "steady_hands" } },
     { id = "under_fire", cat = "medic", spec = "combat_medic", tier = 4, cost = 4, name = "Under fire",
       desc = "20% less damage while you revive or treat someone.", needs = { "quick_revive" } },
@@ -451,7 +464,7 @@ K.NODES = {
       desc = "While dragging someone, right click to revive them with a revive kit as you walk. It takes as long as a normal revive; letting go of the body stops it.",
       needs = { "medevac" } },
 
-    { id = "chem_bench", cat = "medic", spec = "chemist", tier = 3, cost = 3, name = "Chemistry",
+    { id = "chem_bench", cat = "medic", spec = "chemist", tier = 3, cost = 2, name = "Chemistry",
       desc = "Use a chemistry bench to turn medical supplies into gels, painkillers, splints, blood packs and medkits.",
       needs = { "hands_on", "steady_hands" } },
     { id = "field_surgeon", cat = "medic", spec = "chemist", tier = 4, cost = 4, name = "Field surgeon",
@@ -598,15 +611,24 @@ function K.CanCommandSquad(ply)
     return K.IsCommanderSpec(ply) or K.HasReinforcements(ply)
 end
 
--- K.OpticsOn(ply): helmet optics in use: the sun visor down, or looking
--- through macrobinoculars / a rangefinder (rhylib_gear). false without it.
+-- K.OpticsOn(ply): optics in use: the sun visor down, or looking through
+-- macrobinoculars / a rangefinder / the handheld binoculars (rhylib_gear).
+-- false without it.
 function K.OpticsOn(ply)
     if ply:GetNW2Bool("rhylib_visorDown", false) then return true end
     local Gear = Rhylib.Gear
     return Gear and Gear.Looking and Gear.Looking(ply) or false
 end
 
--- K.SpotsNow(ply): Spotter is spotting right now: always for a Commander
+-- K.MarkMax(ply): most enemies one spot or optics Q marks: binocMarkMax
+-- through the handheld binoculars (rhylib_gear optics kind 3), else markMax.
+function K.MarkMax(ply)
+    local G = Rhylib.Gear
+    if ply:GetNW2Int("rhylib_optics", 0) == 3 and G and G.Looking and G.Looking(ply) then return K.Cfg("binocMarkMax") end
+    return K.Cfg("markMax")
+end
+
+-- K.SpotsNow(ply): Tactical visor (mark_target) is spotting right now: always for a Commander
 -- (no gear needed: not every model has the helmet parts), else while
 -- K.OpticsOn.
 function K.SpotsNow(ply)
@@ -615,18 +637,18 @@ function K.SpotsNow(ply)
 end
 
 -- K.LocksNow(ply): a Q from ply now is a lock (the squad damage bonus):
--- always for a Commander (Tactical visor), else (Tactical marks) while
+-- always for a Commander with Tactical visor (mark_target), else (Tactical marks) while
 -- K.OpticsOn.
 function K.LocksNow(ply)
-    if K.Has(ply, "tactical_visor") then return true end
+    if K.Has(ply, "mark_target") and K.IsCommanderSpec(ply) then return true end
     return K.Has(ply, "tactical_marks") and K.OpticsOn(ply)
 end
 
--- K.CanMark(ply): may ply mark with Q (Tactical visor, Tactical marks or
--- ARC training; ARC marks are never locks, K.LocksNow)?
--- Spotter (mark_target) alone only spots through the sun visor.
+-- K.CanMark(ply): may ply mark with Q (Tactical visor as a Commander,
+-- Tactical marks or ARC training; ARC marks are never locks, K.LocksNow)?
+-- Tactical visor (mark_target) without the Commander spec only spots.
 function K.CanMark(ply)
-    return K.Has(ply, "tactical_visor") or K.Has(ply, "tactical_marks") or K.Has(ply, "arc_training")
+    return (K.Has(ply, "mark_target") and K.IsCommanderSpec(ply)) or K.Has(ply, "tactical_marks") or K.Has(ply, "arc_training")
 end
 
 -- K.IsCommanderSpec(ply): a Commander officer (any skill of the commander
@@ -898,7 +920,7 @@ local PAGE_SECTIONS = {
     { "Command orders", { "^command", "^windRegen$", "^triage", "^focus", "^pressSprint$", "^presenceMult$", "^seasoned", "^standingTime$" } },
     { "Reinforcements & squad wheel", { "^reinf", "^squadSignal" } },
     { "Airborne", { "^rush", "^grenade", "^airborne", "^fallMult$", "^tankMult$", "^springJump$", "^hover", "^afterburner", "^combatDrop", "^blastMult$", "^airMult$", "^slam" } },
-    { "Medic", { "^underFire" } },
+    { "Medic", { "^underFire", "^medGun" } },
     { "Shock Trooper", { "^holdLine", "^bash", "^searchMult$" } },
 }
 

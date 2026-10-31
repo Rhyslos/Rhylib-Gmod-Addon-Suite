@@ -305,8 +305,30 @@ Rhylib.Hook.Add("HUDPaint", "menus.wheel", function()
         draw.SimpleText(W.target:IsPlayer() and W.target:Nick() or (W.target.PrintName or ""), UI.Font(15, 700), cx, cy - 9 * s, UI.Colors.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
 
-    local w, h = 210 * s, 58 * s
-    local ring = RING * (#W.list > 6 and 1.32 or 1)   -- (7+ options: wider, so they don't overlap)
+    local n = #W.list
+    -- (more than 10 options: smaller boxes; the ring grows until
+    -- neighbours clear each other across or down)
+    local bw, bh = n > 8 and 180 or 210, n > 8 and 50 or 58
+    local w, h = bw * s, bh * s
+    local ring = RING * (n > 6 and 1.32 or 1)   -- (7+ options: wider, so they don't overlap)
+    if n > 8 then
+        -- (the smallest ring where every pair of neighbours clears,
+        -- across or down, all the way round)
+        local step = math.pi * 2 / n
+        local need = ring
+        for _ = 1, 40 do
+            local ok = true
+            for i = 0, n - 1 do
+                local a1, a2 = -math.pi / 2 + i * step, -math.pi / 2 + (i + 1) * step
+                local dx = math.abs(math.cos(a2) - math.cos(a1)) * need
+                local dy = math.abs(math.sin(a2) - math.sin(a1)) * need
+                if dx < bw + 8 and dy < bh + 6 then ok = false break end
+            end
+            if ok then break end
+            need = need + 10
+        end
+        ring = math.min(need, 470)
+    end
     local HUD = Rhylib.HUD
     for _, o in ipairs(W.list) do
         local a = math.rad(o.angle)

@@ -166,6 +166,8 @@ Rhylib.Hook.Add("CreateMove", "thirdperson.aim", function(cmd)
             if TP.freeLook and TP.freeAim then
                 cmd:SetViewAngles(TP.freeAim)
                 if TP.FreelookCarry then TP.FreelookCarry(TP.camAng) end
+            elseif TP.freeReturn then
+                cmd:SetViewAngles(TP.freeReturn.aim)   -- (mid ease-back: back on the aim)
             else
                 cmd:SetViewAngles(Angle(TP.camAng.p, TP.camAng.y, 0))
             end
@@ -179,6 +181,11 @@ Rhylib.Hook.Add("CreateMove", "thirdperson.aim", function(cmd)
     -- movement stay where the body faces.
     if TP.freeLook and TP.freeAim then
         cmd:SetViewAngles(TP.freeAim)
+        return
+    end
+    -- (freelook just ended: the aim waits while the camera eases back)
+    if TP.freeReturn then
+        cmd:SetViewAngles(TP.freeReturn.aim)
         return
     end
 

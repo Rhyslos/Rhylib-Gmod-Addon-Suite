@@ -1,7 +1,9 @@
 --[[
     Mines (client): finding them (E on one you can see), the mine window
     (dig, safety pin on the needle, lift), the standing-on-a-mine warning,
-    and the mine scanner (beam, outlines, beeps, marking).
+    and the mine scanner (beam, outlines, beeps, marking). Mines flagged
+    with the scanner show as red triangles on everyone's compass radar
+    (rhylib_radio R.radarExtras["eod.mines"]).
 ]]
 
 -- Colours used while drawing (made once, not every frame).
@@ -448,3 +450,40 @@ Rhylib.Hook.Add("InitPostEntity", "eod.minecloser", function()
         Rhylib.UI.RegisterCloser("eodmine", function() if E.mineWin and IsValid(E.mineWin.frame) then closeWin(true) return true end end)
     end
 end)
+
+-- Marked mines on the radar: every mine flagged with the scanner (and
+-- not yet made safe) shows as a red triangle pointing up on everyone's
+-- compass radar (rhylib_radio R.radarExtras), as long as the mine is near
+-- enough for your game to know it. Not while your comms are jammed.
+local TRI_OUT = Color(0, 0, 0, 200)
+local function triangle(x, y, m, col)
+    surface.SetDrawColor(col)
+    surface.DrawPoly({ { x = x, y = y - m }, { x = x + m, y = y + m * 0.8 }, { x = x - m, y = y + m * 0.8 } })
+end
+local function radarMines(cx, cy, r, mp, fx, fy, k)
+    local me = LocalPlayer()
+    local R = Rhylib.Radio
+    if R and R.Jammed and R.Jammed(me) then return end
+    local m = math.max(3, math.floor(r * 0.05))
+    draw.NoTexture()
+    for _, mine in ipairs(mines()) do
+        if IsValid(mine) and mine:GetMarked() and not mine:GetSafe() then
+            local p = mine:GetPos()
+            local dx, dy = p.x - mp.x, p.y - mp.y
+            local fwd = dx * fx + dy * fy
+            local right = dx * fy - dy * fx
+            local sx, sy = right * k, -fwd * k
+            if sx * sx + sy * sy < (r - m) * (r - m) then
+                local x, y = cx + sx, cy + sy
+                triangle(x, y, m + 1.5, TRI_OUT)
+                triangle(x, y, m, RED)
+            end
+        end
+    end
+end
+local function hookRadar()
+    local R = Rhylib.Radio
+    if R and R.radarExtras then R.radarExtras["eod.mines"] = radarMines end
+end
+hookRadar()
+Rhylib.Hook.Add("InitPostEntity", "eod.mineradar", hookRadar)

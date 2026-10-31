@@ -9,11 +9,16 @@
     end), so it never bends and lands exactly where the shot lands.
 
     Realm: client. Public: Bolts.Spawn, Bolts.FireLocal, Bolts.NearMiss,
-    Bolts.COLOR_* numbers. Client convar rhylib_whizz (near-miss sounds).
+    Bolts.COLOR_* numbers. Client convars rhylib_whizz (near-miss sounds),
+    rhylib_bolt_lights (bolts light their surroundings, default on;
+    Settings > Weapons "Bolt lighting"), rhylib_bolt_lights_max (how many
+    of the nearest bolts are lit at once, default 6). A bolt flying through
+    a smoke cloud (rhylib_republic, Rhylib.Weapons.smokes) lights the smoke
+    around it with a big soft glow in its light colour.
     Receives net "wep.shot" (format in sv_10_bolts.lua).
     BoltColor styles (SWEP.BoltColor or opts.color): 1 blue, 2 red,
     3 green, 4 rocket, 5 grapple hook, 6 stun ring, 7 training yellow,
-    8 training droids, 9 training rocket, 10 overcharged.
+    8 training droids, 9 training rocket, 10 overcharged, 11 droids (thick red).
 ]]
 
 local W = Rhylib.Weapons
@@ -25,7 +30,7 @@ Bolts.visual = Bolts.visual or {}
 -- glow size and how long the visual can live.
 local STYLES = {
     -- (core: a thin white-hot centre line, so it reads as a bolt, not a glowing bullet)
-    [1] = { color = Color(90, 150, 255), length = 90, width = 6.5, glow = 17, life = 1.2, core = true },   -- Republic blue
+    [1] = { color = Color(90, 150, 255), length = 90, width = 7.5, glow = 19, life = 1.2, core = true },   -- Republic blue
     [2] = { color = Color(255, 70, 60), length = 90, width = 6.5, glow = 17, life = 1.2, core = true },    -- CIS red
     [3] = { color = Color(80, 255, 120), length = 90, width = 6.5, glow = 17, life = 1.2, core = true },   -- green
     [4] = { color = Color(255, 170, 80), length = 140, width = 9, glow = 40, life = 6, rocket = true },  -- rocket
@@ -35,6 +40,7 @@ local STYLES = {
     [8] = { color = Color(255, 160, 40), length = 70, width = 5, glow = 14, life = 1.2 },   -- training droids (orange-yellow)
     [9] = { color = Color(255, 225, 60), length = 140, width = 9, glow = 40, life = 6, rocket = true },  -- training rocket
     [10] = { color = Color(150, 205, 255), length = 115, width = 9, glow = 26, life = 1.2, core = true },  -- overcharged (DC-15A)
+    [11] = { color = Color(255, 30, 25), length = 100, width = 10, glow = 26, life = 1.2, core = true },   -- droids (rhylib_droids): thicker red, easy to see
 }
 -- BoltColor numbers for other addons.
 Bolts.COLOR_TRAINING, Bolts.COLOR_TRAINING_ENEMY, Bolts.COLOR_TRAINING_ROCKET = 7, 8, 9
@@ -229,9 +235,91 @@ local function impactSound(pos)
     sound.Play(string.format("effects/sw_impact/sw752_hit_%02d.ogg", math.random(1, 24)), pos, 72, math.random(95, 105), 0.8)
 end
 
+-- Bolt light (client convars rhylib_bolt_lights, rhylib_bolt_lights_max):
+-- the nearest bolts in flight light up the walls and people around them
+-- in their colour, and a hit flashes briefly. Engine dynamic lights,
+-- reused by slot every frame (nothing piles up); light never reaches
+-- through walls.
+local lightsVar = CreateClientConVar("rhylib_bolt_lights", "1", true, false, "Blaster bolts light up their surroundings (dynamic lights; off for more FPS)")
+local lightsMaxVar = CreateClientConVar("rhylib_bolt_lights_max", "6", true, false, "Most bolts lit at once (nearest first, 1-16)")
+local LIGHT_BASE = 61000   -- (dynamic light indices: flying bolts, then hit flashes)
+local LIGHT_RANGE2 = 3000 * 3000
+local flashSlot = 0
+
+-- The light's colour: the bolt's colour made deeper (the palest channel
+-- pulled down, the brightest up to full), so a bright light still reads
+-- as blue / red on walls instead of washing out to white. Cached per style.
+local function lightColor(style)
+    local lc = style.lightColor
+    if lc then return lc end
+    local c = style.color
+    local lo = math.min(c.r, c.g, c.b) * 0.75
+    local r, g, b = c.r - lo, c.g - lo, c.b - lo
+    local hi = math.max(r, g, b, 1)
+    lc = Color(r / hi * 255, g / hi * 255, b / hi * 255)
+    style.lightColor = lc
+    return lc
+end
+
+local function hitFlash(b)
+    if not lightsVar:GetBool() or b.style.hook then return end
+    if EyePos():DistToSqr(b.hitPos) > LIGHT_RANGE2 then return end
+    flashSlot = flashSlot % 8 + 1
+    local dl = DynamicLight(LIGHT_BASE + 32 + flashSlot)
+    if not dl then return end
+    local c = lightColor(b.style)
+    dl.pos = b.hitPos + b.hitNormal * 6
+    dl.r, dl.g, dl.b = c.r, c.g, c.b
+    dl.brightness = 4
+    dl.size = 240
+    dl.decay = 1600
+    dl.dietime = CurTime() + 0.15
+end
+
+local near, nearD = {}, {}
+local function boltLights(list)
+    local max = math.Clamp(lightsMaxVar:GetInt(), 1, 16)
+    local eye = EyePos()
+    local n = 0
+    for i = 1, #list do
+        local b = list[i]
+        if b.style and not b.style.hook and b.pos then
+            local d = b.pos:DistToSqr(eye)
+            if d < LIGHT_RANGE2 then
+                -- (keep the max nearest: insertion into a short sorted list)
+                if n < max or d < nearD[n] then
+                    local j = math.min(n + 1, max)
+                    while j > 1 and nearD[j - 1] > d do
+                        near[j], nearD[j] = near[j - 1], nearD[j - 1]
+                        j = j - 1
+                    end
+                    near[j], nearD[j] = b, d
+                    if n < max then n = n + 1 end
+                end
+            end
+        end
+    end
+    local now = CurTime()
+    for i = 1, n do
+        local b = near[i]
+        local dl = DynamicLight(LIGHT_BASE + i)
+        if dl then
+            local c = lightColor(b.style)
+            dl.pos = b.pos
+            dl.r, dl.g, dl.b = c.r, c.g, c.b
+            dl.brightness = b.style.rocket and 4 or 3
+            dl.size = b.style.rocket and 300 or 210
+            dl.decay = 0
+            dl.dietime = now + 0.06
+        end
+        near[i] = nil
+    end
+end
+
 local function impact(b)
     local style = b.style
     if style.rocket or style.hook then return end  -- the server handles these
+    hitFlash(b)
     local ed = EffectData()
     if style.ring then
         -- Stun: a blue spark, no scorch mark.
@@ -291,9 +379,36 @@ Rhylib.Hook.Add("Think", "weapons.bolts", function()
             i = i + 1
         end
     end
+    if lightsVar:GetBool() and #list > 0 then boltLights(list) end
+end)
+
+Rhylib.Hook.Add("InitPostEntity", "weapons.boltlights.setting", function()
+    local Menus = Rhylib.Menus
+    if not (Menus and Menus.AddSetting) then return end
+    Menus.AddSetting("Weapons", { id = "wep.boltlights", order = 30, title = "Bolt lighting",
+        desc = "Blaster bolts light up walls and people as they fly (turn off for more FPS)", kind = "toggle", convar = "rhylib_bolt_lights" })
 end)
 
 local head, tail = Vector(), Vector()
+
+-- How far inside a smoke cloud (rhylib_republic, W.smokes) a point is:
+-- 0 outside, up to 1 deep in a thick one.
+local SMOKE_GLOW = Color(255, 255, 255, 0)
+local SMOKE_UP = Vector(0, 0, 45)
+local function smokeAt(smokes, pos)
+    local best = 0
+    for c in pairs(smokes) do
+        if IsValid(c) and c.Strength then
+            local s = c:Strength()
+            if s > 0 then
+                local r = c:CurRadius()
+                local d = pos:Distance(c:GetPos() + SMOKE_UP)
+                if d < r then best = math.max(best, s * math.Clamp((r - d) / (r * 0.4), 0, 1)) end
+            end
+        end
+    end
+    return best
+end
 
 Rhylib.Hook.Add("PostDrawTranslucentRenderables", "weapons.bolts", function(depth, skybox)
     if depth or skybox then return end
@@ -324,11 +439,21 @@ Rhylib.Hook.Add("PostDrawTranslucentRenderables", "weapons.bolts", function(dept
         end
     end
     render.SetMaterial(matGlow)
+    -- (smoke clouds about: a bolt inside one lights it up around itself)
+    local smokes = W.smokes and next(W.smokes) ~= nil and W.smokes or nil
     for i = 1, #list do
         local b = list[i]
         local st = b.style
         if st and not st.hook and st.glow > 0 then
             render.DrawSprite(b.pos, st.glow, st.glow, st.color)
+            if smokes then
+                local inside = smokeAt(smokes, b.pos)
+                if inside > 0 then
+                    local c = lightColor(st)
+                    SMOKE_GLOW.r, SMOKE_GLOW.g, SMOKE_GLOW.b, SMOKE_GLOW.a = c.r, c.g, c.b, 90 * inside
+                    render.DrawSprite(b.pos, 260, 260, SMOKE_GLOW)
+                end
+            end
         end
     end
     -- Stun rings: a circle facing the camera, pulsing a little.

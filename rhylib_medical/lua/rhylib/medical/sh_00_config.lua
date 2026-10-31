@@ -111,6 +111,8 @@ Config.Register("medical", "burnGel", 60, "Burns that burn gel removes")
 Config.Register("medical", "pillTime", 1.5, "Seconds to give painkillers")
 Config.Register("medical", "painkillerTime", 60, "Painkillers: seconds that hurt limbs and burns don't slow you")
 Config.Register("medical", "bloodPackTime", 4, "Seconds to hook up a blood pack")
+Config.Register("medical", "bactaHeal", 2, "Bacta grenade mist: health per second while standing in it")
+Config.Register("medical", "bactaBleedStep", 5, "Bacta grenade mist: seconds in it for bleeding to drop one step (heavy -> light -> none) on each bleeding part")
 Config.Register("medical", "bloodPackAdd", 60, "Blood pack: seconds added to a downed player's bleed-out")
 Config.Register("medical", "tankModel", "models/props/cydi/bactatank1.mdl", "Bacta tank model (a missing model falls back to a fridge)")
 Config.Register("medical", "tankOffset", Vector(0, 0, 2), "Bacta tank: where the occupant stands, from the bottom centre of the model")
@@ -446,7 +448,7 @@ local SECTIONS = {
     { "Simplified system", { "^simpl" } },
     { "Downed & bleeding out", { "^bleedTime$", "^downHealth$", "^downGrace$", "^giveUpTime$", "^downSequences$", "^callMedic" } },
     { "Revives", { "^reviveKit", "^firstAidRevive", "^handRevive", "^bloodPack" } },
-    { "Kits & field items", { "^firstAid", "^medkit", "^splint", "^burnGel", "^pillTime$", "^painkiller" } },
+    { "Kits & field items", { "^firstAid", "^medkit", "^bacta", "^splint", "^burnGel", "^pillTime$", "^painkiller" } },
     { "Dragging", { "^drag" } },
     { "Medic skills", { "^steadyMult$", "^quickReviveMult$", "^deepPockets$", "^efficientCare$", "^triageFlash$", "^regen" } },
     { "Injuries", { "^injuries$", "Bleed", "^fracture", "^fallFracture", "^recover$", "^burnRecover$", "^legNoSprint", "^armNoAim", "^armSpread$", "^burnSpread$", "^torso" } },

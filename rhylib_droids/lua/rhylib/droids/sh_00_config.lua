@@ -110,6 +110,9 @@ Config.Register("droids", "heavySpread", 2.0, "B1 heavy: inaccuracy cone (degree
 
 Config.Register("droids", "cmdHealth", 480, "B1 commander: health")
 Config.Register("droids", "cmdRadius", 800, "B1 commander: droids this close get the boost")
+Config.Register("droids", "smokeSuppressors", 3, "Smoke: droids per commander that fire into smoke where they last saw their target (0 = none)")
+Config.Register("droids", "smokeSuppressTime", 6, "Smoke: seconds a droid keeps firing into the smoke")
+Config.Register("droids", "boltSpeed", 5200, "Droid blaster bolt speed (units/s); clones and players aren't affected")
 Config.Register("droids", "cmdSpread", 0.7, "B1 commander boost: aim cone multiplier")
 Config.Register("droids", "cmdReaction", 0.6, "B1 commander boost: reaction time multiplier")
 Config.Register("droids", "blackoutReaction", 2, "EOD Signal blackout: droids' reaction time multiplier inside the bubble")
@@ -130,6 +133,19 @@ Config.Register("droids", "coverWindow", 2.5, "B1: seconds the hits are counted 
 Config.Register("droids", "coverTime", 4, "B1: seconds it stays in cover (blind firing) before fighting again")
 Config.Register("droids", "coverCooldown", 8, "B1: seconds after leaving cover before it takes cover again")
 Config.Register("droids", "coverRadius", 700, "B1: how far it looks for a cover spot")
+Config.Register("droids", "coverWallTries", 6, "Cover: nearby spots tried beside walls and props (one trace each) besides the navmesh's hiding spots")
+Config.Register("droids", "coverPeek", true, "Cover: from low cover it fires aimed bursts over it; from full cover clones step out to the side for an aimed burst now and then (droids only blind fire unless droidPeekOut)")
+Config.Register("droids", "droidPeekOut", false, "Cover: droids also step out of full cover for aimed bursts (off: they only blind fire from it, clones step out)")
+Config.Register("droids", "ctCoverHits", 1, "Clones: hits within coverWindow that send a clone to cover (droids use coverHits)")
+Config.Register("droids", "ctBound", 3, "Clones: bounding overwatch at aggression 4 in a squad: half the squad moves while the other half crouches and fires, swapping every this many seconds (0 = off)")
+Config.Register("droids", "coverFlankCheck", 1, "Cover: seconds between checks whether the enemy can see it in its spot (flanked: it finds another spot)")
+Config.Register("droids", "squadSize", 8, "Squads: most NPCs in one squad when the toolgun places several or a preset squad (bigger groups become several squads)")
+Config.Register("droids", "squadMax", 16, "Squads: most NPCs a GM can group into one squad in the toolgun's Command mode")
+Config.Register("droids", "squadFormation", "box", "Squads: formation of new squads (box, wedge, line, column, spread); a preset squad placed in box keeps the block it was placed in")
+Config.Register("droids", "squadSpacing", 80, "Squads: units between neighbours in a formation")
+Config.Register("droids", "squadGap", 50, "Squads: members keep at least this far from each other (units)")
+Config.Register("droids", "squadCatchUp", 1.35, "Squads: speed multiplier for a member behind its slot")
+Config.Register("droids", "squadWait", 260, "Squads: the leader slows down while a member is this far behind its slot (units)")
 Config.Register("droids", "blindSpread", 4, "B1: aim cone multiplier when blind firing from cover")
 Config.Register("droids", "retreatFrac", 0.35, "Health share below which a B1 pulls back once (0 = never)")
 -- Peeking (5 B1s and a commander killed you before
@@ -155,6 +171,7 @@ Config.Register("droids", "lastStandPause", 0.6, "Last stand (retreating with no
 Config.Register("droids", "walkMult", 0.5, "Walking (marching) speed as a share of a droid's run speed")
 Config.Register("droids", "guardRadius", 700, "Guard mode: how far a droid fights away from its post")
 Config.Register("droids", "patrolRadius", 900, "Patrol mode: how far a droid walks around its patrol centre")
+Config.Register("droids", "postRadius", 160, "Spread out / Defend 360 (Command mode): how far an NPC fights away from the spot it was given")
 Config.Register("droids", "markerRadius", 2000, "Droids within this range of a new marker follow it (droids placed after it follow it too)")
 Config.Register("droids", "brushRadius", 400, "Toolgun order brush: droids within this range of where you aim get the order")
 Config.Register("droids", "marchGroup", 2, "Marching (aggression 4) needs this many other droids close by; fewer, or a tight space, means a charge")
@@ -357,7 +374,9 @@ function D.Aggro()
     return math.Clamp(math.Round(tonumber(v) or 3), 1, 5)
 end
 
--- A droid's blaster as rhylib_weapons sees it (BoltColor 2 = red, 8 = training).
+-- A droid's blaster as rhylib_weapons sees it (BoltColor 11 = the droids'
+-- thick red, 8 = training, 1 = clones' blue). Droid bolts fly at droids
+-- boltSpeed; clones' at 6500.
 -- D.Gun(kindName) -> the cached "weapon" table passed to Bolts.Fire
 -- { BoltSpeed, BoltColor, Training, Damage }. Damage is re-read from
 -- config on every call.
@@ -366,10 +385,13 @@ function D.Gun(kind)
     local k = D.KINDS[kind] or D.KINDS.b1
     local g = D.guns[kind]
     if not g then
-        g = { BoltSpeed = 6500, BoltColor = k.color, Training = k.training }
+        -- (droids' red bolts: their own thicker look, BoltColor 11)
+        g = { BoltSpeed = 6500, BoltColor = k.color == 2 and 11 or k.color, Training = k.training }
         D.guns[kind] = g
     end
     g.Damage = D.Cfg(k.damage)
+    -- Droids (not clones): their own, slower bolt speed (droids boltSpeed).
+    if k.color ~= 1 then g.BoltSpeed = D.Cfg("boltSpeed") end
     return g
 end
 function D.E5() return D.Gun("b1") end   -- (older callers)
@@ -401,13 +423,14 @@ end)
 --------------------------------------------------------------------------
 
 local PAGE_SECTIONS = {
-    { "General", { "^maxActive$", "^aggression$", "^pathPerTick$", "^walkMult$", "^runSpread$", "^walkSpread$", "^moveSpread$", "^marchGroup$" } },
+    { "General", { "^boltSpeed$", "^maxActive$", "^aggression$", "^pathPerTick$", "^walkMult$", "^runSpread$", "^walkSpread$", "^moveSpread$", "^marchGroup$" } },
+    { "Squads", { "^squad" } },
     { "Orders & areas", { "^guardRadius$", "^patrolRadius$", "^markerRadius$", "^brushRadius$", "^roamRadius$" } },
     { "B1 grenades", { "^b1Nade" } },
     { "B1 battle droids", { "^b1", "^e5" } },
     { "B2 rockets & mortars", { "^b2Rocket", "^b2Direct", "^b2Slow", "^b2Dive", "^arty" } },
     { "B2 super battle droids", { "^b2" } },
-    { "Heavy & commander droids", { "^heavy", "^cmdHealth$", "^cmdRadius$", "^cmdSpread$", "^cmdReaction$", "^cmdPause$", "^cmdDeath" } },
+    { "Heavy & commander droids", { "^heavy", "^cmdHealth$", "^cmdRadius$", "^cmdSpread$", "^cmdReaction$", "^cmdPause$", "^cmdDeath", "^smoke" } },
     { "Cover & accuracy", { "^cover", "^blindSpread$", "^retreatFrac$", "^flash", "^settle", "^crowd" } },
     { "Retreat", { "^retreat", "^lastStand" } },
     { "Clone medics", { "^ctMedic", "^ctDown", "^reviveShield" } },

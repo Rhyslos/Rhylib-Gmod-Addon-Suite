@@ -20,10 +20,14 @@
     a line while you're on a call.
 
     Public: R.CompassChatWidth, R.VisorGeo, R.MatePos, R.RADAR_M,
-    R.JamShown, R.DrawRadar.
+    R.JamShown, R.DrawRadar, R.radarExtras (other addons add radar blips:
+    R.radarExtras[id] = fn(cx, cy, r, myPos, fx, fy, k); a point's screen
+    offset is right * k, -forward * k with forward = dx * fx + dy * fy,
+    right = dx * fy - dy * fx).
 ]]
 
 local R = Rhylib.Radio
+R.radarExtras = R.radarExtras or {}   -- [id] = fn(cx, cy, r, myPos, fx, fy, k): extra radar blips
 local UI = Rhylib.UI
 
 local geo = { key = "" }
@@ -598,10 +602,14 @@ local function drawCore(cx, cy, r, names)
     local a = math.max(4, math.floor(r * 0.09))
     setCol(R.COL.ch1, 240)
     surface.DrawPoly({ { x = cx, y = cy - a }, { x = cx + a * 0.75, y = cy + a }, { x = cx, y = cy + a * 0.45 }, { x = cx - a * 0.75, y = cy + a } })
-    local sq = R.SquadOf(me)
-    if sq == 0 then return end
     local mp = me:GetPos()
     local k = r / (R.RADAR_M * UNITS_PER_M)
+    -- Other addons' blips (R.radarExtras[id] = fn(cx, cy, r, myPos, fx, fy,
+    -- unitsToPx); rhylib_eod's marked mines).
+    for _, fn in pairs(R.radarExtras) do fn(cx, cy, r, mp, fx, fy, k) end
+    draw.NoTexture()
+    local sq = R.SquadOf(me)
+    if sq == 0 then return end
     local font = UI.Font(11, 600)
     for _, p in ipairs(player.GetAll()) do
         if p ~= me and p:Alive() and R.SquadOf(p) == sq then

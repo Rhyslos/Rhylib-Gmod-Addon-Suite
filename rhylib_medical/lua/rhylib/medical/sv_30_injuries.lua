@@ -354,6 +354,48 @@ end)
 -- fracture knits once its part has no damage left. Not while down.
 --------------------------------------------------------------------------
 
+-- Med.Bacta(ply, dt): called by a bacta grenade's mist (rhylib_republic
+-- rhylib_smoke_cloud) for each player standing in it, dt seconds at a time.
+-- Downed: the bleed-out is held (time added back, as if stabilised).
+-- Otherwise bactaHeal health per second, and every bactaBleedStep seconds
+-- in it each bleeding part steps down one level. Server.
+function Med.Bacta(ply, dt)
+    if not (IsValid(ply) and ply:Alive()) then return end
+    local now = CurTime()
+    if now - (ply.rhylibBactaAt or 0) > 1 then ply.rhylibBactaBleed = 0 end   -- (a fresh visit starts the bleed step over)
+    ply.rhylibBactaAt = now
+    if ply.rhylibDown or Med.IsDown(ply) then
+        if not Med.StabilisedBy(ply) then
+            ply:SetNW2Float(Rhylib.NW.DOWN_END, ply:GetNW2Float(Rhylib.NW.DOWN_END, 0) + dt)
+        end
+        return
+    end
+    local max = ply:GetMaxHealth()
+    if ply:Health() < max then
+        ply.rhylibBactaHp = (ply.rhylibBactaHp or 0) + cfg("bactaHeal") * dt
+        local add = math.floor(ply.rhylibBactaHp)
+        if add >= 1 then
+            ply.rhylibBactaHp = ply.rhylibBactaHp - add
+            ply:SetHealth(math.min(max, ply:Health() + add))
+        end
+    end
+    local t = inj[ply]
+    if not t then return end
+    ply.rhylibBactaBleed = (ply.rhylibBactaBleed or 0) + dt
+    if ply.rhylibBactaBleed < cfg("bactaBleedStep") then return end
+    ply.rhylibBactaBleed = 0
+    local changed = false
+    for _, l in ipairs(Med.LIMBS) do
+        local p = t[l]
+        if p.bleed > 0 then
+            p.bleed = p.bleed - 1
+            if p.bleed == 1 then p.bleedEnd = CurTime() + cfg("lightBleedStops") end
+            changed = true
+        end
+    end
+    if changed then Med.MarkInjuries(ply) end
+end
+
 local function recover(ply)
     local max = ply:GetMaxHealth()
     local hp = cfg("regenHealth")

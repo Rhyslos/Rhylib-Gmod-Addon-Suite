@@ -58,7 +58,11 @@ return function(ENT, env)
         self.redirect = nil   -- (only a redirect during this walk counts)
         if not path:Compute(self, pos) then return false end
         local stop = CurTime() + maxTime
+        local lead = self.squad and self.squad.leader == self
+        local base = self.loco:GetDesiredSpeed()   -- (whatever the caller set: cover runs faster)
         while path:IsValid() and CurTime() < stop do
+            -- (a squad leader waits for members lagging behind)
+            if lead then self.loco:SetDesiredSpeed(self:LeaderPace(base)) end
             path:Update(self)
             self:OpenDoors()
             if self.loco:IsStuck() then

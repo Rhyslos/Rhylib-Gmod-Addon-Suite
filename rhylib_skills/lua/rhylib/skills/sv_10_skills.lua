@@ -460,6 +460,8 @@ function K.DamageMult(ply, bolt, ent, tr, group)
     end
     local living = IsValid(ent) and (ent:IsNPC() or ent:IsNextBot() or ent:IsPlayer())
     local class = IsValid(wep) and K.GunClass(wep)
+    -- Medic's carbine / scattergun.
+    if (set.med_carbine and class == K.DC15S) or (set.med_shotgun and class == K.DP23) then m = m * K.Cfg("medGunDamage") end
     -- Precision rhythm: aimed DC-15S hits in a row on one target.
     if set.precision_rhythm and living and class == K.DC15S and wep.GetAiming and wep:GetAiming() then
         m = m * streak(ply, "rhylibRhythm", ent, "rhythmWindow", "rhythmMax", "rhythmStep")

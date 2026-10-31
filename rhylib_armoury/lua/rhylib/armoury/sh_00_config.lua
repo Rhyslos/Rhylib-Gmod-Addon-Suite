@@ -31,7 +31,7 @@
     Gear from the armoury and ammo cabinet is "issued": dropping it hands
     it back instead of leaving it on the ground.
 
-    Gear cabinet      backpacks, jetpacks (config gearStock) and, with
+    Gear cabinet      backpacks, jetpacks, binoculars (config gearStock) and, with
                         rhylib_gear, the body parts your model can show and
                         your rank allows. (rhylib_gear_cabinet)
       Training armoury  training copies of the guns, and training ammo
@@ -102,7 +102,7 @@ A.CRATES = { "rhylib_crate_small", "rhylib_crate_medium", "rhylib_crate_large", 
 -- A.AMMO_STOCK before a cabinet is first opened (rhylib_eod adds its kits).
 -- Example: table.insert(Rhylib.Armoury.AMMO_STOCK, "my_item")
 A.TRAINING_AMMO_STOCK = { "mag_small_t", "mag_medium_t", "mag_large_t", "cell", "rocket_t", "rhylib_thermal_training", "rhylib_droidpopper_training" }
-A.AMMO_STOCK = { "mag_small", "mag_medium", "mag_large", "cell", "rocket", "grapple", "rhylib_grapple_personal", "rhylib_thermal", "rhylib_droidpopper", "rhylib_ammo_pack", "rhylib_he_charge" }
+A.AMMO_STOCK = { "mag_small", "mag_medium", "mag_large", "cell", "rocket", "grapple", "rhylib_grapple_personal", "rhylib_thermal", "rhylib_smokegrenade", "rhylib_droidpopper", "rhylib_ammo_pack", "rhylib_he_charge" }
 
 -- Settings (module "armoury"). Lists are read when a storage is first
 -- opened after a map start, so changes show after a map change.
@@ -110,7 +110,7 @@ local Config = Rhylib.Config
 Config.Describe("armoury", { name = "Armoury", category = "Server & interface", sections = { "Stock", "Storage sizes", "Training deposit" } })
 Config.Register("armoury", "weapons", {}, "Weapon classes in the armoury, in order. Empty = every Rhylib weapon", { section = "Stock" })
 Config.Register("armoury", "trainingWeapons", {}, "Weapon classes in the training armoury, in order. Empty = every training weapon", { section = "Stock" })
-Config.Register("armoury", "gearStock", { "backpack", "jetpack" }, "Gear cabinet: equipment it hands out (endless, issued)", { section = "Stock" })
+Config.Register("armoury", "gearStock", { "backpack", "jetpack", "rhylib_binoculars" }, "Gear cabinet: equipment it hands out (endless, issued)", { section = "Stock" })
 Config.Register("armoury", "lockerW", 6, "Personal locker width in cells", { section = "Storage sizes" })
 Config.Register("armoury", "depositTime", 7200, "Training deposit: seconds of online time before what's left in it is deleted", { section = "Training deposit" })
 Config.Register("armoury", "lockerH", 6, "Personal locker height in cells", { section = "Storage sizes" })
@@ -131,7 +131,7 @@ Config.Register("armoury", "medCrate", {
 Config.Register("armoury", "roles", {
     trooper = { weapons = {}, gear = { "sw_datapad" } },
     mp = { weapons = { "rhylib_riotshield" }, gear = { "rhylib_stunbaton", "rhylib_handcuffs", "rhylib_flashcharge" } },   -- (stun is a fire mode for MPs)
-    medic = { weapons = {}, gear = { "rhylib_medkit", "rhylib_firstaid", "rhylib_revivekit", "rhylib_antiviral", "rhylib_antidote", "rhylib_antibiotics",
+    medic = { weapons = {}, gear = { "rhylib_medkit", "rhylib_firstaid", "rhylib_revivekit", "rhylib_bactagrenade", "rhylib_antiviral", "rhylib_antidote", "rhylib_antibiotics",
         "rhylib_med_supplies", "rhylib_blood_kit", "rhylib_test_strip" } },
 }, "Specialist armoury stock per role: { weapons = {...}, gear = {...} }", { section = "Stock" })
 

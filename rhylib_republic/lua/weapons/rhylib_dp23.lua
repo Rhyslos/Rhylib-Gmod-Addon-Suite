@@ -67,12 +67,12 @@ SWEP.Secondary = {
     Ammo = "rhylib_cell",   -- shows spare cells on the HUD
 }
 
-SWEP.FireRate = 580
+SWEP.FireRate = 500
 -- Recoil: view kick per shot (rhylib_weapons cl_50_recoil): up = degrees up,
 -- side = random sideways, bias = lean -1 (left) .. 1 (right), recover = share
 -- of the climb that settles back, aimMult = multiplier while aiming.
 SWEP.Recoil = { up = 0.85, side = 0.3, bias = 0, recover = 0.6, aimMult = 0.65 }
-SWEP.Damage = 20
+SWEP.Damage = 22
 SWEP.BoltSpeed = 7000
 SWEP.BoltColor = 1
 SWEP.FireSound = "weapons/dp23/dp23_fire.ogg"

@@ -5,10 +5,16 @@
     Messages (all client -> server; the server traces the player's own aim)
       tool.place   String entry id, UInt 3 count (1-5), String name (named
                    entries, else ""), UInt 3 droid mode (1 guard, 2 patrol,
-                   3 attack, 4 roam); rate 20/s
+                   3 attack, 4 roam, 5 assault: to the side's assault point,
+                   rhylib_droids D.assault), UInt 3 aggression for new squads (0 =
+                   the global level, 1-5), Float turn (degrees added to
+                   the facing, from the placement preview); rate 20/s. Several NPCs at
+                   once become squads (rhylib_droids): count placements
+                   D.MakeSquads, a preset one D.MakeSquad that keeps its
+                   placed block (box); not in roam mode.
       tool.spawn   UInt 3 kind (1 prop, 2 entity, 3 npc, 4 vehicle, 5 weapon),
                    String name, UInt 6 skin, String bodygroups, String NPC
-                   weapon: a spawn-window thing at the aimed spot, through
+                   weapon, Float turn (degrees, the preview's, cl_40_ghost): a spawn-window thing at the aimed spot, through
                    sandbox's own spawn code (so the gamemode's spawn rules
                    and limits apply); full access only; rate 20/s
       tool.remove  empty; rate 20/s
@@ -16,11 +22,18 @@
       tool.follow  empty: clone follow tool RMB; rate 10/s
       tool.save    empty: save every permanent thing again now; rate 1/s
       tool.give    empty: give me a toolgun (console rhylib_toolgun); rate 1/s
+      tool.mode    UInt 2: 0 placing, 1 physgun mode (full access only);
+                   rate 6/s (sv_20_grab.lua)
+      tool.grabdist Int 4: mouse wheel steps while holding something in
+                   physgun mode; rate 40/s (sv_20_grab.lua)
     Every message needs the toolgun in hand (except tool.give) and the
     permission (rhylib.toolgun, or the entry's own perm).
 
     Saved: Data "toolgun"/"keep_<SteamID64>" = true for !keeptoolgun.
     Chat: !toolgun or /toolgun, !keeptoolgun or /keeptoolgun.
+
+    Physgun mode is built into the toolgun (sv_20_grab.lua): the toolgun
+    keeps its own model and the beam comes out of it.
 
     Placing no longer saves anything: staff make a thing
     permanent with the Permanent tool (rhylib_core sh_62_perma.lua).
@@ -134,7 +147,11 @@ local function place(ply, e, count, name, mode)
     -- Preset squad (rhylib_droids D.SpawnPreset): a grid facing you, front row where you aim.
     if e.preset then
         if not (D and D.SpawnPreset) then return end
-        local list, want = D.SpawnPreset(e.preset, tr.HitPos, (ply:GetPos() - tr.HitPos):Angle().y, mode)
+        local pyaw = (ply:GetPos() - tr.HitPos):Angle().y + (ply.rhylibToolRot or 0)
+        local list, want = D.SpawnPreset(e.preset, tr.HitPos, pyaw, mode)
+        -- (squads of squadSize, facing the way they were placed)
+        -- (one squad that keeps the block it was placed in: box formation)
+        if D.MakeSquad and #list > 1 and mode ~= "roam" then D.MakeSquad(list, { face = pyaw, aggro = Tool.PlaceAggro(ply), formation = "box", keep = true }) end
         if #list > 0 then
             undo.Create(e.name)
             for _, ent in ipairs(list) do
@@ -157,7 +174,7 @@ local function place(ply, e, count, name, mode)
         ply:EmitSound("buttons/button14.wav", 60, 120)
         return
     end
-    local yaw = (ply:GetPos() - tr.HitPos):Angle().y   -- facing you
+    local yaw = (ply:GetPos() - tr.HitPos):Angle().y + (ply.rhylibToolRot or 0)   -- facing you, turned as the preview
     -- Entries with their own placing (rhylib_eod minefields): e.place(ply, tr, count, yaw) -> list of entities.
     if e.place then
         local list = e.place(ply, tr, count, yaw) or {}
@@ -175,6 +192,7 @@ local function place(ply, e, count, name, mode)
         return
     end
     local made = 0
+    local placedNpcs = {}
     -- Droids and clones: stop at the cap instead of creating ones Initialize removes.
     local droid = D and D.Count and (e.class == "rhylib_b1" or scripted_ents.IsBasedOn(e.class, "rhylib_b1"))
     local clone = droid and D.CloneCount and (e.class == "rhylib_clone" or scripted_ents.IsBasedOn(e.class, "rhylib_clone"))
@@ -212,6 +230,7 @@ local function place(ply, e, count, name, mode)
             end
             -- (droids: the picked mode, then the latest markers)
             if IsValid(ent) and droid and D.ToolPlaced then D.ToolPlaced(ent, mode) end
+            if IsValid(ent) and droid then placedNpcs[#placedNpcs + 1] = ent end
             if IsValid(ent) then
                 ent.rhylibToolPlaced = true
                 if ent.CPPISetOwner then ent:CPPISetOwner(ply) end
@@ -226,13 +245,32 @@ local function place(ply, e, count, name, mode)
     if made > 0 then
         ply:EmitSound("buttons/button14.wav", 60, 110)
     end
+    -- Several NPCs at once: a squad (roam keeps its pairs).
+    if #placedNpcs > 1 and mode ~= "roam" and D and D.MakeSquads then
+        D.MakeSquads(placedNpcs, { face = yaw, aggro = Tool.PlaceAggro(ply) })
+    end
+end
+
+-- Tool.PlaceAggro(ply) -> the aggression the GM picked for new squads
+-- (1-5), or nil = the global level. From tool.place.
+function Tool.PlaceAggro(ply)
+    return ply.rhylibPlaceAggro
+end
+
+-- The preview's turn (degrees) from the client: a real number, 0-360.
+local function turn(v)
+    if not v or v ~= v or v == math.huge or v == -math.huge then return 0 end
+    return v % 360
 end
 
 Rhylib.Net.Receive("tool.place", function(ply)
     local id = string.sub(net.ReadString(), 1, 32)
     local count = math.Clamp(net.ReadUInt(3), 1, 5)
     local name = string.sub(net.ReadString(), 1, 32)
-    local mode = ({ "guard", "patrol", "attack", "roam" })[net.ReadUInt(3)] or "guard"
+    local mode = ({ "guard", "patrol", "attack", "roam", "assault" })[net.ReadUInt(3)] or "guard"
+    local aggro = net.ReadUInt(3)
+    ply.rhylibPlaceAggro = (aggro >= 1 and aggro <= 5) and aggro or nil
+    ply.rhylibToolRot = turn(net.ReadFloat())
     local e = Tool.ById(id)
     if not e then return end
     if not e.count then count = 1 end
@@ -249,7 +287,14 @@ end
 -- (sandbox's Spawn_* functions don't all return the entity: catch it here)
 for _, h in ipairs({ "PlayerSpawnedSENT", "PlayerSpawnedNPC", "PlayerSpawnedVehicle", "PlayerSpawnedSWEP" }) do
     Rhylib.Hook.Add(h, "toolgun.mark", function(ply, ent)
-        if IsValid(ply) and ply.rhylibToolSpawning then markSpawned(ent) end
+        if IsValid(ply) and ply.rhylibToolSpawning then
+            markSpawned(ent)
+            -- (turned as the preview showed: facing you, plus the turn)
+            if IsValid(ent) and h ~= "PlayerSpawnedSWEP" then
+                local a = ent:GetAngles()
+                ent:SetAngles(Angle(a.p, ply:EyeAngles().y + 180 + (ply.rhylibToolRot or 0), a.r))
+            end
+        end
     end)
 end
 
@@ -275,7 +320,7 @@ local function spawnProp(ply, model, skin, body, tr)
     ent:SetSkin(skin)
     ent:SetPos(tr.HitPos)
     -- (ragdolls lie down, as sandbox spawns them)
-    ent:SetAngles(Angle(class == "prop_ragdoll" and -90 or 0, ply:EyeAngles().y + 180, 0))
+    ent:SetAngles(Angle(class == "prop_ragdoll" and -90 or 0, ply:EyeAngles().y + 180 + (ply.rhylibToolRot or 0), 0))
     ent:Spawn()
     ent:Activate()
     if body ~= "" then
@@ -341,6 +386,7 @@ Rhylib.Net.Receive("tool.spawn", function(ply)
     local skin = net.ReadUInt(6)
     local body = string.sub(net.ReadString(), 1, 64)
     local wep = string.sub(net.ReadString(), 1, 64)
+    ply.rhylibToolRot = turn(net.ReadFloat())
     if kind < 1 or kind > 5 or name == "" then return end
     allowed(ply, function() spawnThing(ply, kind, name, skin, body, wep) end)
 end, { rate = 20, burst = 20 })

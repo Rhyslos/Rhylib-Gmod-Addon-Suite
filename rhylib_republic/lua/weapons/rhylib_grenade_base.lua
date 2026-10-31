@@ -11,6 +11,8 @@
     it to the door or wall you look at (kind "breach": long fuse, small
     blast, forces doors open; see rhylib_grenade).
     SWEP.RequiresSkill: a skill (rhylib_skills) needed to throw it.
+    SWEP.MedicOnly: only medic jobs (rhylib_medical) may throw it;
+    SWEP.NeedText: the refusal shown instead of "Needs the ... skill".
     SWEP.GrenadeKind: "fuse" (explodes FuseTime after the throw), "impact"
     (explodes on the first hit), "emp" (fuse; kills Rhylib droids in
     range, stuns players there, no other damage) or "flash" (fuse; stuns
@@ -30,7 +32,8 @@
     (InvStack per stack); throwing uses one up (SWEP:UseOne).
     Grenades built on it: rhylib_thermal, rhylib_thermal_impact (retired),
     rhylib_thermal_training, rhylib_droidpopper, rhylib_droidpopper_training,
-    rhylib_flashcharge, rhylib_he_charge (its own placing code), and
+    rhylib_flashcharge, rhylib_smokegrenade, rhylib_bactagrenade,
+    rhylib_he_charge (its own placing code), and
     rhylib_rep_mine in rhylib_eod.
 
     Make your own: a small file in lua/weapons/ with SWEP.Base =
@@ -74,7 +77,7 @@ SWEP.InvStack = 3
 SWEP.InvWeight = 0.6
 SWEP.InvCategory = "gear"
 
-SWEP.GrenadeKind = "fuse"     -- see the header: fuse / impact / emp / flash
+SWEP.GrenadeKind = "fuse"     -- see the header: fuse / impact / emp / flash / smoke / bacta
 SWEP.FuseTime = 3             -- seconds (timed kinds)
 SWEP.ThrowForce = 1000       -- LMB
 SWEP.LobForce = 450          -- RMB
@@ -137,8 +140,13 @@ function SWEP:CanBreach()
     return not (K and K.Has) or K.Has(self:GetOwner(), "breaching")
 end
 
--- May the owner throw it (SWEP.RequiresSkill)?
+-- May the owner throw it (SWEP.RequiresSkill; SWEP.MedicOnly: medic jobs,
+-- rhylib_medical Med.IsMedic)?
 function SWEP:SkillOK()
+    if self.MedicOnly then
+        local Med = Rhylib.Medical
+        if Med and Med.IsMedic and not Med.IsMedic(self:GetOwner()) then return false end
+    end
     local K = Rhylib.Skills
     if not (self.RequiresSkill and K and K.Has) then return true end
     if hook.Run("Rhylib.SkillGranted", self:GetOwner(), self.RequiresSkill) == true then return true end   -- (rhylib_bounty)
@@ -248,7 +256,7 @@ function SWEP:Throw(force, lift)
     if not self:SkillOK() then
         self:SetNextPrimaryFire(CurTime() + 1)
         self:SetNextSecondaryFire(CurTime() + 1)
-        if SERVER then Rhylib.Notify(o, "You need the " .. (self.SkillName or "right") .. " skill to throw this", "bad", "Weapons") end
+        if SERVER then Rhylib.Notify(o, self.NeedText or ("You need the " .. (self.SkillName or "right") .. " skill to throw this"), "bad", "Weapons") end
         return
     end
     self:SetNextPrimaryFire(CurTime() + self.ThrowDelay)
@@ -331,7 +339,7 @@ if CLIENT then
     function SWEP:DrawHUD()
         local text
         if not self:SkillOK() then
-            text = "Needs the " .. (self.SkillName or "right") .. " skill"
+            text = self.NeedText or ("Needs the " .. (self.SkillName or "right") .. " skill")
         elseif self:IsBreach() then
             text = "BREACHING CHARGE  ·  E + R"
         elseif self.ImpactMode then

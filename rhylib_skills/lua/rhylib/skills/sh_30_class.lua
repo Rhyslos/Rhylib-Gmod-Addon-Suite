@@ -79,7 +79,7 @@ function K.ClassSet(cls, orderId)
     for _, n in ipairs(K.NODES) do
         if n.cat == cls.cat and (not n.spec or n.spec == cls.spec) and (not n.branch or n.branch == cls.branch)
             and n.id ~= "adapt_1" and n.exclusive ~= "command"
-            -- (the officer's way in: Spotter, or ARC training for the ARC class)
+            -- (the officer's way in: Tactical visor, or ARC training for the ARC class)
             and not (n.exclusive == "officer_start" and (cls.branch == "arc") ~= (n.branch == "arc")) then
             set[n.id] = true
         end

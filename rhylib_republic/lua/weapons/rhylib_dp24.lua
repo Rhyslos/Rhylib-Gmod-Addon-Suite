@@ -61,9 +61,9 @@ SWEP.FireRate = 75           -- 0.8 s between shots
 -- side = random sideways, bias = lean -1 (left) .. 1 (right), recover = share
 -- of the climb that settles back, aimMult = multiplier while aiming.
 SWEP.Recoil = { up = 2.4, side = 0.6, bias = 0.1, recover = 0.75, aimMult = 0.75 }
-SWEP.Damage = 14             -- per bolt
+SWEP.Damage = 16             -- per bolt
 SWEP.Pellets = 6
-SWEP.PelletCone = 4.5        -- degrees, on top of the normal spread
+SWEP.PelletCone = 3.8        -- degrees, on top of the normal spread
 SWEP.BoltSpeed = 6500
 SWEP.BoltColor = 1
 SWEP.FireSound = "weapons/dc17_shotgun/dc17mat_fire.mp3"

@@ -9,10 +9,14 @@
     optics in use) are red diamonds for
     everyone who sees them (the squad hits locked targets harder); other
     marks, spots and Called shot marks orange.
-    Spotter (K.SpotsNow: a Commander always, others with the sun visor down
+    Tactical visor spotting (K.SpotsNow: a Commander always, others with the sun visor down
     or through macrobinoculars / a rangefinder): a white ring on the
     spotted enemy nearest the aim; Q (with a marking skill) locks that one. Your own locks get a red
     ring (only you see rings).
+    Marked enemies also show on the compass radar (rhylib_radio
+    R.radarExtras["skills.marks"]) for whoever got the marks (the marker
+    and their squad): red squares, a commander as two upright bars, a B2
+    as a half circle over a line. Not while your comms are jammed.
     Client only. K.visorTarget = the ringed enemy this frame (sent with Q).
     Distances on the diamonds use 0.019 m per unit.
 ]]
@@ -35,7 +39,7 @@ Rhylib.Hook.Add("Rhylib.MarkKey", "skills.mark", function()
     if not K.CanMark(me) then
         if not toldMark then
             toldMark = true
-            Rhylib.Notify(nil, "Q marking needs Tactical visor (Commander), Tactical marks (Pistol officer) or ARC training", "info", "Skills")
+            Rhylib.Notify(nil, "Q marking needs Tactical visor as a Commander, Tactical marks (Pistol officer) or ARC training", "info", "Skills")
         end
         return
     end
@@ -57,7 +61,7 @@ Rhylib.Net.Receive("skills.mark", function()
     local quiet = net.ReadBool()   -- (sun visor auto spots: no blip every 5 s)
     local lock = net.ReadBool()
     local secs = net.ReadUInt(6)
-    local n = net.ReadUInt(3)
+    local n = net.ReadUInt(4)
     local now = CurTime()
     -- A new Q replaces that player's older locks (spots stay).
     if replace then
@@ -182,7 +186,7 @@ Rhylib.Hook.Add("HUDPaint", "skills.visorring", function()
     K.visorTarget = nil
     if next(K.clientMarks) == nil then return end
     local me = LocalPlayer()
-    if not (IsValid(me) and me:Alive() and K.Has(me, "mark_target")) then return end   -- (Spotter)
+    if not (IsValid(me) and me:Alive() and K.Has(me, "mark_target")) then return end   -- (Tactical visor)
     local myIdx = me:EntIndex()
     local now = CurTime()
     local s = ScrH() / 1080
@@ -220,3 +224,70 @@ Rhylib.Hook.Add("HUDPaint", "skills.visorring", function()
     K.visorTarget = best
     ringOn(best, s, RING_COL)
 end)
+
+-- Marked enemies on the compass radar (see the header).
+local RADAR_RED = Color(235, 60, 50)
+local RADAR_OUT = Color(0, 0, 0, 200)
+local DOME_SEG = 10
+local function dome(x, y, m, col)
+    -- (a half circle sitting on y, flat side down)
+    local pts = {}
+    for i = 0, DOME_SEG do
+        local a = math.pi + i / DOME_SEG * math.pi
+        pts[#pts + 1] = { x = x + math.cos(a) * m, y = y + math.sin(a) * m }
+    end
+    surface.SetDrawColor(col)
+    surface.DrawPoly(pts)
+end
+local function radarIcon(x, y, m, e, col, grow)
+    local kind = e.Kind and e:Kind()
+    local g = grow or 0
+    surface.SetDrawColor(col)
+    if kind and kind.commander then
+        -- two upright bars (an "=" stood on end)
+        local w = math.max(2, math.floor(m * 0.45))
+        surface.DrawRect(x - m * 0.75 - g, y - m - g, w + g * 2, m * 2 + g * 2)
+        surface.DrawRect(x + m * 0.75 - w - g, y - m - g, w + g * 2, m * 2 + g * 2)
+    elseif kind and kind.big then
+        dome(x, y + m * 0.25, m + g, col)
+        local t = math.max(2, math.floor(m * 0.35))
+        surface.SetDrawColor(col)
+        surface.DrawRect(x - m - g, y + m * 0.5 - g, m * 2 + g * 2, t + g * 2)
+    else
+        surface.DrawRect(x - m * 0.8 - g, y - m * 0.8 - g, m * 1.6 + g * 2, m * 1.6 + g * 2)
+    end
+end
+local function radarMarks(cx, cy, r, mp, fx, fy, k)
+    if next(K.clientMarks) == nil then return end
+    local me = LocalPlayer()
+    local R = Rhylib.Radio
+    if R and R.Jammed and R.Jammed(me) then return end
+    local now = CurTime()
+    local m = math.max(3, math.floor(r * 0.045))
+    draw.NoTexture()
+    for idx, per in pairs(K.clientMarks) do
+        local live = false
+        for _, mk in pairs(per) do
+            if mk.untilT > now then live = true break end
+        end
+        local e = live and Entity(idx)
+        if e and IsValid(e) and not e:IsDormant() and alive(e) then
+            local p = e:GetPos()
+            local dx, dy = p.x - mp.x, p.y - mp.y
+            local fwd = dx * fx + dy * fy
+            local right = dx * fy - dy * fx
+            local sx, sy = right * k, -fwd * k
+            if sx * sx + sy * sy < (r - m) * (r - m) then
+                local x, y = cx + sx, cy + sy
+                radarIcon(x, y, m, e, RADAR_OUT, 1)
+                radarIcon(x, y, m, e, RADAR_RED, 0)
+            end
+        end
+    end
+end
+local function hookRadar()
+    local R = Rhylib.Radio
+    if R and R.radarExtras then R.radarExtras["skills.marks"] = radarMarks end
+end
+hookRadar()
+Rhylib.Hook.Add("InitPostEntity", "skills.markradar", hookRadar)

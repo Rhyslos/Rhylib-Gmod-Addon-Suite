@@ -13,11 +13,24 @@ return function(ENT, env)
 
     -- ENT:Idle(secs): waits up to secs, waking early when hit (or
     -- self.woken is set) or someone comes in sight. Yields.
+    -- On a post with a facing (Command mode's Spread out / Defend 360) it
+    -- turns that way; clones on a defence crouch there.
     function ENT:Idle(secs)
         local stop = CurTime() + secs
         self.woken = false
         while CurTime() < stop and not self.woken do
-            coroutine.wait(0.5)
+            local yaw = self.holdYaw
+            if yaw and self.home and self:GetPos():DistToSqr(self.home) < 80 * 80 then
+                local dir = Angle(0, yaw, 0):Forward() * 100
+                local t = CurTime() + 0.5
+                while CurTime() < t and not self.woken do
+                    self.loco:FaceTowards(self:GetPos() + dir)
+                    if self.defending and self.IsRhylibClone then self.crouchUntil = CurTime() + 0.6 end
+                    coroutine.yield()
+                end
+            else
+                coroutine.wait(0.5)
+            end
             if self:Look() then return end
         end
     end

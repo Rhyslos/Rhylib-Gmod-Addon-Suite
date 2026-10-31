@@ -4,13 +4,21 @@
 
     Client convars: rhylib_tool_entry (chosen id, "@custom" = a spawn-window
     thing), rhylib_tool_count (1-5), rhylib_tool_name (beacon/spawn point
-    name), rhylib_tool_droidmode (1-4), rhylib_tool_custom
-    (kind|name|skin|body|weapon|label). Console: rhylib_toolgun.
+    name), rhylib_tool_droidmode (1-5), rhylib_tool_custom
+    (kind|name|skin|body|weapon|label), rhylib_tool_squadaggro (0-5:
+    aggression of newly placed squads, 0 = global), rhylib_tool_physgun_key (default
+    t: physgun mode on / off, cl_30_grab.lua), Settings > Weapons.
+    Console: rhylib_toolgun.
     The spawn window and its tab need rhylib_menus; without it R prints a
     note and rhylib_tool_entry <id> picks an entry. The droid mode and
     aggression row needs rhylib_droids.
     R: a tap opens the window (stays open), held 0.3 s+ closes on release,
     a tap while open closes, two taps within 0.35 s open the old Q menu.
+    In Command mode (cl_20_command.lua) R held is the order wheel instead.
+    With a droid entry: the HUD shows PLACES AS <mode> big and coloured
+    (GUARD, PATROL, ATTACK, ROAM, ASSAULT: to the side's assault point);
+    Shift + wheel changes the mode, Alt + wheel the new squad's aggression.
+    Droid labels add the squad number (S12) and its own aggression (A4).
 ]]
 
 local Tool = Rhylib.Tool
@@ -19,7 +27,9 @@ local cvEntry = CreateClientConVar("rhylib_tool_entry", "b1", true, false, "Tool
 local cvCount = CreateClientConVar("rhylib_tool_count", "1", true, false, "Toolgun: how many droids at once (1-5)")
 local cvName = CreateClientConVar("rhylib_tool_name", "Range", true, false, "Toolgun: name for new training beacons")
 
-local cvMode = CreateClientConVar("rhylib_tool_droidmode", "1", true, false, "Toolgun: mode for placed droids (1 guard, 2 patrol, 3 attack, 4 roam)")
+local cvMode = CreateClientConVar("rhylib_tool_droidmode", "1", true, false, "Toolgun: mode for placed droids (1 guard, 2 patrol, 3 attack, 4 roam, 5 assault: to the assault point set in Command mode)")
+local cvAggro = CreateClientConVar("rhylib_tool_squadaggro", "0", true, false, "Toolgun: aggression for newly placed squads (0 = the global level, 1-5)")
+local cvPhysKey = CreateClientConVar("rhylib_tool_physgun_key", "t", true, false, "Toolgun: key that switches physgun mode on and off")
 local cvCustom = CreateClientConVar("rhylib_tool_custom", "", true, false, "Toolgun: picked spawn-window thing (kind|name|skin|body|weapon|label)")
 
 -- Spawn-window things picked with "Spawn with Rhy's toolgun": entry id
@@ -124,10 +134,12 @@ local function buildTab(body)
         lm:SetWide(S(110))
         lm:SetAutoStretchVertical(false)
         lm:SetContentAlignment(4)
-        for i, m in ipairs({ "Guard", "Patrol", "Attack", "Roam" }) do
+        for i, m in ipairs({ "Guard", "Patrol", "Attack", "Roam", "Assault" }) do
             local b = K.Button(row2, m, function() RunConsoleCommand("rhylib_tool_droidmode", tostring(i)) end,
                 { small = true, selected = function() return cvMode:GetInt() == i end,
-                  tooltip = i == 4 and "Placed NPCs roam the map in twos (spread out)" or "Mode of the droids you place (markers you placed earlier still win)" })
+                  tooltip = i == 4 and "Placed NPCs roam the map in twos (spread out)"
+                      or i == 5 and "Placed NPCs attack the assault point (Command mode: Assault here), only them"
+                      or "Mode of the droids you place (markers you placed earlier still win)" })
             b:Dock(LEFT)
             b:SetWide(S(66))
             b:DockMargin(0, S(2), S(6), S(2))
@@ -266,6 +278,13 @@ Rhylib.Hook.Add("PlayerBindPress", "toolgun.r", function(ply, bind, pressed, cod
     local SP = Rhylib.Menus and Rhylib.Menus.Spawn
     -- (also while the window is open with another tool out)
     if not ((IsValid(w) and w.ToolGun) or (SP and SP.IsOpen())) then return end
+    -- (physgun mode: R is the game's reload key, used to turn what's held)
+    if Tool.PhysOnLocal and Tool.PhysOnLocal() and IsValid(w) and w.ToolGun then return end
+    -- (Command mode: R held is the order wheel)
+    if Tool.command and Tool.CommandWheel and Rhylib.Droids and IsValid(w) and w.ToolGun then
+        Tool.CommandWheel(code or reloadCode())
+        return true
+    end
     onR(code)
     return true
 end, -30)
@@ -287,6 +306,8 @@ end)
 -- remove / follow / stop keeping).
 function Tool.Click(wep, which)
     if which == "3" then return end   -- (R is read from the key, above)
+    if Tool.command and Rhylib.Droids then return end   -- (Command mode reads the mouse itself: cl_20_command)
+    if Tool.PhysOnLocal and Tool.PhysOnLocal() then return end   -- (physgun mode: the server reads the buttons, sv_20_grab)
     if which == "2" then
         local f = Tool.Chosen()
         if f and f.perma then
@@ -314,6 +335,7 @@ function Tool.Click(wep, which)
         net.WriteUInt(math.Clamp(c.skin, 0, 63), 6)
         net.WriteString(c.body)
         net.WriteString(wep)
+        net.WriteFloat(Tool.rot or 0)   -- (the preview's turn, cl_40_ghost)
         net.SendToServer()
         return
     end
@@ -321,7 +343,9 @@ function Tool.Click(wep, which)
     net.WriteString(e.id)
     net.WriteUInt(math.Clamp(cvCount:GetInt(), 1, 5), 3)
     net.WriteString(e.named and cvName:GetString() or "")
-    net.WriteUInt(math.Clamp(cvMode:GetInt(), 1, 4), 3)
+    net.WriteUInt(math.Clamp(cvMode:GetInt(), 1, 5), 3)
+    net.WriteUInt(math.Clamp(cvAggro:GetInt(), 0, 5), 3)
+    net.WriteFloat(Tool.rot or 0)   -- (the preview's turn, cl_40_ghost)
     net.SendToServer()
 end
 
@@ -329,7 +353,12 @@ local COL = Color(255, 210, 80)
 local COL_RED = Color(255, 90, 80)
 
 -- Tool.DrawHUD(wep): the text under the crosshair (SWEP:DrawHUD calls it).
+local MODE_NAMES = { "GUARD", "PATROL", "ATTACK", "ROAM", "ASSAULT" }
+local MODE_COLS = { Color(110, 170, 255), Color(120, 230, 140), Color(255, 100, 80), Color(200, 140, 255), Color(255, 60, 40) }
+
 function Tool.DrawHUD(wep)
+    if Tool.PhysOnLocal and Tool.PhysOnLocal() and Tool.DrawPhysHUD then return Tool.DrawPhysHUD() end
+    if Tool.command and Tool.DrawCommandHUD and Rhylib.Droids then return Tool.DrawCommandHUD() end
     local e = Tool.Chosen()
     if not e then return end
     local ply = LocalPlayer()
@@ -337,7 +366,17 @@ function Tool.DrawHUD(wep)
     if e.perma then return Tool.DrawPermaHUD() end
     local text = e.order and e.name or ((e.custom and "Spawn: " or "Place: ") .. e.name)
     if e.count and cvCount:GetInt() > 1 then text = text .. " ×" .. cvCount:GetInt() end
-    if e.count and not e.custom then text = text .. "  ·  " .. ({ "Guard", "Patrol", "Attack", "Roam" })[math.Clamp(cvMode:GetInt(), 1, 4)] end
+    -- Droids and presets: what they'll do, big and coloured (Shift + wheel
+    -- changes it, Alt + wheel the new squad's aggression).
+    if (e.count or e.preset) and not e.custom and Rhylib.Droids then
+        local m = math.Clamp(cvMode:GetInt(), 1, 5)
+        local a = math.Clamp(cvAggro:GetInt(), 0, 5)
+        local D = Rhylib.Droids
+        local yy = ScrH() * 0.5 - 70
+        draw.SimpleTextOutlined("PLACES AS: " .. MODE_NAMES[m], Rhylib.UI.Font(22, 800), ScrW() * 0.5, yy, MODE_COLS[m], TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 2, color_black)
+        draw.SimpleTextOutlined("Squad aggression: " .. (a == 0 and "global" or (a .. " " .. (D.AGGRO_NAMES and D.AGGRO_NAMES[a] or ""))) .. "   ·   Shift + wheel: mode  ·  Alt + wheel: aggression",
+            Rhylib.UI.Font(13, 600), ScrW() * 0.5, yy + 2, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
+    end
     local D = Rhylib.Droids
     if D and D.AGGRO_NAMES then
         local a = D.Aggro()
@@ -350,8 +389,41 @@ function Tool.DrawHUD(wep)
     if IsValid(ent) and not ent:IsPlayer() and (ent.IsRhylibDroid or ent.IsRhylibClone or Tool.ByClass(ent:GetClass()) or ent:GetNW2Bool("rhylib_toolSpawned")) then
         draw.SimpleTextOutlined("RMB: remove " .. (ent.PrintName or ent:GetClass()), Rhylib.UI.Font(14, 700), ScrW() * 0.5, y + 22, COL_RED, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
     end
-    draw.SimpleTextOutlined("R: spawn window  ·  hold R: peek  ·  R twice: old Q menu", Rhylib.UI.Font(13), ScrW() * 0.5, y + 42, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
+    draw.SimpleTextOutlined("R: spawn window  ·  hold R: peek  ·  R twice: old Q menu  ·  " .. string.upper(cvPhysKey:GetString()) .. ": physgun  ·  hold E: modes"
+        .. (Rhylib.Droids and ("  ·  " .. string.upper(GetConVarString("rhylib_tool_command_key") or "x") .. ": command mode") or ""), Rhylib.UI.Font(13), ScrW() * 0.5, y + 42, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
 end
+
+-- Shift + wheel: placing mode, Alt + wheel: new squads' aggression (with a
+-- droid entry chosen, placing).
+Rhylib.Hook.Add("PlayerBindPress", "toolgun.modewheel", function(ply, bind, pressed)
+    if not pressed or Tool.command then return end
+    local up = string.find(bind, "invprev", 1, true)
+    local down = string.find(bind, "invnext", 1, true)
+    if not (up or down) then return end
+    local w = ply:GetActiveWeapon()
+    if not (IsValid(w) and w:GetClass() == "rhylib_toolgun" and Rhylib.Droids) then return end
+    local e = Tool.Chosen()
+    if not (e and (e.count or e.preset) and not e.custom) then return end
+    local step = down and 1 or -1
+    if input.IsKeyDown(KEY_LSHIFT) or input.IsKeyDown(KEY_RSHIFT) then
+        RunConsoleCommand("rhylib_tool_droidmode", tostring((math.Clamp(cvMode:GetInt(), 1, 5) - 1 + step) % 5 + 1))
+        surface.PlaySound("buttons/lightswitch2.wav")
+        return true
+    elseif input.IsKeyDown(KEY_LALT) or input.IsKeyDown(KEY_RALT) then
+        RunConsoleCommand("rhylib_tool_squadaggro", tostring((math.Clamp(cvAggro:GetInt(), 0, 5) + step) % 6))
+        surface.PlaySound("buttons/lightswitch2.wav")
+        return true
+    end
+end, -36)
+
+local function addPhysSetting()
+    local M = Rhylib.Menus
+    if M and M.AddSetting then
+        M.AddSetting("Weapons", { id = "toolgun.physkey", order = 50, title = "Toolgun: physgun mode", kind = "key", convar = "rhylib_tool_physgun_key" })
+    end
+end
+addPhysSetting()
+Rhylib.Hook.Add("InitPostEntity", "toolgun.physsetting", addPhysSetting)
 
 -- The Permanent tool: what you aim at and whether it's kept.
 local COL_PERMA = Color(255, 150, 40)
@@ -462,7 +534,12 @@ Rhylib.Hook.Add("HUDPaint", "toolgun.droidmodes", function()
             local mode = d:GetNW2String("rhylib_dmode", "guard")
             local sp = (d:GetPos() + Vector(0, 0, 90)):ToScreen()
             if sp.visible then
-                draw.SimpleTextOutlined(MODE_LABEL[mode] or string.upper(mode), font, sp.x, sp.y, MODE_COL[mode] or color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, color_black)
+                -- (squad number and its own aggression, when it has them)
+                local label = MODE_LABEL[mode] or string.upper(mode)
+                local sq, ag = d:GetNW2Int("rhylib_squad", 0), d:GetNW2Int("rhylib_saggro", 0)
+                if sq > 0 then label = label .. "  S" .. sq end
+                if ag > 0 then label = label .. "  A" .. ag end
+                draw.SimpleTextOutlined(label, font, sp.x, sp.y, MODE_COL[mode] or color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, color_black)
                 -- (picked with the follow tool)
                 if d:GetNW2Entity("rhylib_pickBy") == ply then
                     draw.SimpleTextOutlined("PICKED", font, sp.x, sp.y - 14, PICKED, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, color_black)

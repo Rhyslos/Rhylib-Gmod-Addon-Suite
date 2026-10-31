@@ -23,16 +23,18 @@
     Marks live on the target: ent.rhylibMarks = { [marker] = { untilT, lock } };
     K.marks[marker] = { [ent] = true }.
     skills.mark (marker 13, replace bit, quiet bit, lock bit, seconds 6,
-    count 3, targets 13 each) goes to the marker and their squad only
+    count 4, targets 13 each) goes to the marker and their squad only
     (rhylib_radio squads).
     Also here: the Commander's squad skills (Field logistics, Steady the
     line): every 0.5 s, holders mark themselves and radio squad mates within
     squadSkillRange (p.rhylibLogi; NW2Bool rhylib_steadyLine, read by the
     shared kick and stamina code). K.SquadMembers(ply) for Chain of command.
-    Spotter (Officer tier 1, id mark_target), K.SpotsNow (Commanders always,
+    Tactical visor (Officer tier 1, id mark_target), K.SpotsNow (Commanders always,
     others with helmet optics in use): every visorSpotEvery s up to
     markMax enemies in sight within visorSpotCone of the view are spotted
-    for visorSpotTime s (quiet, added to the player's marks).
+    for visorSpotTime s (quiet, added to the player's marks). Looking
+    through the handheld binoculars (rhylib_gear optics kind 3) raises that
+    and the optics Q mark to binocMarkMax (K.MarkMax).
     skills.markreq (client -> server): optics bool, zoomed fov x10 (UInt
     10), visor-pick bool + target index (UInt 13). Rate limited to 4/s
     plus markCooldown.
@@ -91,7 +93,7 @@ local function enemy(e)
 end
 
 -- Enemies within coneDeg of the aim, nearest the middle first, in sight
--- (brush trace). At most max; at most 12 traces.
+-- (brush trace). At most max; at most max + 6 traces.
 local function inCone(ply, coneDeg, max)
     local eye, aim = ply:EyePos(), ply:GetAimVector()
     local cosCone = math.cos(math.rad(coneDeg))
@@ -106,7 +108,7 @@ local function inCone(ply, coneDeg, max)
     table.sort(found, function(a, b) return a.dot > b.dot end)
     local out, traces = {}, 0
     for _, f in ipairs(found) do
-        if #out >= max or traces >= 12 then break end
+        if #out >= max or traces >= max + 6 then break end
         traces = traces + 1
         if not util.TraceLine({ start = eye, endpos = f.e:WorldSpaceCenter(), mask = MASK_SOLID_BRUSHONLY }).Hit then
             out[#out + 1] = f.e
@@ -147,7 +149,7 @@ Rhylib.Net.Receive("skills.markreq", function(ply)
     elseif optics then
         -- (the client's zoomed view: the middle 60% of its half-width)
         local cone = math.Clamp(fov * 0.5 * 0.6, 1, K.Cfg("markOpticsCone"))
-        list = inCone(ply, cone, K.Cfg("markMax"))
+        list = inCone(ply, cone, K.MarkMax(ply))
     else
         -- (a net receive is outside a user command: no lag compensation here)
         local eye = ply:EyePos()
@@ -190,7 +192,7 @@ function K.PlaceMarks(ply, list, secs, replace, quiet, lock)
         end
     end
     local untilT = now + secs
-    local n = math.min(#list, 7)
+    local n = math.min(#list, 15)
     for i = 1, n do
         local e = list[i]
         mine[e] = true
@@ -211,12 +213,12 @@ function K.PlaceMarks(ply, list, secs, replace, quiet, lock)
     net.WriteBool(quiet == true)
     net.WriteBool(lock == true)
     net.WriteUInt(math.Clamp(math.Round(secs), 0, 63), 6)
-    net.WriteUInt(n, 3)
+    net.WriteUInt(n, 4)
     for i = 1, n do net.WriteUInt(list[i]:EntIndex(), 13) end   -- (indexes: targets may be outside a mate's view)
     net.Send(viewers(ply))
 end
 
--- Spotter auto spot (checked once a second): Commanders always, others
+-- Tactical visor auto spot (checked once a second): Commanders always, others
 -- with helmet optics in use (K.SpotsNow).
 timer.Create("Rhylib.Skills.VisorSpot", 1, 0, function()
     local now = CurTime()
@@ -224,7 +226,7 @@ timer.Create("Rhylib.Skills.VisorSpot", 1, 0, function()
         if (ply.rhylibVisorSpot or 0) <= now and ply:Alive() and not Rhylib.State.IsDown(ply)
             and K.SpotsNow(ply) then
             ply.rhylibVisorSpot = now + K.Cfg("visorSpotEvery")
-            local list = inCone(ply, K.Cfg("visorSpotCone"), K.Cfg("markMax"))
+            local list = inCone(ply, K.Cfg("visorSpotCone"), K.MarkMax(ply))
             if #list > 0 then K.PlaceMarks(ply, list, K.Cfg("visorSpotTime"), false, true) end
         end
     end

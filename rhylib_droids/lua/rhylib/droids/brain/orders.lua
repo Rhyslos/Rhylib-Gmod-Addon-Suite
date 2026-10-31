@@ -17,6 +17,8 @@ return function(ENT, env)
 
     -- The area a guard / patrol droid stays in (nil = attack: anywhere).
     function ENT:AreaRadius()
+        -- (Command mode: a patrol area's own radius, a post's small one)
+        if self.areaRadius and not self.guarding and (self.mode == "patrol" or self.mode == "guard") then return self.areaRadius end
         if self.mode == "patrol" then return D.Cfg("patrolRadius") end
         if self.mode == "attack" or self.mode == "roam" or self.mode == "retreat" then return nil end
         if self.guarding then return 250 end
@@ -38,8 +40,9 @@ return function(ENT, env)
     function ENT:SetPace(run)
         local speed = D.Cfg(self:Kind().speed)
         if not run then speed = speed * D.Cfg("walkMult") end
-        self.loco:SetDesiredSpeed(speed)
+        self.paceSpeed = speed
         self.running = run
+        self.loco:SetDesiredSpeed(self:LeaderPace(speed))
     end
 
     -- Several droids close by and room to the sides: march; else charge.
@@ -160,6 +163,23 @@ return function(ENT, env)
         local L = self:Aggro()
         -- Crouched clones holding the line stay down.
         if L == 3 and self.IsRhylibClone and (self.crouchUntil or 0) > CurTime() then return nil end
+        -- A defence holds its spot (InArea keeps it close).
+        if self.defending and L >= 3 then return nil end
+        -- Clone squads advancing (aggression 4): bounding overwatch. Half
+        -- the squad moves up (running) while the other half crouches and
+        -- fires, swapping every ctBound seconds.
+        local bound = false
+        if L == 4 and self.IsRhylibClone and self.squad and #self.squad.list >= 2 then
+            local bt = D.Cfg("ctBound")
+            if bt > 0 then
+                local phase = math.floor(CurTime() / bt) % 2
+                if (self.slotIdx or 0) % 2 ~= phase then
+                    self.crouchUntil = CurTime() + 0.7
+                    return nil
+                end
+                bound = true
+            end
+        end
         local d = pos:Distance(tp)
         local goal, run
         if L <= 2 then
@@ -176,7 +196,18 @@ return function(ENT, env)
         else
             if d > 260 then
                 goal = tp
-                run = L >= 5 or not self:CanMarch()
+                -- (a squad spreads out sideways instead of all running at one spot)
+                local side = self:SquadLateral()
+                if side ~= 0 then
+                    local to = tp - pos
+                    to.z = 0
+                    if to:LengthSqr() > 1 then
+                        to:Normalize()
+                        goal = tp + Vector(-to.y, to.x, 0) * -side * math.Clamp(d / 1200, 0.4, 1)
+                    end
+                end
+                -- (droids march in step; bounding clones run)
+                run = L >= 5 or bound or not self:CanMarch()
             end
         end
         if goal and not (L == 2 and goal == self:FallbackPoint()) then goal = self:InArea(goal) end

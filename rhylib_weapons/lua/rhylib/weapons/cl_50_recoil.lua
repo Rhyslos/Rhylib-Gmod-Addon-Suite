@@ -32,6 +32,9 @@ local lastPitch              -- pitch after our last change, to see your own mou
 function R.Kick(wep)
     local cfg = wep.Recoil
     if not cfg then return end
+    -- (freelooking: no kick at all; the view and aim stay where they are)
+    local TP = Rhylib.ThirdPerson
+    if TP and TP.freeLook then return end
     local m = (wep.GetAiming and wep:GetAiming()) and (cfg.aimMult or 0.65) or 1
     m = m * (Rhylib.Config.Get("weapons", "recoilMult"))
     local K = Rhylib.Skills

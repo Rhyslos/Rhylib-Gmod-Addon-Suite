@@ -26,7 +26,13 @@
     Client only; needs rhylib_menus (page "skills", Character group). Also
     receives skills.note (bad bool, text) and prints it to chat.
     The layout (PerformLayout below) is the tricky part: it lines each
-    skill up under the skills it needs so links are straight lines.
+    skill up under the skills it needs so links are straight lines. A
+    group of skills too many for its column (six orders in a narrow menu)
+    wraps onto several lines inside a faint box, and links go to the box;
+    when the page has no height to spare for that, the group stays on one
+    line as icons only ("One of these · hover for names").
+    Links skip a needed skill that another needed skill already leads
+    back to (no long lines across the tree).
 ]]
 
 local K = Rhylib.Skills
@@ -354,6 +360,61 @@ local function reqsOf(n)
     return out
 end
 
+-- The links the tree draws: reqsOf minus any skill that another needed
+-- skill (shown in the tree now) strictly needs itself, directly or
+-- further up (needs, or every one of its needsGroups), and minus the
+-- node's own menuHide ids (a need shown by a shorter chain anyway).
+local ancestors = {}
+local inView = {}   -- [id] = true for the skills the tree shows now
+local function strictReqs(n)
+    local out = {}
+    for _, r in ipairs(n.needs or {}) do out[#out + 1] = r end
+    local groups = n.needsGroups or {}
+    if #groups > 0 then
+        -- (ids in every group are needed whichever group is used)
+        for _, r in ipairs(groups[1]) do
+            local all = true
+            for g = 2, #groups do
+                if not table.HasValue(groups[g], r) then all = false break end
+            end
+            if all then out[#out + 1] = r end
+        end
+    end
+    return out
+end
+local function ancestorsOf(id, seen)
+    if ancestors[id] then return ancestors[id] end
+    seen = seen or {}
+    if seen[id] then return {} end
+    seen[id] = true
+    local out = {}
+    local n = K.byId[id]
+    if n then
+        for _, r in ipairs(strictReqs(n)) do
+            out[r] = true
+            for a in pairs(ancestorsOf(r, seen)) do out[a] = true end
+        end
+    end
+    ancestors[id] = out
+    return out
+end
+local function linkReqs(n)
+    local reqs = reqsOf(n)
+    local hide = {}
+    for _, r in ipairs(n.menuHide or {}) do hide[r] = true end
+    local out = {}
+    for _, r in ipairs(reqs) do
+        local covered = hide[r] or false
+        if not covered then
+            for _, o in ipairs(reqs) do
+                if o ~= r and inView[o] and ancestorsOf(o)[r] then covered = true break end
+            end
+        end
+        if not covered then out[#out + 1] = r end
+    end
+    return out
+end
+
 -- "learned", "open" (can learn now), "excluded" (ruled out by a choice,
 -- + reason) or "locked" (+ reason).
 local function stateOf(me, set, n)
@@ -628,6 +689,7 @@ local function build(page)
 
     local function fill()
         tree:Clear()
+        ancestors = {}   -- (trees can gain skills later: AddTree)
         hovered, picked = nil, nil
         local cat, viewKey, onlySpec, onlyBranch = viewOf(K.catById[cur])
         local cols = columns(cat)
@@ -639,6 +701,8 @@ local function build(page)
                 maxTier = math.max(maxTier, n.tier)
             end
         end
+        inView = {}
+        for _, n in ipairs(nodes) do inView[n.id] = true end
         -- (learning or undoing the first skill of a path re-draws the tree)
         function tree:Think()
             local _, key = viewOf(K.catById[cur])
@@ -650,7 +714,7 @@ local function build(page)
         -- Which tiers each branch spans (for its frame).
         local branchTiers = {}
         for _, n in ipairs(nodes) do
-            if n.branch then
+            if n.branch and not n.layoutCol then
                 local t = branchTiers[n.branch] or { lo = n.tier, hi = n.tier }
                 t.lo, t.hi = math.min(t.lo, n.tier), math.max(t.hi, n.tier)
                 branchTiers[n.branch] = t
@@ -686,7 +750,7 @@ local function build(page)
                         local bx = math.floor(x0 + inner * c[1] + S(6))
                         local bw = math.floor(inner * (c[2] - c[1]) - S(12))
                         local by = math.floor(L.rowY(t.lo) - S(8))
-                        local bh = math.floor(L.rowY(t.hi) + L.sq + L.labelH + S(26) - by)
+                        local bh = math.floor(L.rowBottom(t.hi) + S(26) - by)
                         Kit.SetCol(C.bg, 120)
                         surface.DrawRect(bx, by, bw, bh)
                         Kit.SetCol(C.warn, 90)
@@ -707,24 +771,32 @@ local function build(page)
                 local a, b = math.min(x0, x1), math.max(x0, x1)
                 surface.DrawRect(math.floor(a) - half, y - half, math.floor(b - a) + th, th)
             end
-            local function bottom(id) local p = L.pos[id] return p.y + L.sq + L.labelH + S(2) end
+            -- Wrapped groups (one box, several lines): a faint frame.
+            for _, bx in ipairs(L.boxes or {}) do
+                Kit.SetCol(C.edgeLight, 70)
+                surface.DrawOutlinedRect(bx.x0, bx.top, bx.x1 - bx.x0, bx.bottom - bx.top)
+                if bx.caption then
+                    draw.SimpleText(bx.caption, Kit.Font(11), bx.cx, bx.capY, C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                end
+            end
+            local outX, outY, inX, inY = L.outX, L.outY, L.inX, L.inY
             Kit.SetCol(C.edgeLight, 150)
             for _, bus in ipairs(L.buses or {}) do
-                for _, id in ipairs(bus.parents) do vline(L.pos[id].cx, bottom(id), bus.y) end
-                for _, id in ipairs(bus.children) do vline(L.pos[id].cx, bus.y, L.pos[id].y) end
+                for _, id in ipairs(bus.parents) do vline(outX(id), outY(id), bus.y) end
+                for _, id in ipairs(bus.children) do vline(inX(id), bus.y, inY(id)) end
                 if not bus.straight then hline(bus.lo, bus.hi, bus.y) end
             end
             Kit.SetCol(C.accent, 255)
             for _, bus in ipairs(L.buses or {}) do
                 for _, cid in ipairs(bus.children) do
                     if set[cid] then
-                        local cx = L.pos[cid].cx
+                        local cx = inX(cid)
                         for _, pid in ipairs(bus.parents) do
                             if set[pid] then
-                                local px = L.pos[pid].cx
-                                vline(px, bottom(pid), bus.y)
+                                local px = outX(pid)
+                                vline(px, outY(pid), bus.y)
                                 hline(px, cx, bus.y)
-                                vline(cx, bus.y, L.pos[cid].y)
+                                vline(cx, bus.y, inY(cid))
                             end
                         end
                     end
@@ -745,7 +817,7 @@ local function build(page)
                     state = "locked"
                     surface.SetAlphaMultiplier(EXCLUDED_ALPHA)
                 end
-                local sq = L.sq or w
+                local sq = self.compactSq or L.sq or w
                 local ox = math.floor((w - sq) * 0.5)
                 local hov = self:IsHovered()
                 local bg = state == "learned" and C.buttonDown or (hov and C.buttonHover or C.button)
@@ -786,7 +858,9 @@ local function build(page)
                     lines = wrap(n.name, f, w - S(4), 2)
                     self.lines, self.linesW = lines, w
                 end
-                for i, l in ipairs(lines) do
+                -- (a compact row shows icons only: the box caption and the
+                -- side panel name them)
+                for i, l in ipairs(self.compactSq and {} or lines) do
                     draw.SimpleText(l, f, w * 0.5, sq + S(4) + (i - 1) * S(14), state == "locked" and C.textDim or C.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
                 end
                 if excluded then surface.SetAlphaMultiplier(1) end
@@ -827,16 +901,13 @@ local function build(page)
             local headY = S(62)
             local top = hasSpecs and headY + S(34) or S(64)
             local avail = h - top - S(14)
-            local rowH = math.min(S(122), math.floor(avail / maxTier))
             local labelH = S(30)
-            local sq = math.max(S(30), math.min(S(56), rowH - labelH - S(34)))
-            L.x0, L.inner, L.headY, L.rowH, L.sq, L.labelH = x0, inner, headY, rowH, sq, labelH
-            L.busGap = math.max(S(14), math.floor((rowH - sq - labelH) * 0.45))
-            L.rowY = function(t) return top + (t - 1) * rowH end
-            L.pos = {}
             local groups = {}
             for _, n in ipairs(nodes) do
-                local col = n.branch and cols.branch[n.branch] or (n.spec and cols.spec[n.spec]) or cols.shared
+                -- (layoutCol = "shared": drawn across the whole width, e.g. a
+                -- start skill that sits next to a shared one)
+                local col = n.layoutCol == "shared" and cols.shared
+                    or (n.branch and cols.branch[n.branch]) or (n.spec and cols.spec[n.spec]) or cols.shared
                 local key = n.tier .. "|" .. col[1] .. "|" .. col[2]
                 if not groups[key] then
                     groups[key] = { col = col, list = {}, tier = n.tier }
@@ -844,13 +915,96 @@ local function build(page)
                 end
                 table.insert(groups[key].list, n)
             end
+            -- A group too narrow for its skills (six orders in a thin
+            -- column) goes on several lines inside a box, so names never
+            -- get cut down to a few letters. Its tier gets taller.
+            local minCell = S(84)
+            local tierLines = {}
+            for _, g in ipairs(groups) do
+                local per = math.max(1, math.floor(inner * (g.col[2] - g.col[1]) / minCell))
+                g.lines = math.ceil(#g.list / per)
+                tierLines[g.tier] = math.max(tierLines[g.tier] or 1, g.lines)
+            end
+            local extra = 0
+            for t = 1, maxTier do extra = extra + (tierLines[t] or 1) - 1 end
+            -- No room for the extra lines (the tree would run off the
+            -- page): those groups stay on one line as a compact row of
+            -- icons instead (names on hover, in the side panel).
+            if extra > 0 and maxTier * (S(30) + labelH + S(34)) + extra * (S(30) + labelH + S(12)) > avail then
+                for _, g in ipairs(groups) do
+                    if g.lines > 1 then g.lines, g.compact = 1, true end
+                end
+                tierLines, extra = {}, 0
+            end
+            -- (the extra lines are only as tall as a button: a tier's full
+            -- height also holds the link lines above it)
+            local rowH = math.min(S(122), math.floor(avail / (maxTier + extra)))
+            local sq, lineH
+            for _ = 1, 3 do
+                sq = math.max(S(30), math.min(S(56), rowH - labelH - S(34)))
+                lineH = sq + labelH + S(12)
+                rowH = math.min(S(122), math.floor((avail - extra * lineH) / maxTier))
+            end
+            sq = math.max(S(30), math.min(S(56), rowH - labelH - S(34)))
+            lineH = math.min(rowH, sq + labelH + S(12))
+            local tierTop = {}
+            local yy = top
+            for t = 1, maxTier do
+                tierTop[t] = yy
+                yy = yy + rowH + ((tierLines[t] or 1) - 1) * lineH
+            end
+            L.x0, L.inner, L.headY, L.rowH, L.sq, L.labelH = x0, inner, headY, rowH, sq, labelH
+            L.busGap = math.max(S(14), math.floor((rowH - sq - labelH) * 0.45))
+            L.rowY = function(t) return tierTop[t] or (top + (t - 1) * rowH) end
+            L.rowBottom = function(t) return L.rowY(t) + ((tierLines[t] or 1) - 1) * lineH + sq + labelH end
+            L.pos, L.box, L.boxes = {}, {}, {}
+            -- Where lines leave a skill (under its name) and end (its top);
+            -- a boxed skill's lines use its box instead.
+            L.outX = function(id) local b = L.box[id] return b and b.cx or L.pos[id].cx end
+            L.outY = function(id) local b = L.box[id] return b and b.bottom or (L.pos[id].y + sq + labelH + S(2)) end
+            L.inX = function(id) local b = L.box[id] return b and b.cx or L.pos[id].cx end
+            L.inY = function(id) local b = L.box[id] return b and b.top or L.pos[id].y end
             -- Top tier first: each skill sits under the skills it needs (in
             -- the same column) where it can, so a one-parent link is one
             -- straight line (lines that jog a few pixels look wrong).
             table.sort(groups, function(a, b) return a.tier < b.tier end)
             local colOf, itemOf = {}, {}
+            local function placeWrapped(g, gx0, gx1)
+                local cnt = #g.list
+                local per = math.ceil(cnt / g.lines)
+                local cellW = math.min((gx1 - gx0) / per, S(150))
+                local bw = math.floor(math.min(cellW - S(10), S(120)))
+                -- (compact: icons only, as big as the cell allows)
+                local csq = g.compact and math.max(S(18), math.min(sq, math.floor(cellW - S(6)))) or nil
+                if csq then bw = math.floor(cellW - S(2)) end
+                local mid = (gx0 + gx1) * 0.5
+                local half = (per - 1) * 0.5 * cellW + bw * 0.5 + S(6)
+                local ty = tierTop[g.tier]
+                local box = {
+                    cx = math.floor(mid + 0.5), x0 = math.floor(math.max(mid - half, gx0 + S(8))), x1 = math.floor(math.min(mid + half, gx1 - S(8))),
+                    top = math.floor(ty - S(6)), bottom = math.floor(ty + (g.lines - 1) * lineH + sq + labelH + S(4)),
+                }
+                if csq then
+                    box.caption = "One of these · hover for names"
+                    box.capY = math.floor(ty + csq + S(14))
+                end
+                L.boxes[#L.boxes + 1] = box
+                for i, n in ipairs(g.list) do
+                    local line = math.floor((i - 1) / per)
+                    local inLine = math.min(per, cnt - line * per)
+                    local k = (i - 1) % per
+                    local cx = mid + (k - (inLine - 1) * 0.5) * cellW
+                    L.pos[n.id] = { cx = math.floor(cx + 0.5), y = math.floor(ty + line * lineH) }
+                    L.box[n.id] = box
+                    colOf[n.id] = g.col
+                    itemOf[n.id] = { n = n, bw = bw, boxed = true, csq = csq }
+                end
+            end
             for _, g in ipairs(groups) do
-                local gx0, gx1 = x0 + inner * g.col[1], x0 + inner * g.col[2]
+              local gx0, gx1 = x0 + inner * g.col[1], x0 + inner * g.col[2]
+              if g.lines > 1 or g.compact then
+                placeWrapped(g, gx0, gx1)
+              else
                 local cnt = #g.list
                 -- Keep siblings fairly close (not at the far edges of wide columns).
                 local span = math.min(gx1 - gx0, cnt * S(150))
@@ -862,8 +1016,8 @@ local function build(page)
                 local items = {}
                 for i, n in ipairs(g.list) do
                     local sum, k = 0, 0
-                    for _, r in ipairs(reqsOf(n)) do
-                        if L.pos[r] and colOf[r] == g.col then sum, k = sum + L.pos[r].cx, k + 1 end
+                    for _, r in ipairs(linkReqs(n)) do
+                        if L.pos[r] and colOf[r] == g.col then sum, k = sum + L.outX(r), k + 1 end
                     end
                     items[i] = { n = n, i = i, want = k > 0 and sum / k or (sx + cellW * (i - 0.5)), anchored = k > 0, single = k == 1 }
                 end
@@ -932,19 +1086,20 @@ local function build(page)
                 end
                 for _, x in ipairs(order) do
                     local n = x.n
-                    L.pos[n.id] = { cx = math.floor(x.pos + 0.5), y = math.floor(top + (n.tier - 1) * rowH) }
+                    L.pos[n.id] = { cx = math.floor(x.pos + 0.5), y = math.floor(tierTop[n.tier]) }
                     colOf[n.id] = g.col
                     x.row, x.minSep, x.bw = order, minSep, bw
                     x.lo, x.hi = gx0 + S(32), gx1 - S(32)
                     itemOf[n.id] = x
                 end
+              end
             end
             -- A parent that isn't lined up with anything above slides over its
             -- only child (the child row may have had to spread out).
             local kids = {}
             for _, n in ipairs(nodes) do
                 local ps = {}
-                for _, r in ipairs(reqsOf(n)) do
+                for _, r in ipairs(linkReqs(n)) do
                     if L.pos[r] and colOf[r] == colOf[n.id] then ps[#ps + 1] = r end
                 end
                 if #ps == 1 then
@@ -954,7 +1109,8 @@ local function build(page)
             end
             for pid, ks in pairs(kids) do
                 local px = itemOf[pid]
-                if #ks == 1 and px and not (px.single and math.abs(L.pos[pid].cx - px.want) < 1) then
+                if #ks == 1 and px and not px.boxed and not (itemOf[ks[1]] and itemOf[ks[1]].boxed)
+                    and not (px.single and math.abs(L.pos[pid].cx - px.want) < 1) then
                     local nx = L.pos[ks[1]].cx
                     local d = nx - L.pos[pid].cx
                     if d ~= 0 and math.abs(d) <= S(80) and nx >= px.lo and nx <= px.hi then
@@ -970,6 +1126,7 @@ local function build(page)
                 local b = self.byNode[id]
                 b:SetPos(L.pos[id].cx - math.floor(x.bw * 0.5), L.pos[id].y)
                 b:SetSize(x.bw, sq + labelH)
+                b.compactSq = x.csq
             end
             -- Link buses: the skills in a row that need the same skills share
             -- one line (so six orders needing the same three draw one bus);
@@ -978,7 +1135,7 @@ local function build(page)
             local byTier = {}
             for _, n in ipairs(nodes) do
                 local ps = {}
-                for _, r in ipairs(reqsOf(n)) do
+                for _, r in ipairs(linkReqs(n)) do
                     if L.pos[r] then ps[#ps + 1] = r end
                 end
                 if #ps > 0 then
@@ -1004,8 +1161,8 @@ local function build(page)
                 local placed = {}
                 for _, bus in ipairs(t.list) do
                     local lo, hi = math.huge, -math.huge
-                    for _, id in ipairs(bus.parents) do lo, hi = math.min(lo, L.pos[id].cx), math.max(hi, L.pos[id].cx) end
-                    for _, id in ipairs(bus.children) do lo, hi = math.min(lo, L.pos[id].cx), math.max(hi, L.pos[id].cx) end
+                    for _, id in ipairs(bus.parents) do lo, hi = math.min(lo, L.outX(id)), math.max(hi, L.outX(id)) end
+                    for _, id in ipairs(bus.children) do lo, hi = math.min(lo, L.inX(id)), math.max(hi, L.inX(id)) end
                     bus.lo, bus.hi = lo, hi
                     bus.straight = hi - lo < 1
                     if not bus.straight then placed[#placed + 1] = bus end
@@ -1027,8 +1184,8 @@ local function build(page)
                     bus.lane = k
                 end
                 -- The gap between the row above's names and this row's squares.
-                local gapTop = L.rowY(tier - 1) + L.sq + L.labelH + S(4)
-                local gapBot = L.rowY(tier) - S(4)
+                local gapTop = L.rowBottom(tier - 1) + S(8)
+                local gapBot = L.rowY(tier) - S(10)
                 local nl = #lanes
                 for _, bus in ipairs(t.list) do
                     if bus.straight then

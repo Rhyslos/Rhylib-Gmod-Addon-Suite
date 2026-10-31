@@ -28,7 +28,7 @@ if Config.Describe then
         { "Ammo & reloading", { "^reloadHoldTime$", "^maxMags$", "^maxCells$", "^lowCell" } },
         { "Explosion knockdown", { "^knock" } },
         { "Shields", { "^shield", "^cgShield", "^phalanx" } },
-        { "Grenades & charges", { "^he", "^emp", "^breach", "^flash" } },
+        { "Grenades & charges", { "^he", "^emp", "^breach", "^flash", "^smoke", "^bacta" } },
     } })
     Config.Describe("guns", { name = "Gun stats", category = "Combat" })
     Config.Describe("armor", { name = "Armour", category = "Combat" })

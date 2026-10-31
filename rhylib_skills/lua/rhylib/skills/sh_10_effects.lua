@@ -73,6 +73,7 @@ reg("markTime", 15, "Mark target: seconds a mark lasts")
 reg("markRange", 8000, "Mark target: reach (units)")
 reg("markCooldown", 1, "Mark target: seconds between marks")
 reg("markMax", 5, "Mark target: most enemies one Q marks through macrobinoculars / a rangefinder")
+reg("binocMarkMax", 10, "Mark target: most enemies spotted or Q marked at once through the handheld binoculars")
 reg("markOpticsCone", 10, "Mark target: widest cone (degrees from the middle) searched through optics")
 reg("visorSpotEvery", 5, "Mark target + sun visor down: seconds between automatic spots")
 reg("visorSpotCone", 30, "Mark target + sun visor down: cone (degrees from the middle) the automatic spot searches")
@@ -87,6 +88,8 @@ reg("lineRegen", 1.25, "Steady the line: stamina refill multiplier near the comm
 reg("rifleDrillSpread", 0.8, "Rifle drill: aimed spread multiplier (rifles and carbines)")
 reg("vetRifle", 0.9, "Combat veteran: rifle spread, kick and reload time multiplier")
 reg("vetCarbineDamage", 1.08, "Combat veteran: carbine damage multiplier")
+reg("medGunDamage", 1.12, "Medic's carbine / scattergun: DC-15S / DP-23 damage multiplier")
+reg("medGunWeight", 0.5, "Medic's carbine / scattergun: DC-15S / DP-23 weight multiplier")
 reg("vetZ6Resist", 0.9, "Combat veteran: damage taken multiplier with the Z-6 in hand")
 reg("markVisorCone", 10, "Mark target: Q with the sun visor down locks the ringed enemy if it's within this many degrees of the aim")
 reg("undoWindow", 120, "Seconds after learning a skill in which right-click can undo it (any time while reset is allowed)")
@@ -184,6 +187,7 @@ K.DP24 = "rhylib_dp24"
 K.DC15S = "rhylib_dc15s"
 K.DC15A = "rhylib_dc15a"
 K.WESTAR = "rhylib_westarm5"
+K.DP23 = "rhylib_dp23"
 
 -- K.GunClass(wep): the gun a weapon counts as for skills (training copies
 -- count as the real one, via SWEP.TrainingOf).
@@ -443,7 +447,7 @@ function K.AdjustWeight(ply, state, weight, cap)
     if not isPly(ply) then return weight, cap end
     local set = K.Set(ply)
     if set.load_bearer then cap = cap + cfg("loadBearerCarry") end
-    if set.gun_runner or set.long_gun or set.shotgun_drills or set.eod_pack then
+    if set.gun_runner or set.long_gun or set.shotgun_drills or set.eod_pack or set.med_carbine or set.med_shotgun then
         local Items = Rhylib.Items
         if not (Items and Items.defs) then return weight, cap end
         for cid, c in pairs(state.cont or {}) do
@@ -457,6 +461,8 @@ function K.AdjustWeight(ply, state, weight, cap)
                             if set.gun_runner and K.ItemGun(o.id) == K.Z6 then mult = math.min(mult, cfg("gunRunnerWeight")) end
                             if set.long_gun and K.ItemGun(o.id) == K.DC15X then mult = math.min(mult, cfg("longGunWeight")) end
                             if set.shotgun_drills and def.w <= 4 and isGun(def.weapon) then mult = math.min(mult, cfg("sidearmWeight")) end
+                            local g = K.ItemGun(o.id)
+                            if (set.med_carbine and g == K.DC15S) or (set.med_shotgun and g == K.DP23) then mult = math.min(mult, cfg("medGunWeight")) end
                         end
                         if set.eod_pack and K.ExplosiveItem(def) then mult = math.min(mult, cfg("eodPackWeight")) end
                         -- (backpack contents count at backpackWeightMult in Items.Weight)
