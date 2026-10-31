@@ -5,9 +5,10 @@
     the normal mouse speed. rhylib_freelook_hold: 0 (the
     default) = click once to start, click again to stop; 1 = only while
     held. When it stops the view eases back to your aim over
-    rhylib_freelook_return (0.045) seconds (smooth start and end; in third
+    rhylib_freelook_return (0.125) seconds (smooth start and end; in third
     person your aim stays put until the camera is back). Console:
-    rhylib_freelook_toggle.
+    rhylib_freelook_toggle. rhylib_freelook_info prints the setting and how
+    long the last ease-back really took.
 
       First person: up to freelookYaw (100) degrees left or right of where
       you face, and up and down as far as normal. The arms and gun
@@ -42,7 +43,17 @@ local keyVar = CreateClientConVar("rhylib_freelook_key", "mouse3", true, false, 
 local yawVar = CreateClientConVar("rhylib_freelook_yaw", "100", true, false, "First person freelook: how far left / right you can look (degrees)")
 local sensVar = CreateClientConVar("rhylib_freelook_sens", "0.5", true, false, "Freelook mouse speed (1 = the same as normal looking)")
 local holdVar = CreateClientConVar("rhylib_freelook_hold", "0", true, false, "Freelook: 0 = click to switch on / off, 1 = only while the key is held")
-local returnVar = CreateClientConVar("rhylib_freelook_return", "0.045", true, false, "Freelook: seconds the view takes to ease back to your aim when it stops (0 = at once)")
+local returnVar = CreateClientConVar("rhylib_freelook_return", "0.125", true, false, "Freelook: seconds the view takes to ease back to your aim when it stops (0 = at once)")
+-- (a saved client convar keeps its old value when the default changes: a
+-- value still at one of the earlier defaults moves to the new one, once)
+-- (compared as numbers: the game saves it as "0.400000")
+if cookie.GetString("rhylib_freelook_return_v", "") ~= "4" then
+    local old = returnVar:GetFloat()
+    for _, d in ipairs({ 0.4, 0.25, 0.045 }) do
+        if math.abs(old - d) < 0.001 then RunConsoleCommand("rhylib_freelook_return", "0.125") break end
+    end
+    cookie.Set("rhylib_freelook_return_v", "4")
+end
 
 -- (0-1 -> 0-1, slow at both ends)
 local function smooth(f) return f * f * (3 - 2 * f) end
@@ -125,6 +136,18 @@ local function wanted(ply)
     return toggled
 end
 
+-- rhylib_freelook_info: which ease-back code runs and how long the last
+-- one really took (to check an update arrived).
+local lastReturn = nil
+concommand.Add("rhylib_freelook_info", function()
+    print(string.format("[Rhy's] Freelook ease-back: timed (v3), rhylib_freelook_return = %s s, curve smooth", returnVar:GetString()))
+    if lastReturn then
+        print(string.format("[Rhy's] Last ease-back (%s) took %d ms", lastReturn.view, math.Round(lastReturn.secs * 1000)))
+    else
+        print("[Rhy's] No ease-back yet: freelook once, stop it, then run this again")
+    end
+end)
+
 Rhylib.Hook.Add("Think", "thirdperson.freelook", function()
     local ply = LocalPlayer()
     local want = wanted(ply)
@@ -163,7 +186,10 @@ Rhylib.Hook.Add("Think", "thirdperson.freelook", function()
         local f = dur > 0 and math.Clamp((now - back.t) / dur, 0, 1) or 1
         local k = 1 - smooth(f)
         TP.freeOff.p, TP.freeOff.y = back.p * k, back.y * k
-        if f >= 1 then TP.freeBack = nil end
+        if f >= 1 then
+            TP.freeBack = nil
+            lastReturn = { secs = now - back.t, view = "first person" }
+        end
     elseif not TP.freeLook and not back and (TP.freeOff.p ~= 0 or TP.freeOff.y ~= 0) then
         TP.freeOff:Zero()
     end
@@ -179,6 +205,7 @@ Rhylib.Hook.Add("Think", "thirdperson.freelook", function()
             if f >= 1 then
                 TP.camAng = Angle(ret.to.p, ret.to.y, 0)
                 TP.freeReturn = nil
+                lastReturn = { secs = now - ret.t, view = "third person" }
             end
         end
     end

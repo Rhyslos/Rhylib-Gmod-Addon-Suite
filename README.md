@@ -15,7 +15,7 @@ addons/
   rhylib_core/          required: loader, config, hook bus, networking, data, permissions, profiler, lying bodies
     lua/autorun/_rhylib_core.lua
     lua/rhylib/core/*.lua
-  rhylib_<name>/        every other system, one Garry's Mod addon each (24 in total)
+  rhylib_<name>/        every other system, one Garry's Mod addon each (25 in total)
 docs/
   README.md             start here
   addons/*.md           one guide per addon
