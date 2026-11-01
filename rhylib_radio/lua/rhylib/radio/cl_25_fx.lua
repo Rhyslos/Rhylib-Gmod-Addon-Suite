@@ -182,21 +182,41 @@ local function staticTo(v)
     static:ChangeVolume(math.Clamp(v, 0.01, 1), 0.2)
 end
 
+-- (weather cuts come and go: their notes at most once every 30 s)
+local wxNoteAt = -100
+local wxCut, wxShow = false, false
+
 timer.Create("Rhylib.Radio.JamFx", 0.1, 0, function()
     local me = LocalPlayer()
     if not IsValid(me) then return end
     local jammed = R.Jammed(me)
     local recon = R.Reconnecting(me) ~= nil
-    if recon ~= wasRecon then
-        wasRecon = recon
-        if recon then R.Note("Out of jammer range: reconnecting...") end
-    end
     if jammed ~= wasJammed then
         wasJammed = jammed
         -- (the compass shows JAMMED / UPLINK ACTIVE from this, cl_20_hud)
         R.jamBanner = { jammed = jammed, at = RealTime() }
-        if jammed then R.Note("Comms jammed: the radio only gives static here, people near you still hear you.")
-        else chat.AddText(Color(110, 220, 120), "Republic uplink active") end
+        if jammed then
+            wxCut = me:GetNW2Bool("rhylib_jamWx", false)
+            if wxCut then
+                wxShow = RealTime() - wxNoteAt >= 30
+                if wxShow then
+                    wxNoteAt = RealTime()
+                    R.Note("Storm interference: comms and radar are down for a moment.")
+                end
+            else
+                R.Note("Comms jammed: the radio only gives static here, people near you still hear you.")
+            end
+        else
+            if not wxCut or wxShow then chat.AddText(Color(110, 220, 120), "Republic uplink active") end
+            wxCut, wxShow = false, false
+        end
+    end
+    if recon ~= wasRecon then
+        wasRecon = recon
+        if recon then
+            if not wxCut then R.Note("Out of jammer range: reconnecting...")
+            elseif wxShow then R.Note("Interference passing: reconnecting...") end
+        end
     end
     if jammed and R.txOn then
         if not static and RealTime() > noted then

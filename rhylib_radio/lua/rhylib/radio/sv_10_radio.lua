@@ -574,6 +574,13 @@ local function setLevel(p, lvl)
     end
 end
 
+-- (NW2Bool rhylib_jamWx: the weather did it, so the messages say so)
+local function setWx(p, wx)
+    if (p.rhylibJamWx == true) == wx then return end
+    p.rhylibJamWx = wx or nil
+    p:SetNW2Bool("rhylib_jamWx", wx)
+end
+
 local function setJammed(p, jam)
     if (p.rhylibJammed == true) == jam then return end
     p.rhylibJammed = jam or nil
@@ -611,6 +618,15 @@ timer.Create("Rhylib.Radio.Jam", 0.5, 0, function()
                 end
             end
         end
+        -- Weather (rhylib_weather): heavy storms / blizzards / sandstorms
+        -- and lightning strikes cut comms for a few seconds outdoors.
+        local W = Rhylib.Weather
+        if not inside and W and W.JamFor and W.JamFor(p) then
+            inside = true
+            setWx(p, true)
+        elseif inside then
+            setWx(p, false)
+        end
         if inside then
             p.rhylibJamUntil = nil
             if p:GetNW2Float(Rhylib.NW.JAM_UNTIL, 0) ~= 0 then p:SetNW2Float(Rhylib.NW.JAM_UNTIL, 0) end
@@ -626,6 +642,7 @@ timer.Create("Rhylib.Radio.Jam", 0.5, 0, function()
                 p.rhylibJamUntil = nil
                 p:SetNW2Float(Rhylib.NW.JAM_UNTIL, 0)
                 setJammed(p, false)
+                setWx(p, false)
             end
             setLevel(p, lvl)
         else
@@ -634,6 +651,7 @@ timer.Create("Rhylib.Radio.Jam", 0.5, 0, function()
                 p:SetNW2Float(Rhylib.NW.JAM_UNTIL, 0)
             end
             setJammed(p, false)
+            setWx(p, false)
             setLevel(p, lvl)
         end
     end
