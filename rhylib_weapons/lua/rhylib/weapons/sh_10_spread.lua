@@ -5,13 +5,22 @@
     Every shot lands inside the current crosshair circle, and the arc
     closest to the shot gets kicked outward (see the design plan).
 
+    Recoil patterns: each gun's SWEP.RecoilPattern gives the direction of
+    every shot in a spray (Spread.PatternAngle; the shot number is the
+    pattern bits of the predicted RecoilB network var (Spread.PatternShot),
+    back to 1 after PATTERN_RESET s
+    without firing). From the second shot on, the shot lands that way
+    inside the cone (a little jitter), so the arc on that side kicks out
+    and shows where the spray is going; the first shot from rest goes
+    anywhere in the cone as before. cl_50_recoil kicks the view the same way.
+
     All spread values are cone angles in degrees. State is stored in the
     weapon's predicted network vars, so server and client always agree:
         Recoil (kicks 1-3), RecoilB (bloom, streak, last arc), KickTime, Aiming
     (declared in rhylib_base SWEP:SetupDataTables). The cone sizes come
     from the gun's SWEP.Spread table:
         hip, aim         resting cone (degrees) hip-fire / aiming
-        kickMain         kick on the arc nearest the shot (x the streak, up to 4)
+        kickMain         kick on the arc nearest the shot (x the streak, up to STREAK_MAX)
         kickSide         kick on the other two arcs
         bloomPerShot     shared bloom added per shot, up to bloomMax
         aimKickMult      kicks and bloom added while aiming are multiplied by this
@@ -34,12 +43,43 @@ Spread.ARC_CENTRES = { math.rad(150), math.rad(270), math.rad(30) }
 Spread.KICK_TAU = 0.12       -- per-arc kick decay, seconds
 Spread.BLOOM_TAU = 0.45      -- shared bloom decay, seconds
 Spread.STREAK_WINDOW = 0.6   -- seconds between same-arc shots to keep a streak
-Spread.STREAK_MAX = 4
+Spread.STREAK_MAX = 2   -- (recoil patterns send runs of shots to the same arc)
 Spread.REST_TIME = 0.35      -- seconds without firing before the next shot counts as "from rest"
+Spread.PATTERN_RESET = 0.45  -- seconds without firing before a spray's recoil pattern starts over
+Spread.PATTERN_JITTER = math.rad(22)   -- shots land within this many degrees of the pattern direction
+-- Guns without SWEP.RecoilPattern: straight up, then a small wobble.
+Spread.DEFAULT_PATTERN = { 270, 270, 270, 260, 280, 255, 285, 260, 280 }
+
+-- Spread.PatternAngle(wep, n): screen angle (radians) of shot n of a spray.
+function Spread.PatternAngle(wep, n)
+    local p = wep.RecoilPattern or Spread.DEFAULT_PATTERN
+    local len = #p
+    if len == 0 then return math.rad(270) end
+    n = math.max(1, n or 1)
+    if n > len then
+        local loop = math.Clamp(wep.RecoilPatternLoop or 4, 1, len)
+        n = len - loop + 1 + (n - len - 1) % loop
+    end
+    return math.rad(p[n])
+end
+
+-- Spread.PatternShot(wep): the number of the last shot of this spray
+-- (RecoilB bits 15-22; 0 = none yet).
+function Spread.PatternShot(wep)
+    if not wep.GetRecoilB then return 0 end
+    return math.floor(wep:GetRecoilB() / 32768) % 256
+end
+
+-- Spread.NextPatternShot(wep, t): the number the next shot will have.
+function Spread.NextPatternShot(wep, t)
+    if not wep.GetKickTime then return 1 end
+    if t - wep:GetKickTime() > Spread.PATTERN_RESET then return 1 end
+    return math.min(Spread.PatternShot(wep) + 1, 255)
+end
 
 -- Packing: Recoil = three kicks, 10 bits each (0.01 degree steps, up to
 -- 10.23); RecoilB = bloom 10 bits (0.005 steps, up to 5.115), streak
--- 3 bits, last arc 2 bits.
+-- 3 bits, last arc 2 bits, recoil pattern shot number 8 bits.
 local BLOOM_STEP, KICK_STEP = 0.005, 0.01
 local BLOOM_MAX_Q, KICK_MAX_Q = 1023, 1023
 
@@ -65,14 +105,16 @@ function Spread.Unpack(wep)
     return b * BLOOM_STEP, k1 * KICK_STEP, k2 * KICK_STEP, k3 * KICK_STEP, streak, arc
 end
 
--- Spread.Pack(wep, bloom, k1, k2, k3, streak, arc): writes them back
--- (values are rounded to the steps above and capped).
-function Spread.Pack(wep, bloom, k1, k2, k3, streak, arc)
+-- Spread.Pack(wep, bloom, k1, k2, k3, streak, arc, pat): writes them back
+-- (values are rounded to the steps above and capped; pat = pattern shot
+-- number, nil keeps it).
+function Spread.Pack(wep, bloom, k1, k2, k3, streak, arc, pat)
     local p = q(k3, KICK_STEP, KICK_MAX_Q)
     p = p * 1024 + q(k2, KICK_STEP, KICK_MAX_Q)
     p = p * 1024 + q(k1, KICK_STEP, KICK_MAX_Q)
     wep:SetRecoil(p)
-    local r = arc * 8 + math.Clamp(streak, 0, 7)
+    pat = math.Clamp(floor(pat or Spread.PatternShot(wep)), 0, 255)
+    local r = (pat * 4 + arc) * 8 + math.Clamp(streak, 0, 7)
     wep:SetRecoilB(r * 1024 + q(bloom, BLOOM_STEP, BLOOM_MAX_Q))
 end
 
@@ -177,7 +219,15 @@ function Spread.ShotDirection(wep, aimAng, index)
     if now - wep:GetKickTime() > Spread.REST_TIME then
         cone = cone * (Rhylib.Config.Get("weapons", "firstShotMult"))
     end
-    local a = util.SharedRandom("rhylib.spread.a", 0, 2 * math.pi, index or 0)
+    -- (the direction follows the recoil pattern, with a little jitter)
+    local n = Spread.NextPatternShot(wep, now)
+    local a
+    if n <= 1 then
+        a = util.SharedRandom("rhylib.spread.a", 0, 2 * math.pi, index or 0)   -- (first shot: anywhere in the cone)
+    else
+        a = Spread.PatternAngle(wep, n)
+            + util.SharedRandom("rhylib.spread.a", -Spread.PATTERN_JITTER, Spread.PATTERN_JITTER, index or 0)
+    end
     local u = util.SharedRandom("rhylib.spread.r", 0, 1, index or 0)
     -- Centre-weighted (radius = u, not sqrt(u)): most shots land near the
     -- middle, a few reach the edge of the circle.
@@ -204,11 +254,12 @@ function Spread.AddShot(wep, arc, t)
     local m = wep:GetAiming() and cfg.aimKickMult or 1
     local main, side = cfg.kickMain * streak * m, cfg.kickSide * m
 
+    local pat = Spread.NextPatternShot(wep, t)   -- (before KickTime moves)
     Spread.Pack(wep,
         math.min(bloom + cfg.bloomPerShot * m, cfg.bloomMax),
         k1 + (arc == 1 and main or side),
         k2 + (arc == 2 and main or side),
         k3 + (arc == 3 and main or side),
-        streak, arc)
+        streak, arc, pat)
     wep:SetKickTime(t)
 end

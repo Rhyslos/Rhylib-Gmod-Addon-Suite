@@ -61,9 +61,12 @@ SWEP.FireRate = 75           -- 0.8 s between shots
 -- side = random sideways, bias = lean -1 (left) .. 1 (right), recover = share
 -- of the climb that settles back, aimMult = multiplier while aiming.
 SWEP.Recoil = { up = 2.4, side = 0.6, bias = 0.1, recover = 0.75, aimMult = 0.75 }
-SWEP.Damage = 16             -- per bolt
+SWEP.Damage = 20             -- per bolt
 SWEP.Pellets = 6
-SWEP.PelletCone = 3.8        -- degrees, on top of the normal spread
+SWEP.PelletCone = 3.0        -- degrees, on top of the normal spread
+-- Fixed pellet pattern (rhylib_base): { screen angle in degrees (0 right,
+-- 90 down), share of PelletCone } per pellet: one in the middle, five round it.
+SWEP.PelletPattern = { { 0, 0 }, { 270, 0.85 }, { 342, 0.85 }, { 54, 0.85 }, { 126, 0.85 }, { 198, 0.85 } }
 SWEP.BoltSpeed = 6500
 SWEP.BoltColor = 1
 SWEP.FireSound = "weapons/dc17_shotgun/dc17mat_fire.mp3"
@@ -85,7 +88,7 @@ SWEP.StartCells = 1
 SWEP.InvW = 4
 SWEP.InvH = 1
 SWEP.InvLarge = true
-SWEP.InvWeight = 4.5         -- kg
+SWEP.InvWeight = 5.5         -- kg
 
 -- Spread: cone angles in degrees (rhylib_weapons sh_10_spread): hip / aim =
 -- resting cone, kickMain / kickSide = how far the crosshair arcs move per shot,

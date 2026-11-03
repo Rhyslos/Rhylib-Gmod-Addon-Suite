@@ -59,6 +59,7 @@ SWEP.FireRate = 355
 -- side = random sideways, bias = lean -1 (left) .. 1 (right), recover = share
 -- of the climb that settles back, aimMult = multiplier while aiming.
 SWEP.Recoil = { up = 0.55, side = 0.3, bias = -0.1, recover = 0.55, aimMult = 0.65 }  -- view kick per shot
+SWEP.RecoilPattern = { 270, 270, 260, 280, 255, 285, 250, 290 }   -- (shot directions in a spray: 270 up, 0 right, 180 left; rhylib_base)
 SWEP.Damage = 33.5
 SWEP.BoltSpeed = 7000
 SWEP.BoltColor = 1

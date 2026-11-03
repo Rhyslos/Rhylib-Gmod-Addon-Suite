@@ -6,15 +6,23 @@
     lands inside the circle you see. Arcs keep their size and only move
     outward; aiming shrinks the whole crosshair.
 
-    Player options (Settings > Weapons): style (classic chevron, dot,
-    cross, arcs only, dot only), colour, centre size, outline, hit markers,
-    thickness, opacity. Classic is the default.
+    Player options (Settings > Weapons): the centre mark (chevron, dot,
+    cross, small ring, T, plus, none) and the outer part (three arcs,
+    ticks, brackets, a split ring, none) chosen separately; colour (a
+    preset or custom R / G / B), centre size, gap and length of the outer
+    part, thickness, outline, opacity, hit markers; "Spread on the
+    crosshair" off keeps the outer part still (no spread or kick shown);
+    "Centre follows recoil" moves the centre mark toward where the kick
+    pushes (off by default: the centre never moves). Classic (chevron + arcs) is the default; an old
+    rhylib_crosshair_style setting is moved over once.
 
     Realm: client. Called from rhylib_base SWEP:DoDrawCrosshair (and by
     rhylib_thirdperson for its own crosshair). Receives net "wep.hit"
     (UInt 2: 0 body, 1 head, 2 down/kill) for the hit marker and sound.
     Client convars: rhylib_hitsound, rhylib_crosshair_smooth / _thickness /
-    _opacity / _style / _colour / _centre / _outline / _hitmarker.
+    _opacity / _inner / _outer / _colour / _r / _g / _b / _centre / _gap /
+    _length / _dynamic / _follow / _outline / _hitmarker (_style: old,
+    read once).
     Reads Rhylib.UI.Tint (a command order's colour, rhylib_skills) and
     Rhylib.Gear.visorFov (sun visor zoom, rhylib_gear).
 ]]
@@ -50,22 +58,41 @@ local colMark = Color(0, 0, 0)
 local smoothVar = CreateClientConVar("rhylib_crosshair_smooth", "1", true, false, "Anti-aliased crosshair lines (0 = plain polygons)", 0, 1)
 local thickVar = CreateClientConVar("rhylib_crosshair_thickness", "1", true, false, "Crosshair line thickness (multiplier)", 0.5, 3)
 local opacityVar = CreateClientConVar("rhylib_crosshair_opacity", "1", true, false, "Crosshair opacity", 0.1, 1)
-local styleVar = CreateClientConVar("rhylib_crosshair_style", "classic", true, false, "Crosshair style: classic, dot, cross, arcs, dotonly")
-local colourVar = CreateClientConVar("rhylib_crosshair_colour", "white", true, false, "Crosshair colour (see X.COLOURS)")
+local styleVar = CreateClientConVar("rhylib_crosshair_style", "classic", true, false, "Old crosshair style (moved to _inner / _outer once)")
+local innerVar = CreateClientConVar("rhylib_crosshair_inner", "chevron", true, false, "Crosshair centre mark: chevron, dot, cross, circle, tee, plus, none")
+local outerVar = CreateClientConVar("rhylib_crosshair_outer", "arcs", true, false, "Crosshair outer part: arcs, ticks, brackets, ring, none")
+local colourVar = CreateClientConVar("rhylib_crosshair_colour", "white", true, false, "Crosshair colour (see X.COLOURS; custom = rhylib_crosshair_r / _g / _b)")
+local rVar = CreateClientConVar("rhylib_crosshair_r", "244", true, false, "Custom crosshair colour: red", 0, 255)
+local gVar = CreateClientConVar("rhylib_crosshair_g", "244", true, false, "Custom crosshair colour: green", 0, 255)
+local bVar = CreateClientConVar("rhylib_crosshair_b", "240", true, false, "Custom crosshair colour: blue", 0, 255)
+local gapVar = CreateClientConVar("rhylib_crosshair_gap", "0", true, false, "Extra gap between the centre and the outer part (px at 1080p)", 0, 30)
+local lengthVar = CreateClientConVar("rhylib_crosshair_length", "1", true, false, "Length of the outer part's pieces (1 = normal)", 0.3, 1.6)
+local dynamicVar = CreateClientConVar("rhylib_crosshair_dynamic", "1", true, false, "The outer part shows spread and kick (0 = stays still)", 0, 1)
+local followVar = CreateClientConVar("rhylib_crosshair_follow", "0", true, false, "The centre mark moves toward where the kick pushes", 0, 1)
 local centreVar = CreateClientConVar("rhylib_crosshair_centre", "1", true, false, "Size of the crosshair's centre mark (multiplier)", 0.5, 2.5)
 local outlineVar = CreateClientConVar("rhylib_crosshair_outline", "1", true, false, "Dark outline around the crosshair", 0, 1)
 local markerVar = CreateClientConVar("rhylib_crosshair_hitmarker", "1", true, false, "Show hit markers on the crosshair", 0, 1)
 
--- Styles: centre mark and whether the spread arcs show.
-X.STYLES = {
-    classic = { centre = "chevron", arcs = true },
-    dot = { centre = "dot", arcs = true },
-    cross = { centre = "cross", arcs = true },
-    arcs = { arcs = true },
-    dotonly = { centre = "dot" },
+-- The old one-setting styles (centre mark, outer part), moved over once.
+local OLD_STYLES = {
+    classic = { "chevron", "arcs" }, dot = { "dot", "arcs" }, cross = { "cross", "arcs" },
+    arcs = { "none", "arcs" }, dotonly = { "dot", "none" },
 }
-X.STYLE_OPTIONS = {
-    { "classic", "Classic" }, { "dot", "Dot" }, { "cross", "Cross" }, { "arcs", "Arcs only" }, { "dotonly", "Dot only" },
+if cookie.GetString("rhylib_xh_v", "") ~= "2" then
+    local o = OLD_STYLES[styleVar:GetString()]
+    if o and styleVar:GetString() ~= "classic" then
+        RunConsoleCommand("rhylib_crosshair_inner", o[1])
+        RunConsoleCommand("rhylib_crosshair_outer", o[2])
+    end
+    cookie.Set("rhylib_xh_v", "2")
+end
+X.INNER = { chevron = true, dot = true, cross = true, circle = true, tee = true, plus = true, none = true }
+X.OUTER = { arcs = true, ticks = true, brackets = true, ring = true, none = true }
+X.INNER_OPTIONS = {
+    { "chevron", "Chevron" }, { "dot", "Dot" }, { "cross", "Cross" }, { "circle", "Ring" }, { "tee", "T" }, { "plus", "Plus" }, { "none", "None" },
+}
+X.OUTER_OPTIONS = {
+    { "arcs", "Arcs" }, { "ticks", "Ticks" }, { "brackets", "Brackets" }, { "ring", "Split ring" }, { "none", "None" },
 }
 X.COLOURS = {
     { "white", "White", Color(244, 244, 240) },
@@ -75,9 +102,19 @@ X.COLOURS = {
     { "orange", "Orange", Color(255, 150, 50) },
     { "red", "Red", Color(255, 75, 70) },
     { "magenta", "Magenta", Color(240, 90, 230) },
+    { "custom", "Custom", nil },   -- (rhylib_crosshair_r / _g / _b)
 }
 local COLOUR_BY_ID = {}
-for _, c in ipairs(X.COLOURS) do COLOUR_BY_ID[c[1]] = c[3] end
+for _, c in ipairs(X.COLOURS) do if c[3] then COLOUR_BY_ID[c[1]] = c[3] end end
+local colCustom = Color(244, 244, 240)
+local function ownColour()
+    local id = colourVar:GetString()
+    if id == "custom" then
+        colCustom.r, colCustom.g, colCustom.b = math.Clamp(rVar:GetInt(), 0, 255), math.Clamp(gVar:GetInt(), 0, 255), math.Clamp(bVar:GetInt(), 0, 255)
+        return colCustom
+    end
+    return COLOUR_BY_ID[id] or colLine
+end
 local colLineNow, colOutlineNow = Color(244, 244, 240), Color(0, 0, 0, 128)
 
 --[[
@@ -203,28 +240,57 @@ local function dot(x, y, rad)
     end
 end
 
--- style: X.STYLES entry; k: centre size; grow: extra radius for the outline pass.
-local function drawShape(x, y, r, offsets, s, w, style, k, grow)
-    if style.arcs then
-        local centres = W.Spread.ARC_CENTRES
+-- inner, outer: the chosen ids; k: centre size; L: the outer pieces'
+-- length; grow: extra radius for the outline pass; fx, fy: where the
+-- centre mark sits.
+local function drawShape(x, y, r, offsets, s, w, inner, outer, k, L, grow, fx, fy)
+    local centres = W.Spread.ARC_CENTRES
+    if outer == "arcs" or outer == "ring" then
+        -- arcs: three 120 degree pieces; ring: the same, closed up (only a hair between)
+        local gap = outer == "ring" and math.rad(4) or GAP
+        local half = math.min(SIXTY - gap * 0.5, (SIXTY - gap * 0.5) * L)
         for i = 1, 3 do
             local c = centres[i]
             local cx, cy = x + math.cos(c) * offsets[i], y + math.sin(c) * offsets[i]
-            arc(cx, cy, r, c - SIXTY + GAP * 0.5, c + SIXTY - GAP * 0.5, w)
+            arc(cx, cy, r, c - half, c + half, w)
+        end
+    elseif outer == "ticks" then
+        -- a short line pointing out from each arc's middle
+        local len = 8 * s * L
+        for i = 1, 3 do
+            local c = centres[i]
+            local cs, sn = math.cos(c), math.sin(c)
+            local rr = r + offsets[i]
+            line(x + cs * rr, y + sn * rr, x + cs * (rr + len), y + sn * (rr + len), w)
+        end
+    elseif outer == "brackets" then
+        -- a bracket round each arc's middle, its ends pointing outward
+        local arm = 7 * s * L
+        for i = 1, 3 do
+            local c = centres[i]
+            local cs, sn = math.cos(c), math.sin(c)
+            local rr = r + offsets[i]
+            local px, py = x + cs * rr, y + sn * rr
+            local tx, ty = -sn, cs   -- (along the ring)
+            line(px - tx * arm, py - ty * arm, px + tx * arm, py + ty * arm, w)
+            line(px - tx * arm, py - ty * arm, px - tx * arm + cs * arm * 0.6, py - ty * arm + sn * arm * 0.6, w)
+            line(px + tx * arm, py + ty * arm, px + tx * arm + cs * arm * 0.6, py + ty * arm + sn * arm * 0.6, w)
         end
     end
-    -- Centre mark, never moves with the spread.
-    local c = style.centre
-    if c == "chevron" then
+    -- Centre mark: never moves with the spread (unless "Centre follows recoil").
+    x, y = fx, fy
+    if inner == "chevron" then
         line(x - 6 * s * k, y + 3 * s * k, x, y - 4 * s * k, w)
         line(x, y - 4 * s * k, x + 6 * s * k, y + 3 * s * k, w)
-    elseif c == "dot" then
+    elseif inner == "dot" then
         dot(x, y, 2 * s * k + grow)
-    elseif c == "cross" then
-        local g, l = 2 * s * k, 7 * s * k
+    elseif inner == "circle" then
+        arc(x, y, 4 * s * k, 0, math.pi * 2, w)
+    elseif inner == "cross" or inner == "tee" or inner == "plus" then
+        local g, l = (inner == "plus" and 0 or 2 * s * k), 7 * s * k
         line(x - l, y, x - g, y, w)
         line(x + g, y, x + l, y, w)
-        line(x, y - l, x, y - g, w)
+        if inner ~= "tee" then line(x, y - l, x, y - g, w) end
         line(x, y + g, x, y + l, w)
     end
 end
@@ -247,16 +313,35 @@ function X.Draw(wep, x, y)
     local s = ScrH() / 1080
     local t = CurTime()
 
-    local r = math.max(degToPx(W.Spread.BaseCone(wep), fov), MIN_RADIUS * s)
-    local o1, o2, o3 = W.Spread.Offsets(wep, t)
-    offsets[1], offsets[2], offsets[3] = degToPx(o1, fov), degToPx(o2, fov), degToPx(o3, fov)
+    local dynamic = dynamicVar:GetBool()
+    local r = math.max(degToPx(W.Spread.BaseCone(wep), fov), MIN_RADIUS * s) + math.Clamp(gapVar:GetFloat(), 0, 30) * s
+    if dynamic then
+        local o1, o2, o3 = W.Spread.Offsets(wep, t)
+        offsets[1], offsets[2], offsets[3] = degToPx(o1, fov), degToPx(o2, fov), degToPx(o3, fov)
+    else
+        offsets[1], offsets[2], offsets[3] = 0, 0, 0
+    end
+    -- Centre follows recoil (setting): toward the arc that kicked out most.
+    local fx, fy = x, y
+    if followVar:GetBool() and dynamic then
+        local mean = (offsets[1] + offsets[2] + offsets[3]) / 3
+        for i = 1, 3 do
+            local c = W.Spread.ARC_CENTRES[i]
+            local d = (offsets[i] - mean) * 0.5
+            fx, fy = fx + math.cos(c) * d, fy + math.sin(c) * d
+        end
+    end
+    local L = math.Clamp(lengthVar:GetFloat(), 0.3, 1.6)
 
     -- Thickness and opacity from the player's settings.
     local thick = math.Clamp(thickVar:GetFloat(), 0.5, 3)
     local op = math.Clamp(opacityVar:GetFloat(), 0.1, 1)
-    local style = X.STYLES[styleVar:GetString()] or X.STYLES.classic
+    local inner = innerVar:GetString()
+    if not X.INNER[inner] then inner = "chevron" end
+    local outer = outerVar:GetString()
+    if not X.OUTER[outer] then outer = "arcs" end
     local k = math.Clamp(centreVar:GetFloat(), 0.5, 2.5)
-    local own = COLOUR_BY_ID[colourVar:GetString()] or colLine
+    local own = ownColour()
     colLineNow.a = 255 * op
     -- (a tint, e.g. an officer's command order: rhylib_skills)
     local tint = Rhylib.UI.Tint
@@ -269,10 +354,10 @@ function X.Draw(wep, x, y)
     beginStrokes()
     if outlineVar:GetBool() then
         surface.SetDrawColor(colOutlineNow)
-        drawShape(x, y, r, offsets, s, (LINE * thick + (OUTLINE - LINE)) * s, style, k, (OUTLINE - LINE) * 0.5 * s)
+        drawShape(x, y, r, offsets, s, (LINE * thick + (OUTLINE - LINE)) * s, inner, outer, k, L, (OUTLINE - LINE) * 0.5 * s, fx, fy)
     end
     surface.SetDrawColor(colLineNow)
-    drawShape(x, y, r, offsets, s, LINE * thick * s, style, k, 0)
+    drawShape(x, y, r, offsets, s, LINE * thick * s, inner, outer, k, L, 0, fx, fy)
     if not markerVar:GetBool() then return end
 
     -- Hit marker: four diagonal ticks around the ring, fading out. Head
@@ -317,14 +402,31 @@ Rhylib.Hook.Add("InitPostEntity", "weapons.hitsound.setting", function()
     if Menus and Menus.AddSetting then
         Menus.AddSetting("Weapons", { id = "wep.hitsound", order = 10, title = "Hit sounds",
             desc = "A click when your bolt hits someone", kind = "toggle", convar = "rhylib_hitsound" })
-        Menus.AddSetting("Weapons", { id = "wep.xhstyle", order = 12, title = "Crosshair style", wide = 560,
-            desc = "Centre mark and spread arcs", kind = "choice", convar = "rhylib_crosshair_style", options = X.STYLE_OPTIONS,
-            get = function() local v = styleVar:GetString() return X.STYLES[v] and v or "classic" end })
+        Menus.AddSetting("Weapons", { id = "wep.xhinner", order = 12, title = "Crosshair centre", wide = 640,
+            desc = "The mark in the middle (it never moves unless Centre follows recoil is on)", kind = "choice", convar = "rhylib_crosshair_inner", options = X.INNER_OPTIONS,
+            get = function() local v = innerVar:GetString() return X.INNER[v] and v or "chevron" end })
+        Menus.AddSetting("Weapons", { id = "wep.xhouter", order = 13, title = "Crosshair outer part", wide = 560,
+            desc = "Shows the spread and the kick of each shot", kind = "choice", convar = "rhylib_crosshair_outer", options = X.OUTER_OPTIONS,
+            get = function() local v = outerVar:GetString() return X.OUTER[v] and v or "arcs" end })
         local cols = {}
         for _, c in ipairs(X.COLOURS) do cols[#cols + 1] = { c[1], c[2] } end
         Menus.AddSetting("Weapons", { id = "wep.xhcolour", order = 14, title = "Crosshair colour", wide = 560,
             kind = "choice", convar = "rhylib_crosshair_colour", options = cols,
-            get = function() local v = colourVar:GetString() return COLOUR_BY_ID[v] and v or "white" end })
+            get = function() local v = colourVar:GetString() return (COLOUR_BY_ID[v] or v == "custom") and v or "white" end })
+        Menus.AddSetting("Weapons", { id = "wep.xhr", order = 14.1, title = "Custom colour: red", desc = "With colour Custom",
+            kind = "slider", convar = "rhylib_crosshair_r", min = 0, max = 255, decimals = 0 })
+        Menus.AddSetting("Weapons", { id = "wep.xhg", order = 14.2, title = "Custom colour: green", desc = "With colour Custom",
+            kind = "slider", convar = "rhylib_crosshair_g", min = 0, max = 255, decimals = 0 })
+        Menus.AddSetting("Weapons", { id = "wep.xhb", order = 14.3, title = "Custom colour: blue", desc = "With colour Custom",
+            kind = "slider", convar = "rhylib_crosshair_b", min = 0, max = 255, decimals = 0 })
+        Menus.AddSetting("Weapons", { id = "wep.xhgap", order = 16.1, title = "Crosshair gap",
+            desc = "Extra room between the centre and the outer part", kind = "slider", convar = "rhylib_crosshair_gap", min = 0, max = 30, decimals = 0 })
+        Menus.AddSetting("Weapons", { id = "wep.xhlength", order = 16.2, title = "Crosshair outer length",
+            desc = "Length of the ticks or brackets (up to 1.6) or the arcs (up to 1)", kind = "slider", convar = "rhylib_crosshair_length", min = 0.3, max = 1.6, decimals = 1 })
+        Menus.AddSetting("Weapons", { id = "wep.xhdynamic", order = 16.3, title = "Spread on the crosshair",
+            desc = "The outer part opens up with spread and kicks out on the side each shot went (off: no spread or kick shown; it still shrinks when aiming)", kind = "toggle", convar = "rhylib_crosshair_dynamic" })
+        Menus.AddSetting("Weapons", { id = "wep.xhfollow", order = 16.4, title = "Centre follows recoil",
+            desc = "The centre mark moves a little toward where the kick pushes (off: it never moves)", kind = "toggle", convar = "rhylib_crosshair_follow" })
         Menus.AddSetting("Weapons", { id = "wep.xhcentre", order = 16, title = "Crosshair centre size",
             desc = "Size of the chevron, dot or cross (1 = normal)", kind = "slider", convar = "rhylib_crosshair_centre", min = 0.5, max = 2.5, decimals = 1 })
         Menus.AddSetting("Weapons", { id = "wep.xhoutline", order = 18, title = "Crosshair outline",

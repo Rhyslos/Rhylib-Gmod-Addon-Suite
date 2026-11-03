@@ -323,11 +323,12 @@ function K.FirstShotReady(ply, wep)
     return CurTime() - wep:GetKickTime() >= cfg("firstShotWait")
 end
 
--- K.OverchargeAuto(wep): full auto with the Overcharge toggle on
--- (rhylib_base OverchargeOn; the charged shot has its own weapons settings).
+-- K.OverchargeAuto(wep): full auto with Charged shot on, for an owner of
+-- the gun's Overcharge skill (rhylib_base ChargedOn / CanOvercharge; the
+-- charged semi shot has its own weapons settings).
 function K.OverchargeAuto(wep)
-    if wep.rhylibChargedShot or not (wep.OverchargeOn and wep.GetFireModeName) then return false end
-    return wep:GetFireModeName() == "auto" and wep:OverchargeOn()
+    if not (wep.ChargedOn and wep.GetFireModeName and wep.CanOvercharge) then return false end
+    return wep:GetFireModeName() == "auto" and wep:ChargedOn() and wep:CanOvercharge()
 end
 
 -- Fire mode damage (Overcharge in full auto, Rapid fire); also shown by

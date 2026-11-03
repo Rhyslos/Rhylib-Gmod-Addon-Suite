@@ -5,17 +5,20 @@
       B1 battle droid (rhylib_b1): b1Health health, E-5 blaster with red bolts,
       now and then a grenade at someone who just ducked behind cover.
       B1 variants (rhylib_b1_<variant>): aat, geonosis, marine, security,
-      snow fight like a B1 (other model); heavy fires long fast bursts;
+      snow fight like a B1 (other model); heavy suppresses like a B2;
       commander has more health and makes droids near it aim better,
       react faster and pause less between bursts. Killing a commander
       rattles the droids near it for a few seconds.
       B2 super battle droid (rhylib_b2): tough and slow, a blaster in each
-      arm firing long fast bursts (no rocket).
-      B2 mortar (rhylib_b2_cannon, was "B2 cannon"): slower bursts, and a
-      wrist rocket lobbed high over cover (purple blast).
+      arm firing without stopping, tighter the longer it stays on you
+      (suppression; no rocket).
+      B2 mortar (rhylib_b2_cannon, was "B2 cannon"): mainly a wrist rocket
+      lobbed high over cover (purple blast); its blaster only at someone
+      close (mortarSelfRange).
       B2 rocket droid (rhylib_b2_rocketdroid): same arm, but its rocket
       flies straight at you and dives into the floor just before you, so
-      it works down hallways and indoors (needs sight of you).
+      it works down hallways and indoors (needs sight of you); between
+      rockets it suppresses like a B2 at half the rate.
       Training B1 / B2 (rhylib_b1_training, rhylib_b2_training): like the
       B1 and B2 with orange-yellow bolts that only take sim health
       (rhylib_training).
@@ -24,7 +27,10 @@
       hurt; B2s don't. Route and cover searches are spread over ticks
       (pathPerTick).
       Spots players in sight within range (checked a few times a second,
-      not every tick), turns, fires short inaccurate bursts, advances when
+      not every tick), turns, fires in its kind's style (B1: fairly fast
+      semi; clones: DC-15S full-auto runs with short random breaks and
+      target switches, DC-15A slow aimed semi, Z-6 non-stop spray while
+      standing; see ENT:StyleFire in rhylib_b1.lua), advances when
       far away, chases to where it last saw you, wanders near where it was
       spawned when idle. Walking needs a navmesh (nav_generate); without
       one droids stand and shoot.
@@ -61,7 +67,7 @@ Config.Register("droids", "b1Speed", 170, "B1 run speed")
 Config.Register("droids", "b1Range", 3000, "How far a B1 sees and shoots")
 Config.Register("droids", "b1Reaction", 0.7, "Seconds before a B1 starts firing at a new target")
 Config.Register("droids", "e5Damage", 13, "E-5 damage per bolt")
-Config.Register("droids", "e5RPM", 300, "E-5 shots per minute within a burst")
+Config.Register("droids", "e5RPM", 150, "B1 E-5: shots per minute (fairly fast semi)")
 Config.Register("droids", "e5Spread", 1.2, "E-5 inaccuracy cone (degrees), more against moving targets")
 
 Config.Register("droids", "b1NadeChance", 0.5, "B1: chance to throw a grenade at a target that just went behind cover")
@@ -77,8 +83,13 @@ Config.Register("droids", "b2Speed", 115, "B2 walk speed")
 Config.Register("droids", "b2Range", 2800, "How far a B2 sees and shoots")
 Config.Register("droids", "b2Reaction", 0.9, "Seconds before a B2 starts firing at a new target")
 Config.Register("droids", "b2Damage", 14, "B2 wrist blaster damage per bolt")
-Config.Register("droids", "b2RPM", 800, "B2 blasters (both arms) shots per minute within a burst")
-Config.Register("droids", "b2cRPM", 420, "B2 cannon: shots per minute within a burst")
+Config.Register("droids", "b2RPM", 320, "B2 blasters (both arms): shots per minute, fired without stopping (suppression)")
+Config.Register("droids", "b2cRPM", 300, "B2 mortar: blaster shots per minute (only at someone within mortarSelfRange)")
+Config.Register("droids", "b2RocketRate", 0.5, "B2 rocket droid: blaster fire rate as a part of the B2's (b2RPM)")
+Config.Register("droids", "mortarSelfRange", 700, "B2 mortar: it only uses its blaster on someone closer than this (units); further out only the mortar")
+Config.Register("droids", "suppressRamp", 3, "B2 / heavy B1 suppression: seconds on the same target until their aim is fully settled")
+Config.Register("droids", "suppressFrom", 1.5, "B2 / heavy B1 suppression: aim cone multiplier when they start on a target")
+Config.Register("droids", "suppressTo", 0.6, "B2 / heavy B1 suppression: aim cone multiplier after suppressRamp seconds on the same target")
 Config.Register("droids", "b2Spread", 1.8, "B2 inaccuracy cone (degrees), more against moving targets")
 Config.Register("droids", "b2RocketDamage", 75, "B2 wrist rocket: damage at the centre")
 Config.Register("droids", "b2RocketRadius", 230, "B2 wrist rocket: blast radius")
@@ -101,11 +112,11 @@ Config.Register("droids", "artyRange", 8000, "Mortar squad artillery: how far it
 Config.Register("droids", "artyCooldown", 4.5, "Mortar squad artillery: seconds between one mortar's rockets")
 Config.Register("droids", "artySpread", 35, "Mortar squad artillery: miss distance per 1000 units (tightens on repeated shots at one target)")
 Config.Register("droids", "artyMaxFlight", 5.5, "Mortar squad artillery: longest rocket flight time (higher arcs at long range)")
-Config.Register("droids", "artyBlasterRange", 1500, "Mortar squad artillery: closer than this it also uses its blaster")
+Config.Register("droids", "artyBlasterRange", 1500, "Mortar squad artillery: closer than this it also uses its blaster (a lone B2 mortar: mortarSelfRange)")
 
 Config.Register("droids", "heavyHealth", 340, "B1 heavy: health")
 Config.Register("droids", "heavySpeed", 140, "B1 heavy: run speed")
-Config.Register("droids", "heavyRPM", 800, "B1 heavy: shots per minute within a burst")
+Config.Register("droids", "heavyRPM", 360, "B1 heavy: shots per minute, fired without stopping (suppression)")
 Config.Register("droids", "heavySpread", 2.0, "B1 heavy: inaccuracy cone (degrees)")
 
 Config.Register("droids", "cmdHealth", 480, "B1 commander: health")
@@ -116,7 +127,7 @@ Config.Register("droids", "boltSpeed", 5200, "Droid blaster bolt speed (units/s)
 Config.Register("droids", "cmdSpread", 0.7, "B1 commander boost: aim cone multiplier")
 Config.Register("droids", "cmdReaction", 0.6, "B1 commander boost: reaction time multiplier")
 Config.Register("droids", "blackoutReaction", 2, "EOD Signal blackout: droids' reaction time multiplier inside the bubble")
-Config.Register("droids", "cmdPause", 0.6, "B1 commander boost: pause between bursts multiplier")
+Config.Register("droids", "cmdPause", 0.6, "Commander boost: multiplier on the gap between shots and the breaks between runs (fires faster)")
 Config.Register("droids", "cmdDeathTime", 6, "B1 commander killed: seconds nearby droids are rattled (0 = off)")
 Config.Register("droids", "cmdDeathMult", 1.8, "B1 commander killed: aim cone multiplier while rattled")
 
@@ -193,14 +204,17 @@ Config.Register("droids", "ctSpeed", 190, "Clone run speed")
 Config.Register("droids", "ctRange", 3000, "How far a clone sees and shoots")
 Config.Register("droids", "ctReaction", 0.35, "Seconds before a clone starts firing at a new target")
 Config.Register("droids", "ctDamage", 18, "Clone DC-15S damage per bolt")
-Config.Register("droids", "ctRPM", 360, "Clone DC-15S shots per minute within a burst")
+Config.Register("droids", "ctRPM", 360, "Clone DC-15S: shots per minute in its full-auto runs")
+Config.Register("droids", "ctAutoPauseMin", 0.25, "Clone DC-15S: shortest break between full-auto runs (seconds)")
+Config.Register("droids", "ctAutoPauseMax", 0.9, "Clone DC-15S: longest break between full-auto runs (seconds)")
+Config.Register("droids", "ctSwitchChance", 0.35, "Clone DC-15S: chance after a run to switch to another enemy in sight")
 Config.Register("droids", "ctSpread", 0.9, "Clone inaccuracy cone (degrees), more against moving targets")
-Config.Register("droids", "ctRifleDamage", 26, "Clone rifleman / commander DC-15A damage per bolt")
-Config.Register("droids", "ctRifleRPM", 300, "Clone DC-15A shots per minute within a burst")
+Config.Register("droids", "ctRifleDamage", 30, "Clone rifleman / commander DC-15A damage per bolt")
+Config.Register("droids", "ctRifleRPM", 100, "Clone rifleman / commander DC-15A: shots per minute (slow, aimed semi)")
 Config.Register("droids", "ctHeavyHealth", 420, "Clone heavy: health")
 Config.Register("droids", "ctHeavySpeed", 160, "Clone heavy: run speed")
 Config.Register("droids", "ctHeavyDamage", 14, "Clone heavy Z-6 damage per bolt")
-Config.Register("droids", "ctHeavyRPM", 900, "Clone heavy Z-6 shots per minute within a burst")
+Config.Register("droids", "ctHeavyRPM", 900, "Clone heavy Z-6: shots per minute, sprayed without stopping (holds fire while moving unless assaulting)")
 Config.Register("droids", "ctHeavySpread", 1.6, "Clone heavy inaccuracy cone (degrees)")
 Config.Register("droids", "ctCmdHealth", 500, "Clone commander: health (boosts clones near it like a B1 commander boosts droids)")
 Config.Register("droids", "ctMedicHeal", 2, "Clone medic: health a second for players and clones near it")
@@ -257,7 +271,10 @@ D.B2T_MODEL = "models/aussiwozzi/cgi/b1droids/b2_battledroid_training.mdl"
       health, speed, range, reaction, damage, rpm, spread
                   config KEY names (strings), read when used, so a
                   Server settings change applies to new shots/spawns
-      burst       { min, max } shots per burst
+      burst       { min, max } shots per burst (full-auto runs, cover bursts)
+      style       how it fires in a fight (ENT:StyleFire): auto, semi,
+                  spray, suppress or mortar; rateKey: config key of a fire
+                  rate multiplier
       color       bolt colour index (rhylib_weapons BoltColor: 1 blue,
                   2 red, 8 training)
       gun         gun model drawn in the right hand (none: no prop, e.g. B2)
@@ -273,9 +290,9 @@ D.B2T_MODEL = "models/aussiwozzi/cgi/b1droids/b2_battledroid_training.mdl"
 ]]
 D.KINDS = {
     b1 = { name = "B1 battle droid", model = D.B1_MODEL, health = "b1Health", speed = "b1Speed", range = "b1Range", reaction = "b1Reaction",
-        damage = "e5Damage", rpm = "e5RPM", spread = "e5Spread", burst = { 2, 3 }, color = 2, gun = D.E5_MODEL, nades = true, cover = true },
+        damage = "e5Damage", rpm = "e5RPM", spread = "e5Spread", burst = { 2, 3 }, color = 2, gun = D.E5_MODEL, nades = true, cover = true, style = "semi" },
     b2 = { name = "B2 super battle droid", model = D.B2_MODEL, health = "b2Health", speed = "b2Speed", range = "b2Range", reaction = "b2Reaction",
-        damage = "b2Damage", rpm = "b2RPM", spread = "b2Spread", burst = { 5, 8 }, color = 2, big = true, dual = true, sound = D.B2_SOUND },
+        damage = "b2Damage", rpm = "b2RPM", spread = "b2Spread", burst = { 5, 8 }, color = 2, big = true, dual = true, sound = D.B2_SOUND, style = "suppress" },
 }
 
 -- B1 variants: a B1 with another model, and a few changes.
@@ -294,13 +311,13 @@ D.KINDS.b1_marine = variant("b1", "B1 marine droid", B1V .. "marine.mdl")
 D.KINDS.b1_security = variant("b1", "B1 security droid", B1V .. "security.mdl")
 D.KINDS.b1_snow = variant("b1", "B1 snow droid", B1V .. "snow.mdl")
 D.KINDS.b1_heavy = variant("b1", "B1 heavy droid", B1V .. "heavy.mdl",
-    { health = "heavyHealth", speed = "heavySpeed", rpm = "heavyRPM", spread = "heavySpread", burst = { 6, 10 }, nades = false })
+    { health = "heavyHealth", speed = "heavySpeed", rpm = "heavyRPM", spread = "heavySpread", burst = { 6, 10 }, nades = false, style = "suppress" })
 D.KINDS.b1_commander = variant("b1", "B1 commander droid", B1V .. "commander.mdl", { health = "cmdHealth", commander = true })
 D.KINDS.b2_cannon = variant("b2", "B2 mortar droid", "models/aussiwozzi/cgi/b1droids/b2_battledroid_cannon.mdl",
-    { rpm = "b2cRPM", burst = { 2, 4 }, dual = false, rockets = true })
+    { rpm = "b2cRPM", burst = { 2, 4 }, dual = false, rockets = true, style = "mortar" })
 -- (a level rocket that dives down just before you)
 D.KINDS.b2_rocket = variant("b2", "B2 rocket droid", "models/aussiwozzi/cgi/b1droids/b2_battledroid_cannon.mdl",
-    { rpm = "b2cRPM", burst = { 2, 4 }, dual = false, rockets = true, direct = true })
+    { rpm = "b2RPM", rateKey = "b2RocketRate", burst = { 2, 4 }, dual = false, rockets = true, direct = true, style = "suppress" })
 
 -- Training droids: yellow bolts (color 8), no kill credit.
 D.KINDS.b1t = variant("b1", "B1 training droid", D.B1T_MODEL, { training = true, color = 8 })
@@ -312,15 +329,15 @@ D.KINDS.b2t = variant("b2", "B2 training droid", D.B2T_MODEL, { training = true,
 local DC15S, DC15A, Z6 = "models/jajoff/sps/cgiweapons/tc13j/dc15s.mdl", "models/jajoff/sps/cgiweapons/tc13j/dc15a.mdl", "models/jajoff/sps/cgiweapons/tc13j/z6.mdl"
 D.CLONE_FALLBACK = "models/combine_soldier.mdl"
 D.KINDS.ct_trooper = { name = "Clone trooper", side = "republic", modelCfg = "ctModel", health = "ctHealth", speed = "ctSpeed", range = "ctRange", reaction = "ctReaction",
-    damage = "ctDamage", rpm = "ctRPM", spread = "ctSpread", burst = { 2, 4 }, color = 1, gun = DC15S, poppers = true, cover = true,
+    damage = "ctDamage", rpm = "ctRPM", spread = "ctSpread", burst = { 3, 8 }, color = 1, gun = DC15S, poppers = true, cover = true, style = "auto",
     sound = "weapons/dc15a/dc15a_fire.ogg", pitch = 112 }
-D.KINDS.ct_rifleman = variant("ct_trooper", "Clone rifleman", nil, { damage = "ctRifleDamage", rpm = "ctRifleRPM", burst = { 2, 3 }, gun = DC15A, poppers = false,
+D.KINDS.ct_rifleman = variant("ct_trooper", "Clone rifleman", nil, { damage = "ctRifleDamage", rpm = "ctRifleRPM", burst = { 2, 3 }, gun = DC15A, poppers = false, style = "semi",
     sound = "weapons/dc15a/dc15a_fire.ogg", pitch = 100 })
 D.KINDS.ct_heavy = variant("ct_trooper", "Clone heavy", nil, { health = "ctHeavyHealth", speed = "ctHeavySpeed", damage = "ctHeavyDamage", rpm = "ctHeavyRPM",
-    spread = "ctHeavySpread", burst = { 6, 10 }, gun = Z6, poppers = false, cover = false, sound = "weapons/airboat/airboat_gun_energy2.wav", pitch = 100 })
+    spread = "ctHeavySpread", burst = { 6, 10 }, gun = Z6, poppers = false, cover = false, style = "spray", sound = "weapons/airboat/airboat_gun_energy2.wav", pitch = 100 })
 D.KINDS.ct_medic = variant("ct_trooper", "Clone medic", nil, { modelCfg = "ctMedicModel", poppers = false, medic = true })
 D.KINDS.ct_commander = variant("ct_trooper", "Clone commander", nil, { modelCfg = "ctCmdModel", health = "ctCmdHealth", damage = "ctRifleDamage", rpm = "ctRifleRPM",
-    burst = { 2, 3 }, gun = DC15A, poppers = false, commander = true, sound = "weapons/dc15a/dc15a_fire.ogg", pitch = 100 })
+    burst = { 2, 3 }, gun = DC15A, poppers = false, commander = true, style = "semi", sound = "weapons/dc15a/dc15a_fire.ogg", pitch = 100 })
 
 -- Server settings > Models: each kind's model and gun (clone bodies are
 -- config settings: ctModel, ctMedicModel, ctCmdModel).
@@ -428,9 +445,9 @@ local PAGE_SECTIONS = {
     { "Orders & areas", { "^guardRadius$", "^patrolRadius$", "^markerRadius$", "^brushRadius$", "^roamRadius$" } },
     { "B1 grenades", { "^b1Nade" } },
     { "B1 battle droids", { "^b1", "^e5" } },
-    { "B2 rockets & mortars", { "^b2Rocket", "^b2Direct", "^b2Slow", "^b2Dive", "^arty" } },
+    { "B2 rockets & mortars", { "^b2Rocket", "^b2Direct", "^b2Slow", "^b2Dive", "^arty", "^mortar", "^b2cRPM$" } },
     { "B2 super battle droids", { "^b2" } },
-    { "Heavy & commander droids", { "^heavy", "^cmdHealth$", "^cmdRadius$", "^cmdSpread$", "^cmdReaction$", "^cmdPause$", "^cmdDeath", "^smoke" } },
+    { "Heavy & commander droids", { "^suppress", "^heavy", "^cmdHealth$", "^cmdRadius$", "^cmdSpread$", "^cmdReaction$", "^cmdPause$", "^cmdDeath", "^smoke" } },
     { "Cover & accuracy", { "^cover", "^blindSpread$", "^retreatFrac$", "^flash", "^settle", "^crowd" } },
     { "Retreat", { "^retreat", "^lastStand" } },
     { "Clone medics", { "^ctMedic", "^ctDown", "^reviveShield" } },

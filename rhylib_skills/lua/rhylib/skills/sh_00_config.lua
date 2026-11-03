@@ -163,7 +163,7 @@ K.NODES = {
       desc = "Carry and use ammo packs: they top up a teammate's magazines and hand out full ones for any blaster.",
       needs = { "eff_cells" } },
     { id = "overcharge", cat = "trooper", spec = "autorifleman", tier = 5, cost = 2, name = "Overcharge", icon = "bolt",
-      desc = "DC-15A Overcharge toggle (hold V): full auto fires overcharged bolts (30% more damage, bigger bolts, more kick and spread, the power cell drains 4x faster), and the charged semi shot uses 1 round instead of 3.",
+      desc = "DC-15A with Charged shot on (hold V): you keep full auto, which fires overcharged bolts (30% more damage, bigger bolts, more kick and spread, the power cell drains 4x faster), and charged semi shots use 1 round instead of 3.",
       needs = { "eff_cells" } },
     { id = "zip_rigger", cat = "trooper", spec = "autorifleman", tier = 5, cost = 3, name = "Grapple specialist", icon = "anchor",
       desc = "Grapple zipline mode: the far end goes anywhere you aim (a hook on the floor plants a second post there), and both grapple modes reach 10 m further. Also a Hook fire mode (V): your rifle's grapple works like the personal grappling hook, with 25 m of reach.",

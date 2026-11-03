@@ -10,8 +10,7 @@
 
     Fire modes: the fire-mode key (rhylib_firemode_key, default V). Tap it
     for the next mode; hold it (MODE_HOLD s) for a wheel (rhylib_menus
-    Wheel.OpenList) with every mode you may use now, plus the Overcharge
-    toggle on guns that have it (SWEP:ModeWheel, rhylib_base). Let go of
+    Wheel.OpenList) with every mode you may use now (SWEP:ModeWheel, rhylib_base). Let go of
     the key on an option, or click it, to pick it. The Charged shot toggle
     (SWEP.ChargedShot) is in it too. It also switches
     grenade modes (SWEP.RhylibModeKey, rhylib_grenade_base). With a gun
@@ -23,7 +22,7 @@
     last mode, net wep.stunmode).
 
     The client only asks; the server checks the pouch and runs the reload.
-    Realm: client. Sends nets wep.mode, wep.modeset, wep.overcharge, wep.chargemode,
+    Realm: client. Sends nets wep.mode, wep.modeset, wep.chargemode,
     wep.stunmode and wep.reload (read in sv_20_pouch.lua). Config weapons reloadHoldTime sets how long R must
     be held. The toolgun (SWEP.ToolGun) keeps R; the open inventory keeps
     it only while an item is being dragged (R turns it).
@@ -329,8 +328,7 @@ local function openModeWheel(wep, code)
     for _, it in ipairs(wep:ModeWheel()) do
         local o = { label = it.label, sub = it.sub }
         if it.toggle then
-            local netName = it.toggle == "overcharge" and "wep.overcharge" or "wep.chargemode"
-            o.run = function() Rhylib.Net.Start(netName) net.SendToServer() end
+            o.run = function() Rhylib.Net.Start("wep.chargemode") net.SendToServer() end
             if it.on then o.col = COL_OVER end
         else
             local slot = it.slot
@@ -436,7 +434,7 @@ end)
 local function addKeySettings()
     local M = Rhylib.Menus
     if not (M and M.AddSetting) then return end
-    M.AddSetting("Weapons", { id = "wep.firemodekey", order = 50, title = "Fire mode key", desc = "Tap: next fire mode. Hold: the fire-mode wheel (and Overcharge on / off)", kind = "key", convar = "rhylib_firemode_key" })
+    M.AddSetting("Weapons", { id = "wep.firemodekey", order = 50, title = "Fire mode key", desc = "Tap: next fire mode. Hold: the fire-mode wheel (and Charged shot on / off)", kind = "key", convar = "rhylib_firemode_key" })
     M.AddSetting("Weapons", { id = "wep.safetykey", order = 51, title = "Safety key", desc = "Safety on/off (Shift + E + R works too)", kind = "key", convar = "rhylib_safety_key" })
     M.AddSetting("Weapons", { id = "wep.stunkey", order = 52, title = "Stun mode key (MPs)", desc = "Straight to stun, press again for the last mode", kind = "key", convar = "rhylib_stun_key" })
 end

@@ -27,7 +27,8 @@ local SHORT = { lockon = "LOCK-ON" }
 local function modeLabel(wep)
     if wep.HUDModeText then return wep:HUDModeText() end   -- (e.g. the grenade launcher's range)
     local m = wep:GetFireModeName()
-    if m == "auto" and wep.OverchargeOn and wep:OverchargeOn() then return "AUTO · OC" end   -- (the Overcharge toggle)
+    -- (Charged shot on: charged semi / overcharged full auto)
+    if wep.IsOverchargedShot and wep:IsOverchargedShot() then return m == "auto" and "AUTO · OC" or "CHARGED" end
     return SHORT[m] or string.upper(m)
 end
 

@@ -474,7 +474,7 @@ if SERVER then
     -- you killed before 4 shots): the aim settles in over settleTime after
     -- first sight (cone x settleMult at first), and when more than
     -- crowdFree droids fire at one player each extra one widens the cone.
-    function ENT:FireAt(t)
+    function ENT:FireAt(t, mult)
         local now = CurTime()
         local settle = math.Clamp((now - (self.sightStart or 0)) / math.max(D.Cfg("settleTime"), 0.01), 0, 1)
         local extra = Lerp(settle, D.Cfg("settleMult"), 1)
@@ -485,7 +485,7 @@ if SERVER then
         for d, at in pairs(f) do
             if now - at < 1.5 and IsValid(d) then n = n + 1 else f[d] = nil end
         end
-        extra = extra * math.min(1 + D.Cfg("crowdMult") * math.max(0, n - D.Cfg("crowdFree")), D.Cfg("crowdMax"))
+        extra = extra * math.min(1 + D.Cfg("crowdMult") * math.max(0, n - D.Cfg("crowdFree")), D.Cfg("crowdMax")) * (mult or 1)
         self:FireAtPos(t:WorldSpaceCenter() + Vector(0, 0, 8), t:GetVelocity():Length2D(), extra)   -- chest
     end
 
@@ -615,16 +615,134 @@ if SERVER then
     -- Fighting: one tick at a time, moving and firing together
     --------------------------------------------------------------------------
 
+    -- Firing styles (kind.style), one shot (or none) per call; returns
+    -- when the next one is due:
+    --   auto      runs of kind.burst shots at rpm with short random breaks
+    --             (ctAutoPause), now and then switching to another enemy in
+    --             sight (ctSwitchChance)
+    --   semi      single shots at rpm, a little uneven
+    --   spray     non-stop at rpm; holds fire while moving unless on an
+    --             assault (attack with an objective) or aggression 4+
+    --   suppress  non-stop at rpm (x kind.rateKey); the longer it stays on
+    --             the same target the tighter it gets (suppressFrom ->
+    --             suppressTo over suppressRamp s; a new target or lost sight starts over)
+    --   mortar    rockets at range; its blaster (as suppress) only at
+    --             someone within mortarSelfRange (artillery squads:
+    --             artyBlasterRange) or out of rocket range
+    -- st = { left, suppT, suppAt }. Gaps and pauses are x cmdPause boosted
+    -- and x lastStandPause; after a run (auto / semi) maybe a grenade.
+    function ENT:StyleFire(t, now, st)
+        local k = self:Kind()
+        local style = k.style or "semi"
+        local d = t:GetPos():Distance(self:GetPos())
+        local rpm = math.max(D.Cfg(k.rpm) * (k.rateKey and D.Cfg(k.rateKey) or 1), 1)
+        local gap = 60 / rpm
+        local function pauseMult()
+            local m = 1
+            if D.Boosted(self) then m = m * D.Cfg("cmdPause") end
+            if self.lastStand then m = m * D.Cfg("lastStandPause") end
+            return m
+        end
+        local function afterRun()
+            if IsValid(t) and self.threatPos then self.threatPos = t:GetPos() end   -- (once shot at: cover from the one it's fighting)
+            -- now and then a grenade at a target in the open (more likely at a group); not while on the move.
+            if IsValid(t) and (not self.moveGoal or k.poppers) and not self.popRush then self:NadeAt(t) end
+        end
+        -- B2 mortar / rocket droid: rockets.
+        if k.rockets then
+            local arty = self.artillery
+            -- (mortar: its blaster only close by, or when out of rocket range)
+            local rocketMax = arty and D.Cfg("artyRange") or D.Cfg("b2RocketMax")
+            local selfDef = style == "mortar" and (d <= math.max(D.Cfg("mortarSelfRange"), arty and D.Cfg("artyBlasterRange") or 0) or d >= rocketMax)
+            if now >= self.nextRocket and d > D.Cfg("b2RocketMin") and not selfDef
+                and d < rocketMax and (arty or style == "mortar" or math.random() < 0.5) then
+                self:FireRocket(t:GetPos(), t)
+                return now + 0.6 + math.Rand(0.6, 1.3)
+            end
+            if style == "mortar" and not selfDef then return now + 0.3 end   -- (its blaster only in self-defence)
+            if arty and style ~= "mortar" and d > D.Cfg("artyBlasterRange") then return now + 0.5 end   -- (artillery: only rockets at range)
+        end
+        -- A friend in the way: hold fire and step aside (the other side next time).
+        if self:FriendInLine(t) then
+            st.left = 0
+            if CurTime() >= (self.blockedUntil or 0) then self.stepSide = -(self.stepSide or 1) end
+            self.blockedUntil = CurTime() + 1.2
+            self.planAt = 0
+            return now + 0.3
+        end
+        if not self:CanSee(t) then
+            st.left, st.suppT = 0, nil
+            return now + 0.2
+        end
+        if style == "spray" then
+            -- (only while standing, unless on an assault)
+            local moving = self.loco:GetVelocity():Length2DSqr() > 900
+            if moving and not (self.mode == "attack" and self.objective) and self:Aggro() < 4 then return now + 0.15 end
+            self:FireAt(t)
+            if now - (st.threatAt or 0) > 1 then st.threatAt = now if self.threatPos then self.threatPos = t:GetPos() end end
+            return now + gap * math.Rand(0.9, 1.1) * pauseMult()
+        elseif style == "suppress" or style == "mortar" then
+            -- (a new target, or no shot at it for 2.5 s: starts over; a rocket in between doesn't)
+            if st.suppT ~= t or now - (st.lastAt or 0) > 2.5 then st.suppT, st.suppAt = t, now end
+            st.lastAt = now
+            local f = math.Clamp((now - st.suppAt) / math.max(D.Cfg("suppressRamp"), 0.1), 0, 1)
+            self:FireAt(t, Lerp(f, D.Cfg("suppressFrom"), D.Cfg("suppressTo")))
+            -- (cover from the one it's fighting, now and then)
+            if now - (st.threatAt or 0) > 1 then st.threatAt = now if self.threatPos then self.threatPos = t:GetPos() end end
+            return now + gap * math.Rand(0.9, 1.1) * pauseMult()
+        elseif style == "auto" then
+            if st.left <= 0 then st.left = math.random(k.burst[1], k.burst[2]) end
+            self:FireAt(t)
+            st.left = st.left - 1
+            if st.left > 0 then return now + gap * math.Rand(0.9, 1.15) end
+            afterRun()
+            -- Now and then another enemy in sight.
+            if math.random() < D.Cfg("ctSwitchChance") then
+                local o = self:OtherTarget(t)
+                if o then
+                    -- (half a reaction to settle on the new one)
+                    self.target = o
+                    self.reactUntil = now + D.Cfg(k.reaction) * 0.5
+                    self.sightStart = now
+                    self.lastSeenAt = now
+                end
+            end
+            local lo = math.max(D.Cfg("ctAutoPauseMin"), 0.05)
+            return now + math.Rand(lo, math.max(lo, D.Cfg("ctAutoPauseMax"))) * pauseMult()
+        end
+        -- semi
+        self:FireAt(t)
+        if math.random() < 0.25 then afterRun() end
+        return now + gap * math.Rand(0.85, 1.25) * pauseMult()
+    end
+
+    -- ENT:OtherTarget(t): another enemy within range it can see (a few
+    -- checks at most), or nil.
+    function ENT:OtherTarget(t)
+        local k = self:Kind()
+        local range = D.Cfg(k.range)
+        local pos, tries = self:GetPos(), 0
+        for _, p in ipairs(self:TargetList()) do
+            if p ~= t and valid(p) and p:GetPos():DistToSqr(pos) < range * range then
+                tries = tries + 1
+                if self:CanSee(p) then return p end
+                if tries >= 3 then return nil end
+            end
+        end
+    end
+
     -- ENT:Engage(): the fight loop, one tick per pass, until the target is
     -- gone or out of sight 1.5 s (then a grenade/rocket at the last seen
     -- spot). Each tick: cover check, Look, StepMove, then fire if reaction
-    -- time is over, the next shot is due and it faces the target. Bursts
-    -- of kind.burst shots at rpm, a pause (x cmdPause boosted, x
-    -- lastStandPause), then maybe a grenade. Yields.
+    -- time is over, the next shot is due and it faces the target, in the
+    -- kind's firing style (StyleFire). Yields.
     function ENT:Engage()
         local k = self:Kind()
         local t = self.target
-        local burstLeft, nextShot = 0, 0
+        local nextShot = 0
+        -- Firing style state (StyleFire): shots left in a run, suppression start.
+        local st = { left = 0, suppT = nil, suppAt = 0 }
+        self.styleState = st
         self.planAt = 0
         while valid(t) do
             if self.reviveTarget then break end   -- (a medic going to a downed player)
@@ -633,7 +751,7 @@ if SERVER then
             if self.target ~= t then
                 t = self.target
                 if not IsValid(t) then break end
-                burstLeft = 0
+                st.left, st.suppT = 0, nil
             end
             local now = CurTime()
             if now - (self.lastSeenAt or 0) > 1.5 then   -- lost sight
@@ -661,46 +779,7 @@ if SERVER then
             end
 
             if now >= (self.reactUntil or 0) and now >= nextShot and self:Facing(t) then
-                if burstLeft <= 0 then
-                    local d = t:GetPos():Distance(self:GetPos())
-                    -- B2 mortar / rocket droid: now and then a rocket instead of a burst.
-                    local arty = self.artillery
-                    if k.rockets and now >= self.nextRocket and d > D.Cfg("b2RocketMin")
-                        and d < (arty and D.Cfg("artyRange") or D.Cfg("b2RocketMax")) and (arty or math.random() < 0.5) then
-                        self:FireRocket(t:GetPos(), t)
-                        nextShot = now + 0.6 + math.Rand(0.6, 1.3)
-                    elseif arty and d > D.Cfg("artyBlasterRange") then
-                        nextShot = now + 0.5   -- (artillery: only rockets at range)
-                    else
-                        burstLeft = math.random(k.burst[1], k.burst[2])
-                    end
-                end
-                if burstLeft > 0 then
-                    if self:FriendInLine(t) then
-                        -- (hold fire and step aside; the other side next time)
-                        burstLeft = 0
-                        if CurTime() >= (self.blockedUntil or 0) then self.stepSide = -(self.stepSide or 1) end
-                        self.blockedUntil = CurTime() + 1.2
-                        self.planAt = 0
-                    elseif self:CanSee(t) then
-                        self:FireAt(t)
-                        burstLeft = burstLeft - 1
-                    else
-                        burstLeft = 0
-                    end
-                    if burstLeft > 0 then
-                        nextShot = now + 60 / math.max(D.Cfg(k.rpm), 1)
-                    else
-                        local pause = math.Rand(0.6, 1.3)
-                        if D.Boosted(self) then pause = pause * D.Cfg("cmdPause") end
-                        if self.lastStand then pause = pause * D.Cfg("lastStandPause") end
-                        nextShot = now + pause
-                        if IsValid(t) and self.threatPos then self.threatPos = t:GetPos() end   -- (once shot at: cover from the one it's fighting)
-                        -- B1: now and then a grenade at a target in the open
-                        -- (more likely at a group); not while on the move.
-                        if IsValid(t) and (not self.moveGoal or k.poppers) and not self.popRush then self:NadeAt(t) end
-                    end
-                end
+                nextShot = self:StyleFire(t, now, st)
             end
             coroutine.yield()
         end

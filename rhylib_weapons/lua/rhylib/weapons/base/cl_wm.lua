@@ -142,7 +142,6 @@ return function(SWEP, env)
     -- Every ClientsideModel this weapon made (props, extras, proxies,
     -- mirrored hands: env.Track), in one pass.
     function SWEP:OnRemove()
-        if self.UpdateChargeSound then self:UpdateChargeSound(false, 0, true) end   -- (the charged shot's hum)
         for _, x in ipairs(self.rhylibCSEnts or {}) do
             if IsValid(x) then x:Remove() end
         end

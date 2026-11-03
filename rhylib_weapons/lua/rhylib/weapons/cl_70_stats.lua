@@ -49,10 +49,10 @@ local function build(w, me)
     add("Damage", pellets > 1 and (math.Round(dmg) .. " × " .. pellets .. " pellets") or tostring(math.Round(dmg)),
         math.Clamp(dmg * pellets / 150, 0, 1))
     add("Fire rate", math.Round(rpm) .. " rpm", math.Clamp(rpm / 900, 0, 1))
-    if w.ChargedShot and w.ChargeShotCost then   -- (hold the trigger in semi)
+    if w.ChargedShot and w.ChargeShotCost then   -- (semi with Charged shot on)
         local cd = (w.Damage or 0) * (w.GetCellDamageMult and w:GetCellDamageMult() or 1) * Rhylib.Config.Get("weapons", "chargeDamage")
         local n = w:ChargeShotCost()
-        add("Charged shot", math.Round(cd) .. " dmg · " .. n .. (n == 1 and " round" or " rounds"))
+        add("Charged bolt", math.Round(cd) .. " dmg · " .. n .. (n == 1 and " round" or " rounds"))
     end
     if mode ~= "stun" and mode ~= "grapple" and mode ~= "zipline" and mode ~= "hook" then
         add("Damage / second", tostring(math.Round(dmg * pellets * rpm / 60)), math.Clamp(dmg * pellets * rpm / 60 / 450, 0, 1))
@@ -103,7 +103,7 @@ local function build(w, me)
         end
     end
     if #modes > 0 then add("Fire modes", table.concat(modes, "  ")) end
-    if w.CanOvercharge and w:CanOvercharge() then add("Overcharge", w:GetOvercharge() and "On (fire-mode wheel)" or "Off (fire-mode wheel)") end
+    if w.ChargedShot then add("Charged shot", w:GetChargeMode() and "On (fire-mode wheel)" or "Off (fire-mode wheel)") end
 
     -- Carrying.
     local Items = Rhylib.Items

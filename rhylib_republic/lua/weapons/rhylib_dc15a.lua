@@ -87,8 +87,8 @@ SWEP.Mags = { "mag_medium", "mag_small" }
 SWEP.Grapple = true     -- grapple fire mode while carrying a grapple hook
 SWEP.FireModes = { "semi", "auto", "stun" }   -- (stun: military police only)
 SWEP.SkillModes = { auto = "full_auto" }      -- (rhylib_skills: Autorifleman)
-SWEP.ChargedShot = true                       -- hold the trigger in semi: one overcharged shot
-SWEP.OverchargeSkill = "overcharge"           -- the Overcharge toggle (V wheel; rhylib_skills: Autorifleman)
+SWEP.ChargedShot = true                       -- Charged shot toggle (V wheel): semi fires charged bolts
+SWEP.OverchargeSkill = "overcharge"           -- (rhylib_skills Autorifleman) with Charged shot on: overcharged full auto, 1 round per charged bolt
 
 SWEP.UsesCell = true
 SWEP.CellShots = 500

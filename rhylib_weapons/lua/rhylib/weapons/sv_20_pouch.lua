@@ -16,7 +16,7 @@
     menu can read them.
 
     Realm: server. Also here: the fire mode / safety and reload requests
-    from the client (nets wep.mode, wep.modeset, wep.overcharge, wep.chargemode, wep.reload), rhylib_infammo, and the
+    from the client (nets wep.mode, wep.modeset, wep.chargemode, wep.reload), rhylib_infammo, and the
     dual-pistol check after inventory changes.
     Hooks listened to: PlayerSpawn, Rhylib.InventoryChanged,
     Rhylib.InventoryWeaponPickup (rhylib_inventory).
@@ -197,12 +197,6 @@ Rhylib.Net.Receive("wep.chargemode", function(ply)
     if IsValid(wep) and wep.IsRhylib and wep.ToggleChargeMode then wep:ToggleChargeMode() end
 end, { rate = 4, burst = 3 })
 
--- Net "wep.overcharge" (client -> server, empty): the Overcharge toggle
--- (fire-mode wheel). Rate 4/s.
-Rhylib.Net.Receive("wep.overcharge", function(ply)
-    local wep = ply:GetActiveWeapon()
-    if IsValid(wep) and wep.IsRhylib and wep.ToggleOvercharge then wep:ToggleOvercharge() end
-end, { rate = 4, burst = 3 })
 
 -- MPs' stun key (cl_30_reload.lua rhylib_stun_key).
 -- Net "wep.stunmode" (client -> server, empty): straight to the gun's
