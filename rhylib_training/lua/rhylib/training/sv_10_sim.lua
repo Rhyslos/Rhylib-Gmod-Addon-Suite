@@ -20,6 +20,9 @@
     Ends early (no respawn): Rhylib.PlayerDowned, PlayerDeath, PlayerSpawn;
     getting up another way (Rhylib.PlayerUnknocked) clears the out state.
     Perm rhylib.training.admin (admin): rhylib_training_save.
+    Cadet armour (end of this file, T.CheckCadetArmour): WeaponEquip /
+    PlayerDroppedWeapon / EntityRemoved of a training weapon, PlayerSpawn
+    and Rhylib.InventoryChanged check whether you still carry one.
     Saved: Data "training"/<map> = { { class, name, pos, ang } } (older rows
     { name, pos, yaw } still load), permanent beacons only, through core's
     Rhylib.Perma.Placements (T.places).
@@ -227,3 +230,78 @@ function T.SpawnBeacons() return T.places:Load() end
 
 Rhylib.PLACEMENT_CLASSES = Rhylib.PLACEMENT_CLASSES or {}
 Rhylib.PLACEMENT_CLASSES[BEACON] = true
+
+--------------------------------------------------------------------------
+-- Cadet armour: carrying a training weapon swaps you into the cadet
+-- model; with none left, your own model comes back. ply.rhylibCadetPrev
+-- = the model to go back to (nil = not in cadet armour).
+--------------------------------------------------------------------------
+
+local function cadetModel()
+    local m = T.Cfg("cadetModel")
+    if isstring(m) and m ~= "" then return m end
+    local t = TEAM_CADET or (GAMEMODE and GAMEMODE.DefaultTeam)
+    local job = t and RPExtraTeams and RPExtraTeams[t]
+    local jm = job and job.model
+    if istable(jm) then jm = jm[1] end
+    return isstring(jm) and jm ~= "" and jm or nil
+end
+
+local function carriesTraining(ply)
+    for _, w in ipairs(ply:GetWeapons()) do
+        if w.Training then return true end
+    end
+    return false
+end
+
+function T.CheckCadetArmour(ply)
+    if not IsValid(ply) or not ply:Alive() then return end
+    local want = T.Cfg("cadetArmour") and carriesTraining(ply)
+    local m = want and cadetModel()
+    if m then
+        if string.lower(ply:GetModel() or "") ~= string.lower(m) then
+            ply.rhylibCadetPrev = ply:GetModel()
+            ply:SetModel(m)
+            ply:SetupHands()
+        end
+    elseif ply.rhylibCadetPrev then
+        local prev = ply.rhylibCadetPrev
+        ply.rhylibCadetPrev = nil
+        if isstring(prev) and prev ~= "" and util.IsValidModel(prev) then
+            ply:SetModel(prev)
+        else
+            hook.Run("PlayerSetModel", ply)
+        end
+        ply:SetupHands()
+    end
+end
+
+local function soon(ply)
+    timer.Simple(0, function() T.CheckCadetArmour(ply) end)
+end
+
+Rhylib.Hook.Add("WeaponEquip", "training.armour", function(wep, ply)
+    if wep.Training then soon(ply) end
+end)
+Rhylib.Hook.Add("PlayerDroppedWeapon", "training.armour", function(ply, wep)
+    if IsValid(wep) and wep.Training then soon(ply) end
+end)
+-- (the inventory strips a weapon when its item leaves)
+Rhylib.Hook.Add("EntityRemoved", "training.armour", function(ent)
+    if not ent.Training or not ent:IsWeapon() then return end
+    local o = ent:GetOwner()
+    if IsValid(o) and o:IsPlayer() then soon(o) end
+end)
+Rhylib.Hook.Add("Rhylib.InventoryChanged", "training.armour", function(ply)
+    if ply.rhylibCadetPrev then soon(ply) end   -- (in case a strip went unseen)
+end)
+-- A respawn sets the job's model again: start clean, then check (the
+-- inventory gives the weapons back during the spawn).
+Rhylib.Hook.Add("PlayerSpawn", "training.armour", function(ply)
+    ply.rhylibCadetPrev = nil
+    timer.Simple(0.6, function() T.CheckCadetArmour(ply) end)
+end)
+Rhylib.Hook.Add("Rhylib.ConfigChanged", "training.armour", function(m, k)
+    if m ~= "training" or (k ~= "cadetArmour" and k ~= "cadetModel") then return end
+    for _, p in ipairs(player.GetAll()) do T.CheckCadetArmour(p) end
+end)

@@ -18,6 +18,10 @@
 
     Real damage still works as normal during a simulation.
 
+    Cadet armour (cadetArmour): while you carry any training weapon
+    (SWEP.Training) you wear the cadet model (cadetModel, or the cadet
+    job's); with none left your own model comes back.
+
     Shared file: Rhylib.Training (T) with Cfg, Out, Health. Server logic in
     sv_10_sim.lua, HUD bar and beacon list in cl_10_sim.lua. Training hits
     come from rhylib_weapons (training bolts, W.TrainingBlast).
@@ -28,6 +32,8 @@ local T = Rhylib.Training
 local Config = Rhylib.Config
 
 Config.Describe("training", { name = "Training", category = "Units & roles" })
+Config.Register("training", "cadetArmour", true, "Carrying a training weapon puts you in cadet armour (a model swap) until you no longer carry one")
+Config.Register("training", "cadetModel", "", "Model for cadet armour; empty = the cadet job's (first) model")
 Config.Register("training", "simHealth", 100, "Sim health: what training hits take off before you're eliminated")
 Config.Register("training", "simRegen", 10, "Seconds without a training hit before sim health refills")
 Config.Register("training", "outMin", 3, "Seconds an eliminated player lies there at least")
