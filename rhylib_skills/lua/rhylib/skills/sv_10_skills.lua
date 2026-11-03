@@ -380,6 +380,18 @@ Rhylib.Hook.Add("PlayerInitialSpawn", "skills.freewarn", function(ply)
     end)
 end)
 
+-- A reset character (rhylib_roster's !charreset) starts with no skills
+-- (and out of any class). The free-reset cooldown stays.
+Rhylib.Hook.Add("Rhylib.CharacterReset", "skills.wipe", function(sid, ply)
+    if IsValid(ply) then
+        if K.ClassOf(ply) and K.LeaveClass then K.LeaveClass(ply, true) end
+        K.SetSkills(ply, {})
+        ply.rhylibLearnedAt = nil
+    end
+    Data.Delete("skills", "s" .. sid)
+    Data.Delete("skills", "c" .. sid)
+end)
+
 -- Admins: rhylib_skills_reset [name] (yourself without a name; also
 -- !skillsreset). Rhylib.Command, perm rhylib.skills.admin.
 Rhylib.Perms.Register("rhylib.skills.admin", "admin", "Reset other players' skills")

@@ -10,7 +10,8 @@
       !unbattalion <player|id>           out of their battalion
       !train <player|id>                 pass basic training
       !qual <player|id> <qual> <on|off>  a qualification
-      !charreset <player>                new number and nickname
+      !charreset <player>                full wipe: new number and nickname,
+                                         empty inventory, no skills, lockers freed
     Also: the character line in !info (hook Rhylib.AdminInfo) and the
     staff menu's pickers for rosterrank / qual (Admin.ArgChoices, client).
 ]]
@@ -91,7 +92,7 @@ local function register()
     A.AddCommand({ id = "unbattalion", name = "Remove from battalion", cat = "Ranks", perm = "roster", target = "id", args = {} }, H.unbattalion, ROSTER)
     A.AddCommand({ id = "train", name = "Pass basic training", cat = "Ranks", perm = "roster", target = "id", args = {} }, H.train, ROSTER)
     A.AddCommand({ id = "qual", name = "Qualification", cat = "Ranks", perm = "roster", target = "id", args = { { "qual", "Qualification", "qual" }, { "on", "On / off", "onoff" } } }, H.qual, ROSTER)
-    A.AddCommand({ id = "charreset", name = "Reset character", cat = "Ranks", target = "player", args = {}, desc = "They pick a new number and nickname" }, H.charreset, ROSTER)
+    A.AddCommand({ id = "charreset", name = "Reset character", cat = "Ranks", target = "player", args = {}, desc = "Wipes them: new number and nickname, empty inventory and gear, no skills, locker emptied and freed" }, H.charreset, ROSTER)
 
     if CLIENT then
         A.ArgChoices = A.ArgChoices or {}

@@ -118,6 +118,11 @@ function X.DrawGrapple(wep, x, y)
     end
 end
 
+-- Lines drawn in a solid material (writes depth: glass, water and smoke
+-- drawn later can't paint over them).
+local ROPE_MAT = CreateMaterial("rhylib_rope_solid", "UnlitGeneric", { ["$basetexture"] = "color/white", ["$vertexcolor"] = 1 })
+G.RopeMat = ROPE_MAT
+
 -- Zipline riders: a short line from the hands up to the cable.
 local handBone = {}
 local COL_CABLE = Color(20, 20, 22)
@@ -133,7 +138,7 @@ Rhylib.Hook.Add("PostPlayerDraw", "weapons.zipline", function(ply)
         handBone[mdl] = bone
     end
     local hand = bone and ply:GetBonePosition(bone) or ply:GetPos() + Vector(0, 0, 64)
-    render.SetColorMaterial()
+    render.SetMaterial(ROPE_MAT)
     render.DrawBeam(hand, d.a + d.dir * ply:GetDTFloat(G.DT_S), 1.4, 0, 1, COL_CABLE)
 end)
 
@@ -156,6 +161,6 @@ Rhylib.Hook.Add("PostPlayerDraw", "weapons.grapple", function(ply)
     end
     local belt = bone and ply:GetBonePosition(bone) or ply:GetPos() + Vector(0, 0, 38)
 
-    render.SetColorMaterial()
+    render.SetMaterial(ROPE_MAT)
     render.DrawBeam(belt, G.PosAt(d, ply:GetDTFloat(G.DT_S), false), 1.8, 0, 1, COL_ROPE)
 end)

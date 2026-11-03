@@ -2,7 +2,7 @@
     A grapple rope: the hook where it gripped, plus the rope laid down the
     surface below it (see sh_30_grapple.lua and sv_30_grapple.lua).
 
-    Static: no physics, no Think. Its points are network vars, so they
+    Static: no physics, no server Think. Its points are network vars, so they
     reach every player who comes near, once. Press E on the hook to pick
     it back up (not while anyone is climbing). Shooting the hook (or a
     blast on it) breaks the rope (ENT:OnTakeDamage): the hook is lost and
@@ -10,8 +10,11 @@
 
     Looks: the hook is a small dark grey block sticking out
     of the surface, the rope a black line. Both are drawn directly, no
-    model. The hook's use box is a bit bigger than it looks, so it's easy
-    to press E on.
+    model, in a solid material (so glass, water and smoke can't paint
+    over them), the line a little wider far away. Sent to every player
+    (TRANSMIT_ALWAYS), and its draw bounds cover the whole rope (put
+    back every second by a client Think). The hook's use box is a bit
+    bigger than it looks, so it's easy to press E on.
 
     Realm: shared. The server creates it (sv_30_grapple.lua onHookHit)
     and fills it with ENT:SetRope; both realms read it with
@@ -150,7 +153,8 @@ function ENT:GetRopeData()
             mins.x, mins.y, mins.z = math.min(mins.x, p.x), math.min(mins.y, p.y), math.min(mins.z, p.z)
             maxs.x, maxs.y, maxs.z = math.max(maxs.x, p.x), math.max(maxs.y, p.y), math.max(maxs.z, p.z)
         end
-        self:SetRenderBoundsWS(mins - Vector(8, 8, 8), maxs + Vector(8, 8, 8))
+        d.mins, d.maxs = mins - Vector(8, 8, 8), maxs + Vector(8, 8, 8)
+        self:SetRenderBoundsWS(d.mins, d.maxs)
     end
     return d
 end
@@ -185,7 +189,31 @@ if SERVER then
     end
 end
 
+if SERVER then
+    -- Sent to everyone: the hook may sit where the player below can't
+    -- "see" (another PVS leaf), and the rope would vanish with it.
+    function ENT:UpdateTransmitState()
+        return TRANSMIT_ALWAYS
+    end
+end
+
 if CLIENT then
+    -- Ropes draw with a solid (opaque) material so they write depth: the
+    -- translucent colour material let glass, water, smoke and weather drawn
+    -- later paint over them. Far away a rope is drawn a little wider so it
+    -- never thins out to nothing.
+    local ROPE_MAT = CreateMaterial("rhylib_rope_solid_r", "UnlitGeneric", { ["$basetexture"] = "color/white", ["$vertexcolor"] = 1 })
+    local function ropeW(pos, w) return math.max(w, EyePos():Distance(pos) * 0.0011) end
+
+    -- The draw bounds cover the whole rope; the engine can reset them (the
+    -- rope coming back into view), so they are put back now and then.
+    function ENT:Think()
+        local d = self.ropeData
+        if d and d.mins then self:SetRenderBoundsWS(d.mins, d.maxs) end
+        self:SetNextClientThink(CurTime() + 1)
+        return true
+    end
+
     local COL_ROPE = Color(14, 14, 14)          -- black
     local COL_HOOK = Color(58, 60, 62)          -- dark grey
     local HOOK_MINS = Vector(-2.25, -1.5, -1.5)  -- along the surface normal: 2.25 in, 6.75 out
@@ -193,7 +221,7 @@ if CLIENT then
 
     function ENT:Draw()
         -- No DrawModel: the hook and rope are drawn as plain shapes.
-        render.SetColorMaterial()
+        render.SetMaterial(ROPE_MAT)
         render.DrawBox(self:GetPos(), self:GetAngles(), HOOK_MINS, HOOK_MAXS, COL_HOOK)
 
         local d = self:GetRopeData()
@@ -211,8 +239,8 @@ if CLIENT then
         end
 
         render.StartBeam(last + (tip and 1 or 0))
-        for i = 1, last do render.AddBeam(pts[i], 1.8, 0, COL_ROPE) end
-        if tip then render.AddBeam(tip, 1.8, 0, COL_ROPE) end
+        for i = 1, last do render.AddBeam(pts[i], ropeW(pts[i], 1.8), 0, COL_ROPE) end
+        if tip then render.AddBeam(tip, ropeW(tip, 1.8), 0, COL_ROPE) end
         render.EndBeam()
     end
 end

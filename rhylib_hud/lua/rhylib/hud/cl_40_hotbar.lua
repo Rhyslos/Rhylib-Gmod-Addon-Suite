@@ -11,7 +11,8 @@
     something when picked (grenades and handing out ammo come later).
     Anything you hold that isn't in your inventory (force-given, like the
     physgun or a sandbox loadout) sits in an overflow slot after them:
-    its key cycles through them.
+    its key cycles through them, and pressing it on the last one puts it
+    away.
 
     Without rhylib_inventory: one box per weapon you hold, by weapon slot.
 
@@ -172,12 +173,17 @@ local function pickSlot(ply, n)
         Rhylib.Inventory.RequestHold(e.hold)
         previous = active
     elseif e.overflow then
-        -- Cycle through the overflow weapons.
+        -- Cycle through the overflow weapons (toolgun, physgun...); past
+        -- the last one (or pressing a lone one again) puts it away.
         local pick = e.overflow[1]
         for i, w in ipairs(e.overflow) do
-            if w == active then pick = e.overflow[i % #e.overflow + 1] end
+            if w == active then pick = e.overflow[i + 1] or false end
         end
-        selectWeapon(pick)
+        if pick then
+            selectWeapon(pick)
+        elseif inventory() then
+            stow(ply)
+        end
     elseif e.wep and e.wep ~= active then
         selectWeapon(e.wep)
     elseif inventory() and (e.empty or e.wep == active) then

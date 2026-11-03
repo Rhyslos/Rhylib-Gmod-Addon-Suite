@@ -18,9 +18,11 @@
       and movement stay where your body faces, and your head turns toward
       where you look (only on your own screen).
 
-    While helmet optics are in use (rhylib_gear: binoculars / rangefinder
-    up, sun visor down) and the freelook key is the same as the optics
-    mode key, the key keeps its optics job (and freelook ends). Not while down / lying (the
+    Off while looking through binoculars / a rangefinder (rhylib_gear
+    G.Looking): the view turns freely there anyway.
+    Middle mouse is freelook's alone: helmet optics use the helmet gear
+    key (rhylib_gear). Only if a player binds rhylib_optics_mode_key to
+    the same key does it keep its optics job while optics are in use. Not while down / lying (the
     body camera has its own look-around), in a menu or typing.
 
     Switching between first and third person keeps freelook on and the
@@ -102,6 +104,10 @@ local function allowed(ply)
     if not (IsValid(ply) and ply:Alive()) or ply:GetViewEntity() ~= ply then return false end
     local L = Rhylib.Lying
     if L and L.bodyCam then return false end
+    -- (looking through binoculars / a rangefinder: the view already turns
+    -- freely; freelook only in their weapon mode)
+    local G = Rhylib.Gear
+    if G and G.Looking and G.Looking(ply) then return false end
     return true
 end
 
@@ -255,8 +261,8 @@ Rhylib.Hook.Add("InitPostEntity", "thirdperson.freelook.setting", function()
         tab = "Camera & motion", kind = "choice", convar = "rhylib_freelook_hold",
         options = { { "0", "Click on / off" }, { "1", "Hold the key" } } })
     Menus.AddSetting("Third person", { id = "tp.freelookkey", order = 60, title = "Freelook key",
-        desc = "Middle mouse by default; while helmet optics are in use it keeps its optics job",
-        kind = "key", convar = "rhylib_freelook_key", shareWith = { rhylib_optics_mode_key = true } })
+        desc = "Middle mouse by default",
+        kind = "key", convar = "rhylib_freelook_key" })
     Menus.AddSetting("Third person", { id = "tp.freelookyaw", order = 61, title = "First person freelook range",
         desc = "How far left / right you can look while holding freelook (degrees)", tab = "Camera & motion",
         kind = "slider", convar = "rhylib_freelook_yaw", min = 30, max = 170 })

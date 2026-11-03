@@ -548,6 +548,45 @@ function A.UpdatePlacement(ent)
     if IsValid(ent) and Rhylib.Perma.Is(ent) then A.places:Save() end
 end
 
+-- A reset character (rhylib_roster's !charreset): their locker contents
+-- and training deposit are deleted, and every locker they had claimed is
+-- free again, on this map and in the saved rows of every other map.
+Rhylib.Hook.Add("Rhylib.CharacterReset", "armoury.wipe", function(sid)
+    if not sid or sid == "" then return end
+    depositExpire(sid)
+    Rhylib.Data.Delete("locker", sid)
+    Rhylib.Data.Flush()
+    for _, row in ipairs(sql.Query("SELECT key FROM rhylib_kv WHERE module = 'armoury'") or {}) do
+        local rows = Rhylib.Data.Get("armoury", row.key)
+        local changed = false
+        if istable(rows) then
+            for _, r in ipairs(rows) do
+                if istable(r) and r.owner == sid then
+                    r.owner, r.ownerName, r.locked = "", "", false
+                    changed = true
+                end
+            end
+        end
+        if changed then Rhylib.Data.Set("armoury", row.key, rows) end
+    end
+    local I = Inv()
+    for _, e in ipairs(ents.FindByClass("rhylib_locker")) do
+        if e:GetOwnerSid() == sid then
+            local storage = I and I.GetStorage(e)
+            if storage then
+                for p in pairs(storage.viewers) do
+                    if IsValid(p) then I.CloseStorage(p) end
+                end
+                I.RemoveStorage(e)
+            end
+            e:SetOwnerSid("")
+            e:SetOwnerName("")
+            e:SetLocked(false)
+            A.UpdatePlacement(e)
+        end
+    end
+end)
+
 --------------------------------------------------------------------------
 -- Admin commands
 --------------------------------------------------------------------------

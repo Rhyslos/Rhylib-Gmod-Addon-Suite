@@ -115,6 +115,13 @@ local function saveKitOff(ply)
     end
 end
 
+-- A reset character (rhylib_roster's !charreset): the worn gear goes with
+-- the inventory; the handed-back list is forgotten too.
+Rhylib.Hook.Add("Rhylib.CharacterReset", "gear.wipe", function(sid, ply)
+    if IsValid(ply) then ply.rhylibKitOff = nil end
+    Rhylib.Data.Delete("gear", "kitoff_" .. sid)
+end)
+
 -- rhylib_inventory: job gear dropped (it just vanishes).
 Rhylib.Hook.Add("Rhylib.LoadoutDropped", "gear.kitoff", function(ply, id)
     if not (IsValid(ply) and ply:Alive() and G.ITEMS[id] and G.KitFor(ply)[id]) then return end

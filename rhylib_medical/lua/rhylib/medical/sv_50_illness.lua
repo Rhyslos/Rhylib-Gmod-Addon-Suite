@@ -96,6 +96,12 @@ function Med.Cure(ply)
     if had then save(ply) end
 end
 
+-- A reset character (rhylib_roster's !charreset) isn't ill.
+Rhylib.Hook.Add("Rhylib.CharacterReset", "medical.illness", function(id, ply)
+    if IsValid(ply) then Med.Cure(ply) end
+    Data.Delete("med_ill", id)
+end)
+
 -- Med.Illness(ply): { kind, load, told } or nil. Read only. Server only.
 function Med.Illness(ply)
     return Med.ill[ply]

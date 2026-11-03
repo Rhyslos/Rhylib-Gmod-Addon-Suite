@@ -5,7 +5,9 @@
       - Icons above heads while someone is talking on voice (bars that
         move with their voice volume) or typing in chat (bouncing dots).
 
-    Target info uses the eye trace GMod already makes each frame. Icons
+    Target info uses the eye trace GMod already makes each frame. The
+    plate is anchored on the head bone as drawn that frame (read in
+    PostPlayerDraw, for the one player being looked at). Icons
     loop over the players once per frame and skip anyone far away,
     dead or not being networked to you.
 
@@ -51,6 +53,27 @@ end
 local target, seenAt, fade = nil, 0, 0
 local nameCol, outlineCol = Color(255, 255, 255), Color(0, 0, 0)
 
+-- The plate sits on the head as it was drawn this frame: the head bone is
+-- read right after the model is drawn (PostPlayerDraw), so it moves with
+-- the model exactly. (Read later, in HUDPaint, the bone cache or the eye
+-- position could be a step behind or ahead of the drawn model: jitter.)
+local platePos, plateFrame = Vector(), -1
+local UP_HEAD = Vector(0, 0, 17)
+Rhylib.Hook.Add("PostPlayerDraw", "hud.platehead", function(ply)
+    if ply ~= target then return end
+    local mdl = ply:GetModel() or ""
+    local bone = headBone[mdl]
+    if bone == nil then
+        bone = ply:LookupBone("ValveBiped.Bip01_Head1") or false
+        headBone[mdl] = bone
+    end
+    local m = bone and ply:GetBoneMatrix(bone)
+    if not m then return end
+    platePos:Set(m:GetTranslation())
+    platePos:Add(UP_HEAD)
+    plateFrame = FrameNumber()
+end)
+
 Rhylib.Hook.Add("HUDPaint", "hud.target", function()
     if HUD.Hidden() then return end
     local me = LocalPlayer()
@@ -66,9 +89,9 @@ Rhylib.Hook.Add("HUDPaint", "hud.target", function()
     fade = math.Approach(fade, visible and 1 or 0, FrameTime() * 6)
     if fade <= 0 or not IsValid(target) then return end
 
-    -- (anchored on the interpolated eye position: the head bone's cached
-    -- matrix trailed behind moving players and the plate lagged)
-    local scr = (target:EyePos() + UP_PLATE):ToScreen()
+    -- (the head as drawn this frame; the eye position when the model
+    -- wasn't drawn this frame)
+    local scr = (plateFrame == FrameNumber() and platePos or (target:EyePos() + UP_PLATE)):ToScreen()
     if not scr.visible then return end
 
     local s = HUD.Scale()

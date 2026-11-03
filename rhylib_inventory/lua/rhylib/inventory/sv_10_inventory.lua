@@ -924,6 +924,30 @@ function Inv.Save(ply)
     Rhylib.Data.Set("inventory", ply:SteamID64(), serialize(st))
 end
 
+-- Inv.Wipe(ply): empties the whole inventory, worn gear included
+-- (weapons stripped, nothing dropped), and saves it empty.
+function Inv.Wipe(ply)
+    local st = Inv.states[ply]
+    if st then
+        -- (several passes: a backpack only comes off once it is empty)
+        for _ = 1, 6 do
+            local left = false
+            for uid, inst in pairs(st.byUid) do
+                if Items.CanLeave(st, inst) then removeInst(ply, st, uid) else left = true end
+            end
+            if not left then break end
+        end
+        Inv.dirty[ply] = nil
+        if next(st.byUid) then Inv.Save(ply) return end
+    end
+    if ply:SteamID64() then Rhylib.Data.Set("inventory", ply:SteamID64(), {}) end
+end
+
+-- A reset character (rhylib_roster's !charreset) starts with nothing.
+Rhylib.Hook.Add("Rhylib.CharacterReset", "inventory.wipe", function(sid, ply)
+    if IsValid(ply) then Inv.Wipe(ply) else Rhylib.Data.Delete("inventory", sid) end
+end, -10)   -- (before rhylib_skills drops what the lost skills no longer allow)
+
 Rhylib.Hook.Add("PlayerInitialSpawn", "inventory.load", function(ply)
     Inv.Get(ply)
 end)

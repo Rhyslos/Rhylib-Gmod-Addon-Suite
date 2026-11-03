@@ -6,6 +6,8 @@
       rhylib.gear.optics  UInt 2 kind (0 = down), Bool weapon mode; rate 8/s
       rhylib.gear.visor   Bool down; rate 6/s
     A 0.5 s timer puts optics and the visor away when you can't use them.
+    With rhylib_inventory, worn optics follow the hands (G.AutoMode,
+    PlayerSwitchWeapon): a weapon out = weapon mode, Stowed = looking.
 ]]
 
 local G = Rhylib.Gear
@@ -49,6 +51,8 @@ end
 Rhylib.Net.Receive("gear.optics", function(ply)
     local kind, fire = net.ReadUInt(2), net.ReadBool()
     if kind ~= 0 and (busy(ply) or not G.OpticsAllowed(ply, kind)) then kind = 0 end
+    -- (worn optics follow the hands: a weapon out = weapon mode)
+    if (kind == 1 or kind == 2) and G.AutoMode() then fire = G.Armed(ply) end
     G.SetOptics(ply, kind, fire)
 end, { rate = 8, burst = 8 })
 
@@ -57,6 +61,13 @@ Rhylib.Net.Receive("gear.visor", function(ply)
     if on and (busy(ply) or not G.Active(ply, "visor")) then on = false end
     G.SetVisor(ply, on)
 end, { rate = 6, burst = 6 })
+
+-- Worn optics up: drawing a weapon goes to weapon mode, putting it away
+-- (Stowed) back to looking.
+Rhylib.Hook.Add("PlayerSwitchWeapon", "gear.optics.auto", function(ply, old, new)
+    local kind = ply:GetNW2Int("rhylib_optics", 0)
+    if (kind == 1 or kind == 2) and G.AutoMode() then G.SetOptics(ply, kind, G.Armed(ply, new)) end
+end)
 
 -- Put down when you go down, lie down or die (the visor goes up).
 timer.Create("Rhylib.Gear.Optics", 0.5, 0, function()

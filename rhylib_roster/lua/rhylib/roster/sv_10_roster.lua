@@ -473,8 +473,10 @@ function R.Train(id, by)
 end
 
 -- R.ResetChar(sid): delete the character (number freed, out of the
--- battalion); an online player gets the creator again. Returns true if
--- there was one.
+-- battalion); an online player gets the creator again. Fires
+-- Rhylib.CharacterReset(sid, ply or nil) so the other addons wipe what
+-- they keep for that player (inventory and worn gear, skills, lockers,
+-- illness, training deposit). Returns true if there was one.
 function R.ResetChar(id)
     local c = R.Char(id)
     if not c then return false end
@@ -491,6 +493,9 @@ function R.ResetChar(id)
         if target.setDarkRPVar then target:setDarkRPVar("rpname", "New recruit") end
         needCharacter(target)
     end
+    -- (after the roster's own steps, so a broken listener can't leave
+    -- them without a character creator)
+    ProtectedCall(function() hook.Run("Rhylib.CharacterReset", id, IsValid(target) and target or nil) end)
     return true
 end
 

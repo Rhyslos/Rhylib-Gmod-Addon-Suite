@@ -5,7 +5,7 @@
     the grapple's zipline fire mode (sv_30_grapple.lua); ridden in
     SetupMove (sh_30_grapple.lua, "Zipline mode").
 
-    Static: no physics, no Think. The ends are network vars, sent to
+    Static: no physics (a client Think only re-applies the draw bounds). The ends are network vars, sent to
     everyone once. The hook is used up: there's no picking it back up. The
     entity sits at the foot of the near post (planted just behind the
     rigger); its box is the post, solid to players. The far
@@ -123,7 +123,8 @@ function ENT:GetZipData()
     if CLIENT then
         local mins = Vector(math.min(a.x, b.x), math.min(a.y, b.y), math.min(a.z, b.z) - 100)
         local maxs = Vector(math.max(a.x, b.x), math.max(a.y, b.y), math.max(a.z, b.z))
-        self:SetRenderBoundsWS(mins - Vector(8, 8, 8), maxs + Vector(8, 8, 8))
+        d.mins, d.maxs = mins - Vector(8, 8, 8), maxs + Vector(8, 8, 8)
+        self:SetRenderBoundsWS(d.mins, d.maxs)
     end
     return d
 end
@@ -171,6 +172,20 @@ if SERVER then
 end
 
 if CLIENT then
+    -- Ropes draw with a solid (opaque) material so they write depth: the
+    -- translucent colour material let glass, water, smoke and weather drawn
+    -- later paint over them. Far away a rope is drawn a little wider so it
+    -- never thins out to nothing.
+    local ROPE_MAT = CreateMaterial("rhylib_rope_solid_z", "UnlitGeneric", { ["$basetexture"] = "color/white", ["$vertexcolor"] = 1 })
+    local function ropeW(pos, w) return math.max(w, EyePos():Distance(pos) * 0.0011) end
+
+    function ENT:Think()
+        local d = self.zipData
+        if d and d.mins then self:SetRenderBoundsWS(d.mins, d.maxs) end
+        self:SetNextClientThink(CurTime() + 1)
+        return true
+    end
+
     local COL_LINE = Color(20, 20, 22)
     local COL_POST = Color(70, 72, 74)
     local COL_HOOK = Color(58, 60, 62)
@@ -201,7 +216,7 @@ if CLIENT then
             cm:DrawModel()
             return
         end
-        render.SetColorMaterial()
+        render.SetMaterial(ROPE_MAT)
         POST_MAXS.z = top.z - foot.z
         render.DrawBox(foot, ANG0, POST_MINS, POST_MAXS, COL_POST)
     end
@@ -214,10 +229,13 @@ if CLIENT then
         if self:GetPostB() then
             drawPost(d.b - Vector(0, 0, G.POST_H), d.b)
         else
-            render.SetColorMaterial()
+            render.SetMaterial(ROPE_MAT)
             render.DrawBox(d.b, self:GetHookAng(), HOOK_MINS, HOOK_MAXS, COL_HOOK)
         end
-        render.SetColorMaterial()
-        render.DrawBeam(d.a, d.b, 1.6, 0, 1, COL_LINE)
+        render.SetMaterial(ROPE_MAT)
+        render.StartBeam(2)
+        render.AddBeam(d.a, ropeW(d.a, 1.6), 0, COL_LINE)
+        render.AddBeam(d.b, ropeW(d.b, 1.6), 1, COL_LINE)
+        render.EndBeam()
     end
 end

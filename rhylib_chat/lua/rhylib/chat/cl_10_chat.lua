@@ -956,6 +956,18 @@ function Chat.Close()
     sendTyping(false)
 end
 
+-- Esc with the chat open closes the chat first (rhylib_menus' Esc handler
+-- runs the UI closers before opening the pause menu).
+if Rhylib.UI and Rhylib.UI.RegisterCloser then
+    Rhylib.UI.RegisterCloser("chat", function()
+        -- (the chat box's own Esc may have closed it a moment ago)
+        if not IsValid(Chat.panel) then return Chat.hideMenuUntil ~= nil and RealTime() < Chat.hideMenuUntil end
+        Chat.Close()
+        Chat.hideMenuUntil = RealTime() + 0.3
+        return true
+    end)
+end
+
 -- Escape closes the chat; don't let it open the game menu too
 -- (for 0.3 s after Esc, any game menu that opened is hidden again).
 Rhylib.Hook.Add("Think", "chat.escape", function()

@@ -310,7 +310,14 @@ if CLIENT then
     local HOOK_MINS, HOOK_MAXS = Vector(-2, -2, -2), Vector(2, 2, 2)
     local ANG0 = Angle(0, 0, 0)
     local handBone = {}
-    Rhylib.Hook.Add("PostDrawTranslucentRenderables", "weapons.phook", function(depth, sky)
+    local mat
+    local function ropeMat()
+        mat = mat or CreateMaterial("rhylib_rope_solid_p", "UnlitGeneric", { ["$basetexture"] = "color/white", ["$vertexcolor"] = 1 })
+        return mat
+    end
+    -- (after the opaque world, before glass, water and smoke, which then
+    -- cover the line properly)
+    Rhylib.Hook.Add("PostDrawOpaqueRenderables", "weapons.phook", function(depth, sky)
         if depth or sky then return end
         local me = LocalPlayer()
         local first = not me:ShouldDrawLocalPlayer()
@@ -329,7 +336,7 @@ if CLIENT then
                     end
                     hand = b and p:GetBonePosition(b) or p:GetPos() + UP * 60
                 end
-                render.SetColorMaterial()
+                render.SetMaterial(G.RopeMat or ropeMat())
                 render.DrawBeam(hand, hook, 1.2, 0, 1, COL)
                 render.DrawBox(hook, ANG0, HOOK_MINS, HOOK_MAXS, COL_HOOK)
             end

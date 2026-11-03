@@ -81,7 +81,7 @@ G.ITEMS = {
     rhylib_helmet_light = { slot = "light", name = "Helmet lights", desc = "Worn on the helmet: two lamps (flashlight key)",
         groups = { "flashlighthelmet" }, on = { "trooper_flashlight" },
         w = 1, h = 1, weight = 0.2, model = "models/props_junk/garbage_metalcan001a.mdl" },
-    rhylib_sunvisor = { slot = "visor", name = "Sun visor", desc = "Helmet gear key (L): visor down for a red tactical view, 3x zoom on the optics mode key, night vision on the flashlight key; with Mark target it spots enemies every 5 s. Not with macrobinoculars on models where they share a mount.",
+    rhylib_sunvisor = { slot = "visor", name = "Sun visor", desc = "Helmet gear key (L): visor down for a red tactical view, 3x zoom while aiming, night vision on the flashlight key; with Mark target it spots enemies every 5 s. Not with macrobinoculars on models where they share a mount.",
         groups = { "sunvisor", "binos" }, on = { "sunvisor" },
         w = 1, h = 1, weight = 0.1, model = "models/props_lab/binderblue.mdl" },
     rhylib_holster = { slot = "holster", name = "Holster", desc = "Worn: holsters for two pistols",
@@ -170,7 +170,7 @@ Config.Register("gear", "lightRange", 2000, "Helmet lights: how far the beams re
 Config.Register("gear", "lightBrightness", 3.5, "Helmet lights: brightness of each beam", { section = "Helmet lights" })
 Config.Register("gear", "lightMaxPlayers", 2, "Helmet lights: other players whose beams light the world for you (nearest first, no shadows; your own always do). Further ones show only the lamp glow", { section = "Helmet lights" })
 Config.Register("gear", "bareHeadshotDowns", true, "With the helmet off, any head hit downs you", { section = "Armour parts" })
-Config.Register("gear", "visorZoom", 3, "Sun visor: the zoom its zoom toggle gives (the optics mode key, default middle mouse)", { section = "Sun visor" })
+Config.Register("gear", "visorZoom", 3, "Sun visor: the zoom it gives while aiming a gun (no scope of its own)", { section = "Sun visor" })
 Config.Register("gear", "nvMode", 1, "Night vision: 1 = amplified (a wide shadowless light from your eyes that turns itself down where it's already bright; default), 2 = the world drawn fully lit (can glare at light sources), 0 = only the green filter", { section = "Night vision" })
 Config.Register("gear", "nvGain", 2.5, "Night vision (amplified): strength of the light in the dark", { section = "Night vision" })
 Config.Register("gear", "nvLift", 0.04, "Night vision: how much the darkest parts are lifted (the green floor)", { section = "Night vision" })
@@ -186,7 +186,9 @@ G.Cfg = Config.For("gear")
 -- one helper the gear key handlers share.
 if CLIENT then
     function G.KeyDown(var)
-        local code = input.GetKeyCode(var:GetString())
+        local k = var:GetString()
+        if k == "" then return false end   -- (unbound)
+        local code = input.GetKeyCode(k)
         return code and code > 0 and input.IsButtonDown(code)
     end
 end

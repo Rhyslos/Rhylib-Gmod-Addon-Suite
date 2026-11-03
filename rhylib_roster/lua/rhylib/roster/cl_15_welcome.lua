@@ -41,6 +41,15 @@ end
 
 local panel
 
+-- Esc closes the card (rhylib_menus' Esc handler runs the UI closers).
+if Rhylib.UI and Rhylib.UI.RegisterCloser then
+    Rhylib.UI.RegisterCloser("welcome", function()
+        if not IsValid(panel) then return false end
+        panel:Remove()
+        return true
+    end)
+end
+
 function R.ShowWelcome()
     local k = K()
     if not k or IsValid(panel) then return end

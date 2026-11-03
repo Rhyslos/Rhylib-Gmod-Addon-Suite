@@ -4,8 +4,11 @@
     weapon: right or left click raises / lowers them, zoom to 20x). The optics key raises them (they flip down on the model):
     zoom (mouse wheel), the range to what you look at, night vision (the
     flashlight key). No shooting or sprinting while you look through them;
-    weapon mode (mode key) keeps them down with night vision but gives the
-    normal view and HUD so you can fight.
+    weapon mode keeps them down with night vision but gives the normal
+    view and HUD so you can fight. With rhylib_inventory the worn ones
+    follow your hands (G.AutoMode): a weapon out = weapon mode, your gun
+    put away (Stowed) = looking. Without it the helmet gear key steps
+    from looking to weapon mode.
     NW2Int rhylib_optics = the kind in use (0 = none). Both use the same
     viewer (cl_30_optics.lua); the rangefinder zooms half as far.
     Shared: the state readers below and the StartCommand block (it runs on
@@ -49,6 +52,22 @@ end
 -- where you shoot with the normal HUD and 1x view, night vision still on).
 function G.Looking(ply)
     return ply:GetNW2Int("rhylib_optics", 0) ~= 0 and not ply:GetNW2Bool("rhylib_opticsFire", false)
+end
+
+-- G.AutoMode(): with rhylib_inventory (it gives the empty "Stowed" hands),
+-- worn optics follow what is in your hands: a weapon out = weapon mode,
+-- hands empty = looking. Without it, the helmet gear key steps from
+-- looking to weapon mode.
+function G.AutoMode()
+    return Rhylib.Has and Rhylib.Has("inventory") and true or false
+end
+
+-- G.Armed(ply, wep?): a weapon in hand (not the empty Stowed hands or a
+-- held magazine).
+local UNARMED = { rhylib_stowed = true, rhylib_hand = true }
+function G.Armed(ply, wep)
+    wep = wep or ply:GetActiveWeapon()
+    return IsValid(wep) and not UNARMED[wep:GetClass()]
 end
 
 local band, bnot, bor = bit.band, bit.bnot, bit.bor

@@ -27,13 +27,24 @@
     Zoom: macrobinoculars x2 to x12, the rangefinder half that, handheld
     binoculars x2 to x20 (G.ZOOM_RANGE).
 
-    Sun visor (worn and the helmet on): the same key lowers it (off ->
-    binoculars -> visor -> off). Down: red night vision always on, a grid
-    and scan line under the HUD (masked to rhylib_hud's visor opening),
-    and the mode key toggles a fixed zoom (config visorZoom).
+    Holding the helmet gear key (about 0.35 s) with optics up switches
+    night vision (the flashlight key still does too); a tap acts when the
+    key is let go.
+    The helmet gear key (L) steps through it all: off -> binoculars ->
+    sun visor -> off. With rhylib_inventory the binoculars / rangefinder
+    follow your hands (G.AutoMode): a weapon out = weapon mode, gun put
+    away = looking. Without it, L steps looking -> weapon mode -> visor.
+    Middle mouse is freelook's alone (rhylib_thirdperson).
+
+    Sun visor (worn and the helmet on): down, red night vision is always
+    on, a grid and scan line under the HUD (masked to rhylib_hud's visor
+    opening), and aiming a Rhylib gun (right mouse, not through a scope)
+    gives a fixed zoom (config visorZoom).
 
     Client only. Client convars: rhylib_optics_key (default l),
-    rhylib_optics_mode_key (default mouse3); both in Settings > Gear.
+    rhylib_optics_mode_key (an optional extra key that only switches
+    looking <-> weapon mode, and toggles the visor zoom; unbound by
+    default); both in Settings > Gear.
     Sends rhylib.gear.optics, rhylib.gear.visor, rhylib.gear.lights.
     Sets for other client code: G.NightVision() (is it on?), G.opticsFov
     (view FOV while looking), G.visorFov (visor zoom factor; the crosshair
@@ -44,7 +55,12 @@ local G = Rhylib.Gear
 local UI = Rhylib.UI
 
 local keyVar = CreateClientConVar("rhylib_optics_key", "l", true, false, "Helmet gear key: raises or lowers your macrobinoculars / rangefinder, or switches your helmet lights")
-local modeVar = CreateClientConVar("rhylib_optics_mode_key", "mouse3", true, false, "Key that switches binoculars / rangefinder between looking and weapon mode")
+local modeVar = CreateClientConVar("rhylib_optics_mode_key", "", true, false, "Optional extra key that switches binoculars / rangefinder between looking and weapon mode (the helmet gear key does it too)")
+-- (middle mouse belongs to freelook now: an old saved default moves off it, once)
+if cookie.GetString("rhylib_optics_mode_v", "") ~= "2" then
+    if string.lower(modeVar:GetString()) == "mouse3" then RunConsoleCommand("rhylib_optics_mode_key", "") end
+    cookie.Set("rhylib_optics_mode_v", "2")
+end
 
 local zoomOf = {}   -- [kind] = current zoom
 local nv = false
@@ -101,40 +117,64 @@ end
 
 local keyDown = G.KeyDown   -- (sh_00_config.lua)
 
--- Helmet gear key: optics up (binoculars first) or down, or the helmet
--- lights on / off (they can't be worn together). Mode key: looking <-> weapon mode.
+-- Helmet gear key: a tap acts on release (gearTap), holding it with optics
+-- up switches night vision. Mode key: looking <-> weapon mode.
+-- A tap of the helmet gear key: optics up (binoculars first) or down, the
+-- sun visor, or the helmet lights (see the header for the order).
+local function gearTap(me)
+    -- (worn with binoculars too: off -> binoculars -> visor -> off)
+    if kindUp() == 3 then
+        send(0)   -- (handheld binoculars: just lowered)
+    elseif kindUp() ~= 0 and looking() and not G.AutoMode() then
+        send(kindUp(), true)   -- (looking -> weapon mode; with the inventory your hands decide)
+    elseif kindUp() ~= 0 then
+        send(0)
+        if G.Active(me, "visor") then sendVisor(true) end
+    elseif visorDown() then
+        sendVisor(false)
+    elseif G.OpticsAllowed(me, 1) then
+        send(1)
+    elseif G.OpticsAllowed(me, 2) then
+        send(2)
+    elseif G.Active(me, "visor") then
+        sendVisor(true)
+    elseif G.Active(me, "light") or (G.Worn(me, "light") == nil and not G.Cfg("lightNeeded") and G.HelmetOn(me)) then
+        Rhylib.Net.Start("gear.lights")
+        net.SendToServer()
+    elseif not G.HelmetOn(me) then
+        Rhylib.Notify(nil, "Put your helmet on first", "bad", "Gear")
+    else
+        Rhylib.Notify(nil, "You need macrobinoculars, a rangefinder, a sun visor or helmet lights worn", "bad", "Gear")
+    end
+end
+
+-- Holding the helmet gear key this long (with optics up) switches night
+-- vision instead of acting as a tap.
+local HOLD_NV = 0.35
+local pressAt, holdUsed
+
 local modeWasDown = false
 Rhylib.Hook.Add("Think", "gear.optics.key", function()
     local me = LocalPlayer()
     local down = keyDown(keyVar)
     if down and not wasDown and free() then
-        -- (worn with binoculars too: off -> binoculars -> visor -> off)
-        if kindUp() == 3 then
-            send(0)   -- (handheld binoculars: just lowered)
-        elseif kindUp() ~= 0 then
-            send(0)
-            if G.Active(me, "visor") then sendVisor(true) end
-        elseif visorDown() then
-            sendVisor(false)
-        elseif G.OpticsAllowed(me, 1) then
-            send(1)
-        elseif G.OpticsAllowed(me, 2) then
-            send(2)
-        elseif G.Active(me, "visor") then
-            sendVisor(true)
-        elseif G.Active(me, "light") or (G.Worn(me, "light") == nil and not G.Cfg("lightNeeded") and G.HelmetOn(me)) then
-            Rhylib.Net.Start("gear.lights")
-            net.SendToServer()
-        elseif not G.HelmetOn(me) then
-            Rhylib.Notify(nil, "Put your helmet on first", "bad", "Gear")
-        else
-            Rhylib.Notify(nil, "You need macrobinoculars, a rangefinder, a sun visor or helmet lights worn", "bad", "Gear")
+        pressAt, holdUsed = RealTime(), false
+    end
+    if down and pressAt and not holdUsed and RealTime() - pressAt >= HOLD_NV then
+        holdUsed = true
+        if kindUp() ~= 0 then
+            nv = not nv
+            surface.PlaySound("items/flashlight1.wav")
         end
+    end
+    if not down and wasDown and pressAt then
+        if not holdUsed then gearTap(me) end
+        pressAt = nil
     end
     wasDown = down
     local mdown = keyDown(modeVar)
     local kind = kindUp()
-    if mdown and not modeWasDown and kind ~= 0 and free() then
+    if mdown and not modeWasDown and kind ~= 0 and free() and not (G.AutoMode() and kind ~= 3) then
         local toFire = looking()
         if not toFire then
             -- Back to looking: all the way out, so nothing jumps at you.
@@ -212,7 +252,11 @@ Rhylib.Hook.Add("CalcView", "gear.visor.zoom", function(ply, pos, angles, fov, z
         G.visorFov = 1
         return
     end
-    local want = visorZoom and math.max(1, G.Cfg("visorZoom")) or 1
+    -- (zoomed while aiming a Rhylib gun that has no scope of its own, or
+    -- with the optional mode key's toggle)
+    local wep = ply:GetActiveWeapon()
+    local aiming = IsValid(wep) and wep.GetAiming and wep:GetAiming() and not (wep.Scoped and wep:Scoped())
+    local want = (visorZoom or aiming) and math.max(1, G.Cfg("visorZoom")) or 1
     visorFov = Lerp(math.min(1, FrameTime() * 12), visorFov, want)
     if math.abs(visorFov - want) < 0.01 then visorFov = want end
     G.visorFov = visorFov   -- (the crosshair scales its spread by it)
@@ -526,6 +570,7 @@ end
 
 local function keyName(var)
     local k = string.lower(var:GetString())
+    if k == "" then return "?" end
     if k == "mouse3" then return "MIDDLE MOUSE" end
     return string.upper(k)
 end
@@ -674,8 +719,9 @@ local function drawViewer(fire)
     draw.SimpleText("ELEVATION · BEARING · TARGET RANGE", mark, sh.R - S(70, h), sh.B + S(28, h), RED, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
 
     if not fire then
-        local hint = "Wheel: zoom  ·  " .. string.upper(input.LookupBinding("impulse 100") or "F") .. ": night vision  ·  "
-            .. keyName(modeVar) .. ": weapon mode  ·  " .. keyName(keyVar) .. ": lower"
+        local hint = "Wheel: zoom  ·  hold " .. keyName(keyVar) .. ": night vision  ·  "
+            .. (G.AutoMode() and "draw a weapon: weapon mode  ·  " .. keyName(keyVar) .. ": lower"
+                or keyName(keyVar) .. ": weapon mode")
         draw.SimpleText(hint, UI.Font(S(13, h)), w * 0.5, h - S(36, h), Color(200, 200, 200, 140), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
 end
@@ -740,12 +786,15 @@ Rhylib.Hook.Add("InitPostEntity", "gear.optics.setting", function()
     if not Menus then return end
     if Menus.AddSetting then
         Menus.AddSetting("Gear", { id = "gear.opticskey", order = 10, title = "Helmet gear: binoculars / rangefinder up or down, helmet lights on or off", kind = "key", convar = "rhylib_optics_key" })
-        Menus.AddSetting("Gear", { id = "gear.opticsmode", order = 11, title = "Binoculars / rangefinder: weapon mode", kind = "key", convar = "rhylib_optics_mode_key" })
+        Menus.AddSetting("Gear", { id = "gear.opticsmode", order = 11, title = "Binoculars / rangefinder: weapon mode (extra key, optional)",
+            desc = "The helmet gear key already steps from looking to weapon mode; bind this only if you want a second key for it", kind = "key", convar = "rhylib_optics_mode_key" })
     end
     if Menus.AddControl then
         Menus.AddControl("Gear", "Mouse wheel", "Zoom (binoculars / rangefinder up)")
         Menus.AddControl("Gear", "{impulse 100}", "Night vision (binoculars / rangefinder up; the sun visor has it always on)")
-        Menus.AddControl("Gear", "[rhylib_optics_mode_key]", "Sun visor down: 3x zoom on / off")
+        Menus.AddControl("Gear", "Hold [rhylib_optics_key]", "Night vision on / off (binoculars / rangefinder up)")
+        Menus.AddControl("Gear", "[rhylib_optics_key]", "Binoculars / rangefinder up or down (gun out: weapon mode, gun put away: looking)")
+        Menus.AddControl("Gear", "Right mouse", "Sun visor down: aim for the 3x zoom")
     end
 end)
 
