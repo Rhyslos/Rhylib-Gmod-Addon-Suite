@@ -17,6 +17,8 @@ return function(ENT, env)
 
     -- The area a guard / patrol droid stays in (nil = attack: anywhere).
     function ENT:AreaRadius()
+        -- (a patrol or guard answering a call for help fights where the fight is)
+        if (self.mode == "patrol" or self.mode == "guard") and (self.helpUntil or 0) > CurTime() then return nil end
         -- (Command mode: a patrol area's own radius, a post's small one)
         if self.areaRadius and not self.guarding and (self.mode == "patrol" or self.mode == "guard") then return self.areaRadius end
         if self.mode == "patrol" then return D.Cfg("patrolRadius") end
@@ -24,6 +26,31 @@ return function(ENT, env)
         if self.guarding then return 250 end
         if self.mode == "follow" then return D.Cfg("cloneFollowRadius") end
         return D.Cfg("guardRadius")
+    end
+
+    -- ENT:PatrolPoint() -> the next spot to walk to in its patrol area: a
+    -- point inside the circle on the navmesh, at least a few metres away.
+    -- A squad leader picks the one of a few that turns it least, so its
+    -- squad's formation doesn't keep swinging round.
+    function ENT:PatrolPoint()
+        local home = self.home or self:GetPos()
+        local R = self:AreaRadius() or D.Cfg("patrolRadius")
+        local pos = self:GetPos()
+        local lead = self.squad and self.squad.leader == self
+        local fwd = self:GetForward()
+        fwd.z = 0
+        local best, bestScore
+        for _ = 1, lead and 4 or 1 do
+            -- (a point inside the circle, not the square around it)
+            local a, r = math.Rand(0, math.pi * 2), R * math.sqrt(math.Rand(0, 0.9))
+            local p = D.SnapNav and D.SnapNav(home + Vector(math.cos(a) * r, math.sin(a) * r, 0)) or home + Vector(math.cos(a) * r, math.sin(a) * r, 0)
+            local d = p - pos
+            d.z = 0
+            local len = d:Length()
+            local score = len < math.min(300, R * 0.5) and -2 or (len > 0 and d:Dot(fwd) / len or 0)
+            if not bestScore or score > bestScore then best, bestScore = p, score end
+        end
+        return best
     end
 
     -- A point pulled back inside the droid's area.

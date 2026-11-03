@@ -181,7 +181,7 @@ Config.Register("droids", "retreatMax", 1500, "Retreat: with no enemy in sight i
 Config.Register("droids", "lastStandPause", 0.6, "Last stand (retreating with nowhere to go): pause between bursts multiplier")
 Config.Register("droids", "walkMult", 0.5, "Walking (marching) speed as a share of a droid's run speed")
 Config.Register("droids", "guardRadius", 700, "Guard mode: how far a droid fights away from its post")
-Config.Register("droids", "patrolRadius", 900, "Patrol mode: how far a droid walks around its patrol centre")
+Config.Register("droids", "patrolRadius", 2500, "Patrol mode: how far a patrol goes from where it was placed")
 Config.Register("droids", "postRadius", 160, "Spread out / Defend 360 (Command mode): how far an NPC fights away from the spot it was given")
 Config.Register("droids", "markerRadius", 2000, "Droids within this range of a new marker follow it (droids placed after it follow it too)")
 Config.Register("droids", "brushRadius", 400, "Toolgun order brush: droids within this range of where you aim get the order")
@@ -227,13 +227,18 @@ Config.Register("droids", "ctMedicRepair", 4, "Clone medic: injury damage and bu
 Config.Register("droids", "ctMedicReviveRadius", 1500, "Clone medic: goes to downed or just-dead players this close")
 Config.Register("droids", "ctMedicReviveTime", 5, "Clone medic: seconds crouched on the body to get someone up")
 Config.Register("droids", "ctMedicReviveHealth", 0.3, "Clone medic: share of max health a revived player gets up with")
--- Spread out / doctrine : roaming in twos; clones
--- call for help, fall back when outnumbered, hold when even, charge when
--- they outnumber the droids, and crouch when there's no cover.
-Config.Register("droids", "roamRadius", 4000, "Spread out (roam): how far a roaming NPC picks its next spot")
-Config.Register("droids", "ctCallRadius", 2000, "Clones: how far a clone's call for help reaches")
-Config.Register("droids", "ctCallHelpers", 4, "Clones: most clones that come when one calls for help")
-Config.Register("droids", "ctCallCooldown", 12, "Clones: seconds between one clone's calls for help")
+-- Roam / patrol groups and calls for help (sv_40_squads), clone doctrine:
+-- clones fall back when outnumbered, hold when even, charge when they
+-- outnumber the droids, and crouch when there's no cover.
+Config.Register("droids", "roamRadius", 4000, "Spread out (roam): how far one leg of a roam goes (roaming has no home: it carries on across the whole map)")
+Config.Register("droids", "wanderClones", 2, "Roam and patrol: clones per group")
+Config.Register("droids", "wanderDroids", 6, "Roam and patrol: droids per group (roaming droids left over make a group of 4 or 2; one left over goes alone)")
+Config.Register("droids", "callRadius", 2000, "Droids: how far a droid's call for help reaches (idle roaming, patrolling and guarding groups answer)")
+Config.Register("droids", "callHelpers", 10, "Droids: droids that come when one calls for help (whole groups, so it can be a few more)")
+Config.Register("droids", "callCooldown", 12, "Droids: seconds between one droid group's calls for help")
+Config.Register("droids", "ctCallRadius", 2000, "Clones: how far a clone's call for help reaches (idle roaming, patrolling and guarding groups answer)")
+Config.Register("droids", "ctCallHelpers", 4, "Clones: clones that come when one calls for help (whole groups, so it can be one more)")
+Config.Register("droids", "ctCallCooldown", 12, "Clones: seconds between one clone group's calls for help")
 Config.Register("droids", "ctOddsFriends", 900, "Clones: friends (clones and players) this close count for the odds")
 Config.Register("droids", "ctOddsEnemies", 1500, "Clones: droids this close count for the odds (B2s count double)")
 Config.Register("droids", "ctFallBackOdds", 0.8, "Clones fall back when friends are fewer than this share of the enemies")
@@ -442,7 +447,8 @@ end)
 local PAGE_SECTIONS = {
     { "General", { "^boltSpeed$", "^maxActive$", "^aggression$", "^pathPerTick$", "^walkMult$", "^runSpread$", "^walkSpread$", "^moveSpread$", "^marchGroup$" } },
     { "Squads", { "^squad" } },
-    { "Orders & areas", { "^guardRadius$", "^patrolRadius$", "^markerRadius$", "^brushRadius$", "^roamRadius$" } },
+    { "Roam, patrol & calls for help", { "^roamRadius$", "^patrolRadius$", "^wander", "^call", "^ctCall" } },
+    { "Orders & areas", { "^guardRadius$", "^markerRadius$", "^brushRadius$" } },
     { "B1 grenades", { "^b1Nade" } },
     { "B1 battle droids", { "^b1", "^e5" } },
     { "B2 rockets & mortars", { "^b2Rocket", "^b2Direct", "^b2Slow", "^b2Dive", "^arty", "^mortar", "^b2cRPM$" } },
@@ -451,7 +457,7 @@ local PAGE_SECTIONS = {
     { "Cover & accuracy", { "^cover", "^blindSpread$", "^retreatFrac$", "^flash", "^settle", "^crowd" } },
     { "Retreat", { "^retreat", "^lastStand" } },
     { "Clone medics", { "^ctMedic", "^ctDown", "^reviveShield" } },
-    { "Clone tactics", { "^ctCall", "^ctOdds", "^ctFallBackOdds$", "^ctChargeOdds$", "^ctCrouch", "^ctPopper" } },
+    { "Clone tactics", { "^ctOdds", "^ctFallBackOdds$", "^ctChargeOdds$", "^ctCrouch", "^ctPopper" } },
     { "Clone troopers", { "^clone", "^ct", "^cmdFollowRadius$", "^cmdMaxFollowers$" } },
 }
 

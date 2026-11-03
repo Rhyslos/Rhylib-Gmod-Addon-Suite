@@ -272,23 +272,10 @@ local function run(ply, op, list, pl)
     elseif op == "mode" then
         local mode = MODES[pl.v]
         if not mode then return end
-        if mode == "roam" then
-            -- (roaming: two and two, like the brush; squads break up)
-            for _, d in ipairs(list) do D.LeaveSquad(d) end
-            local done = {}
-            for _, d in ipairs(list) do
-                if not done[d] then
-                    done[d] = true
-                    D.SetMode(d, "roam", d:GetPos())
-                end
-            end
-            if D.Buddy then
-                for side = 1, 2 do
-                    local s = {}
-                    for _, d in ipairs(list) do if (d.IsRhylibClone and 1 or 2) == side then s[#s + 1] = d end end
-                    for k = 2, #s, 2 do D.Buddy(s[k], s[k - 1]) end
-                end
-            end
+        if mode == "roam" or mode == "patrol" then
+            -- (roam / patrol groups, like the brush; old squads break up)
+            D.WanderGroups(list, mode)   -- (each group keeps its old squad's aggression)
+            for _, d in ipairs(list) do wake(d) end
         elseif mode == "retreat" then
             D.SetGroupMode(list, "retreat")
         else

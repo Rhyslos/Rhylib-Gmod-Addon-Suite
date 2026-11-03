@@ -20,8 +20,22 @@
     Squads are made when the toolgun places several NPCs at once, a preset
     squad (cut into squads of squadSize), or a GM groups NPCs in the
     toolgun's Command mode (D.MakeSquad). Clones following an officer,
-    roaming pairs, artillery and the NPCs guarding it keep their own way
-    of following and are never put in a squad.
+    artillery and the NPCs guarding it keep their own way of following and
+    are never put in a squad.
+
+    Roam and patrol groups (D.WanderGroups): NPCs given roam or patrol are
+    cut into groups of wanderClones / wanderDroids (roaming droids left
+    over: a group of 4 or 2; one left over goes alone). Patrols walk in
+    column, roaming droids spread out, roaming clones as a wedge. One placed
+    at a time, they join the last one placed (D.WanderJoin).
+
+    Calls for help (D.CallHelp, from ENT:Look on fresh contact): idle
+    roaming, patrolling and guarding groups of the caller's side within callRadius (clones
+    ctCallRadius) come, whole groups, nearest first, until callHelpers
+    (clones ctCallHelpers) are coming. The group's leader gets
+    reinforceTo (it runs there, the members run with it) and every member
+    npc.helpUntil (D.Helping: a patrol or guard may fight outside its area,
+    kept on while it fights; after, it walks back to its range or post).
 
     Per squad aggression (squad.aggro 1-5, nil = the global level) beats
     the global droid aggression and the clones' own (ENT:Aggro).
@@ -89,8 +103,8 @@ local function boxKeep(sq, yaw)
     end
 end
 
--- Can this NPC be in a squad? (Not following an officer or a roaming
--- buddy, not artillery, alive.)
+-- Can this NPC be in a squad? (Not following an officer or an NPC, not
+-- artillery, alive.)
 local function squadable(d)
     return IsValid(d) and (d.IsRhylibDroid or d.IsRhylibClone) and d:Health() > 0
         and not d.artillery and not d.leader and not d.overCap
@@ -133,7 +147,11 @@ local function relist(sq)
     -- A new leader takes over the squad's job (kept by the timer while
     -- the old one led), so the squad doesn't wander back to its post.
     if lead ~= oldLead and oldLead ~= nil and sq.jMode and sq.jMode ~= "follow" then
+        -- (answering a call for help: the new leader carries on)
+        local help = lead.helpUntil
         D.SetMode(lead, sq.jMode, sq.jHome)
+        lead.helpUntil = help
+        lead.reinforceTo, lead.reinforceUntil, lead.reinforceEnemy = sq.jReinforce, sq.jReinforceUntil, sq.jReinforceEnemy
         lead.objective, lead.fallback = sq.jObjective, sq.jFallback
         lead.route, lead.routeIdx, lead.areaRadius = sq.jRoute, sq.jRouteIdx, sq.jArea
     end
@@ -355,6 +373,7 @@ timer.Create("Rhylib.Droids.Squads", 0.25, 0, function()
             -- (the leader's job, for whoever takes over)
             sq.jMode, sq.jHome, sq.jObjective, sq.jFallback = lead.mode, lead.home, lead.objective, lead.fallback
             sq.jRoute, sq.jRouteIdx, sq.jArea = lead.route, lead.routeIdx, lead.areaRadius
+            sq.jReinforce, sq.jReinforceUntil, sq.jReinforceEnemy = lead.reinforceTo, lead.reinforceUntil, lead.reinforceEnemy
             local lp = lead:GetPos()
             local t = sq.trail
             if #t == 0 or t[#t]:DistToSqr(lp) > TRAIL_STEP * TRAIL_STEP then
@@ -364,7 +383,8 @@ timer.Create("Rhylib.Droids.Squads", 0.25, 0, function()
             local v = lead.loco:GetVelocity()
             if v:Length2DSqr() > 900 then
                 sq.heading = v:Angle().y
-            elseif sq.face then
+            elseif sq.face and lead.mode == "guard" then
+                -- (a post's facing; patrolling squads keep the way they walked)
                 sq.heading = sq.face
             end
             -- How far the members are from their slots (the leader waits).
@@ -433,3 +453,176 @@ function D.SquadMode(sq, mode, pos)
     end
     sq.face = nil
 end
+
+--------------------------------------------------------------------------
+-- Roam and patrol groups, calls for help
+--------------------------------------------------------------------------
+
+local function wanderSize(side)
+    return math.max(1, math.floor(D.Cfg(side == 1 and "wanderClones" or "wanderDroids")))
+end
+
+-- Group sizes for n NPCs: groups of size; roaming droids left over make a
+-- group of 4 or 2 (an even number), and a single one left over goes alone.
+local function wanderSizes(n, size, evenOnly)
+    local out = {}
+    while n >= size do out[#out + 1] = size n = n - size end
+    if n > 0 then
+        if evenOnly and n % 2 == 1 then
+            if n > 1 then out[#out + 1] = n - 1 end
+            out[#out + 1] = 1
+        else
+            out[#out + 1] = n
+        end
+    end
+    return out
+end
+D.WanderSizes = wanderSizes
+
+-- The formation of a roam / patrol group: patrols walk in column, roaming
+-- droids spread out, a roaming clone pair walks as a wedge (side by side,
+-- one a step behind).
+local function wanderFormation(side, mode)
+    if mode == "patrol" then return "column" end
+    return side == 2 and "spread" or "wedge"
+end
+
+-- D.WanderGroups(list, mode, opts) -> squads: puts the NPCs in mode
+-- ("roam" or "patrol", centred where each stands; ones already in that
+-- mode keep their home and markers) and cuts them into groups by side
+-- (wanderClones / wanderDroids; nearest neighbours together). opts:
+-- whole = also the rest of any squad one of them is in, aggro = the new
+-- groups' aggression (else the one their old squad had). Mortars and the
+-- droids guarding them are left out. Called by the toolgun (placing, the
+-- order brush, Command mode).
+-- Example: Rhylib.Droids.WanderGroups(myDroids, "patrol")
+function D.WanderGroups(list, mode, opts)
+    if mode ~= "roam" and mode ~= "patrol" then return {} end
+    opts = opts or {}
+    local whole = opts.whole
+    local all, seen = {}, {}
+    -- (mortars and the droids guarding them stay as they are)
+    local function add(d)
+        if IsValid(d) and (d.IsRhylibDroid or d.IsRhylibClone) and not seen[d] and not d.artillery and not d.leaderNpc then
+            seen[d] = true
+            all[#all + 1] = d
+        end
+    end
+    for _, d in ipairs(list) do
+        add(d)
+        if whole and IsValid(d) and d.squad then
+            for _, m in ipairs(d.squad.list) do add(m) end
+        end
+    end
+    local out = {}
+    for side = 1, 2 do
+        local left = {}
+        local aggro = opts.aggro
+        for _, d in ipairs(all) do
+            if sideOf(d) == side then
+                aggro = aggro or (d.squad and d.squad.aggro)
+                D.LeaveSquad(d)
+                if d.mode ~= mode then D.SetMode(d, mode, d:GetPos()) end
+                if squadable(d) then left[#left + 1] = d end
+            end
+        end
+        for _, size in ipairs(wanderSizes(#left, wanderSize(side), side == 2 and mode == "roam")) do
+            -- (the first one left and its nearest neighbours)
+            local seed = left[1]:GetPos()
+            table.sort(left, function(a, b) return a:GetPos():DistToSqr(seed) < b:GetPos():DistToSqr(seed) end)
+            local chunk = {}
+            for i = 1, size do chunk[i] = table.remove(left, 1) end
+            if #chunk > 1 then
+                local sq = D.MakeSquad(chunk, { formation = wanderFormation(side, mode), aggro = aggro })
+                if sq then out[#out + 1] = sq end
+            end
+        end
+    end
+    return out
+end
+
+-- One at a time: an NPC the toolgun places on its own in roam or patrol
+-- joins the last one placed on its side (within 3 s and 500 units, same
+-- mode) while that group has room (up to wanderClones / wanderDroids, so
+-- roaming droids placed one by one can make a group of 3 or 5).
+-- D.WanderJoin(npc, mode, aggro), from D.ToolPlaced.
+D.wanderRecent = D.wanderRecent or {}
+function D.WanderJoin(d, mode, aggro)
+    if not (IsValid(d) and (mode == "roam" or mode == "patrol")) then return end
+    local side = sideOf(d)
+    local r = D.wanderRecent[side]
+    local now = CurTime()
+    D.wanderRecent[side] = { e = d, at = now, mode = mode }
+    if not (r and IsValid(r.e) and r.e ~= d and r.mode == mode and r.e.mode == mode and now - r.at < 3
+        and r.e:GetPos():DistToSqr(d:GetPos()) < 500 * 500) then return end
+    local group = {}
+    for _, m in ipairs(r.e.squad and r.e.squad.list or { r.e }) do group[#group + 1] = m end
+    if #group >= wanderSize(side) then return end
+    group[#group + 1] = d
+    D.MakeSquad(group, { formation = wanderFormation(side, mode), aggro = aggro or (r.e.squad and r.e.squad.aggro) })
+end
+
+-- D.Helping(npc) -> true while it (or its squad) answers a call for help:
+-- a patrol or guard then fights outside its area, and walks back after.
+function D.Helping(d)
+    return (d.helpUntil or 0) > CurTime()
+end
+
+-- Can this one answer a call? A free roam / patrol / guard NPC (not a
+-- Command mode post: Spread out / Defend 360), not already on
+-- its way to help, not fighting, not retreating or falling back
+-- (aggression 1 or 2, a running retreat), not following anyone.
+local function canHelp(u)
+    return IsValid(u) and u:Health() > 0 and (u.mode == "roam" or u.mode == "patrol" or u.mode == "guard") and not u.posted
+        and not IsValid(u.target) and not u.leader and not u.guardDowned and not u.reviveTarget
+        and not u.artillery and not D.Helping(u) and not (u.Retreating and u:Retreating())
+        and not (u.Aggro and u:Aggro() <= 2)
+end
+
+-- D.CallHelp(caller, enemy): a droid or clone on fresh contact calls
+-- idle roaming, patrolling and guarding groups of its side within callRadius (clones
+-- ctCallRadius) over, nearest first, whole groups until callHelpers
+-- (clones ctCallHelpers) NPCs are coming. Their leader runs to the
+-- caller, the group runs with it, and on arrival they go for the enemy.
+-- One call per squad (or lone NPC) every callCooldown (ctCallCooldown) s.
+-- Called from ENT:Look. (D.CloneCall is the old name.)
+function D.CallHelp(caller, enemy)
+    if not IsValid(caller) then return end
+    local clone = caller.IsRhylibClone
+    local now = CurTime()
+    local holder = caller.squad or caller
+    if (holder.callReady or 0) > now then return end
+    holder.callReady = now + D.Cfg(clone and "ctCallCooldown" or "callCooldown")
+    local from = caller:GetPos()
+    local r2 = D.Cfg(clone and "ctCallRadius" or "callRadius") ^ 2
+    local want = math.floor(D.Cfg(clone and "ctCallHelpers" or "callHelpers"))
+    if want <= 0 then return end
+    local groups = {}
+    for u in pairs(clone and (D.clones or {}) or D.active) do
+        -- (a squad counts once, through its leader; the caller's own squad is already there)
+        local sq = IsValid(u) and u.squad
+        if (not sq or sq.leader == u) and (not sq or sq ~= caller.squad) and u ~= caller and canHelp(u) then
+            local d = u:GetPos():DistToSqr(from)
+            if d < r2 then groups[#groups + 1] = { u = u, n = sq and #sq.list or 1, d = d } end
+        end
+    end
+    if #groups == 0 then return end
+    table.sort(groups, function(a, b) return a.d < b.d end)
+    local to = D.SnapNav(from)
+    local coming = 0
+    for _, g in ipairs(groups) do
+        if coming >= want then break end
+        coming = coming + g.n
+        local lead = g.u
+        lead.reinforceTo, lead.reinforceUntil = to, now + 30
+        lead.reinforceEnemy = IsValid(enemy) and enemy or nil
+        lead.roamGoal, lead.patrolGoal = nil, nil
+        for _, m in ipairs(lead.squad and lead.squad.list or { lead }) do
+            m.helpUntil = now + 45
+            m.woken, m.planAt = true, 0
+        end
+        lead.redirect = true
+    end
+    if clone then caller:EmitSound("npc/combine_soldier/vo/on1.wav", 65, 110) end
+end
+D.CloneCall = D.CallHelp

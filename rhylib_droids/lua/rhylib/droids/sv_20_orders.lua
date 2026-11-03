@@ -3,10 +3,12 @@
 
       Modes (per droid, NW2String rhylib_dmode for the GM labels):
         guard   hold a post (droid.home) and fight within guardRadius
-        patrol  walk around a centre (droid.home) within patrolRadius
+        patrol  walk from spot to spot within patrolRadius of where it was
+                placed (droid.home), in groups, in column (D.WanderGroups)
         attack  push on: to an attack marker (droid.objective), else
                 hunt the nearest players
-        roam    spread out: wander the map in twos (D.Buddy, D.RoamPoint)
+        roam    spread out: wander the whole map in groups (clones in
+                twos, droids up to 6; D.WanderGroups, D.RoamPoint)
         retreat withdraw from the enemy, nowhere in particular (run, turn
                 and fight, run on; last stand when cornered; rhylib_b1
                 ENT:RetreatPlan). Aggression 1 does the same.
@@ -42,16 +44,17 @@ D.MARKER_KINDS = KIND_NAMES
 -- D.SetMode(npc, mode, center): sets a droid's or clone's mode ("guard",
 -- "patrol", "attack", "roam", "retreat"; anything else = "guard") and,
 -- if given, its home (centre of its area). Ends following, command wheel
--- orders, a running retreat and roam pairing. Server.
+-- orders, a running retreat and answering a call for help. Server.
 -- Example: Rhylib.Droids.SetMode(droid, "patrol", droid:GetPos())
 function D.SetMode(droid, mode, center)
     if not (IsValid(droid) and (droid.IsRhylibDroid or droid.IsRhylibClone)) then return end
     if mode ~= "guard" and mode ~= "patrol" and mode ~= "attack" and mode ~= "roam" and mode ~= "retreat" then mode = "guard" end
     droid.leader, droid.advanceTo, droid.leaderNpc = nil, nil, nil   -- (a new mode ends following an officer / buddy)
-    droid.roamGoal, droid.reinforceTo = nil, nil
+    droid.roamGoal, droid.reinforceTo, droid.patrolGoal = nil, nil, nil
     droid.holdAt, droid.orderAggro = nil, nil   -- (command wheel orders end with the follow)
     droid.rt, droid.lastStand, droid.retreatDir = nil, nil, nil   -- (a retreat starts over)
     droid.buddyRoam = nil
+    droid.helpUntil, droid.reinforceEnemy = nil, nil   -- (a call for help being answered)
     -- (Command mode extras: a patrol route or area, a post with a facing)
     droid.route, droid.routeIdx, droid.areaRadius = nil, nil, nil
     droid.posted, droid.holdYaw, droid.defending = nil, nil, nil
@@ -140,14 +143,13 @@ function D.MarkerRemoved(marker)
     end
 end
 
--- Placed in roam mode: paired up two and two like the brush does (the
--- next one placed within 3 s and 500 units walks beside this one).
-D.roamSolo = D.roamSolo or {}
-
 -- D.ToolPlaced(npc, mode): a droid or clone the toolgun (or a preset)
--- placed: the picked mode, then the latest markers of its side. Roam
--- placements pair up (D.roamSolo). Called by rhylib_toolgun.
-function D.ToolPlaced(droid, mode)
+-- placed: the picked mode, then the latest markers of its side. single =
+-- placed on its own (not several at once, not a preset): roam and patrol
+-- placements then join the last one placed into a group (D.WanderJoin,
+-- sv_40_squads, with aggro); several at once are grouped by the toolgun
+-- (D.WanderGroups). Called by rhylib_toolgun.
+function D.ToolPlaced(droid, mode, single, aggro)
     if not (IsValid(droid) and (droid.IsRhylibDroid or droid.IsRhylibClone)) then return end
     -- Assault: at the side's assault point (Command mode's Assault here),
     -- else guard. Markers don't pull them elsewhere.
@@ -161,17 +163,7 @@ function D.ToolPlaced(droid, mode)
         return
     end
     D.SetMode(droid, mode or "guard", droid:GetPos())
-    if mode == "roam" and D.Buddy then
-        local side = droid.IsRhylibClone and 1 or 2
-        local solo = D.roamSolo[side]
-        if solo and IsValid(solo.e) and solo.e.mode == "roam" and CurTime() - solo.at < 3
-            and solo.e:GetPos():DistToSqr(droid:GetPos()) < 500 * 500 then
-            D.Buddy(droid, solo.e)
-            D.roamSolo[side] = nil
-        else
-            D.roamSolo[side] = { e = droid, at = CurTime() }
-        end
-    end
+    if single and (mode == "roam" or mode == "patrol") and D.WanderJoin then D.WanderJoin(droid, mode, aggro) end
     if droid.IsRhylibClone then
         -- (clones follow the latest clone marker)
         if IsValid(D.lastCloneOrder) then D.ApplyMarker(droid, D.lastCloneOrder) end
@@ -194,7 +186,9 @@ function D.PaintMode(pos, mode, side)
     local picked = {}
     for _, list in ipairs({ sideList(side) }) do
         for d in pairs(list) do
-            if IsValid(d) and d:GetPos():DistToSqr(pos) < r * r then
+            -- (roam / patrol leave mortars and the droids guarding them be)
+            if IsValid(d) and d:GetPos():DistToSqr(pos) < r * r
+                and not ((mode == "roam" or mode == "patrol") and (d.artillery or d.leaderNpc)) then
                 d.objectiveMarker, d.homeMarker = nil, nil
                 D.SetMode(d, mode, d:GetPos())
                 d.nextLook = 0
@@ -203,12 +197,13 @@ function D.PaintMode(pos, mode, side)
             end
         end
     end
-    -- Squads (sv_40_squads): roam breaks them up (it pairs NPCs); any
-    -- other mode goes to the whole squad, led by its leader, so members
-    -- the brush missed don't stay behind.
+    -- Squads (sv_40_squads): roam and patrol regroup them (with the rest
+    -- of their squads) into roam / patrol groups; any other mode goes to
+    -- the whole squad, led by its leader, so members the brush missed
+    -- don't stay behind.
     if D.LeaveSquad then
-        if mode == "roam" then
-            for _, d in ipairs(picked) do D.LeaveSquad(d) end
+        if (mode == "roam" or mode == "patrol") and D.WanderGroups then
+            D.WanderGroups(picked, mode, { whole = true })
         elseif mode ~= "retreat" and D.SquadMode then
             local done = {}
             for _, d in ipairs(picked) do
@@ -221,12 +216,6 @@ function D.PaintMode(pos, mode, side)
         end
     end
     if mode == "retreat" and #picked > 0 then D.RetreatGroup(picked, side) end
-    -- Spread out (alone or two and two): pair them up; the second
-    -- of each pair walks beside the first (D.Buddy).
-    if mode == "roam" and D.Buddy then
-        table.sort(picked, function(a, b) return a:EntIndex() < b:EntIndex() end)
-        for i = 2, #picked, 2 do D.Buddy(picked[i], picked[i - 1]) end
-    end
     return n
 end
 

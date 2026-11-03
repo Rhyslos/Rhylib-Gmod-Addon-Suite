@@ -49,7 +49,8 @@
     The brain is one coroutine, ENT:RunBehaviour: each loop picks one
     job in this order: revive (medics) > cover > fight (Look finds a
     target -> Engage) > retreat > answer a call for help > reinforcement
-    steps > keep its squad slot (members) > fall back > chase the last seen spot > attack mode > roam >
+    steps > keep its squad slot (members) > fall back > chase the last seen spot > hold at a fight it
+    was called to > attack mode > roam >
     back to home > artillery > idle / patrol / shuffle. Functions that
     wait (Go, Face, Idle, TakeCover, Engage) yield, so only call them from
     inside the coroutine.
@@ -376,8 +377,11 @@ if SERVER then
                 end
             end
             seen[best] = now
-            -- Clones: fresh contact, call nearby clones over (sv_30_clones).
-            if self.IsRhylibClone and not IsValid(cur) and D.CloneCall and not self:Retreating() then D.CloneCall(self, best) end
+            -- Fresh contact: call roaming / patrolling groups over (sv_40_squads).
+            -- (not while answering one: calls would chain across the map)
+            if not IsValid(cur) and D.CallHelp and not self:Retreating() and (self.helpUntil or 0) <= now then D.CallHelp(self, best) end
+            -- (answering a call: keep at it while there's fighting)
+            if (self.helpUntil or 0) > now then self.helpUntil = math.max(self.helpUntil, now + 15) end
             self.target = best
             self.lastSeen = best:GetPos()
             self.lastSeenAt = now
@@ -839,11 +843,19 @@ if SERVER then
                 else
                     self:Idle(0.5)
                 end
-            elseif self.reinforceTo and CurTime() < (self.reinforceUntil or 0) and not self.guarding and not self.leader
-                and self:GetPos():DistToSqr(self.reinforceTo) > 250 * 250 then
-                -- Called by a clone in a fight: run over.
-                self:SetPace(true)
-                self:GoOrWait(self.reinforceTo, 6, true)
+            elseif self.reinforceTo and CurTime() < (self.reinforceUntil or 0) and not self.guarding and not self.leader then
+                -- Answering a call for help: run over (a squad runs with
+                -- its leader); there, go for the enemy it called about.
+                if self:GetPos():DistToSqr(self.reinforceTo) > 250 * 250 then
+                    self:SetPace(true)
+                    self:GoOrWait(self.reinforceTo, 6, true)
+                else
+                    local e = self.reinforceEnemy
+                    self.reinforceTo, self.reinforceEnemy = nil, nil
+                    if IsValid(e) and e:Health() > 0 then
+                        self.lastSeen, self.lastSeenAt = e:GetPos(), CurTime()
+                    end
+                end
             elseif self.advanceTo then
                 -- Reinforcements: a few steps toward the enemy first.
                 local to = self.advanceTo
@@ -869,8 +881,13 @@ if SERVER then
                 -- from); guards and patrols only within their area.
                 local pos = self:InArea(self.lastSeen)
                 self.lastSeen = nil
-                self:SetPace(L >= 5 or self.mode == "attack")
+                self:SetPace(L >= 5 or self.mode == "attack" or (self.helpUntil or 0) > CurTime())   -- (answering a call: runs)
                 self:GoOrWait(pos, 8, true)
+            elseif (self.mode == "patrol" or self.mode == "roam" or self.mode == "guard") and (self.helpUntil or 0) > CurTime() then
+                -- Answered a call, nobody in sight just now: hold here a
+                -- while (its group keeps formation round it), then back to
+                -- roaming / into its patrol range / to its post.
+                self:Idle(math.Rand(1, 2))
             elseif self.mode == "attack" and L >= 3 then
                 -- Push on: to the objective, then hunt the nearest players.
                 self:SetPace(L >= 5)
@@ -881,14 +898,21 @@ if SERVER then
                     local p = self:NearestTarget(6000)
                     if p then self:GoOrWait(p:GetPos(), 5, true) else self:Idle(math.Rand(1, 2)) end
                 end
-            elseif self.mode == "roam" and not self.guarding then
-                -- Spread out: wander the map to a new spot, then the next.
+            elseif self.mode == "roam" and not self.guarding and not self.artillery then
+                -- Spread out: like a patrol with no home, across the whole
+                -- map. A spot about roamRadius away (a group's leader picks
+                -- the one that turns it least), then a short stop.
                 local now = CurTime()
-                if not self.roamGoal or now > (self.roamUntil or 0) or self:GetPos():DistToSqr(self.roamGoal) < 200 * 200 then
-                    self.roamGoal = D.RoamPoint and D.RoamPoint(self:GetPos()) or nil
+                if not self.roamGoal or now > (self.roamUntil or 0) then
+                    local fwd = self.squad and self.squad.leader == self and self:GetForward() or nil
+                    self.roamGoal = D.RoamPoint and D.RoamPoint(self:GetPos(), fwd) or nil
                     self.roamUntil = now + 45
                 end
-                if self.roamGoal then
+                if self.roamGoal and self:GetPos():DistToSqr(self.roamGoal) < 200 * 200 then
+                    -- (there: stop a moment, then the next spot)
+                    self.roamGoal = nil
+                    if not self.target then self:Idle(math.Rand(1, 3)) end
+                elseif self.roamGoal then
                     self:SetPace(false)
                     -- (no route there: pick another spot next time)
                     if self:Go(self.roamGoal, 8, true) == false then
@@ -930,12 +954,25 @@ if SERVER then
                     if not self.target then self:Idle(1) end
                 end
             elseif self.mode == "patrol" then
-                -- Walk around the patrol area.
-                self:SetPace(false)
-                -- (a point inside the circle, not the square around it)
-                local a, r = math.Rand(0, math.pi * 2), (self:AreaRadius() or D.Cfg("patrolRadius")) * math.sqrt(math.Rand(0, 0.9))
-                self:GoOrWait(self.home + Vector(math.cos(a) * r, math.sin(a) * r, 0), 8, true)
-                if not self.target then self:Idle(math.Rand(1, 3)) end
+                -- Walk around the patrol area (ENT:PatrolPoint): all the way
+                -- to the spot (given up after 30 s, e.g. a bad navmesh), then
+                -- a short stop and the next spot.
+                local now = CurTime()
+                if not self.patrolGoal then
+                    self.patrolGoal, self.patrolUntil = self:PatrolPoint(), now + 30
+                end
+                if now > (self.patrolUntil or 0) or self:GetPos():DistToSqr(self.patrolGoal) < 100 * 100 then
+                    self.patrolGoal = nil
+                    if not self.target then self:Idle(math.Rand(1, 3)) end
+                else
+                    self:SetPace(false)
+                    -- (in steps of up to 8 s, so the loop above stays in charge;
+                    -- no route there: the next spot after a short wait)
+                    if self:Go(self.patrolGoal, math.min(8, self.patrolUntil - now), true) == false then
+                        self.patrolGoal = nil
+                        if not self.target then self:Idle(math.Rand(1, 2)) end
+                    end
+                end
             elseif not self:AnyoneNear() then
                 -- Nobody anywhere near: stand still a while.
                 self:Idle(math.Rand(3, 5))

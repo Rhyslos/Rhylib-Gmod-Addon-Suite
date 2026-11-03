@@ -17,7 +17,7 @@
       - downed guards: up to ctDownGuards clones stand over each downed player
       - revive shield (less damage just after a medic NPC revive) and the
         medic's own shield while reviving
-      - spread out (roam pairs), calls for help, the odds (clone doctrine)
+      - spread out (D.RoamPoint), the odds (clone doctrine)
       - preset squads (D.SpawnPreset, the toolgun's ps_* entries)
       - the follow tool (D.ToggleFollowPick, D.AssignFollow)
       - artillery spotting (D.SpottedTarget)
@@ -395,10 +395,12 @@ end
 
 -- A random navmesh spot for roaming: within roamRadius, at least 600 away.
 -- (The area list is fetched once per map; empty = no navmesh yet, retried.)
--- D.RoamPoint(from) -> a random navmesh point (or nil): an area at least
--- 48x48, not underwater, 600 to roamRadius away.
+-- D.RoamPoint(from, fwd) -> a random navmesh point (or nil): an area at
+-- least 48x48, not underwater, 600 to roamRadius away. With fwd (a group
+-- leader's facing) it picks the one of up to 4 that turns it least, so
+-- the group carries on roughly the way it was going.
 local areas, areasRetry = nil, 0
-function D.RoamPoint(from)
+function D.RoamPoint(from, fwd)
     if not (navmesh and navmesh.GetAllNavAreas) then return nil end
     if not areas then
         if CurTime() < areasRetry then return nil end
@@ -409,48 +411,27 @@ function D.RoamPoint(from)
     -- (nearby areas first: on a big map few of all areas are in range)
     local near = navmesh.Find and navmesh.Find(from, D.Cfg("roamRadius"), 200, 200)
     local pool = (near and #near > 0) and near or areas
+    local best, bestScore, found = nil, nil, 0
     for _ = 1, 16 do
         local a = pool[math.random(#pool)]
         if IsValid(a) and a:GetSizeX() >= 48 and a:GetSizeY() >= 48 and not a:IsUnderwater() then
             local d = a:GetCenter():DistToSqr(from)
-            if d < r2 and d > 600 * 600 then return a:GetRandomPoint() end
+            if d < r2 and d > 600 * 600 then
+                local p = a:GetRandomPoint()
+                if not fwd then return p end
+                local dir = p - from
+                dir.z = 0
+                local score = dir:GetNormalized():Dot(Vector(fwd.x, fwd.y, 0):GetNormalized())
+                if not bestScore or score > bestScore then best, bestScore = p, score end
+                found = found + 1
+                if found >= 4 then break end
+            end
         end
     end
-    return nil
+    return best
 end
 
--- A clone spotted droids: up to ctCallHelpers idle clones within
--- ctCallRadius come to it (guards/patrols take up the new spot).
--- D.CloneCall(caller, enemy): called from ENT:Look on fresh contact; one
--- call per clone every ctCallCooldown s. enemy is not used yet.
-function D.CloneCall(caller, enemy)
-    local now = CurTime()
-    if (caller.callReady or 0) > now then return end
-    caller.callReady = now + D.Cfg("ctCallCooldown")
-    local from = caller:GetPos()
-    local r2 = D.Cfg("ctCallRadius") ^ 2
-    local free = {}
-    for c in pairs(D.clones) do
-        if c ~= caller and IsValid(c) and c:Health() > 0 and not IsValid(c.target) and not c.leader
-            and not c.guardDowned and not c.reviveTarget and c.mode ~= "attack" and not c:Retreating() then
-            local d = c:GetPos():DistToSqr(from)
-            if d < r2 then free[#free + 1] = { c = c, d = d } end
-        end
-    end
-    if #free == 0 then return end
-    table.sort(free, function(a, b) return a.d < b.d end)
-    for i = 1, math.min(D.Cfg("ctCallHelpers"), #free) do
-        local c = free[i].c
-        if c.mode == "roam" then
-            c.roamGoal, c.roamUntil = from, now + 30
-        else
-            c.reinforceTo, c.reinforceUntil = from, now + 20
-            if c.mode == "guard" or c.mode == "patrol" then c.home = from end
-        end
-        c.redirect, c.woken, c.planAt = true, true, 0
-    end
-    caller:EmitSound("npc/combine_soldier/vo/on1.wav", 65, 110)
-end
+-- Calls for help (D.CallHelp, D.CloneCall) are in sv_40_squads.
 
 -- The odds around a clone: friends (clones and players) within
 -- ctOddsFriends, enemies (B2s count double) within ctOddsEnemies, and

@@ -151,7 +151,12 @@ local function place(ply, e, count, name, mode)
         local list, want = D.SpawnPreset(e.preset, tr.HitPos, pyaw, mode)
         -- (squads of squadSize, facing the way they were placed)
         -- (one squad that keeps the block it was placed in: box formation)
-        if D.MakeSquad and #list > 1 and mode ~= "roam" then D.MakeSquad(list, { face = pyaw, aggro = Tool.PlaceAggro(ply), formation = "box", keep = true }) end
+        -- (roam / patrol: cut into roam or patrol groups instead)
+        if (mode == "roam" or mode == "patrol") and D.WanderGroups then
+            D.WanderGroups(list, mode, { aggro = Tool.PlaceAggro(ply) })
+        elseif D.MakeSquad and #list > 1 then
+            D.MakeSquad(list, { face = pyaw, aggro = Tool.PlaceAggro(ply), formation = "box", keep = true })
+        end
         if #list > 0 then
             undo.Create(e.name)
             for _, ent in ipairs(list) do
@@ -229,7 +234,7 @@ local function place(ply, e, count, name, mode)
                 if IsValid(phys) then phys:EnableMotion(false) end
             end
             -- (droids: the picked mode, then the latest markers)
-            if IsValid(ent) and droid and D.ToolPlaced then D.ToolPlaced(ent, mode) end
+            if IsValid(ent) and droid and D.ToolPlaced then D.ToolPlaced(ent, mode, count == 1, Tool.PlaceAggro(ply)) end
             if IsValid(ent) and droid then placedNpcs[#placedNpcs + 1] = ent end
             if IsValid(ent) then
                 ent.rhylibToolPlaced = true
@@ -245,8 +250,10 @@ local function place(ply, e, count, name, mode)
     if made > 0 then
         ply:EmitSound("buttons/button14.wav", 60, 110)
     end
-    -- Several NPCs at once: a squad (roam keeps its pairs).
-    if #placedNpcs > 1 and mode ~= "roam" and D and D.MakeSquads then
+    -- Several NPCs at once: a squad (roam / patrol: roam or patrol groups).
+    if #placedNpcs > 1 and (mode == "roam" or mode == "patrol") and D and D.WanderGroups then
+        D.WanderGroups(placedNpcs, mode, { aggro = Tool.PlaceAggro(ply) })
+    elseif #placedNpcs > 1 and D and D.MakeSquads then
         D.MakeSquads(placedNpcs, { face = yaw, aggro = Tool.PlaceAggro(ply) })
     end
 end
