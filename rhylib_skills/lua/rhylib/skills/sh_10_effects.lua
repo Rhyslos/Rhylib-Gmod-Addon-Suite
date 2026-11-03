@@ -51,7 +51,7 @@ reg("lightKitSpeed", 1.05, "Light kit: speed multiplier")
 reg("lightKitLoad", 0.6, "Light kit: only under this share of your carry limit")
 reg("momentumTime", 4, "Momentum: seconds of free sprinting after a kill")
 reg("momentumReload", 0.75, "Momentum: next reload time multiplier")
-reg("extMagBonus", 10, "Extended mags: extra rounds in a medium magazine")
+reg("extMagBonus", 15, "Extended mags: extra rounds in a medium magazine")
 reg("effCellsMult", 1.25, "Efficient cells: power cell shots multiplier")
 reg("loadBearerCarry", 6, "Load bearer: extra carry limit (kg)")
 reg("loadBearerPenalty", 0.75, "Load bearer: weight stamina penalty multiplier")
@@ -60,7 +60,8 @@ reg("gunRunnerSpin", 0.9, "Gun runner: walk speed while the Z-6 spins (normally 
 reg("gunRunnerWeight", 0.5, "Gun runner: Z-6 weight multiplier")
 reg("steadySpread", 0.45, "Steady barrels: Z-6 spread multiplier")
 reg("steadyRecoil", 0.45, "Steady barrels: Z-6 view kick multiplier")
-reg("rapidFireRPM", 600, "Rapid fire: DC-15S fire rate")
+reg("rapidFireRPM", 400, "Rapid fire: DC-15S fire rate")
+reg("rapidFireDamage", 1.21, "Rapid fire: DC-15S damage multiplier")
 reg("pistolSpread", 0.8, "Pistol proficiency: DC-17 spread multiplier")
 reg("steadyGripRecoil", 0.5, "Steady grip: pistol view kick multiplier (DC-17, and the DC-15S in Sidearm mode)")
 reg("dualRate", 1, "Dual DC-17: fire rate multiplier (the gain is the second magazine)")
@@ -111,11 +112,6 @@ reg("afterburnerMult", 1.25, "Afterburner: jetpack climb, steering and top speed
 reg("combatDropAir", 7, "Combat drop: seconds of jetpack flight needed before a landing counts")
 reg("combatDropTime", 5, "Combat drop: seconds of reduced damage after landing")
 reg("combatDropMult", 0.5, "Combat drop: damage multiplier while it lasts")
-reg("sidestepSpeed", 340, "Sidestep: dash speed (units/s)")
-reg("sidestepTime", 0.18, "Sidestep: seconds at full dash speed, then it slows to sidestepCarry")
-reg("sidestepCarry", 60, "Sidestep: sideways speed kept after the burst (units/s)")
-reg("sidestepCooldown", 2.5, "Sidestep: seconds between dashes")
-reg("sidestepStamina", 25, "Sidestep: stamina per dash")
 reg("lightMagBonus", 20, "Light mags: extra rounds in a small magazine")
 reg("blastMult", 0.7, "Blast hardened: explosion damage multiplier")
 reg("airMult", 0.8, "Aerial stability: damage multiplier while off the ground")
@@ -137,7 +133,8 @@ reg("rhythmStep", 0.05, "Precision rhythm: extra damage per DC-15S hit in a row"
 reg("rhythmMax", 2, "Precision rhythm: most steps (2 x 0.05 = +10%); only while aiming")
 reg("overchargeDamage", 1.3, "Overcharge: DC-15A damage multiplier")
 reg("overchargeDrain", 4, "Overcharge: power cell drain multiplier")
-reg("overchargeKick", 1.15, "Overcharge: view kick multiplier")
+reg("overchargeKick", 1.4, "Overcharge: view kick multiplier in full auto")
+reg("overchargeSpread", 1.35, "Overcharge: spread multiplier in full auto")
 reg("sustainKick", 0.6, "Sustained fire: view kick multiplier once fully settled")
 reg("sustainRamp", 1.5, "Sustained fire: seconds of continuous fire to settle fully (eased)")
 reg("sustainStep", 0.02, "Sustained fire: extra damage per DC-15A hit in a row on one target")
@@ -158,6 +155,16 @@ reg("juggernautMult", 0.85, "Juggernaut: damage multiplier")
 reg("suppressRadius", 300, "Suppression: droids this close to one you hit with the Z-6 aim worse (units)")
 reg("suppressMult", 1.8, "Suppression: droid aim cone multiplier")
 reg("suppressTime", 3, "Suppression: seconds it lasts")
+reg("burstShots", 5, "Burst fire: shots in a DC-15S burst")
+reg("burstRate", 1.6, "Burst fire: fire rate multiplier during the burst")
+reg("hunkerMult", 0.75, "Hunker down: damage multiplier while crouched")
+reg("holdFastMult", 0.4, "Hold fast (order): damage multiplier while it lasts")
+reg("stunRoundsMult", 2, "Stun rounds: stun time multiplier for DC-15A stun shots")
+reg("bracedMult", 0.8, "Braced: damage multiplier while aiming the DC-15A")
+reg("bracedKick", 0.75, "Braced: DC-15A view kick multiplier while aiming")
+reg("republicTime", 5, "For The Republic: seconds you fight on before going down")
+reg("republicDamage", 2, "For The Republic: damage multiplier while it lasts")
+reg("republicKick", 1.25, "For The Republic: view kick multiplier while it lasts")
 reg("holdLineMult", 0.8, "Hold the line: damage multiplier with the shield up and another MP near")
 reg("holdLineRange", 200, "Hold the line: how close the other MP must be (units)")
 reg("bashDamage", 30, "Shield bash: damage to droids")
@@ -231,9 +238,10 @@ function K.ScopeAllowed(ply, wep)
     return isPly(ply) and K.Has(ply, wep.ScopeSkill)
 end
 
--- K.RunAndGun(ply, wep): true if ply may fire while sprinting (Run and gun).
+-- K.RunAndGun(ply, wep): true if ply may fire and aim while sprinting
+-- (Run and gun; Shock Assault).
 function K.RunAndGun(ply, wep)
-    return isPly(ply) and K.Has(ply, "run_gun")
+    return isPly(ply) and (K.Has(ply, "run_gun") or K.Has(ply, "shock_assault"))
 end
 
 local function sprinting(ply, wep)
@@ -243,7 +251,7 @@ end
 -- K.SpreadMult(ply, wep): multiplier on every cone of this gun right now
 -- (sprint-firing, Steady barrels, Pistol proficiency, Steady stance,
 -- Planted, Steady aim, Carbine discipline, Rifle drill, Combat veteran,
--- Hover, First shot). Called in predicted code, so only shared state.
+-- Hover, First shot, Overcharge in full auto). Called in predicted code, so only shared state.
 function K.SpreadMult(ply, wep)
     if not isPly(ply) then return 1 end
     local set = K.Set(ply)
@@ -266,6 +274,7 @@ function K.SpreadMult(ply, wep)
     if set.first_shot and K.FirstShotReady(ply, wep) then m = m * cfg("firstShotSpread") end
     if set.arc_training and class == K.WESTAR then m = m * cfg("arcWestar") end
     if set.arc_fieldcraft then m = m * cfg("arcAll") end
+    if K.OverchargeAuto(wep) then m = m * cfg("overchargeSpread") end
     return m
 end
 
@@ -287,7 +296,7 @@ function K.RecoilMult(ply, wep)
     if K.Has(ply, "arc_training") and K.GunClass(wep) == K.WESTAR then m = m * cfg("arcWestar") end
     if ply:GetNW2Bool("rhylib_steadyLine", false) then m = m * cfg("lineKick") end   -- (Steady the line)
     local mode = wep.GetFireModeName and wep:GetFireModeName()
-    if mode == "overcharge" then m = m * cfg("overchargeKick") end
+    if K.OverchargeAuto(wep) then m = m * cfg("overchargeKick") end
     -- Sustained fire: the kick eases down (smoothstep) the longer a DC-15A
     -- full-auto spray lasts (rhylib_base notes rhylibSprayStart per shot).
     if wep.AutoModes and wep.AutoModes[mode] and wep.rhylibSprayStart and K.GunClass(wep) == K.DC15A
@@ -296,6 +305,9 @@ function K.RecoilMult(ply, wep)
         local t = math.Clamp((CurTime() - wep.rhylibSprayStart) / cfg("sustainRamp"), 0, 1)
         m = m * (1 - (1 - cfg("sustainKick")) * t * t * (3 - 2 * t))
     end
+    -- Braced (Shock Tactics): aiming the DC-15A.
+    if K.GunClass(wep) == K.DC15A and wep.GetAiming and wep:GetAiming() and K.Has(ply, "braced") and K.ShockOk(ply) then m = m * cfg("bracedKick") end
+    if K.LastStand(ply) then m = m * cfg("republicKick") end   -- (For The Republic)
     if K.GunClass(wep) == K.Z6 then
         if K.Has(ply, "steady_barrels") and sprinting(ply, wep) then m = m * cfg("steadyRecoil") end
         if K.Has(ply, "planted") and ply:Crouching() then m = m * cfg("plantedMult") end
@@ -311,15 +323,25 @@ function K.FirstShotReady(ply, wep)
     return CurTime() - wep:GetKickTime() >= cfg("firstShotWait")
 end
 
--- Fire mode damage (Overcharge); also shown by the C stats panel.
-function K.ModeDamageMult(ply, wep)
-    if wep.GetFireModeName and wep:GetFireModeName() == "overcharge" then return cfg("overchargeDamage") end
-    return 1
+-- K.OverchargeAuto(wep): full auto with the Overcharge toggle on
+-- (rhylib_base OverchargeOn; the charged shot has its own weapons settings).
+function K.OverchargeAuto(wep)
+    if wep.rhylibChargedShot or not (wep.OverchargeOn and wep.GetFireModeName) then return false end
+    return wep:GetFireModeName() == "auto" and wep:OverchargeOn()
 end
 
--- Power cell drain multiplier per shot (Overcharge).
+-- Fire mode damage (Overcharge in full auto, Rapid fire); also shown by
+-- the C stats panel.
+function K.ModeDamageMult(ply, wep)
+    local m = 1
+    if K.OverchargeAuto(wep) then m = m * cfg("overchargeDamage") end
+    if isPly(ply) and K.GunClass(wep) == K.DC15S and K.Has(ply, "rapid_fire") then m = m * cfg("rapidFireDamage") end
+    return m
+end
+
+-- Power cell drain multiplier per shot (Overcharge in full auto).
 function K.CellDrainMult(ply, wep)
-    if wep.GetFireModeName and wep:GetFireModeName() == "overcharge" then return cfg("overchargeDrain") end
+    if K.OverchargeAuto(wep) then return cfg("overchargeDrain") end
     return 1
 end
 
@@ -331,6 +353,31 @@ function K.ShotDamageMult(ply, wep)
         m = m * (K.GunClass(wep) == K.DC15X and cfg("firstShotMult") or cfg("firstShotOther"))
     end
     return m
+end
+
+-- K.ChargeBurst(ply, wep): shots in a burst this gun fires now (the
+-- DC-15S in its "burst" fire mode with the Burst fire skill, id
+-- charged_burst), else 0. rhylib_base fires them faster (burstRate, the
+-- ChargedBurst flag) and they crit B2s. Shared (predicted).
+function K.ChargeBurst(ply, wep)
+    if not (isPly(ply) and IsValid(wep) and K.GunClass(wep) == K.DC15S) then return 0 end
+    if not (wep.GetFireModeName and wep:GetFireModeName() == "burst") then return 0 end
+    if not K.Has(ply, "charged_burst") then return 0 end
+    return math.max(0, math.floor(cfg("burstShots")))
+end
+
+-- K.ShockOk(ply): the Shock Tactics skills work (military police jobs
+-- only, rhylib_mp; without it: always).
+function K.ShockOk(ply)
+    local MP = Rhylib.MP
+    if not (MP and MP.IsMP) then return true end
+    return MP.IsMP(ply) and true or false
+end
+
+-- K.LastStand(ply): For The Republic is running (NW2Float rhylib_lastStand
+-- = when it ends). Shared.
+function K.LastStand(ply)
+    return isPly(ply) and ply:GetNW2Float("rhylib_lastStand", 0) > CurTime()
 end
 
 -- Heavy feed: SWEP.MagSkills = { [magId] = skill }.
@@ -356,6 +403,7 @@ function K.FireRateMult(ply, wep, mode)
         m = m * cfg("rapidFireRPM") / wep.FireRate
     end
     if mode == "dual" then m = m * cfg("dualRate") end
+    if wep.GetChargedBurst and wep:GetChargedBurst() then m = m * cfg("burstRate") end   -- (Burst fire)
     return m
 end
 
@@ -603,96 +651,51 @@ function K.JetCfg(ply, key, v)
     return v
 end
 
--- Sidestep (Officer): Sprint + Jump with left / right / back held and NO
--- forward input (any sprint-jump with forward held, diagonals included,
--- stays a jump), from the ground; or the optional dodge key (client convar
--- rhylib_dodge_key, default "" = off; Settings > Controls, section
--- "Skills") + any direction. The dodge key reaches the predicted move as
--- the spare IN_GRENADE2 button (set in CreateMove below). The Alt / +walk
--- trigger is gone (walking quietly with Alt dashed every time). A short
--- burst (sidestepTime), then the sideways speed drops to sidestepCarry so
--- the step stays short. Predicted; cooldown in DTFloat 25, end of the
--- burst in DTFloat 24.
--- (player DTFloat slots, claimed in core's Rhylib.DT table)
-local DT = Rhylib.DT
-local DT_DODGE = DT and DT.Claim("Float", "skills.dodge", 25) or 25
-local DT_STEP = DT and DT.Claim("Float", "skills.step", 24) or 24
-local DT_ROPE = DT and DT.Slot("Entity", "grapple.rope") or 31
-local DT_ZIP = DT and DT.Slot("Entity", "grapple.zip") or 30
-local DT_PH = DT and DT.Slot("Int", "grapple.phook") or 31
-local IN_DODGE = IN_GRENADE2   -- (unused by GMod and the suite: the dodge key)
+--------------------------------------------------------------------------
+-- For The Republic (Shock Tactics): rooted to the spot while it lasts
+-- (the server side, damage and the timer, is in sv_10_skills.lua).
+--------------------------------------------------------------------------
+
+Rhylib.Hook.Add("SetupMove", "skills.laststand", function(ply, mv)
+    if not K.LastStand(ply) then return end
+    mv:SetForwardSpeed(0)
+    mv:SetSideSpeed(0)
+    mv:SetUpSpeed(0)
+    mv:SetButtons(bit.band(mv:GetButtons(), bit.bnot(bit.bor(IN_JUMP, IN_SPEED, IN_DUCK))))
+    mv:SetMaxClientSpeed(1)
+    mv:SetMaxSpeed(1)
+    if ply:OnGround() then
+        local v = mv:GetVelocity()
+        v.x, v.y = 0, 0
+        mv:SetVelocity(v)
+    end
+end, -210)
 
 if CLIENT then
-    local dodgeKey = CreateClientConVar("rhylib_dodge_key", "", true, false, "Sidestep skill: a dodge key (dash in the direction you move); empty = off")
-    Rhylib.Hook.Add("CreateMove", "skills.dodgekey", function(cmd)
-        local name = dodgeKey:GetString()
-        if name == "" then return end
-        local code = input.GetKeyCode(name)
-        if not code or code <= 0 or not input.IsButtonDown(code) then return end
-        if gui.IsGameUIVisible() or vgui.CursorVisible() then return end
+    local COL = Color(232, 64, 52)
+    Rhylib.Hook.Add("HUDPaint", "skills.laststand", function()
         local me = LocalPlayer()
-        if not IsValid(me) or me:IsTyping() or not K.Has(me, "sidestep") then return end
-        cmd:SetButtons(bit.bor(cmd:GetButtons(), IN_DODGE))
+        if not K.LastStand(me) then return end
+        local left = me:GetNW2Float("rhylib_lastStand", 0) - CurTime()
+        local s = ScrH() / 1080
+        local UI = Rhylib.UI
+        local font = UI and UI.Font and UI.Font(math.floor(30 * s), 800) or "DermaLarge"
+        local small = UI and UI.Font and UI.Font(math.floor(16 * s)) or "DermaDefault"
+        local pulse = 0.6 + 0.4 * math.abs(math.sin(CurTime() * 6))
+        COL.a = 255 * pulse
+        draw.SimpleText("FOR THE REPUBLIC", font, ScrW() * 0.5, ScrH() * 0.3, COL, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText(string.format("%.1f s  ·  double damage, infinite ammo, you can't move", math.max(0, left)), small,
+            ScrW() * 0.5, ScrH() * 0.3 + 28 * s, Color(240, 220, 210, 220), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        -- (a red edge round the screen)
+        local w, h = ScrW(), ScrH()
+        for i = 0, 7 do
+            local a = 60 * pulse * (1 - i / 8)
+            surface.SetDrawColor(200, 30, 20, a)
+            local o = i * 6 * s
+            surface.DrawRect(0, o, w, 6 * s)
+            surface.DrawRect(0, h - o - 6 * s, w, 6 * s)
+            surface.DrawRect(o, 0, 6 * s, h)
+            surface.DrawRect(w - o - 6 * s, 0, 6 * s, h)
+        end
     end)
-    local function addSetting()
-        local M = Rhylib.Menus
-        if M and M.AddSetting then
-            M.AddSetting("Skills", { id = "skills.dodgekey", order = 10, title = "Sidestep: dodge key (dash the way you move; console rhylib_dodge_key \"\" turns it off)", kind = "key", convar = "rhylib_dodge_key" })
-        end
-    end
-    addSetting()
-    Rhylib.Hook.Add("InitPostEntity", "skills.dodgesetting", addSetting)
 end
-Rhylib.Hook.Add("SetupMove", "skills.dodge", function(ply, mv)
-    local now = CurTime()
-    -- End of the burst: slow down.
-    local stepEnd = ply:GetDTFloat(DT_STEP)
-    if stepEnd > 0 and now >= stepEnd then
-        ply:SetDTFloat(DT_STEP, 0)
-        local vel = mv:GetVelocity()
-        local h = math.sqrt(vel.x * vel.x + vel.y * vel.y)
-        local carry = cfg("sidestepCarry")
-        if h > carry then
-            vel.x, vel.y = vel.x * carry / h, vel.y * carry / h
-            mv:SetVelocity(vel)
-        end
-    end
-
-    local key = mv:KeyPressed(IN_DODGE)
-    if not (key or (mv:KeyPressed(IN_JUMP) and mv:KeyDown(IN_SPEED))) then return end
-    -- (sprint-jump: only an explicit side / back dodge; forward held = a jump)
-    if not key and (mv:KeyDown(IN_FORWARD) or mv:GetForwardSpeed() > 0 or (mv:GetSideSpeed() == 0 and mv:GetForwardSpeed() == 0)) then return end
-    if not K.Has(ply, "sidestep") or not ply:OnGround() then return end
-    if K.OrderIs and K.OrderIs(ply, "hold") then return end   -- (Hold fast: hold the position)
-    if not ply:Alive() or ply:GetMoveType() ~= MOVETYPE_WALK or ply:WaterLevel() >= 2 then return end
-    local Med = Rhylib.Medical
-    if Med and Med.IsDown and (Med.IsDown(ply) or (Med.Dragging and Med.Dragging(ply))) then return end
-    if Med and Med.InTank and (Med.InTank(ply) or ply:GetNW2Int("rhylib_medAct", 0) ~= 0) then return end
-    if IsValid(ply:GetDTEntity(DT_ROPE)) or IsValid(ply:GetDTEntity(DT_ZIP)) or ply:GetDTInt(DT_PH) ~= 0 then return end   -- (on a grapple rope, zipline or personal hook)
-    local MP = Rhylib.MP
-    if MP and MP.IsCuffed and (MP.IsCuffed(ply) or MP.IsStunned(ply) or MP.EscortedBy(ply)) then return end
-    if ply:GetDTFloat(DT_DODGE) > now then return end
-    local f, s = mv:GetForwardSpeed(), mv:GetSideSpeed()
-    if f * f + s * s < 1 then return end
-
-    local cost = cfg("sidestepStamina")
-    local St = Rhylib.Stamina
-    if St and St.Get then
-        if St.Get(ply) < cost then return end
-        if SERVER then St.Drain(ply, cost) end
-    end
-
-    local speed = cfg("sidestepSpeed")
-    local yaw = Angle(0, mv:GetMoveAngles().y, 0)
-    local dir = yaw:Forward() * f + yaw:Right() * s
-    dir.z = 0
-    dir:Normalize()
-    local vel = mv:GetVelocity()
-    vel.x, vel.y = dir.x * speed, dir.y * speed
-    vel.z = math.max(vel.z, 160)   -- a hop (over 140 leaves the ground), so friction doesn't eat it
-    ply:SetGroundEntity(NULL)
-    mv:SetVelocity(vel)
-    ply:SetDTFloat(DT_DODGE, now + cfg("sidestepCooldown"))
-    ply:SetDTFloat(DT_STEP, now + cfg("sidestepTime"))
-    if SERVER then ply:EmitSound("ambient/machines/thumper_dust.wav", 60, 140, 0.5) end
-end, -150)

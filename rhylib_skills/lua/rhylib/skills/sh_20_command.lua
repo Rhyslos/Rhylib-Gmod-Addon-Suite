@@ -79,7 +79,7 @@ end
 K.ORDERS = {
     { key = "wind", skill = "cmd_wind", name = "Second wind", col = Color(242, 209, 75), text = "No stamina drain, fast refill" },
     { key = "triage", skill = "cmd_triage", name = "Field triage", col = Color(91, 201, 122), text = "Downed get up, healing, afflictions muted" },
-    { key = "hold", skill = "cmd_hold", name = "Hold fast", col = Color(79, 143, 232), text = "Armour refilled, no damage, hold position" },
+    { key = "hold", skill = "cmd_hold", name = "Hold fast", col = Color(79, 143, 232), text = "Armour refilled, 60% less damage, hold position" },
     { key = "focus", skill = "cmd_focus", name = "Focus fire", col = Color(232, 97, 60), text = "+20% damage, half the kick" },
     { key = "open", skill = "cmd_open", name = "Open up", col = Color(167, 123, 232), text = "No ammo used" },
     { key = "press", skill = "cmd_press", name = "Press forward", col = Color(214, 48, 58), text = "No knockback, faster sprint" },
@@ -162,7 +162,7 @@ end
 
 -- Hold fast: hold the position. No sprint (so no jetpack hover either),
 -- no jetpack climb in the air, walk speed at most (jumping still works on
--- the ground). After Light kit (-200), before Sidestep (-150) and the
+-- the ground). After Light kit (-200), before the
 -- jetpack, which read the buttons left here.
 Rhylib.Hook.Add("SetupMove", "skills.holdfast", function(ply, mv)
     if not K.OrderIs(ply, "hold") then return end

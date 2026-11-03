@@ -489,6 +489,7 @@ function Bolts.Fire(owner, weapon, origin, dir, damage, opts, hits)
         explosive = weapon.Explosive,
         stun = weapon.Stun or (opts and opts.stun) or nil,
         training = weapon.Training or (opts and opts.training) or nil,   -- (rhylib_training)
+        charged = weapon.GetChargedBurst and weapon:GetChargedBurst() or nil,   -- (Burst fire: crits B2s)
         clone = owner.IsRhylibClone == true or nil,   -- (rhylib_droids clone NPC: never hurts friendlies)
         onHit = opts and opts.onHit,
         onExpire = opts and opts.onExpire,

@@ -4,7 +4,7 @@
     The rocket is a slow explosive bolt: blast damage where it hits.
     Reload with R after each shot.
     Too heavy to fire while flying.
-    Lock-on mode (EOD Top attack skill, E + R): aim at a comms jammer or a
+    Lock-on mode (EOD Top attack skill, V): aim at a comms jammer or a
     droid until it locks (box on the HUD), then fire: rhylib_topattack
     climbs and dives onto it by itself. Fired without a lock it's laser
     guided: it climbs, then dives onto the spot you aim at (a red dot) and

@@ -20,9 +20,19 @@
     SprintRaiseTime after you stop.
 
     Fire modes and safety:
-      - E + R cycles through the weapon's FireModes ("semi", "auto", "burst").
-        Any mode but "auto" (and "overcharge", SWEP.AutoModes) fires once
+      - V (rhylib_firemode_key, cl_30_reload.lua) cycles through the
+        weapon's FireModes ("semi", "auto", "burst"); holding it opens a
+        wheel to pick one. Any mode but "auto" (SWEP.AutoModes) fires once
         per trigger pull (e.g. "sidearm").
+      - Charged shot (SWEP.ChargedShot, the cell rifles): an on/off toggle
+        in the fire-mode wheel (net wep.chargemode, off by default). On, in
+        semi the shot goes when the trigger is let go. Let go before weapons chargeTime:
+        a normal shot. Held that long (a rising hum, chargeSound, then a
+        blip): one overcharged bolt that uses chargeRounds rounds (1 with
+        the Overcharge toggle on).
+      - Overcharge (SWEP.OverchargeSkill, the DC-15A's Autorifleman skill):
+        an on/off toggle in the fire-mode wheel (net wep.overcharge). On,
+        full auto fires overcharged bolts and the charged shot costs 1 round.
       - Shift + E + R toggles safety: the weapon is lowered (passive hold),
         can't fire or aim, and the crosshair hides.
       Semi and burst need a fresh trigger pull for each shot or burst.
@@ -50,7 +60,8 @@
       IsReloading, CurrentFireRate, GetCellDamageMult, GetMoveMult,
       InfiniteAmmo, NoAmmoUse, UsesCarrier, GetInventoryData /
       SetInventoryData (rhylib_inventory), CarriedCount
-      server: CycleFireMode, ToggleSafety, StartReload(kind, magId),
+      IsOverchargedShot, CanOvercharge, OverchargeOn, ChargeShotCost, ModeSlotOk(i)
+      server: CycleFireMode, SetModeChecked(i), ToggleOvercharge, ToggleChargeMode, ToggleSafety, StartReload(kind, magId),
               FinishReload, ChooseMag, TrimClip, LeaveGrappleMode
       client: GetAimFrac, Scoped, GetPropMuzzle, CarrierPose(key), DrawScope
     Methods a gun may define to change behaviour: GetMoveMult,
@@ -134,7 +145,7 @@ SWEP.FireSoundPitch = 1
 SWEP.StunSound = "weapons/bf3/e11_light.wav"
 SWEP.ReloadSound = nil
 
--- Fire modes this weapon can switch between (E + R), first one is the default.
+-- Fire modes this weapon can switch between (V), first one is the default.
 SWEP.FireModes = { "semi" }
 SWEP.SprintRaiseTime = 0.25         -- seconds after sprinting before the gun can fire
 SWEP.Grapple = false                -- true: gets "grapple" and "zipline" fire modes while you carry a grapple hook
@@ -142,6 +153,8 @@ SWEP.BurstCount = 3
 SWEP.BurstDelay = 0.25              -- extra pause after a burst
 SWEP.BurstFireRate = nil            -- rounds per minute inside a burst (nil = FireRate)
 SWEP.SkillModes = nil               -- { [mode] = skill id }: modes that need a skill (rhylib_skills)
+SWEP.ChargedShot = false            -- true: a "Charged shot" toggle; on, hold the trigger in semi for a charged (overcharged) shot
+SWEP.OverchargeSkill = nil          -- skill id: the Overcharge toggle (full auto fires overcharged bolts)
 SWEP.DualHoldType = nil             -- hold type for the "dual" fire mode
 SWEP.ModeHoldTypes = nil            -- { mode = hold type } for other modes (DC-15S "sidearm": revolver = two-handed pistol grip)
 SWEP.ModeReplaces = nil             -- { mode = other mode }: while mode is allowed, the other one isn't (sidearm replaces semi)
@@ -299,6 +312,10 @@ function SWEP:SetupDataTables()
     self:NetworkVar("Bool", 1, "Safety")
     self:NetworkVar("Bool", 2, "TriggerReady")
     self:NetworkVar("Bool", 3, "Lowered")      -- lowered while sprinting
+    self:NetworkVar("Float", 8, "ChargeStart") -- Charged shot: when the trigger was pressed (0 = not charging)
+    self:NetworkVar("Bool", 4, "ChargedBurst") -- a Burst fire burst (DC-15S skill) is firing (faster; its bolts crit B2s)
+    self:NetworkVar("Bool", 5, "Overcharge")   -- the Overcharge toggle (OverchargeSkill guns)
+    self:NetworkVar("Bool", 6, "ChargeMode")   -- the Charged shot toggle (ChargedShot guns)
 
     -- Lowered hold on every client as soon as safety or sprinting changes.
     self:NetworkVarNotify("Safety", self.OnLoweredChanged)
@@ -495,6 +512,7 @@ end
 function SWEP:NoAmmoUse()
     if self:InfiniteAmmo() then return true end
     local K = Rhylib.Skills
+    if K and K.LastStand and K.LastStand(self:GetOwner()) then return true end   -- (For The Republic)
     return K and K.OrderIs and K.OrderIs(self:GetOwner(), "open") or false
 end
 
@@ -527,14 +545,17 @@ function SWEP:Initialize()
 end
 
 -- The grapple modes sit after the weapon's own modes: "grapple" at index
--- #FireModes + 1, "zipline" at #FireModes + 2 (E + R only offers it to
--- Autoriflemen: Grapple.CanZip).
+-- #FireModes + 1, "zipline" at #FireModes + 2 (V only offers it to
+-- Autoriflemen: Grapple.CanZip), "hook" at #FireModes + 3 (Grapple
+-- specialists: Grapple.CanHookMode; the personal grappling hook's
+-- movement with a longer reach, sh_32_phook.lua).
 -- The mode name used at index i: a grapple slot, the mode itself if
 -- allowed, the mode that replaces it (sidearm for semi), else the first
 -- allowed one (a skill since lost or gained).
 function SWEP:ModeNameAt(i)
     if self.Grapple and i == #self.FireModes + 1 then return "grapple" end
     if self.Grapple and i == #self.FireModes + 2 then return "zipline" end
+    if self.Grapple and i == #self.FireModes + 3 then return "hook" end
     if not self:ModeAllowed(i) then i = self:ReplacementFor(i) or self:FirstAllowedMode() end
     return self.FireModes[i] or self.FireModes[1] or "semi"
 end
@@ -633,6 +654,123 @@ function SWEP:InZiplineMode()
     return self.Grapple and self:GetFireMode() == #self.FireModes + 2
 end
 
+-- Can the owner switch to slot i now (1..#FireModes, then grapple,
+-- zipline, hook)? Shared: the server checks the pouch, the client the
+-- mirrored grapple ammo (the fire-mode wheel, cl_30_reload.lua).
+function SWEP:ModeSlotOk(i)
+    local n = #self.FireModes
+    if i >= 1 and i <= n then return self:ModeAllowed(i) end
+    if not self.Grapple or i < 1 or i > n + 3 then return false end
+    local G = Rhylib.Weapons.Grapple
+    local owner = self:GetOwner()
+    if not (G and IsValid(owner) and owner:IsPlayer()) then return false end
+    local have
+    if SERVER then have = Rhylib.Weapons.Pouch.Count(owner, G.ITEM) > 0 else have = owner:GetAmmoCount(G.AMMO) > 0 end
+    if not have then return false end
+    if i == n + 2 then return G.CanZip(owner) and true or false end                         -- (zipline: Autoriflemen)
+    if i == n + 3 then return G.CanHookMode and G.CanHookMode(owner) and true or false end   -- (hook: Grapple specialists)
+    return true
+end
+
+-- May the owner use the Overcharge toggle (SWEP.OverchargeSkill; without
+-- rhylib_skills: yes)?
+function SWEP:CanOvercharge()
+    local need = self.OverchargeSkill
+    if not need then return false end
+    local K = skills()
+    if not (K and K.Has) then return true end
+    local o = self:GetOwner()
+    return IsValid(o) and o:IsPlayer() and K.Has(o, need) or false
+end
+
+-- The Overcharge toggle is on and may be used.
+function SWEP:OverchargeOn()
+    return self:GetOvercharge() and self:CanOvercharge()
+end
+
+-- Is the shot being fired now overcharged (a charged shot, or full auto
+-- with Overcharge on)? Bigger, brighter bolts, more damage, faster drain.
+function SWEP:IsOverchargedShot()
+    if self.rhylibChargedShot then return true end
+    return self:GetFireModeName() == "auto" and self:OverchargeOn()
+end
+
+-- Names in the fire-mode wheel (cl_30_reload.lua); other modes are capitalised.
+SWEP.ModeWheelNames = {
+    semi = "Semi", auto = "Full auto", burst = "Burst", dual = "Dual", sidearm = "Sidearm",
+    stun = "Stun", grapple = "Grapple", zipline = "Zipline", hook = "Hook", lockon = "Lock-on",
+}
+
+-- The fire-mode key's wheel: { slot, label, sub, current } for each slot
+-- the owner may use now, then the toggles: { toggle = "charge" }
+-- (ChargedShot), { toggle = "overcharge" } (OverchargeSkill).
+function SWEP:ModeWheel()
+    local list = {}
+    local cur = self:GetFireMode()
+    local total = #self.FireModes + (self.Grapple and 3 or 0)
+    for i = 1, total do
+        if self:ModeSlotOk(i) then
+            local name = self:ModeNameAt(i)
+            list[#list + 1] = { slot = i, label = self.ModeWheelNames[name] or (string.upper(string.sub(name, 1, 1)) .. string.sub(name, 2)),
+                current = i == cur }
+        end
+    end
+    if self.ChargedShot then
+        local on = self:GetChargeMode()
+        list[#list + 1] = { toggle = "charge", label = on and "Charged shot: ON" or "Charged shot: OFF",
+            sub = on and "Semi: hold the trigger, let go to fire" or "Turn on: hold the trigger in semi to charge", on = on }
+    end
+    if self:CanOvercharge() then
+        local on = self:GetOvercharge()
+        list[#list + 1] = { toggle = "overcharge", label = on and "Overcharge: ON" or "Overcharge: OFF",
+            sub = on and "Full auto overcharged · charged shot 1 round" or "Turn on: overcharged full auto", on = on }
+    end
+    return list
+end
+
+-- Does semi fire on letting go of the trigger (SWEP.ChargedShot with the
+-- Charged shot toggle on)?
+function SWEP:ChargesOnRelease()
+    return self.ChargedShot and self:GetChargeMode() or false
+end
+
+-- The charging hum (weapons chargeSound): rises in pitch over the charge
+-- time. on = charging. The shooter hears their own (predicted Think);
+-- the server plays it for everyone else near.
+-- force: stop it even while the client is re-predicting (holster, removed).
+function SWEP:UpdateChargeSound(on, frac, force)
+    local snd = self.rhylibChargeSnd
+    if CLIENT and not force and not IsFirstTimePredicted() then return end
+    if not on then
+        if snd then snd:Stop() self.rhylibChargeSnd = nil end
+        return
+    end
+    if not snd then
+        local path = Rhylib.Config.Get("weapons", "chargeSound")
+        if not path or path == "" then return end
+        local owner = self:GetOwner()
+        if SERVER then
+            local rf = RecipientFilter()
+            rf:AddPAS(self:GetPos())
+            if IsValid(owner) and owner:IsPlayer() then rf:RemovePlayer(owner) end
+            snd = CreateSound(self, path, rf)
+        else
+            snd = CreateSound(self, path)
+        end
+        if not snd then return end
+        snd:SetSoundLevel(85)
+        snd:PlayEx(math.Clamp(Rhylib.Config.Get("weapons", "chargeVolume"), 0, 1), 70)
+        self.rhylibChargeSnd = snd
+    end
+    snd:ChangePitch(70 + 75 * math.Clamp(frac, 0, 1), 0.05)
+end
+
+-- Rounds a charged shot uses (weapons chargeRounds; 1 with Overcharge on).
+function SWEP:ChargeShotCost()
+    if self:OverchargeOn() then return 1 end
+    return math.max(1, math.floor(Rhylib.Config.Get("weapons", "chargeRounds")))
+end
+
 -- Magazine helpers --------------------------------------------------------
 
 function SWEP:TakesMag(id)
@@ -710,6 +848,10 @@ function SWEP:Holster()
     if self.rhylibDrawEnd then self:EndQuickDraw(self:GetOwner()) end   -- (the viewmodel is shared)
     self:SetAiming(false)
     self:SetBurstLeft(0)
+    self:SetChargeStart(0)
+    self:SetChargedBurst(false)
+    self.rhylibChargeTold, self.rhylibChargeArmed = nil, nil
+    self:UpdateChargeSound(false, 0, true)
     self:SetSpinStart(0)
     self:SetLowered(false)
     self:CancelReload()
@@ -717,39 +859,69 @@ function SWEP:Holster()
 end
 
 if SERVER then
-    -- E + R (sent by cl_30_reload.lua).
-    function SWEP:CycleFireMode()
-        local n = #self.FireModes
-        local G = Rhylib.Weapons.Grapple
-        local owner = self:GetOwner()
-        local grapple = self.Grapple and G and IsValid(owner)
-            and Rhylib.Weapons.Pouch.Count(owner, G.ITEM) > 0
-        local total = n + (grapple and 2 or 0)   -- (grapple, then zipline)
-        if self:GetSafety() or total <= 1 then
-            self:EmitSound("weapons/2misc_non_guns/sw_noammo.ogg", 60)
-            return
-        end
+    -- Switches to slot i (already checked): remembers the mode before a
+    -- grapple slot, ends a burst, clicks.
+    function SWEP:SwitchToMode(i)
         local cur = self:GetFireMode()
-        if cur < 1 or cur > total then cur = 1 end
-        -- Next mode the owner may use (skill-gated modes are skipped).
-        local nextMode = cur
-        local canZip = grapple and G.CanZip(owner)   -- (zipline: Autoriflemen only)
-        for _ = 1, total do
-            nextMode = nextMode % total + 1
-            if nextMode == n + 2 and not canZip then
-                -- skip the zipline slot
-            elseif nextMode > n or self:ModeAllowed(nextMode) then
-                break
-            end
-        end
-        if nextMode == cur then
-            self:EmitSound("weapons/2misc_non_guns/sw_noammo.ogg", 60)
-            return
-        end
-        if nextMode > n and cur <= n then self.preGrappleMode = cur end
-        self:SetFireMode(nextMode)
+        local n = #self.FireModes
+        if i > n and cur <= n then self.preGrappleMode = cur end
+        self:SetFireMode(i)
         self:SetBurstLeft(0)
         self:EmitSound("weapons/2misc_non_guns/sw_change.ogg", 60)
+    end
+
+    -- V tapped (net wep.mode, cl_30_reload.lua): the next slot the owner
+    -- may use (ModeSlotOk). An empty click on safety or with nothing else.
+    function SWEP:CycleFireMode()
+        local total = #self.FireModes + (self.Grapple and 3 or 0)   -- (grapple, zipline, then hook)
+        local cur = self:GetFireMode()
+        if cur < 1 or cur > total then cur = 1 end
+        local nextMode = cur
+        for _ = 1, total do
+            nextMode = nextMode % total + 1
+            if self:ModeSlotOk(nextMode) then break end
+        end
+        if self:GetSafety() or nextMode == cur then
+            self:EmitSound("weapons/2misc_non_guns/sw_noammo.ogg", 60)
+            return
+        end
+        self:SwitchToMode(nextMode)
+    end
+
+    -- Picked in the fire-mode wheel (net wep.modeset): slot i if the owner
+    -- may use it now.
+    function SWEP:SetModeChecked(i)
+        if i == self:GetFireMode() then return end
+        if self:GetSafety() or not self:ModeSlotOk(i) then
+            self:EmitSound("weapons/2misc_non_guns/sw_noammo.ogg", 60)
+            return
+        end
+        self:SwitchToMode(i)
+    end
+
+    -- The Charged shot toggle (net wep.chargemode, the fire-mode wheel).
+    function SWEP:ToggleChargeMode()
+        if not self.ChargedShot then
+            self:EmitSound("weapons/2misc_non_guns/sw_noammo.ogg", 60)
+            return
+        end
+        local on = not self:GetChargeMode()
+        self:SetChargeMode(on)
+        self:SetChargeStart(0)
+        self.rhylibChargeArmed, self.rhylibChargeTold = nil, nil
+        self:UpdateChargeSound(false, 0, true)
+        self:EmitSound("weapons/2misc_non_guns/sw_change.ogg", 60, on and 80 or 100)
+    end
+
+    -- The Overcharge toggle (net wep.overcharge, the fire-mode wheel).
+    function SWEP:ToggleOvercharge()
+        if not self:CanOvercharge() then
+            self:EmitSound("weapons/2misc_non_guns/sw_noammo.ogg", 60)
+            return
+        end
+        local on = not self:GetOvercharge()
+        self:SetOvercharge(on)
+        self:EmitSound("weapons/2misc_non_guns/sw_change.ogg", 60, on and 80 or 100)
     end
 
     -- Back to the fire mode used before switching to grapple.
@@ -840,6 +1012,8 @@ function SWEP:CanPrimaryAttack()
     end
     if self:TooHeavyToFire() then return false end
 
+    -- (For The Republic, rhylib_skills: infinite ammo also with an empty magazine)
+    if self:Clip1() <= 0 and self:NoAmmoUse() and not self:InfiniteAmmo() and self:GetMaxClip1() > 0 then self:SetClip1(1) end
     if self:Clip1() <= 0 then
         self:EmitSound("weapons/2misc_non_guns/sw_noammo.ogg", 65)
         self:SetNextPrimaryFire(CurTime() + 0.3)
@@ -875,12 +1049,25 @@ function SWEP:PrimaryAttack()
         self:FireGrapple(mode == "zipline")
         return
     end
+    if mode == "hook" then
+        self:FireHookMode()
+        return
+    end
     -- Rotary guns wait for spin-up (an empty gun skips it, so you still
     -- hear the empty click).
     if self:Clip1() > 0 and not self:SpunUp() then return end
     if not self:CanPrimaryAttack() then return end
 
-    if mode == "burst" then self:SetBurstLeft(self.BurstCount - 1) end
+    if mode == "burst" then
+        -- (Burst fire, rhylib_skills: its own shot count, faster, crits B2s)
+        local K = skills()
+        local cb = K and K.ChargeBurst and K.ChargeBurst(self:GetOwner(), self) or 0
+        if cb > 0 then self:SetChargedBurst(true) end
+        self:SetBurstLeft((cb > 0 and cb or self.BurstCount) - 1)
+    end
+    if mode == "semi" then self.rhylibChargeArmed = true end   -- (charged shot: this press may charge)
+    -- Charged shot: nothing yet, the shot goes when the trigger is let go (Think).
+    if mode == "semi" and self:ChargesOnRelease() then return end
     self:FireShot()
 end
 
@@ -896,10 +1083,10 @@ end
 
 -- The MP "stun" fire mode: slow blue rings that do no damage (rhylib_mp).
 local STUN_OPTS = { stun = true, color = 6, speed = 2600 }
--- Overcharge (DC-15A, Autorifleman skill): bigger, brighter bolts (training copies stay yellow).
+-- Overcharged shots (IsOverchargedShot): bigger, brighter bolts (training copies stay yellow).
 local OVER_OPTS = { color = 10 }
 -- Modes that keep firing while the trigger is held.
-SWEP.AutoModes = { auto = true, overcharge = true }
+SWEP.AutoModes = { auto = true }
 SWEP.StunFireRate = 75   -- one ring every 0.8 s
 
 -- First-leg pellet hits, applied after lag compensation (reused list).
@@ -940,23 +1127,32 @@ function SWEP:FireShot()
     local Spread = Rhylib.Weapons.Spread
     local dir, a = Spread.ShotDirection(self, owner:EyeAngles(), 0)
     local K = skills()
+    local Cfg = Rhylib.Config
+    local charged = self.rhylibChargedShot
     local damage = self.Damage * self:GetCellDamageMult()
-    if K and K.ShotDamageMult then damage = damage * K.ShotDamageMult(owner, self) end   -- (First shot, before AddShot)
+    if K and K.ShotDamageMult then damage = damage * K.ShotDamageMult(owner, self) end   -- (First shot, Overcharge, before AddShot)
+    if charged then damage = damage * Cfg.Get("weapons", "chargeDamage") end
     Spread.AddShot(self, Spread.NearestArc(a), now)
     -- Shotguns: Pellets bolts, one round each (fewer when the clip is low).
+    -- A charged shot: ChargeShotCost rounds for its one bolt.
     local pellets = self.Pellets or 1
     if not self:NoAmmoUse() then
         pellets = math.max(1, math.min(pellets, self:Clip1()))
-        self:TakePrimaryAmmo(pellets)
+        local cost = charged and math.min(self:ChargeShotCost(), self:Clip1()) or pellets
+        self:TakePrimaryAmmo(cost)
     end
     if self.UsesCell and not self:NoAmmoUse() then
         local shots = self.CellShots * (K and K.CellMult and K.CellMult(owner) or 1)
-        if K and K.CellDrainMult then shots = shots / K.CellDrainMult(owner, self) end   -- (Overcharge)
+        if charged then
+            shots = shots / Cfg.Get("weapons", "chargeDrain")
+        elseif K and K.CellDrainMult then
+            shots = shots / K.CellDrainMult(owner, self)   -- (Overcharge in full auto)
+        end
         self:SetCell(math.max(0, self:GetCell() - 1 / shots))
     end
 
     local stun = self:GetFireModeName() == "stun"
-    local over = self:GetFireModeName() == "overcharge"
+    local over = self:IsOverchargedShot()
     -- (Overcharge: the same shot, pitched down so it sounds heavier)
     local snd = self.FireSound
     if istable(snd) then snd = snd[math.floor(util.SharedRandom("rhylib.snd", 1, #snd + 0.999))] or snd[1] end
@@ -991,7 +1187,7 @@ function SWEP:FireShot()
     if CLIENT and IsFirstTimePredicted() then
         Rhylib.Weapons.Recoil.Kick(self)
     elseif SERVER and game.SinglePlayer() then
-        self:CallOnClient("RhylibRecoilKick")
+        self:CallOnClient("RhylibRecoilKick", self.rhylibChargedShot and "1" or "")
     end
 
     local origin = owner:GetShootPos()
@@ -1032,8 +1228,39 @@ function SWEP:FireGrapple(zipline)
     if SERVER then G.Fire(owner, self, zipline) end
 end
 
-function SWEP:RhylibRecoilKick()
-    if CLIENT then Rhylib.Weapons.Recoil.Kick(self) end
+-- Hook fire mode (Grapple specialist): the personal grappling hook's
+-- line from the rifle (sh_32_phook.lua; reach grapple phookSpecialistRange).
+-- Needs a grapple hook carried, which it doesn't use up.
+function SWEP:FireHookMode()
+    local owner = self:GetOwner()
+    if not IsValid(owner) or not owner:IsPlayer() then return end
+    local G = Rhylib.Weapons.Grapple
+    if not (G and G.PhookStart) or G.PhookOn(owner) ~= 0 then return end
+    self:SetNextPrimaryFire(CurTime() + 0.5)
+    -- (the skill gone, or no grapple hook carried any more: back to the gun)
+    if not (G.CanHookMode and G.CanHookMode(owner)) or (SERVER and Rhylib.Weapons.Pouch.Count(owner, G.ITEM) <= 0) then
+        if SERVER then
+            Rhylib.Notify(owner, G.CanHookMode and G.CanHookMode(owner) and "No grapple hook" or "Needs Grapple specialist", "bad", "Grapple")
+            self:LeaveGrappleMode()
+        end
+        return
+    end
+    local ok, why = G.PhookStart(owner)
+    if ok then
+        if IsFirstTimePredicted() then
+            self:EmitSound("weapons/crossbow/fire1.wav", 65, 125)
+            owner:SetAnimation(PLAYER_ATTACK1)
+        end
+    elseif SERVER and why then
+        Rhylib.Notify(owner, why, "bad", "Grapple")
+    end
+end
+
+function SWEP:RhylibRecoilKick(arg)
+    if not CLIENT then return end
+    self.rhylibChargedShot = arg == "1" or nil   -- (singleplayer: a charged shot's kick)
+    Rhylib.Weapons.Recoil.Kick(self)
+    self.rhylibChargedShot = nil
 end
 
 function SWEP:SecondaryAttack()
@@ -1287,7 +1514,10 @@ function SWEP:GetInventoryData()
         mag = self:GetMagType(),
         cell = self.UsesCell and self:GetCell() or nil,
         mode = self:GetFireMode(),
+        mv = 2,   -- (fire mode list version: 2 = without the old "overcharge" mode)
         safe = self:GetSafety() or nil,
+        over = self:GetOvercharge() or nil,
+        charge = self:GetChargeMode() or nil,
         -- Whether the loaded magazine / cell came from an armoury.
         magIssued = self.magIssued or nil,
         cellIssued = self.cellIssued or nil,
@@ -1301,7 +1531,9 @@ function SWEP:SetInventoryData(data)
     if not (m and self:TakesMag(m.id)) then m = W.MagTypes[self:FirstMagFor(self:GetOwner())] end
     if m then self:SetMagType(m.index) end
     -- (mode first: dual pistols hold two magazines)
-    if data.mode and self.FireModes[data.mode] and self:ModeAllowed(data.mode) then self:SetFireMode(data.mode) end
+    local mode = data.mode
+    if self.OverchargeSkill and not data.mv and mode == 3 then mode = nil end   -- (saved in the old Overcharge mode: back to semi, not stun)
+    if mode and self.FireModes[mode] and self:ModeAllowed(mode) then self:SetFireMode(mode) end
     local want = data.clip or self:GetMagSize()
     if SERVER and want > self:GetMagSize() then
         -- (saved in dual mode, which isn't allowed now: the rest goes back as magazines)
@@ -1312,6 +1544,8 @@ function SWEP:SetInventoryData(data)
     end
     if self.UsesCell then self:SetCell(data.cell or 1) end
     if data.safe then self:SetSafety(true) end
+    if data.over then self:SetOvercharge(true) end
+    if data.charge then self:SetChargeMode(true) end
     -- An issued gun's own magazine and cell count as issued too.
     self.magIssued = data.magIssued or data.issued or nil
     self.cellIssued = data.cellIssued or data.issued or nil
@@ -1341,11 +1575,34 @@ function SWEP:UpdateLowered(owner)
     end
 end
 
+-- A charge's trigger was taken away rather than let go of: downed or
+-- cuffed (rhylib_medical / rhylib_mp strip IN_ATTACK), or busy with a
+-- medical action.
+local function chargeInterrupted(owner)
+    local Med = Rhylib.Medical
+    if Med and ((Med.IsDown and Med.IsDown(owner)) or (Med.Action and Med.Action(owner) ~= 0)) then return true end
+    local MP = Rhylib.MP
+    return MP and MP.IsCuffed and MP.IsCuffed(owner) or false
+end
+
+if SERVER then
+    function SWEP:OnRemove() self:UpdateChargeSound(false, 0, true) end
+end
+-- Dropped or handed over mid-charge: the hum and the charge stop.
+function SWEP:OwnerChanged()
+    self:UpdateChargeSound(false, 0, true)
+    self.rhylibChargeTold, self.rhylibChargeArmed = nil, nil
+    if SERVER then self:SetChargeStart(0) end
+end
+
 -- Every tick (predicted): finish reloads, auto reload, sprint lowering,
 -- spin-up, trigger release, bursts and the aim (right mouse).
 function SWEP:Think()
     local owner = self:GetOwner()
-    if not IsValid(owner) or not owner:IsPlayer() then return end
+    if not IsValid(owner) or not owner:IsPlayer() then
+        if self.rhylibChargeSnd then self:UpdateChargeSound(false, 0, true) end   -- (dropped mid-charge)
+        return
+    end
     -- (Quick draw: back to normal speed once the faster draw is done)
     if self.rhylibDrawEnd and CurTime() >= self.rhylibDrawEnd then self:EndQuickDraw(owner) end
 
@@ -1369,17 +1626,71 @@ function SWEP:Think()
         self:SetTriggerReady(true)
     end
 
+    -- Charged shot (SWEP.ChargedShot, toggle on): in semi the press
+    -- doesn't fire (PrimaryAttack); letting go fires: a normal shot before
+    -- chargeTime, one overcharged shot after it (hum while charging, blip
+    -- when ready).
+    local single = self:GetFireModeName() == "semi" and self:ChargesOnRelease()
+    if single and self:GetBurstLeft() == 0 and not self:GetSafety() and not self:IsLowered() and not self:IsReloading() then
+        local st = self:GetChargeStart()
+        local need = Rhylib.Config.Get("weapons", "chargeTime")
+        -- (a charged shot needs its rounds in the clip)
+        local enough = self:NoAmmoUse() or self:Clip1() >= self:ChargeShotCost()
+        if owner:KeyDown(IN_ATTACK) then
+            if st == 0 and self.rhylibChargeArmed then
+                self.rhylibChargeArmed = nil
+                self:SetChargeStart(CurTime())
+            elseif st > 0 and enough and not self.rhylibChargeTold and CurTime() - st >= need then
+                self.rhylibChargeTold = true
+                if CLIENT and IsFirstTimePredicted() then surface.PlaySound("buttons/blip1.wav") end
+            end
+            local now = self:GetChargeStart()
+            self:UpdateChargeSound(now > 0 and enough, now > 0 and (CurTime() - now) / need or 0)
+        elseif st > 0 or self.rhylibChargeArmed then
+            local armedOnly = st == 0   -- (let go in the same tick it was pressed)
+            self.rhylibChargeArmed = nil
+            self:SetChargeStart(0)
+            self.rhylibChargeTold = nil
+            self:UpdateChargeSound(false)
+            -- (the trigger let go of, not taken away: downed, cuffed or busy
+            -- treating someone cancels it)
+            local full = not armedOnly and CurTime() - st >= need
+            if not chargeInterrupted(owner) and CurTime() >= self:GetNextPrimaryFire() and self:CanPrimaryAttack() then
+                -- A normal shot, or (held long enough, rounds for it) the charged one.
+                if full and enough then
+                    self.rhylibChargedShot = true
+                    local ok, err = pcall(self.FireShot, self)
+                    self.rhylibChargedShot = nil
+                    if not ok then error(err, 0) end
+                else
+                    self:FireShot()
+                end
+            end
+        end
+    elseif self:GetChargeStart() ~= 0 or self.rhylibChargeArmed or self.rhylibChargeSnd then
+        self:SetChargeStart(0)
+        self.rhylibChargeArmed = nil
+        self.rhylibChargeTold = nil
+        self:UpdateChargeSound(false)
+    end
+
     -- Keep a burst going after the first shot.
     local left = self:GetBurstLeft()
     if left > 0 and CurTime() >= self:GetNextPrimaryFire() then
         if self:CanPrimaryAttack() then
             self:FireShot()
             left = left - 1
-            if left == 0 then self:SetNextPrimaryFire(self:GetNextPrimaryFire() + self.BurstDelay) end
+            if left == 0 then
+                self:SetNextPrimaryFire(self:GetNextPrimaryFire() + self.BurstDelay)
+                self:SetChargedBurst(false)
+            end
             self:SetBurstLeft(left)
         else
             self:SetBurstLeft(0)
+            self:SetChargedBurst(false)
         end
+    elseif left == 0 and self:GetChargedBurst() then
+        self:SetChargedBurst(false)
     end
 
     local Med = Rhylib.Medical

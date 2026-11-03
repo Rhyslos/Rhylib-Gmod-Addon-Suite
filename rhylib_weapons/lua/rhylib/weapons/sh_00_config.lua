@@ -26,6 +26,7 @@ if Config.Describe then
         { "Bolts & damage", { "^lagCompMax$", "^boltSpeedMult$", "^shotRange$", "^boltRange$", "^boltLife$", "^headMult$", "^limbMult$" } },
         { "Accuracy & recoil", { "^recoilMult$", "^crouchSpread$", "^firstShotMult$" } },
         { "Ammo & reloading", { "^reloadHoldTime$", "^maxMags$", "^maxCells$", "^lowCell" } },
+        { "Charged shot", { "^charge" } },
         { "Explosion knockdown", { "^knock" } },
         { "Shields", { "^shield", "^cgShield", "^phalanx" } },
         { "Grenades & charges", { "^he", "^emp", "^breach", "^flash", "^smoke", "^bacta" } },
@@ -63,6 +64,13 @@ Config.Register("weapons", "knockDropChance", 0.1, "Explosions: chance a knocked
 Config.Register("weapons", "lowCellThreshold", 0.1, "Below this power cell charge (0-1), damage starts to drop")
 Config.Register("weapons", "lowCellMinDamage", 0.5, "Damage multiplier when the power cell is completely drained")
 Config.Register("weapons", "reloadHoldTime", 0.2, "Seconds R must be held to open the reload menu")
+Config.Register("weapons", "chargeTime", 0.84, "Charged shot (DC-15A, DP-23): seconds the trigger must be held (semi fires on letting go: sooner = a normal shot)")
+Config.Register("weapons", "chargeVolume", 1, "Charged shot: how loud the charging hum is (0-1)")
+Config.Register("weapons", "chargeSound", "weapons/gauss/chargeloop.wav", "Charged shot: the hum while it charges (loops, pitch rises; \"\" = none)")
+Config.Register("weapons", "chargeRounds", 3, "Charged shot: rounds it uses (1 with the DC-15A's Overcharge toggle on)")
+Config.Register("weapons", "chargeDamage", 3, "Charged shot: damage multiplier of its one bolt")
+Config.Register("weapons", "chargeDrain", 4, "Charged shot: power cell drain, in normal shots")
+Config.Register("weapons", "chargeKick", 1.6, "Charged shot: view kick multiplier")
 Config.Register("weapons", "maxMags", 12, "Without rhylib_inventory: spare magazines of each type a player can carry")
 Config.Register("weapons", "maxCells", 4, "Without rhylib_inventory: spare power cells a player can carry")
 

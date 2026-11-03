@@ -39,7 +39,7 @@ local STYLES = {
     [7] = { color = Color(255, 225, 60), length = 70, width = 5, glow = 14, life = 1.2 },   -- training (yellow)
     [8] = { color = Color(255, 160, 40), length = 70, width = 5, glow = 14, life = 1.2 },   -- training droids (orange-yellow)
     [9] = { color = Color(255, 225, 60), length = 140, width = 9, glow = 40, life = 6, rocket = true },  -- training rocket
-    [10] = { color = Color(150, 205, 255), length = 115, width = 9, glow = 26, life = 1.2, core = true },  -- overcharged (DC-15A)
+    [10] = { color = Color(150, 205, 255), length = 115, width = 9, glow = 26, life = 1.2, core = true },  -- overcharged (charged shots, DC-15A Overcharge)
     [11] = { color = Color(255, 30, 25), length = 100, width = 10, glow = 26, life = 1.2, core = true },   -- droids (rhylib_droids): thicker red, easy to see
 }
 -- BoltColor numbers for other addons.

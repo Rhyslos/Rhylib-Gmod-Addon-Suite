@@ -2,7 +2,7 @@
     Low ammo warning under the crosshair (client, Rhylib guns): "LAST MAGAZINE"
     when no spare magazine the gun takes is left, "OUT OF AMMO" when the
     clip is empty too, "POWER CELL LOW" when the power cell is under 5%
-    (under 15% in Overcharge mode, or with no spare cell), "CELL EMPTY"
+    (under 15% in full auto with Overcharge on, or with no spare cell), "CELL EMPTY"
     when it's flat with no spare cell. Not with test ammo or the Open up order.
     Not shown for the toolgun, or while looking through binoculars
     (rhylib_gear G.Looking). Red warnings pulse faster than amber ones.
@@ -17,7 +17,7 @@ local AMBER = Color(255, 190, 60)
 local RED = Color(255, 80, 70)
 local CELL_LOW = 0.15    -- (no spare cell)
 local CELL_NEAR = 0.05   -- (spare cells on you)
-local CELL_OVER = 0.15   -- (Overcharge mode drains fast)
+local CELL_OVER = 0.15   -- (Overcharge in full auto drains fast)
 
 -- HUD.LowAmmo(ply, wep): the warning to show for that weapon: text,
 -- colour (most urgent first), or nil when there is nothing to warn
@@ -40,10 +40,10 @@ local function warning(ply, wep)
     end
     if spare <= 0 and clip <= 0 then return "OUT OF AMMO", RED end
     if cellLeft and cells <= 0 and cellLeft <= 0 then return "CELL EMPTY", RED end
-    -- (cell nearly flat: under 5%, under 15% in Overcharge mode or with
+    -- (cell nearly flat: under 5%, under 15% in Overcharge full auto or with
     -- no spare cell)
     if cellLeft and cellLeft > 0 then
-        local thr = (wep.GetFireModeName and wep:GetFireModeName() == "overcharge") and CELL_OVER or CELL_NEAR
+        local thr = (wep.GetFireModeName and wep:GetFireModeName() == "auto" and wep.OverchargeOn and wep:OverchargeOn()) and CELL_OVER or CELL_NEAR
         if cells <= 0 then thr = math.max(thr, CELL_LOW) end
         if cellLeft < thr then return "POWER CELL LOW", AMBER end
     end

@@ -48,6 +48,16 @@ local function key(ply) return "s" .. (ply:SteamID64() or "0") end
 -- Renamed skills (old saves keep working): old id -> new id.
 local RENAMED = { burst_fire = "rapid_fire", thruster_dodge = "combat_drop" }
 
+-- Tree version saved with each set (tv). A save from before a rework of a
+-- tree loses that tree's skills (points back) on join, with a note:
+-- REWORKED[v] = the trees reworked in version v.
+K.TREE_VERSION = 3
+local REWORKED = {
+    [2] = { trooper = true, support = true, officer = true, shocktrooper = true },
+    [3] = { support = true, shocktrooper = true },
+}
+local TREE_NAMES = { trooper = "Trooper", support = "Support", officer = "Officer", shocktrooper = "Shock Trooper" }
+
 local function setString(set)
     local ids = {}
     for _, n in ipairs(K.NODES) do
@@ -69,6 +79,38 @@ function K.Stored(ply)
             for _, id in ipairs(d.n) do
                 id = RENAMED[id] or id
                 if K.byId[id] then set[id] = true end
+            end
+            -- (a tree reworked since this was saved: its skills go, points back)
+            local from = tonumber(d.tv) or 1
+            if from < K.TREE_VERSION then
+                local gone = {}
+                for v = from + 1, K.TREE_VERSION do
+                    for id in pairs(set) do
+                        local cat = K.byId[id].cat
+                        if REWORKED[v] and REWORKED[v][cat] then
+                            set[id] = nil
+                            gone[cat] = true
+                        end
+                    end
+                end
+                local ids = {}
+                for id in pairs(set) do ids[#ids + 1] = id end
+                table.sort(ids)
+                Data.Set("skills", key(ply), { n = ids, tv = K.TREE_VERSION })
+                local names = {}
+                for cat in pairs(gone) do names[#names + 1] = TREE_NAMES[cat] or cat end
+                table.sort(names)
+                if #names > 0 then
+                    -- (items the refunded skills allowed go; K.SetSkills drops them)
+                    timer.Simple(5, function()
+                        if IsValid(ply) and not (K.ClassOf and K.ClassOf(ply)) then K.SetSkills(ply, K.Stored(ply)) end
+                    end)
+                    timer.Simple(10, function()
+                        if IsValid(ply) then
+                            K.Note(ply, "Skill trees were reworked: your " .. table.concat(names, ", ") .. " skills were refunded. Learn them again on the Skills page.")
+                        end
+                    end)
+                end
             end
         end
     end
@@ -105,7 +147,7 @@ function K.Stored(ply)
             local ids = {}
             for id in pairs(set) do ids[#ids + 1] = id end
             table.sort(ids)
-            Data.Set("skills", key(ply), { n = ids })
+            Data.Set("skills", key(ply), { n = ids, tv = K.TREE_VERSION })
         end
     end
     -- Skills another one made pointless (Full auto with Combat veteran) go.
@@ -117,7 +159,7 @@ function K.Stored(ply)
         local ids = {}
         for id in pairs(set) do ids[#ids + 1] = id end
         table.sort(ids)
-        Data.Set("skills", key(ply), { n = ids })
+        Data.Set("skills", key(ply), { n = ids, tv = K.TREE_VERSION })
     end
     ply.rhylibSkills = set
     ply.rhylibSkillsLoaded = true
@@ -236,7 +278,7 @@ function K.SetSkills(ply, set, noSave)
         local ids = {}
         for id in pairs(set) do ids[#ids + 1] = id end
         table.sort(ids)
-        if #ids > 0 then Data.Set("skills", key(ply), { n = ids }) else Data.Delete("skills", key(ply)) end
+        if #ids > 0 then Data.Set("skills", key(ply), { n = ids, tv = K.TREE_VERSION }) else Data.Delete("skills", key(ply)) end
     end
     syncGrids(ply)
     dropForbidden(ply)
@@ -449,6 +491,7 @@ function K.DamageMult(ply, bolt, ent, tr, group)
     if not IsValid(ply) or not ply:IsPlayer() then return 1, false end
     local m, crit = 1, false
     if K.OrderIs(ply, "focus") then m = m * K.Cfg("focusDamage") end   -- (command order)
+    if K.LastStand(ply) then m = m * K.Cfg("republicDamage") end   -- (For The Republic)
     if ply:GetNW2Float("rhylib_rush", 0) > CurTime() then m = m * K.Cfg("rushDamage") end   -- (Battle rush)
     local set = K.Set(ply)
     if K.LockMult then m = m * K.LockMult(ply, ent, set) end   -- (a squad mate's locked mark)
@@ -485,6 +528,11 @@ function K.DamageMult(ply, bolt, ent, tr, group)
     if set.called_shot and group == HITGROUP_HEAD and IsValid(ent) and K.CalledShot then K.CalledShot(ply, ent) end
     if set.shotgun_drills and IsValid(bolt.weapon) and K.GunClass(bolt.weapon) == K.DP24 then
         m = m * K.Cfg("shotgunDamage")
+    end
+    -- Burst fire: its shots crit against B2s (bolt.charged, rhylib_weapons).
+    if bolt.charged and IsValid(ent) and ent.IsRhylibDroid and ent.Kind then
+        local k = ent:Kind()
+        if k and k.big then return m * K.Cfg("critMult"), true end
     end
     -- Critical hits / Light rounds: one roll at the better chance (no stacking).
     local chance = set.crits and K.Cfg("critChance") or 0
@@ -549,6 +597,11 @@ Rhylib.Hook.Add("EntityTakeDamage", "skills.resist", function(ent, dmg)
         end
         if set.combat_drop and (ent.rhylibDropUntil or 0) > CurTime() then m = m * K.Cfg("combatDropMult") end
         if set.juggernaut then m = m * K.Cfg("juggernautMult") end
+        if set.hunker_down and ent:Crouching() then m = m * K.Cfg("hunkerMult") end
+        if set.braced and K.ShockOk(ent) then
+            local aw = ent:GetActiveWeapon()
+            if IsValid(aw) and K.GunClass(aw) == K.DC15A and aw.GetAiming and aw:GetAiming() then m = m * K.Cfg("bracedMult") end
+        end
         if set.combat_veteran then
             local aw = ent:GetActiveWeapon()
             if IsValid(aw) and K.GunClass(aw) == K.Z6 then m = m * K.Cfg("vetZ6Resist") end
@@ -570,7 +623,8 @@ Rhylib.Hook.Add("EntityTakeDamage", "skills.resist", function(ent, dmg)
         -- Shock Assault: no push from hits.
         if set.shock_assault then noPush(dmg) end
     end
-    -- Command orders (Hold fast blocks everything earlier, skills.holdfast).
+    -- Command orders.
+    if K.OrderIs(ent, "hold") then m = m * K.Cfg("holdFastMult") end
     if K.OrderIs(ent, "press") then noPush(dmg) end
     if m ~= 1 then dmg:ScaleDamage(m) end
 end, 95)
@@ -590,10 +644,62 @@ Rhylib.Hook.Add("EntityTakeDamage", "skills.antiarmour", function(ent, dmg)
     if k and (k.big or k.commander or ent.DroidKind == "b1_heavy") then dmg:ScaleDamage(K.Cfg("eodAntiArmour")) end
 end, 90)
 
--- Hold fast: no damage at all while it lasts (before lying, medical, armour).
-Rhylib.Hook.Add("EntityTakeDamage", "skills.holdfast", function(ent, dmg)
-    if ent:IsPlayer() and K.OrderIs(ent, "hold") then return true end
+-- For The Republic: no damage at all while it runs (before lying,
+-- medical, armour), so nothing downs or kills you early.
+Rhylib.Hook.Add("EntityTakeDamage", "skills.laststand", function(ent, dmg)
+    if ent:IsPlayer() and K.LastStand(ent) then return true end
 end, -1200)
+Rhylib.Hook.Remove("EntityTakeDamage", "skills.holdfast")   -- (the old Hold fast block, on a refresh)
+
+-- For The Republic: rhylib_medical asks before downing someone
+-- (Rhylib.DelayDown). Once per life the Shock rifleman fights on for
+-- republicTime seconds, then goes down by the same hit's attacker.
+local function endStand(ply, down)
+    timer.Remove("Rhylib.Skills.LastStand." .. ply:EntIndex())
+    local st = ply.rhylibLastStand
+    ply.rhylibLastStand = nil
+    ply:SetNW2Float("rhylib_lastStand", 0)
+    local Med = Rhylib.Medical
+    if down and st and ply:Alive() and Med and Med.Down and not (Med.IsDown and Med.IsDown(ply)) then
+        Med.Down(ply, IsValid(st.attacker) and st.attacker or ply, IsValid(st.inflictor) and st.inflictor or ply)
+    end
+end
+Rhylib.Hook.Add("Rhylib.DelayDown", "skills.republic", function(ply, attacker, inflictor)
+    if not K.Has(ply, "for_republic") or not K.ShockOk(ply) or ply.rhylibLastStandUsed or K.LastStand(ply) then return end
+    ply.rhylibLastStandUsed = true
+    ply.rhylibLastStand = { attacker = attacker, inflictor = inflictor }
+    local t = K.Cfg("republicTime")
+    ply:SetNW2Float("rhylib_lastStand", CurTime() + t)
+    ply:EmitSound("npc/combine_soldier/vo/on1.wav", 75, 90)
+    K.Note(ply, "For the Republic! " .. t .. " s: double damage, infinite ammo, you can't move")
+    timer.Create("Rhylib.Skills.LastStand." .. ply:EntIndex(), t, 1, function()
+        if IsValid(ply) then endStand(ply, true) end
+    end)
+    return true
+end)
+Rhylib.Hook.Add("PlayerSpawn", "skills.republic", function(ply)
+    ply.rhylibLastStandUsed = nil
+    if ply.rhylibLastStand or K.LastStand(ply) then endStand(ply, false) end
+end)
+Rhylib.Hook.Add("PostPlayerDeath", "skills.republic", function(ply)
+    if ply.rhylibLastStand or K.LastStand(ply) then endStand(ply, false) end
+end)
+
+-- Stun rounds (Shock Tactics): DC-15A stuns last longer (rhylib_mp asks).
+Rhylib.Hook.Add("Rhylib.StunTimeMult", "skills.stunrounds", function(ply, by, src)
+    if not (IsValid(by) and by:IsPlayer() and K.Has(by, "stun_rounds") and K.ShockOk(by)) then return end
+    if IsValid(src) and src:IsWeapon() and K.GunClass(src) == K.DC15A then return K.Cfg("stunRoundsMult") end
+end)
+
+-- Downed some other way during the stand (illness, staff): it ends.
+Rhylib.Hook.Add("Rhylib.PlayerDowned", "skills.republic", function(ply)
+    if ply.rhylibLastStand or K.LastStand(ply) then endStand(ply, false) end
+end)
+
+-- Hold fast: no explosion knockdowns either (rhylib_weapons).
+Rhylib.Hook.Add("Rhylib.CanKnockDown", "skills.holdfast", function(p)
+    if K.OrderIs(p, "hold") then return false end
+end)
 
 -- Suppression: a Z-6 hit on a droid rattles the droids around it.
 Rhylib.Hook.Add("EntityTakeDamage", "skills.suppress", function(ent, dmg)

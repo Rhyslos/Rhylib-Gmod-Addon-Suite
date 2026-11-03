@@ -3,11 +3,12 @@
     throws hard, RMB lobs short. Each throw uses one from the inventory
     (none in rhylib_infammo test mode) and spawns rhylib_grenade.
 
-    SWEP.ImpactMode = true: E + R switches it between timed (fuse) and
-    impact; the choice is a player NW2Bool per grenade type (ImpactKey).
+    SWEP.ImpactMode = true: the fire-mode key (V, rhylib_weapons
+    cl_30_reload.lua; hold it for a wheel) switches it between timed (fuse)
+    and impact; the choice is a player NW2Bool per grenade type (ImpactKey).
     An EMP in impact mode is kind "emp_impact".
     SWEP.BreachMode = true: with the Breaching charge skill (rhylib_skills)
-    E + R cycles timed -> impact -> breach. In breach mode LMB / RMB stick
+    V cycles timed -> impact -> breach. In breach mode LMB / RMB stick
     it to the door or wall you look at (kind "breach": long fuse, small
     blast, forces doors open; see rhylib_grenade).
     SWEP.RequiresSkill: a skill (rhylib_skills) needed to throw it.
@@ -117,7 +118,7 @@ function SWEP:ImpactKey()
     return c == "rhylib_thermal" and "rhylib_nadeImpact" or ("rhylib_nadeImpact_" .. c)
 end
 
--- Breach mode on (E + R, BreachMode grenades with the skill)?
+-- Breach mode on (V, BreachMode grenades with the skill)?
 function SWEP:IsBreach()
     if not self.BreachMode then return false end
     local o = self:GetOwner()
@@ -126,7 +127,7 @@ function SWEP:IsBreach()
     return not (K and K.Has) or K.Has(o, "breaching")
 end
 
--- Impact mode on (E + R, for ImpactMode grenades)?
+-- Impact mode on (V, for ImpactMode grenades)?
 function SWEP:IsImpact()
     local o = self:GetOwner()
     return self.ImpactMode and IsValid(o) and o:GetNW2Bool(self:ImpactKey()) and not self:IsBreach() or false
@@ -153,35 +154,59 @@ function SWEP:SkillOK()
     return K.Has(self:GetOwner(), self.RequiresSkill)
 end
 
--- Think: E + R cycles the mode (server; chat line + click), and the next
--- grenade comes up after a throw.
-function SWEP:Think()
-    -- E + R: timed / impact.
-    local o = self:GetOwner()
-    if SERVER and self.ImpactMode and IsValid(o) and o:KeyPressed(IN_RELOAD) and o:KeyDown(IN_USE) then
-        -- timed -> impact -> (breach) -> timed
-        local key, bkey = self:ImpactKey(), self:ImpactKey() .. "_breach"
-        local msg
-        if self:IsBreach() then
-            o:SetNW2Bool(bkey, false)
-            o:SetNW2Bool(key, false)
-        elseif o:GetNW2Bool(key) then
-            o:SetNW2Bool(key, false)
-            if self:CanBreach() then o:SetNW2Bool(bkey, true) end
-        else
-            o:SetNW2Bool(bkey, false)
-            o:SetNW2Bool(key, true)
-        end
-        if self:IsBreach() then
-            msg = ": breaching charge (stick it on a door)"
-        elseif self:IsImpact() then
-            msg = ": impact"
-        else
-            msg = ": timed (" .. self.FuseTime .. " s)"
-        end
+-- The mode now: 1 timed, 2 impact, 3 breaching charge.
+function SWEP:GrenadeMode()
+    if self:IsBreach() then return 3 end
+    return self:IsImpact() and 2 or 1
+end
+
+-- May the owner pick mode m (1 timed, 2 impact, 3 breach)?
+function SWEP:GrenadeModeOk(m)
+    if not self.ImpactMode then return false end
+    if m == 3 then return self:CanBreach() end
+    return m == 1 or m == 2
+end
+
+-- The fire-mode key's wheel (rhylib_weapons cl_30_reload.lua): { slot, label, sub, current }.
+function SWEP:ModeWheel()
+    local list = {}
+    if not self.ImpactMode then return list end
+    local cur = self:GrenadeMode()
+    list[#list + 1] = { slot = 1, label = "Timed", sub = self.FuseTime .. " s fuse", current = cur == 1 }
+    list[#list + 1] = { slot = 2, label = "Impact", sub = "Goes off where it lands", current = cur == 2 }
+    if self:CanBreach() then list[#list + 1] = { slot = 3, label = "Breaching charge", sub = "Stick it on a door or wall", current = cur == 3 } end
+    return list
+end
+SWEP.RhylibModeKey = true   -- (cl_30_reload.lua: the fire-mode key works on it)
+
+if SERVER then
+    local MSG = { ": timed", ": impact", ": breaching charge (stick it on a door)" }
+
+    -- Sets mode m (checked): chat line + click.
+    function SWEP:SetModeChecked(m)
+        local o = self:GetOwner()
+        if not (IsValid(o) and self:GrenadeModeOk(m)) then return end
+        if m == self:GrenadeMode() then return end
+        local key = self:ImpactKey()
+        o:SetNW2Bool(key .. "_breach", m == 3)
+        o:SetNW2Bool(key, m == 2)
         o:EmitSound("weapons/smg1/switch_single.wav", 60)
+        local msg = m == 1 and (": timed (" .. self.FuseTime .. " s)") or MSG[m]
         Rhylib.Notify(o, self.PrintName .. msg, "info", "Weapons")
     end
+
+    -- The fire-mode key tapped: timed -> impact -> (breach) -> timed.
+    function SWEP:CycleFireMode()
+        if not self.ImpactMode then return end
+        local m = self:GrenadeMode()
+        local nextM = m % 3 + 1
+        if not self:GrenadeModeOk(nextM) then nextM = nextM % 3 + 1 end
+        self:SetModeChecked(nextM)
+    end
+end
+
+-- Think: the next grenade comes up after a throw.
+function SWEP:Think()
     if self:GetNeedDraw() and CurTime() >= self:GetLastThrow() + self.RedrawTime then
         self:SetNeedDraw(false)
         self:SendWeaponAnim(ACT_VM_DRAW)
@@ -335,15 +360,22 @@ if CLIENT then
     local IMPACT_TINT = Color(255, 190, 150)
     local WHITE = Color(255, 255, 255)
 
+    -- The fire-mode key's name (rhylib_weapons rhylib_firemode_key).
+    local function modeKeyName()
+        local cv = GetConVar("rhylib_firemode_key")
+        local k = cv and cv:GetString() or ""
+        return k ~= "" and string.upper(k) or "NO KEY"
+    end
+
     -- Mode under the crosshair (thermal: timed / impact; locked grenades).
     function SWEP:DrawHUD()
         local text
         if not self:SkillOK() then
             text = self.NeedText or ("Needs the " .. (self.SkillName or "right") .. " skill")
         elseif self:IsBreach() then
-            text = "BREACHING CHARGE  ·  E + R"
+            text = "BREACHING CHARGE  ·  " .. modeKeyName()
         elseif self.ImpactMode then
-            text = self:IsImpact() and "IMPACT  ·  E + R" or ("TIMED " .. self.FuseTime .. " S  ·  E + R")
+            text = self:IsImpact() and ("IMPACT  ·  " .. modeKeyName()) or ("TIMED " .. self.FuseTime .. " S  ·  " .. modeKeyName())
         end
         if not text then return end
         local font = Rhylib.UI and Rhylib.UI.Font and Rhylib.UI.Font(13, 700) or "DermaDefaultBold"

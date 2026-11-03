@@ -39,6 +39,10 @@
     after climbing over; zero = none), Float grapple.phookLen (line paid out
     below the hang point), grapple.phookT (climbing over must be done by).
 
+    Grapple specialists (rhylib_skills zip_rigger) get the same from a
+    rifle's Hook fire mode (rhylib_base "hook"), reaching
+    phookSpecialistRange (25 m); switching out of that mode lets go too.
+
     Realm: shared (client draws the line). Config module "grapple"
     (phook* keys). Public: G.PhookOn(ply), G.PhookStart(ply),
     G.PhookRelease(ply, mv, push), G.PhookAim(ply) -> hang point, hook,
@@ -59,6 +63,7 @@ G.DT_PH_LEN = DT and DT.Claim("Float", "grapple.phookLen", 20) or 20
 G.PH_CLASS = "rhylib_grapple_personal"
 
 Config.Register("grapple", "phookRange", 787, "Personal grappling hook: reach (units, 787 = 15 m)")
+Config.Register("grapple", "phookSpecialistRange", 1312, "Grapple specialist's Hook fire mode (a rifle's grapple used like the personal hook): reach (units, 1312 = 25 m)")
 Config.Register("grapple", "phookSpeed", 140, "Personal grappling hook: how fast it reels you in and pays out (units/s)")
 Config.Register("grapple", "phookMinRise", 16, "Personal grappling hook: how far above your feet the hang point must be (the hook goes up, not down)")
 Config.Register("grapple", "phookReach", 56, "Personal grappling hook: how far out from under the hang point the line still holds you up (units); further out it only drags you along the ground")
@@ -72,6 +77,27 @@ local HULL_MIN, HULL_MAX = Vector(-16, -16, 0), Vector(16, 16, 72)
 local gravityVar = GetConVar("sv_gravity")
 
 local function cfg(k) return Config.Get("grapple", k) end
+
+-- The weapon holding the line: the personal hook, or a rifle in the Hook
+-- fire mode (Grapple specialist, rhylib_base "hook").
+local function hookMode(wep)
+    return IsValid(wep) and wep.GetFireModeName ~= nil and wep:GetFireModeName() == "hook"
+end
+function G.PhookWeaponOk(wep)
+    return IsValid(wep) and (wep:GetClass() == G.PH_CLASS or hookMode(wep))
+end
+
+-- G.PhookRange(ply): reach and longest line (the Hook fire mode reaches further).
+function G.PhookRange(ply)
+    if hookMode(ply:GetActiveWeapon()) then return cfg("phookSpecialistRange") end
+    return cfg("phookRange")
+end
+
+-- G.CanHookMode(ply): may use a rifle's Hook fire mode (the Grapple
+-- specialist skill; without rhylib_skills: nobody).
+function G.CanHookMode(ply)
+    return G.HasRigger ~= nil and G.HasRigger(ply)
+end
 
 -- Traces skip the player and zipline far-end boxes (server-only: the
 -- client can't see them, and predicted traces must agree).
@@ -118,7 +144,7 @@ end
 -- feet when fully reeled in), hook, ledge (or nil) - or nil and a message.
 function G.PhookAim(ply)
     local eye = ply:GetShootPos()
-    local t = trace(eye, eye + ply:GetAimVector() * cfg("phookRange"), ply)
+    local t = trace(eye, eye + ply:GetAimVector() * G.PhookRange(ply), ply)
     if not t.Hit or t.HitSky then return nil, nil, nil, "Out of reach" end
     if not G.CanGrip(t) then return nil, nil, nil, "The hook can't grip that" end
     local h, n = Vector(t.HitPos), Vector(t.HitNormal)
@@ -178,6 +204,8 @@ function G.PhookRelease(ply, mv, push)
     local wep = ply:GetActiveWeapon()
     if IsValid(wep) and wep:GetClass() == G.PH_CLASS then
         wep:SetNextPrimaryFire(CurTime() + cfg("phookCooldown"))
+    elseif G.PhookWeaponOk(wep) then
+        wep:SetNextPrimaryFire(CurTime() + 0.5)   -- (the rifle: back to shooting soon)
     end
     if mv then
         local v = mv:GetVelocity()
@@ -197,7 +225,7 @@ Rhylib.Hook.Add("SetupMove", "weapons.phook", function(ply, mv)
     if st == 0 then return end
     local wep = ply:GetActiveWeapon()
     if not ply:Alive() or ply:GetMoveType() ~= MOVETYPE_WALK or ply:InVehicle()
-        or not (IsValid(wep) and wep:GetClass() == G.PH_CLASS) then
+        or not G.PhookWeaponOk(wep) then
         G.PhookRelease(ply, mv)
         return
     end
@@ -250,7 +278,7 @@ Rhylib.Hook.Add("SetupMove", "weapons.phook", function(ply, mv)
         local flatTo = Vector(at.x - origin.x, at.y - origin.y, 0)
         local fd = flatTo:Length()
         if fd > cfg("phookReach") then
-            ply:SetDTFloat(G.DT_PH_LEN, math.Clamp(at.z - origin.z, 0, cfg("phookRange")))
+            ply:SetDTFloat(G.DT_PH_LEN, math.Clamp(at.z - origin.z, 0, G.PhookRange(ply)))
             if st == 2 and mv:KeyDown(IN_ATTACK) then
                 local v = mv:GetVelocity()
                 local pull = flatTo * (speed / fd)
@@ -270,7 +298,7 @@ Rhylib.Hook.Add("SetupMove", "weapons.phook", function(ply, mv)
         -- going up: the line never gets far ahead of you, so nothing yanks later)
         if ply:OnGround() then len = math.min(len, math.max(0, at.z - origin.z)) end
         len = math.max(len, at.z - origin.z - 16)
-        len = math.Clamp(len, 0, cfg("phookRange"))
+        len = math.Clamp(len, 0, G.PhookRange(ply))
         ply:SetDTFloat(G.DT_PH_LEN, len)
 
         if st == 2 and len <= 1 and mv:GetForwardSpeed() > 0 and ply:GetDTVector(G.DT_PH_LEDGE) ~= ZERO then

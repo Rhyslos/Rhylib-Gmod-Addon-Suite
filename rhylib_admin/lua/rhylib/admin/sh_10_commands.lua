@@ -107,6 +107,7 @@ Admin.COMMANDS = {
     { id = "cleanup", name = "Clean up spawned things", cat = "Server", target = "opt", args = {}, desc = "Everything that isn't part of the map or made permanent (toolgun Permanent tool); or one player's things with a target (^ = yours)" },
     { id = "cancelmap", name = "Cancel map change", cat = "Server", perm = "map", args = {} },
     { id = "restartmap", name = "Restart map", cat = "Server", perm = "map", args = {}, aliases = { "maprestart" }, desc = "Reloads this map after a 10 s countdown" },
+    { id = "fmaprestart", name = "Force map restart", cat = "Server", perm = "map", args = {}, aliases = { "forcemaprestart" }, desc = "Reloads this map now, no countdown" },
     { id = "freezeprops", name = "Freeze all props", cat = "Server", args = {}, aliases = { "nolag" }, desc = "Stops every moving prop (lag)" },
     { id = "cleardecals", name = "Clear decals", cat = "Server", args = {}, desc = "Blood, scorch marks and client death ragdolls, for everyone" },
     { id = "announce", name = "Announcement", cat = "Server", args = { { "text", "Text", "text", need = true } }, aliases = { "a" }, desc = "A banner for everyone" },
@@ -131,7 +132,7 @@ Admin.SECTIONS = {
         { "Punish", { "slay", "kick", "ban" } },
     },
     server = {
-        { "Map", { "map", "restartmap", "cancelmap" } },
+        { "Map", { "map", "restartmap", "fmaprestart", "cancelmap" } },
         { "Announcements & sound", { "announce", "playsound", "stopsound" } },
         { "Cleanup", { "cleanup", "freezeprops", "cleardecals" } },
         { "Staff", { "who", "unspectate" } },

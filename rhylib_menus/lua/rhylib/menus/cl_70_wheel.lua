@@ -5,11 +5,11 @@
     cancel. The view stops turning while it's open.
 
     On a standing player E isn't swallowed: it opens after HOLD seconds
-    (HOLD_GUN with a Rhy's gun out), so a tap and E + R (fire modes) still
-    work. On a downed player it opens at once (it replaces medical's E
+    (HOLD_GUN with a Rhy's gun out), so a tap and Shift + E + R (safety)
+    still work. On a downed player it opens at once (it replaces medical's E
     menu). Not on a grapple rope, in the bacta tank, while R is held, or
     within REPRESS seconds of pressing R with a Rhy's gun out; R pressed
-    just after it opened (E + R a little late) closes it again.
+    just after it opened (Shift + E + R a little late) closes it again.
     A "Hold E · interact" line shows under the crosshair while it's on a
     standing player you could open it on (target looked up every 0.1 s).
 
@@ -59,7 +59,7 @@ local DEADZONE = 44        -- px at 1080p
 local CURSOR_MAX = 150
 local RING = 165
 local HOLD = 0.25          -- s of holding E on a standing player before it opens
-local HOLD_GUN = 0.35      -- the same with a Rhy's gun out (E + R chords)
+local HOLD_GUN = 0.35      -- the same with a Rhy's gun out (Shift + E + R chords)
 local REPRESS = 0.4        -- s after R (Rhy's gun out) the wheel won't open
 
 local function rhyGun(me)
@@ -101,7 +101,7 @@ local function canOpen(me)
     if G and G.ZipOn and G.ZipOn(me) then return false end         -- (or the zipline)
     if G and G.PhookOn and G.PhookOn(me) ~= 0 then return false end -- (or the personal hook)
     if IsValid(me:GetNW2Entity("rhylib_tank")) then return false end   -- (E gets out of the tank)
-    if me:KeyDown(IN_RELOAD) then return false end   -- (E + R: fire mode)
+    if me:KeyDown(IN_RELOAD) then return false end   -- (Shift + E + R: safety)
     if rhyGun(me) and RealTime() - (W.lastReload or 0) < REPRESS then return false end
     return true
 end
@@ -177,7 +177,7 @@ end
 Rhylib.Hook.Add("PlayerBindPress", "menus.wheel", function(ply, bind, pressed, code)
     if pressed and bind == "+reload" then
         W.lastReload = RealTime()
-        -- (E + R pressed a little late: the wheel that just opened goes away)
+        -- (Shift + E + R pressed a little late: the wheel that just opened goes away)
         if W.open and not W.title and rhyGun(ply) and RealTime() - (W.openedAt or 0) < 0.5 then W.Close() end
         return
     end

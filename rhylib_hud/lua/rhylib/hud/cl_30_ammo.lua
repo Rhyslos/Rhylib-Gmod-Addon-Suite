@@ -23,10 +23,11 @@ local HUD = Rhylib.HUD
 -- Fire mode text (long names shortened so they fit beside the gun name).
 -- A weapon can supply its own with SWEP:HUDModeText() (the grenade
 -- launcher shows its range there).
-local SHORT = { overcharge = "OVERCH", lockon = "LOCK-ON" }
+local SHORT = { lockon = "LOCK-ON" }
 local function modeLabel(wep)
     if wep.HUDModeText then return wep:HUDModeText() end   -- (e.g. the grenade launcher's range)
     local m = wep:GetFireModeName()
+    if m == "auto" and wep.OverchargeOn and wep:OverchargeOn() then return "AUTO · OC" end   -- (the Overcharge toggle)
     return SHORT[m] or string.upper(m)
 end
 

@@ -721,6 +721,19 @@ local function build(page)
             end
         end
 
+        -- A common trunk (skills of no specialisation, all in tiers before
+        -- any specialisation's): framed across the page as "Both paths",
+        -- and the dividers between specialisations start below it.
+        local trunkLo, trunkHi, specLo
+        for _, n in ipairs(nodes) do
+            if n.spec or n.layoutCol then
+                specLo = math.min(specLo or n.tier, n.tier)
+            else
+                trunkLo, trunkHi = math.min(trunkLo or n.tier, n.tier), math.max(trunkHi or n.tier, n.tier)
+            end
+        end
+        local trunk = #(cat.specs or {}) > 1 and trunkHi ~= nil and specLo ~= nil and trunkHi < specLo
+
         function tree:Paint(w, h)
             Kit.Plate(0, 0, w, h, { bg = C.row })
             draw.SimpleText(string.upper(cat.name), Kit.Font(16, 700), S(14), S(16), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
@@ -735,11 +748,24 @@ local function build(page)
                 local sx = x0 + inner * c[1]
                 if i > 1 then
                     Kit.SetCol(C.edgeLight, 120)
-                    surface.DrawRect(math.floor(sx), L.headY - S(8), 1, h - L.headY - S(4))
+                    local dy = trunk and math.floor(L.rowBottom(trunkHi) + S(30)) or (L.headY - S(8))
+                    surface.DrawRect(math.floor(sx), dy, 1, h - dy - S(4))
                 end
                 local cx = x0 + inner * (c[1] + c[2]) * 0.5
                 draw.SimpleText(string.upper(s.name), Kit.Font(13, 700), cx, L.headY, C.accent, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
                 draw.SimpleText(s.desc or "", Kit.Font(11), cx, L.headY + S(15), C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            end
+
+            -- The common trunk's frame (title at the bottom, like a branch's).
+            if trunk then
+                local bx, bw = math.floor(x0 + S(6)), math.floor(inner - S(12))
+                local by = math.floor(L.rowY(trunkLo) - S(8))
+                local bh = math.floor(L.rowBottom(trunkHi) + S(26) - by)
+                Kit.SetCol(C.bg, 90)
+                surface.DrawRect(bx, by, bw, bh)
+                Kit.SetCol(C.edgeLight, 140)
+                surface.DrawOutlinedRect(bx, by, bw, bh)
+                draw.SimpleText("BOTH PATHS", Kit.Font(11, 700), bx + S(8), by + bh - S(10), C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
             end
 
             -- End branch frames (title at the bottom, clear of the lines).

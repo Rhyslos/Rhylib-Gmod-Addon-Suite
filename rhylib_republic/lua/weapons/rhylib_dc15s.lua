@@ -54,30 +54,31 @@ SWEP.Primary = {
     Ammo = "rhylib_mag_medium",
 }
 
-SWEP.FireRate = 440
+SWEP.FireRate = 355
 -- Recoil: view kick per shot (rhylib_weapons cl_50_recoil): up = degrees up,
 -- side = random sideways, bias = lean -1 (left) .. 1 (right), recover = share
 -- of the climb that settles back, aimMult = multiplier while aiming.
 SWEP.Recoil = { up = 0.55, side = 0.3, bias = -0.1, recover = 0.55, aimMult = 0.65 }  -- view kick per shot
-SWEP.Damage = 27
+SWEP.Damage = 33.5
 SWEP.BoltSpeed = 7000
 SWEP.BoltColor = 1
 SWEP.FireSound = "weapons/dc15a/dc15a_fire.ogg"   -- (the DC-15A sound, a bit brighter)
 SWEP.FireSoundPitch = 1.12
 SWEP.FireSoundLevel = 140
 
--- Semi first (default), switch with E + R.
+-- Semi first (default), switch with V.
 -- Magazines it takes, preferred first.
 SWEP.Mags = { "mag_medium", "mag_small" }
 
 SWEP.Grapple = true     -- grapple fire mode while carrying a grapple hook
-SWEP.FireModes = { "semi", "auto", "sidearm", "stun" }   -- (stun: military police only)
+SWEP.FireModes = { "semi", "auto", "sidearm", "stun", "burst" }   -- (stun: military police only; burst: Burst fire skill, last so saved modes keep their places)
+SWEP.BurstCount = 5   -- (rhylib_skills sets it with burstShots)
 -- Sidearm (Officer skill): semi-auto only, and it takes the place of semi
 -- (owner: mainly for looks). Third person: two-handed pistol grip. First
 -- person: held on the DC-17's pistol hands, a proxy viewmodel drawn by us
 -- (the real one isn't swapped: that glitched when firing). Values are first
 -- guesses: tune with rhylib_vm_editor in sidearm mode; its Copy gives the block.
-SWEP.SkillModes = { sidearm = "carbine_sidearm" }
+SWEP.SkillModes = { sidearm = "carbine_sidearm", burst = "charged_burst" }
 SWEP.ModeHoldTypes = { sidearm = "revolver" }
 SWEP.ModeFireGestures = { sidearm = ACT_HL2MP_GESTURE_RANGE_ATTACK_PISTOL }   -- (owner: the revolver recoil lasted too long)
 SWEP.ModeReplaces = { sidearm = "semi" }

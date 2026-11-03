@@ -82,6 +82,7 @@ SWEP.Mags = { "mag_small" }
 
 SWEP.Grapple = true
 SWEP.FireModes = { "semi", "auto", "stun" }   -- (stun: military police only)
+SWEP.ChargedShot = true                       -- hold the trigger in semi: one overcharged shot
 
 SWEP.UsesCell = true
 SWEP.CellShots = 500

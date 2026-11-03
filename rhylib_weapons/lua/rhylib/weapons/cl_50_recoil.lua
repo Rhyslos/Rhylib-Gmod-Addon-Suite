@@ -39,6 +39,7 @@ function R.Kick(wep)
     m = m * (Rhylib.Config.Get("weapons", "recoilMult"))
     local K = Rhylib.Skills
     if K and K.RecoilMult then m = m * K.RecoilMult(wep:GetOwner(), wep) end   -- (Steady barrels)
+    if wep.rhylibChargedShot then m = m * Rhylib.Config.Get("weapons", "chargeKick") end   -- (charged shot, rhylib_base)
     local up = (cfg.up or 0.5) * m * math.Rand(0.85, 1.15)
     local side = (cfg.side or 0.2) * m
     pendP = pendP - up

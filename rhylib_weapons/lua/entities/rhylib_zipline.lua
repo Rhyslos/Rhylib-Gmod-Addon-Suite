@@ -1,7 +1,7 @@
 --[[
     A zipline: a straight line from a post planted where the shooter stood
     (A) to where the grapple hook gripped (B), or to a second post when
-    the Zipline rigger skill planted the far end on the floor. Rigged by
+    the Grapple specialist skill planted the far end on the floor. Rigged by
     the grapple's zipline fire mode (sv_30_grapple.lua); ridden in
     SetupMove (sh_30_grapple.lua, "Zipline mode").
 

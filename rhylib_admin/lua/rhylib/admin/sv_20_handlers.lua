@@ -383,6 +383,21 @@ H.restartmap = function(caller)
     return startMapChange(caller, game.GetMap())
 end
 
+-- No countdown: a running one is dropped, the map reloads a moment later
+-- (so the reply still goes out).
+H.fmaprestart = function(caller)
+    if timer.Exists("rhylib_admin_map") then
+        timer.Remove("rhylib_admin_map")
+        Rhylib.Net.Start("admin.countdown")   -- (the countdown banner goes)
+        net.WriteString("")
+        net.WriteUInt(0, 6)
+        net.Broadcast()
+    end
+    local m = game.GetMap()
+    timer.Simple(0.5, function() RunConsoleCommand("changelevel", m) end)
+    return name(caller) .. " is restarting the map now"
+end
+
 H.cancelmap = function(caller)
     if not timer.Exists("rhylib_admin_map") then return nil, "No map change is counting down" end
     timer.Remove("rhylib_admin_map")

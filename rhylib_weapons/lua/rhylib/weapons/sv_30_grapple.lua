@@ -19,7 +19,7 @@
     Zipline mode: G.Fire(owner, wep, true) plants the near post under the
     shooter (G.ZipNear; refused off the ground before the hook is used),
     then where the hook lands G.ZipFar picks the far end (a wall-type grip,
-    or with the Zipline rigger skill a post on the floor), G.ZipCheck wants
+    or with the Grapple specialist skill a post on the floor), G.ZipCheck wants
     zipMin length, no steeper than zipMaxAngle and a clear line, and a
     rhylib_zipline is made. The hook is used up by a line (no pick-up); a
     failed rig drops it. Ropes and ziplines share maxRopes. Only
@@ -290,7 +290,7 @@ function G.ZipNear(ply)
 end
 
 -- G.ZipFar(t, ply): the far end for a hook that hit trace t: a hook in a
--- wall / ceiling / anything above the floor, or (Zipline rigger skill) a
+-- wall / ceiling / anything above the floor, or (Grapple specialist skill) a
 -- post on the floor where it landed. Returns b, postB, hookNormal, or nil
 -- + a message.
 function G.ZipFar(t, ply)
@@ -306,7 +306,7 @@ function G.ZipFar(t, ply)
         return ground + UP * G.POST_H, true, UP
     end
     if G.CanGrip(t) then
-        return nil, nil, nil, "The hook needs a wall or something above the floor (the Zipline rigger skill can plant it on the floor)"
+        return nil, nil, nil, "The hook needs a wall or something above the floor (the Grapple specialist skill can plant it on the floor)"
     end
     return nil, nil, nil, "The hook couldn't grip that"
 end

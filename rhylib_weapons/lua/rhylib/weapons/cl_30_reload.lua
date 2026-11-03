@@ -2,21 +2,29 @@
     Reload input and the radial reload menu (client only).
 
     Tap R:  reload the best magazine (same type if you have one).
-    E + R:  next fire mode.   Shift + E + R: safety on/off.
     Hold R: the radial menu opens and the view stops turning. Move the
             mouse toward an option and let go of R to pick it. It only
             shows ammo you carry (and the type loaded now).
             Let go in the middle to cancel.
+    Shift + E + R: safety on/off.
+
+    Fire modes: the fire-mode key (rhylib_firemode_key, default V). Tap it
+    for the next mode; hold it (MODE_HOLD s) for a wheel (rhylib_menus
+    Wheel.OpenList) with every mode you may use now, plus the Overcharge
+    toggle on guns that have it (SWEP:ModeWheel, rhylib_base). Let go of
+    the key on an option, or click it, to pick it. The Charged shot toggle
+    (SWEP.ChargedShot) is in it too. It also switches
+    grenade modes (SWEP.RhylibModeKey, rhylib_grenade_base). With a gun
+    out, the key's own bind (noclip on V) is swallowed.
 
     Optional keys of their own (client convars, "" = off; Settings >
-    Controls, section Weapons): rhylib_firemode_key (next fire mode, like
-    E + R), rhylib_safety_key (safety, like Shift + E + R), rhylib_stun_key
-    (MPs: straight to the stun mode and back to the last mode, net
-    wep.stunmode). E + R and Shift + E + R keep working.
+    Controls, section Weapons): rhylib_safety_key (safety, like Shift + E +
+    R), rhylib_stun_key (MPs: straight to the stun mode and back to the
+    last mode, net wep.stunmode).
 
     The client only asks; the server checks the pouch and runs the reload.
-    Realm: client. Sends nets wep.mode, wep.stunmode and wep.reload (read
-    in sv_20_pouch.lua). Config weapons reloadHoldTime sets how long R must
+    Realm: client. Sends nets wep.mode, wep.modeset, wep.overcharge, wep.chargemode,
+    wep.stunmode and wep.reload (read in sv_20_pouch.lua). Config weapons reloadHoldTime sets how long R must
     be held. The toolgun (SWEP.ToolGun) keeps R; the open inventory keeps
     it only while an item is being dragged (R turns it).
 ]]
@@ -147,10 +155,10 @@ Rhylib.Hook.Add("PlayerBindPress", "weapons.reload", function(ply, bind, pressed
     if Inv and IsValid(Inv.panel) and Inv.panel.drag then return true end
     if not activeRhylibWeapon() then return end
 
-    -- E + R: fire mode. Shift + E + R: safety.
-    if ply:KeyDown(IN_USE) then
+    -- Shift + E + R: safety.
+    if ply:KeyDown(IN_USE) and ply:KeyDown(IN_SPEED) then
         Rhylib.Net.Start("wep.mode")
-        net.WriteBool(ply:KeyDown(IN_SPEED))
+        net.WriteBool(true)
         net.SendToServer()
         return true
     end
@@ -266,12 +274,147 @@ Rhylib.Hook.Add("HUDPaint", "weapons.reload", function()
 end)
 
 --------------------------------------------------------------------------
--- Keys of their own for fire mode, safety and stun (off by default)
+-- The fire-mode key (V): tap = next mode, hold = the fire-mode wheel
+--------------------------------------------------------------------------
+
+local MODE_HOLD = 0.25          -- s held before the wheel opens
+local MODE_TITLE = "Fire mode"
+local COL_OVER = Color(150, 205, 255)
+
+local modeVar = CreateClientConVar("rhylib_firemode_key", "v", true, false, "Fire mode key: tap for the next fire mode, hold for the fire-mode wheel")
+-- (it used to be off by default: an old saved empty value moves to V, once)
+if cookie.GetString("rhylib_firemode_v", "") ~= "2" then
+    if modeVar:GetString() == "" then RunConsoleCommand("rhylib_firemode_key", "v") end
+    cookie.Set("rhylib_firemode_v", "2")
+end
+
+-- The held weapon the key works on (a Rhy's gun, or a grenade with modes).
+local function modeWeapon()
+    local ply = LocalPlayer()
+    if not IsValid(ply) or not ply:Alive() then return nil end
+    local wep = ply:GetActiveWeapon()
+    if not IsValid(wep) then return nil end
+    if wep.IsRhylib and not wep.ToolGun then return wep end
+    if wep.RhylibModeKey and wep.ImpactMode then return wep end
+end
+
+local function modeCode()
+    local name = modeVar:GetString()
+    local c = name ~= "" and input.GetKeyCode(name) or nil
+    return c and c > 0 and c or nil
+end
+
+local function sendCycle()
+    Rhylib.Net.Start("wep.mode")
+    net.WriteBool(false)
+    net.SendToServer()
+end
+
+local function wheelApi()
+    local M = Rhylib.Menus
+    return M and M.Wheel and M.Wheel.OpenList and M.Wheel or nil
+end
+
+local function modeWheelOpen()
+    local Wh = wheelApi()
+    return Wh and Wh.open and Wh.title == MODE_TITLE
+end
+
+-- The wheel for wep (false: nothing to pick between, or no wheel addon).
+local function openModeWheel(wep, code)
+    local Wh = wheelApi()
+    if not Wh or not wep.ModeWheel then return false end
+    if Wh.open then return true end   -- (another wheel is up: leave it)
+    local list = {}
+    for _, it in ipairs(wep:ModeWheel()) do
+        local o = { label = it.label, sub = it.sub }
+        if it.toggle then
+            local netName = it.toggle == "overcharge" and "wep.overcharge" or "wep.chargemode"
+            o.run = function() Rhylib.Net.Start(netName) net.SendToServer() end
+            if it.on then o.col = COL_OVER end
+        else
+            local slot = it.slot
+            if it.current then
+                o.sub = it.sub and (it.sub .. " · now") or "Now"
+                o.col = UI.Colors.accent
+                o.run = function() end
+            else
+                o.run = function()
+                    Rhylib.Net.Start("wep.modeset")
+                    net.WriteUInt(slot, 5)
+                    net.SendToServer()
+                end
+            end
+        end
+        list[#list + 1] = o
+    end
+    if #list < 2 then return false end
+    return Wh.OpenList(MODE_TITLE, list, code)
+end
+
+local fm = { was = false, at = nil, opened = false, wep = nil, mouseWas = false, block = false, heldAtOpen = false }
+
+Rhylib.Hook.Add("Think", "weapons.firemodekey", function()
+    local me = LocalPlayer()
+    if not IsValid(me) then return end
+    local wep = modeWeapon()
+    local code = modeCode()
+    local raw = code ~= nil and input.IsButtonDown(code) or false
+    local free = not (gui.IsGameUIVisible() or vgui.CursorVisible() or me:IsTyping())
+    local down = wep ~= nil and raw and free
+    if down and not fm.was then
+        fm.at, fm.opened, fm.wep = RealTime(), false, wep
+    end
+    if down and fm.at and not fm.opened and fm.wep == wep and RealTime() - fm.at >= MODE_HOLD then
+        fm.opened = true
+        -- (the trigger already held: it stays held until let go, so a charge
+        -- isn't fired by the wheel taking it away)
+        fm.heldAtOpen = input.IsMouseDown(MOUSE_LEFT)
+        if not openModeWheel(wep, code) then sendCycle() end   -- (nothing to pick between: like a tap)
+    end
+    -- A tap: let go before the wheel opened.
+    if not raw and fm.was and fm.at and not fm.opened and fm.wep == wep and wep ~= nil then sendCycle() end
+    if not down then fm.at = nil end
+    fm.was = down
+
+    -- Switched weapons with the wheel up: it's for the old one, so it goes.
+    if modeWheelOpen() and wep ~= fm.wep then wheelApi().Close() end
+
+    -- Clicking an option in the wheel picks it too (and that click doesn't fire).
+    local mouse = input.IsMouseDown(MOUSE_LEFT)
+    if not mouse then fm.heldAtOpen = false end
+    if mouse and not fm.mouseWas and modeWheelOpen() then
+        local Wh = wheelApi()
+        local pick = Wh.pick
+        Wh.Close()
+        fm.block = true
+        if pick and pick.run and not pick.disabled then
+            surface.PlaySound("ui/buttonclick.wav")
+            pick.run()
+        end
+    end
+    if not mouse then fm.block = false end
+    fm.mouseWas = mouse
+end)
+
+-- No shots while the wheel is open, or from the click that picked in it.
+Rhylib.Hook.Add("CreateMove", "weapons.firemodekey", function(cmd)
+    if fm.block or (modeWheelOpen() and not fm.heldAtOpen) then cmd:RemoveKey(IN_ATTACK) end
+end)
+
+-- With a gun out the key is the fire-mode key only (V is noclip by default).
+Rhylib.Hook.Add("PlayerBindPress", "weapons.firemodekey", function(ply, bind, pressed, code)
+    if not pressed or not modeWeapon() then return end
+    local c = modeCode()
+    if not c then return end
+    if code == c or (code == nil and input.IsButtonDown(c) and string.find(bind, "noclip", 1, true)) then return true end
+end)
+
+--------------------------------------------------------------------------
+-- Keys of their own for safety and stun (off by default)
 --------------------------------------------------------------------------
 
 local KEYS = {
-    { cv = CreateClientConVar("rhylib_firemode_key", "", true, false, "Next fire mode (like E + R); empty = off"),
-      send = function() Rhylib.Net.Start("wep.mode") net.WriteBool(false) net.SendToServer() end },
     { cv = CreateClientConVar("rhylib_safety_key", "", true, false, "Safety on/off (like Shift + E + R); empty = off"),
       send = function() Rhylib.Net.Start("wep.mode") net.WriteBool(true) net.SendToServer() end },
     { cv = CreateClientConVar("rhylib_stun_key", "", true, false, "MPs: straight to the stun mode and back; empty = off"),
@@ -293,7 +436,7 @@ end)
 local function addKeySettings()
     local M = Rhylib.Menus
     if not (M and M.AddSetting) then return end
-    M.AddSetting("Weapons", { id = "wep.firemodekey", order = 50, title = "Fire mode key", desc = "Next fire mode (E + R works too)", kind = "key", convar = "rhylib_firemode_key" })
+    M.AddSetting("Weapons", { id = "wep.firemodekey", order = 50, title = "Fire mode key", desc = "Tap: next fire mode. Hold: the fire-mode wheel (and Overcharge on / off)", kind = "key", convar = "rhylib_firemode_key" })
     M.AddSetting("Weapons", { id = "wep.safetykey", order = 51, title = "Safety key", desc = "Safety on/off (Shift + E + R works too)", kind = "key", convar = "rhylib_safety_key" })
     M.AddSetting("Weapons", { id = "wep.stunkey", order = 52, title = "Stun mode key (MPs)", desc = "Straight to stun, press again for the last mode", kind = "key", convar = "rhylib_stun_key" })
 end

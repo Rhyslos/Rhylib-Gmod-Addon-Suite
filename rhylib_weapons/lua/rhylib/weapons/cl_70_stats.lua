@@ -13,7 +13,7 @@ local stats = { open = false, code = nil }
 
 local MODE_NAMES = {
     semi = "Semi", auto = "Auto", burst = "Burst", dual = "Dual", sidearm = "Sidearm",
-    stun = "Stun", grapple = "Grapple", zipline = "Zipline", overcharge = "Overcharge",
+    stun = "Stun", grapple = "Grapple", zipline = "Zipline", hook = "Hook",
 }
 
 local function gun(me)
@@ -43,13 +43,18 @@ local function build(w, me)
 
     local pellets = w.Pellets or 1
     local dmg = (w.Damage or 0) * (w.GetCellDamageMult and w:GetCellDamageMult() or 1)
-    if K and K.ModeDamageMult then dmg = dmg * K.ModeDamageMult(me, w) end   -- (Overcharge)
+    if K and K.ModeDamageMult then dmg = dmg * K.ModeDamageMult(me, w) end   -- (Overcharge in full auto)
     local rpm = w.CurrentFireRate and w:CurrentFireRate() or w.FireRate or 0
     local mode = w.GetFireModeName and w:GetFireModeName() or "semi"
     add("Damage", pellets > 1 and (math.Round(dmg) .. " × " .. pellets .. " pellets") or tostring(math.Round(dmg)),
         math.Clamp(dmg * pellets / 150, 0, 1))
     add("Fire rate", math.Round(rpm) .. " rpm", math.Clamp(rpm / 900, 0, 1))
-    if mode ~= "stun" and mode ~= "grapple" and mode ~= "zipline" then
+    if w.ChargedShot and w.ChargeShotCost then   -- (hold the trigger in semi)
+        local cd = (w.Damage or 0) * (w.GetCellDamageMult and w:GetCellDamageMult() or 1) * Rhylib.Config.Get("weapons", "chargeDamage")
+        local n = w:ChargeShotCost()
+        add("Charged shot", math.Round(cd) .. " dmg · " .. n .. (n == 1 and " round" or " rounds"))
+    end
+    if mode ~= "stun" and mode ~= "grapple" and mode ~= "zipline" and mode ~= "hook" then
         add("Damage / second", tostring(math.Round(dmg * pellets * rpm / 60)), math.Clamp(dmg * pellets * rpm / 60 / 450, 0, 1))
     end
     local Cfg = Rhylib.Config
@@ -98,6 +103,7 @@ local function build(w, me)
         end
     end
     if #modes > 0 then add("Fire modes", table.concat(modes, "  ")) end
+    if w.CanOvercharge and w:CanOvercharge() then add("Overcharge", w:GetOvercharge() and "On (fire-mode wheel)" or "Off (fire-mode wheel)") end
 
     -- Carrying.
     local Items = Rhylib.Items

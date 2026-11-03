@@ -295,7 +295,11 @@ end, 50)
 Rhylib.Hook.Add("PostEntityTakeDamage", "medical.down", function(ent, dmg, took)
     if not ent.rhylibGoingDown then return end
     ent.rhylibGoingDown = nil
-    if took and ent:Alive() then Med.Down(ent, dmg:GetAttacker(), dmg:GetInflictor()) end
+    if not (took and ent:Alive()) then return end
+    -- Hook Rhylib.DelayDown(ply, attacker, inflictor): true = not now (the
+    -- caller downs them later itself; rhylib_skills' For The Republic).
+    if hook.Run("Rhylib.DelayDown", ent, dmg:GetAttacker(), dmg:GetInflictor()) == true then return end
+    Med.Down(ent, dmg:GetAttacker(), dmg:GetInflictor())
 end)
 
 Rhylib.Hook.Add("PlayerDeath", "medical.clear", function(ply)

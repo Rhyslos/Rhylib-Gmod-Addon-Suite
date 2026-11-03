@@ -3,7 +3,7 @@
 
     The grapple hook is an inventory item. While you carry one, the DC-15S,
     DC-15A and DC-17 (SWEP.Grapple = true) get a "GRAPPLE" fire mode on
-    E + R. Firing it shoots the hook as a projectile (straight line,
+    V. Firing it shoots the hook as a projectile (straight line,
     hookSpeed, max `range`). Where it grips, a rope is worked out once on
     the server and lowered down the surface at lowerSpeed. It stays until
     someone picks the hook up again (E on the hook). A hook that doesn't
@@ -75,7 +75,7 @@ Config.Register("grapple", "cooldown", 1, "Seconds between grapple shots")
 Config.Register("grapple", "showLanding", true, "Show where the hook will land while in grapple mode (false = troopers judge it themselves)")
 Config.Register("grapple", "hookSpeed", 2500, "How fast the hook flies (units/s)")
 Config.Register("grapple", "lowerSpeed", 450, "How fast the rope lowers after the hook grips (units/s)")
-Config.Register("grapple", "skillRange", 862, "Zipline rigger skill (Autorifleman): extra hook range on both modes (units; 862 makes the default range about 45 m)")
+Config.Register("grapple", "skillRange", 862, "Grapple specialist skill (Autorifleman): extra hook range on both modes (units; 862 makes the default range about 45 m)")
 -- Zipline mode
 Config.Register("grapple", "zipMin", 150, "Zipline: shortest line (units)")
 Config.Register("grapple", "zipTwoWayAngle", 5, "Zipline: steepest slope you can still ride uphill (degrees); steeper lines only take you down")
@@ -256,13 +256,13 @@ end
 --------------------------------------------------------------------------
 -- Zipline mode
 --
--- The zipline fire mode (after GRAPPLE on E + R, Autorifleman skill
+-- The zipline fire mode (after GRAPPLE on V, Autorifleman skill
 -- specialisation only: G.CanZip) shoots the hook the same way, but strings
 -- a straight line from a post planted where you stand to where the hook
 -- grips (a wall, a ceiling, anything above the floor). The hook is used up:
 -- a line can't be taken down for the hook again. It stays until it's shot
 -- (either post or the far hook), what it gripped goes, its rigger leaves
--- the server, staff remove it, or the map changes. With the Zipline rigger
+-- the server, staff remove it, or the map changes. With the Grapple specialist
 -- skill the far end can be anywhere: a hook on the floor plants a second
 -- post there, and both modes reach skillRange further. Riding (anyone, up
 -- to zipMaxRiders a line):
@@ -286,7 +286,7 @@ function G.Range(ply)
     return r
 end
 
--- G.HasRigger(ply): has the Zipline rigger skill (rhylib_skills).
+-- G.HasRigger(ply): has the Grapple specialist skill (rhylib_skills).
 function G.HasRigger(ply)
     local K = Rhylib.Skills
     return IsValid(ply) and K ~= nil and K.Has ~= nil and K.Has(ply, G.SKILL) or false

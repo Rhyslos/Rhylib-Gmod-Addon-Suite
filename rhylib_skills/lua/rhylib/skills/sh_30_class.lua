@@ -32,7 +32,7 @@ K.CLASSES = {
     { id = "heavy", name = "Heavy", cat = "support", spec = "heavy", who = "Anyone",
       desc = "Z-6 and DP-24 anchor who soaks hits and suppresses droids." },
     { id = "officer", name = "Pistol officer", cat = "officer", spec = "pistol", branch = "command", who = "Anyone", orders = true,
-      desc = "Two DC-17s and quick footwork for close fights, spotting and marking targets for the squad. Leads with one command order of your choice." },
+      desc = "Two DC-17s and a quick draw for close fights, spotting and marking targets for the squad. Leads with one command order of your choice." },
     { id = "arc", name = "ARC trooper", cat = "officer", spec = "pistol", branch = "arc", who = "Anyone",
       desc = "The Westar-M5 and two DC-17s, Q marks for the squad, and all-round field training: higher jumps, softer landings, lighter loads." },
     { id = "commander", name = "Commander", cat = "officer", spec = "commander", who = "LT and up", orders = true,
@@ -47,8 +47,10 @@ K.CLASSES = {
       desc = "Fast frontline revives and dragging the wounded to cover." },
     { id = "chemist", name = "Chemist", cat = "medic", spec = "chemist", who = "Medics",
       desc = "Crafts medical supplies and runs the med bay." },
-    { id = "shocktrooper", name = "Shock Trooper", cat = "shocktrooper", who = "Military police",
-      desc = "Riot shield, breaching charges and arrests." },
+    { id = "shocktrooper", name = "Riot trooper", cat = "shocktrooper", spec = "shield_wall", who = "Military police",
+      desc = "Riot shield, breaching charges and arrests, holding the line together." },
+    { id = "shock_rifle", name = "Shock rifleman", cat = "shocktrooper", spec = "shock_rifle", who = "Military police",
+      desc = "Breaching and arrests with the DC-15A: longer stuns, steady under fire, and one last stand." },
 }
 K.classById = {}
 for i, c in ipairs(K.CLASSES) do

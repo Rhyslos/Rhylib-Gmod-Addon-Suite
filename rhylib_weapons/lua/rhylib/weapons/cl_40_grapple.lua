@@ -4,7 +4,7 @@
         (turn it off with the grapple.showLanding config)
       - the short line from a climber's belt to the rope
       - zipline mode: the far-end marker (length, both ways / one way
-        down, "post" with the Zipline rigger skill) and the riders' hand line
+        down, "post" with the Grapple specialist skill) and the riders' hand line
     Realm: client.
 ]]
 
@@ -57,7 +57,7 @@ local function drawZipline(ply, start, x, y, s)
                 end
             end
         else
-            bad = G.CanGrip(tr) and "Needs a wall (or Zipline rigger)" or "Can't grip"
+            bad = G.CanGrip(tr) and "Needs a wall (or Grapple specialist)" or "Can't grip"
         end
     end
     local a = foot and foot + Vector(0, 0, G.POST_H)
@@ -86,6 +86,33 @@ end
 function X.DrawGrapple(wep, x, y)
     local ply = LocalPlayer()
     local s = ScrH() / 1080
+
+    -- Hook fire mode (Grapple specialist): the personal hook's aim.
+    if wep.GetFireModeName and wep:GetFireModeName() == "hook" and G.PhookAim then
+        surface.SetDrawColor(COL_DIM)
+        surface.DrawRect(x - 1, y - 1, 2, 2)
+        if G.PhookOn(ply) ~= 0 then
+            draw.SimpleText("LMB reel in  ·  RMB down  ·  Jump / E let go", UI.Font(14), x, y + 26 * s, COL_OK, TEXT_ALIGN_CENTER)
+            return
+        end
+        -- (a few traces: worked out 10 times a second)
+        local now = RealTime()
+        if not wep.rhylibHookAimAt or now >= wep.rhylibHookAimAt then
+            wep.rhylibHookAimAt = now + 0.1
+            local at0, _, ledge0, why0 = G.PhookAim(ply)
+            wep.rhylibHookAim = { at0 ~= nil, ledge0 ~= nil, why0 }
+        end
+        local a = wep.rhylibHookAim
+        local at, ledge, why = a[1], a[2], a[3]
+        if at then
+            ring(x, y, 12 * s, COL_OK, s)
+            draw.SimpleText(ledge and "Hook: ledge, W to climb over" or "Hook", UI.Font(14), x, y + 18 * s, COL_OK, TEXT_ALIGN_CENTER)
+        else
+            ring(x, y, 12 * s, COL_BAD, s)
+            draw.SimpleText(why or "Can't hook", UI.Font(14), x, y + 18 * s, COL_BAD, TEXT_ALIGN_CENTER)
+        end
+        return
+    end
 
     surface.SetDrawColor(COL_DIM)
     surface.DrawRect(x - 1, y - 1, 2, 2)

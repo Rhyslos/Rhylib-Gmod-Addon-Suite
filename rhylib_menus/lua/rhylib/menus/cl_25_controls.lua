@@ -42,7 +42,7 @@ function Menus.AddControl(section, keys, text, need)
     list[#list + 1] = { keys = keys, text = text, need = need }
 end
 
--- "{+use} + {+reload}" -> "E + R" with the player's own binds; "[convar]"
+-- "{+speed} + {+use}" -> "SHIFT + E" with the player's own binds; "[convar]"
 -- -> that key setting's key.
 local function keyText(keys)
     local s = string.gsub(keys, "%[([%w_]+)%]", function(cv)
@@ -204,13 +204,14 @@ A("Interaction", "hold {+use} on a player", "Interaction wheel: move the mouse t
 A("Movement", "{+speed}", "Sprint (uses stamina; jumping too)", has("Stamina"))
 A("Movement", "{+jump}", "Jetpack: thrust up", has("Jetpack"))
 A("Movement", "{+speed} in the air", "Jetpack: hover", has("Jetpack"))
-A("Movement", "{+speed} + side/back + {+jump}", "Sidestep dash (Officer skill), or {+walk} + any direction", has("Skills"))
 A("Movement", "{+use} / {+jump}", "Grapple rope: grab or let go / jump off", function() return Rhylib.Weapons and Rhylib.Weapons.Grapple ~= nil end)
 
 A("Weapons", "{+attack} / {+attack2}", "Fire / aim", has("Weapons"))
 A("Weapons", "tap {+reload}", "Reload the best magazine", has("Weapons"))
 A("Weapons", "hold {+reload}", "Magazine wheel: pick which magazine to load", has("Weapons"))
-A("Weapons", "{+use} + {+reload}", "Next fire mode (grenades: timed, impact, breach)", has("Weapons"))
+A("Weapons", "tap [rhylib_firemode_key]", "Next fire mode (grenades: timed, impact, breach)", has("Weapons"))
+A("Weapons", "hold [rhylib_firemode_key]", "Fire-mode wheel: pick a mode, Overcharge on / off (let go or click)", has("Weapons"))
+A("Weapons", "hold {+attack} in semi, let go", "DC-15A / DP-23 with Charged shot on (V wheel): semi fires on letting go; held long enough: charged shot", has("Weapons"))
 A("Weapons", "{+speed} + {+use} + {+reload}", "Safety on or off", has("Weapons"))
 A("Weapons", "{+attack} / {+attack2}", "Grenades: throw / lob", has("Weapons"))
 

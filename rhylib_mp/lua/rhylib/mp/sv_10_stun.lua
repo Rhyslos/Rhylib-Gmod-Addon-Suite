@@ -68,7 +68,7 @@ end
 -- down, already stunned, still immune, or hook Rhylib.CanStun returns
 -- false. Does not check that by is an MP (callers do). Server only.
 -- Example: Rhylib.MP.Stun(target, mp)
-function MP.Stun(ply, by)
+function MP.Stun(ply, by, src)
     if not IsValid(ply) or not ply:Alive() then return end
     if downNow(ply) then return end                         -- already downed (rhylib_medical)
     local L = Rhylib.Lying
@@ -77,6 +77,11 @@ function MP.Stun(ply, by)
     if (ply.rhylibStunImmune or 0) > CurTime() then return end
     if hook.Run("Rhylib.CanStun", ply, by) == false then return end
     local t = MP.Cfg("stunTime")
+    -- Hook Rhylib.StunTimeMult(ply, by, src) -> number: a longer (or
+    -- shorter) stun (rhylib_skills' Stun rounds). src = the weapon whose
+    -- stun bolt it was, if one.
+    local mult = hook.Run("Rhylib.StunTimeMult", ply, by, src)
+    if isnumber(mult) and mult > 0 then t = t * mult end
     if ply:InVehicle() then ply:ExitVehicle() end
     ply:SetNW2Float("rhylib_stunYaw", ply:EyeAngles().y)
     ply:SetNW2Float(Rhylib.NW.STUN_END, CurTime() + t)
@@ -94,8 +99,8 @@ function MP.Stun(ply, by)
 end
 
 -- Stun guns (rhylib_weapons bolts with SWEP.Stun).
-Rhylib.Hook.Add("Rhylib.StunHit", "mp.stun", function(ply, by)
-    if MP.IsMP(by) then MP.Stun(ply, by) end
+Rhylib.Hook.Add("Rhylib.StunHit", "mp.stun", function(ply, by, wep)
+    if MP.IsMP(by) then MP.Stun(ply, by, wep) end
 end)
 
 -- Downed while stunned: medical takes over the low view, the stun ends.
