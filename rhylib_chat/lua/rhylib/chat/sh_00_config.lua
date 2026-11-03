@@ -53,7 +53,8 @@ local Chat = Rhylib.Chat
 --   staff    CAMI permission needed to send (checked on the server)
 --   needs    "squad" | "battalion" | "command": hidden and refused for
 --            players outside it (Chat.CanUse)
---   jammable carried by radio: dead inside a rhylib_radio comms jammer
+--   jammable carried by radio: inside a rhylib_radio comms jammer you can't
+--            send on it, and what reaches you arrives scrambled (Chat.Scramble)
 Chat.CHANNELS = {
     { id = "public", name = "Public", color = Color(228, 227, 220), cmds = { "public", "p", "ooc" }, desc = "Everyone on the server" },
     { id = "local", name = "Local", color = Color(151, 196, 89), cmds = { "local", "l" }, desc = "People near you" },

@@ -79,6 +79,8 @@ Config.Register("radio", "jammerFallbackModel", "models/props_lab/reciever01a.md
 Config.Register("radio", "jammerFringe", 0.35, "Comms jammers: interference zone outside the range, as a part of the range (0.35 = 35% further out; the compass breaks up and radio gets static as you get closer)")
 Config.Register("radio", "jamReconnect", 4, "Comms jammers: seconds the radio stays jammed and reconnects after leaving the range")
 Config.Register("radio", "jamStatic", "ambient/energy/electric_loop.wav", "Comms jammer: the static loop you hear when you key the radio while jammed")
+Config.Register("radio", "jamGarble", { "ambient/levels/prison/radio_random6.wav", "ambient/levels/prison/radio_random7.wav", "ambient/levels/prison/radio_random8.wav", "ambient/levels/prison/radio_random9.wav", "ambient/levels/prison/radio_random10.wav", "ambient/levels/prison/radio_random11.wav" },
+    "Comms jammer: the broken transmission a jammed listener hears while someone talks on a channel they're on (one after another while they talk)")
 
 -- R.Cfg(key): a radio config value (Config.Get("radio", key)). Shared.
 R.Cfg = Config.For and Config.For("radio") or function(k) return Config.Get("radio", k) end

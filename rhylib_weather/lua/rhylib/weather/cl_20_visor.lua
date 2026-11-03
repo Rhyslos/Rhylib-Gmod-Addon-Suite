@@ -15,17 +15,21 @@
         wavy wet trail and a few tiny beads, swallowing small drops on the
         way; a fine wet film builds up. A lightning flash glints in every
         drop. Indoors no new ones land and it dries off over a few seconds.
-      Snow / blizzard: frosted glass grows in from the edges and corners
+      Snow / blizzard: (inside the visor's clear opening only, never over
+        the helmet's brow and cheek pads: rhylib_hud HUD.VisorShellTris,
+        the same mask as the sun visor) frosted glass grows in from the edges and corners
         with a ragged edge (blurred and pale, whiter further in, fine
         grain), ice crystals branch in from its edge; flakes stick as
         little stars and melt into drops; your breath fogs the bottom of
         the visor every few seconds. Indoors it thaws.
-      Sandstorm: sand streaks whip across with the wind, gusts of dust
+      Sandstorm: (inside the clear opening too) sand streaks whip across with the wind, gusts of dust
         sweep over, grains tick against the visor, a dusty blurred film
         builds up (heaviest at the bottom) with stuck grains and fine
         scratches; indoors it slowly settles off.
-      Mist / fog: the visor fogs over from the edges, blurred and pale,
-        with fine condensation.
+      Mist / fog: a few small water drops form here and there and fade
+        away (no fogging over).
+    Weather setting visorFx off (!weather <kind> noef): no visor effect
+    for that weather.
     While the weather cuts comms (rhylib_radio NW2Bool rhylib_jamWx), thin
     interference bands flicker across the visor.
 
@@ -124,8 +128,15 @@ local function blur(amount, passes)
     draw.NoTexture()
 end
 
--- Draw inside(): only where mask() drew.
-local function masked(mask, inside)
+-- The helmet shell's triangles (brow and cheek pads), while the visor HUD shows.
+local function shellTris()
+    local HUD = Rhylib.HUD
+    return HUD and HUD.VisorShellTris and HUD.VisorShellTris() or nil
+end
+
+-- Draw inside(): only where mask() drew; skipShell: never over the
+-- helmet's brow and cheek pads.
+local function masked(mask, inside, skipShell)
     draw.NoTexture()
     render.ClearStencil()
     render.SetStencilEnable(true)
@@ -139,6 +150,12 @@ local function masked(mask, inside)
     render.OverrideColorWriteEnable(true, false)
     surface.SetDrawColor(255, 255, 255, 255)
     local ok, err = pcall(mask)
+    local tris = skipShell and shellTris()
+    if ok and tris then
+        render.SetStencilReferenceValue(0)
+        for i = 1, #tris do surface.DrawPoly(tris[i]) end
+        render.SetStencilReferenceValue(1)
+    end
     render.OverrideColorWriteEnable(false)
     render.SetStencilPassOperation(STENCIL_KEEP)
     render.SetStencilCompareFunction(STENCIL_EQUAL)
@@ -146,6 +163,17 @@ local function masked(mask, inside)
     render.SetStencilEnable(false)
     draw.NoTexture()
     if not ok then ErrorNoHalt("[Rhylib] weather visor: " .. tostring(err) .. "\n") end
+end
+
+-- Draw inside() only in the visor's clear opening (not on the shell).
+local function fullRect() surface.DrawRect(0, 0, ScrW(), ScrH()) end
+local function opening(inside)
+    if not shellTris() then
+        local ok, err = pcall(inside)
+        if not ok then ErrorNoHalt("[Rhylib] weather visor: " .. tostring(err) .. "\n") end
+        return
+    end
+    masked(fullRect, inside, true)
 end
 
 -- Ragged fronts growing in from the edges. A noise set holds 0-1 per
@@ -325,7 +353,7 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
     local k = W.KINDS[cur.kind] or W.KINDS.clear
     local amt = cur.amt
     local out = W.exposure or 0
-    local show = cvVisor:GetBool() and visorView()
+    local show = cvVisor:GetBool() and W.Cfg("visorFx") ~= false and visorView()
     if not show then
         -- (helmet off / third person: the visor isn't in front of you)
         if #drops > 0 then drops = {} end
@@ -352,7 +380,7 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
     V.frost = level(V.frost, k.visor == "frost", outside, dt, (k.frostRate or 0) * amt, (k.frostMax or 0) * amt, 0.04)
     V.dust = level(V.dust, k.visor == "dust", outside, dt, (k.dustRate or 0) * amt, (k.dustMax or 0) * amt, 0.012)
     V.wet = level(V.wet, k.visor == "drops", outside, dt, (k.wetRate or 0) * amt, 0.8 * amt, 0.08)
-    V.mist = level(V.mist, k.visor == "mist", outside, dt, (k.mistRate or 0) * amt, (k.mistMax or 0) * amt, 0.05)
+    V.mist = math.max(0, V.mist - dt * 0.05)   -- (mist / fog: small drops now, no fogging)
 
     -- New drops / flakes: more looking up and moving.
     if (k.visorRate or 0) > 0 and outside then
@@ -363,11 +391,14 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
             spawnAcc = spawnAcc - 1
             if #drops < 90 then
                 local snow = k.visor == "frost"
+                local mist = k.visor == "mist"   -- (small beads that don't run, fading out)
                 drops[#drops + 1] = {
                     x = math.Rand(0.03, 0.97) * w, y = math.Rand(0.02, 0.9) * h,
-                    r = (snow and math.Rand(2.5, 5) or (math.random() < 0.2 and math.Rand(5.5, 9) or math.Rand(1.5, 4.5))) * s,
-                    born = now, life = snow and math.Rand(1.5, 4) or math.Rand(4, 10), snow = snow,
-                    runAt = now + math.Rand(0.4, 2.5), trail = {}, nextTrail = 0, vy = 0, wob = math.Rand(0, 6),
+                    r = (snow and math.Rand(2.5, 5) or mist and math.Rand(1.6, 3.2)
+                        or (math.random() < 0.2 and math.Rand(5.5, 9) or math.Rand(1.5, 4.5))) * s,
+                    born = now, life = snow and math.Rand(1.5, 4) or mist and math.Rand(2.5, 5) or math.Rand(4, 10), snow = snow,
+                    masked = snow or mist,   -- (drawn only in the visor's clear opening)
+                    runAt = mist and math.huge or now + math.Rand(0.4, 2.5), trail = {}, nextTrail = 0, vy = 0, wob = math.Rand(0, 6),
                 }
             end
         end
@@ -375,37 +406,19 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
         spawnAcc = 0
     end
 
-    -- Mist / fog: the glass fogs from the edges, blurred and pale.
-    if V.mist > 0.01 then
-        local m = V.mist
-        surface.SetDrawColor(205, 212, 218, 14 * m)
-        surface.DrawRect(0, 0, w, h)
-        local b = setBase(h * 0.34 * m, h * 0.4 * m, w * 0.22 * m, w * 0.22 * m)
-        masked(function() drawFront(mistNz, b, 0.8) end, function()
-            blur(1.5 + 3 * m, 1)
-            surface.SetDrawColor(208, 214, 220, 30 + 40 * m)
-            surface.DrawRect(0, 0, w, h)
-            for _, p in ipairs(speckles) do
-                if p.th < m * 1.6 then
-                    surface.SetDrawColor(225, 230, 236, 28)
-                    surface.DrawRect(p.x * w, p.y * h, p.r * s + 0.5, p.r * s + 0.5)
-                end
-            end
-        end)
-    end
-
     -- Dust: a blurred brown film from the edges (most at the bottom),
     -- stuck grains and fine sand scratches.
     if V.dust > 0.01 then
         local d = V.dust
-        surface.SetDrawColor(140, 108, 70, 26 * d)
-        surface.DrawRect(0, 0, w, h)
         local b = setBase(h * 0.07 * d, h * 0.32 * d, w * 0.08 * d, w * 0.08 * d)
         masked(function() drawFront(dustNz, b, 0.9) end, function()
             blur(1 + 2 * d, 1)
             surface.SetDrawColor(146, 112, 72, 40 + 60 * d)
             surface.DrawRect(0, 0, w, h)
-        end)
+        end, true)
+        opening(function()
+        surface.SetDrawColor(140, 108, 70, 26 * d)
+        surface.DrawRect(0, 0, w, h)
         for _, g in ipairs(grains) do
             if g.th < d then
                 local x, y, sz = g.x * w, g.y * h, g.s * s + 0.5
@@ -421,6 +434,7 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
                 surface.DrawLine(x, y, x + math.cos(sc.ang) * l, y + math.sin(sc.ang) * l)
             end
         end
+        end)
     end
 
     -- Sand whipping across the visor with the wind, gusts, grains ticking.
@@ -430,7 +444,8 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
         local right = me:EyeAngles():Right()
         local side = wx * right.x + wy * right.y   -- (+1: blowing to the right)
         local dir = side >= 0 and 1 or -1
-        streakAcc = streakAcc + dt * 40 * amt
+        local sf = k.sandFx or 1
+        streakAcc = streakAcc + dt * 40 * amt * sf
         while streakAcc >= 1 do
             streakAcc = streakAcc - 1
             if #streaks < 30 then
@@ -438,9 +453,10 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
                     vy = math.Rand(-60, 120) * s, len = math.Rand(30, 90) * s, t = now, thick = math.random() < 0.25 }
             end
         end
-        if math.random() < dt * 12 * amt and #ticks < 20 then ticks[#ticks + 1] = { x = math.Rand(0, w), y = math.Rand(0, h), t = now } end
-        if math.random() < dt * 0.3 * amt and #gusts < 2 then gusts[#gusts + 1] = { t = now, dir = dir } end
+        if math.random() < dt * 12 * amt * sf and #ticks < 20 then ticks[#ticks + 1] = { x = math.Rand(0, w), y = math.Rand(0, h), t = now } end
+        if math.random() < dt * 0.3 * amt * sf and #gusts < 2 then gusts[#gusts + 1] = { t = now, dir = dir, a = sf } end
     end
+    if #gusts > 0 or #streaks > 0 or #ticks > 0 then opening(function()
     for i = #gusts, 1, -1 do
         local g = gusts[i]
         local f = (now - g.t) / 0.9
@@ -450,7 +466,7 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
             -- (a soft band of dust sweeping across)
             local cx = g.dir > 0 and (-0.3 + f * 1.6) * w or (1.3 - f * 1.6) * w
             local bw = w * 0.4
-            local a = 38 * amt * math.sin(f * math.pi)
+            local a = 38 * amt * (g.a or 1) * math.sin(f * math.pi)
             for j = -6, 5 do
                 local o = (j + 0.5) / 6
                 surface.SetDrawColor(160, 126, 84, a * (1 - math.abs(o)))
@@ -486,20 +502,23 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
             circle(tk.x, tk.y, 1.1 * s, 70, 54, 34, 170 * (1 - f))
         end
     end
+    end) end
 
     -- Frost: frosted glass from the edges and corners (two layers: lightly
     -- frosted at the front, thick and white further in), crystals at its edge.
     if V.frost > 0.01 then
         local fr = V.frost
-        surface.SetDrawColor(196, 214, 236, 10 * fr)
-        surface.DrawRect(0, 0, w, h)
+        opening(function()
+            surface.SetDrawColor(196, 214, 236, 10 * fr)
+            surface.DrawRect(0, 0, w, h)
+        end)
         local D = h * 0.36 * fr
         local outer = setBase(D * 0.75, D * 0.95, D * 0.85, D * 0.85)
         masked(function() drawFront(frostNz, outer, 0.8) end, function()
             blur(1.5 + 2 * fr, 1)
             surface.SetDrawColor(206, 222, 240, 26 + 30 * fr)
             surface.DrawRect(0, 0, w, h)
-        end)
+        end, true)
         local inner = setBase(D * 0.42, D * 0.52, D * 0.47, D * 0.47)
         masked(function() drawFront(frostNz, inner, 1.0) end, function()
             blur(4 + 3 * fr, 2)
@@ -509,8 +528,9 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
                 surface.SetDrawColor(245, 250, 255, g.a)
                 surface.DrawRect(g.x * w, g.y * h, g.s * s + 0.5, g.s * s + 0.5)
             end
-        end)
+        end, true)
         outer = setBase(D * 0.75, D * 0.95, D * 0.85, D * 0.85)
+        opening(function()
         frontRim(frostNz, outer, 0.8, 230, 240, 252, 40 + 40 * fr)
         -- Crystals branching in from the frost's edge.
         local G = math.Clamp((fr - 0.06) * 4, 0, 1) * 2.4
@@ -533,6 +553,7 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
                 end
             end
         end
+        end)
     end
 
     -- Breath fogging the bottom of the visor in the cold.
@@ -558,7 +579,7 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
                     blur(3 * a * amt + 0.5, 1)
                     surface.SetDrawColor(226, 232, 238, 45 * a * amt)
                     surface.DrawRect(0, 0, w, h)
-                end)
+                end, true)
             end
         end
     end
@@ -619,13 +640,15 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
             end
         end
 
+        -- (snow flakes and mist beads stay in the clear opening; rain as before)
+        local function drawDrops(want)
         -- (the screen copy for the lenses, taken before any drop is drawn)
         render.UpdateScreenEffectTexture()
 
         -- Pass 1 (plain): dark rims, wet trail edges, flakes.
         draw.NoTexture()
         for _, d in ipairs(drops) do
-            if not d.dead then
+            if not d.dead and (d.masked or false) == want then
                 local fade = d.fade
                 if d.snow and d.age < d.life * 0.55 then
                     drawFlake(d.x, d.y, d.r * 1.3, 200 * fade)
@@ -644,7 +667,7 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
         -- and a faint smear along the trails.
         surface.SetMaterial(scrMat)
         for _, d in ipairs(drops) do
-            if not d.dead and not (d.snow and d.age < d.life * 0.55) then
+            if not d.dead and (d.masked or false) == want and not (d.snow and d.age < d.life * 0.55) then
                 local r = d.snow and d.r * 0.6 or d.r
                 local n = #d.trail
                 for j, p in ipairs(d.trail) do
@@ -660,7 +683,7 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
         -- Pass 3 (plain): a small glint up top, a faint light spot below, landing rings.
         draw.NoTexture()
         for _, d in ipairs(drops) do
-            if not d.dead and not (d.snow and d.age < d.life * 0.55) then
+            if not d.dead and (d.masked or false) == want and not (d.snow and d.age < d.life * 0.55) then
                 local r = d.snow and d.r * 0.6 or d.r
                 local fade = d.fade
                 circle(d.x, d.y + r * 0.42, r * 0.38, 230, 236, 244, 18 * fade * glint)
@@ -672,6 +695,13 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
                 circle(d.x - r * 0.32, d.y - r * 0.38, math.max(0.7, r * 0.16), 255, 255, 255, math.min(255, 115 * fade * glint))
             end
         end
+        end
+        local anyM, anyR = false, false
+        for _, d in ipairs(drops) do
+            if not d.dead then if d.masked then anyM = true else anyR = true end end
+        end
+        if anyR then drawDrops(false) end
+        if anyM then opening(function() drawDrops(true) end) end
     end
 
     -- Comms cut by the weather: interference bands across the visor.
@@ -690,7 +720,7 @@ local function addSettings()
     local M = Rhylib.Menus
     if not (M and M.AddSetting) then return end
     M.AddSetting("Weather", { id = "weather.visor", order = 83, tab = "Interface", title = "Weather on the visor",
-        desc = "Rain drops running down, frost creeping in, dust settling and fog misting your helmet visor (first person, helmet on)",
+        desc = "Rain drops running down, frost creeping in, dust settling and mist beading on your helmet visor (first person, helmet on)",
         kind = "toggle", convar = "rhylib_weather_visor" })
 end
 addSettings()

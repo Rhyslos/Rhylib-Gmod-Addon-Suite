@@ -16,7 +16,10 @@
     weather out and the new one in over fadeTime seconds.
 
     Command (Rhylib.Command): rhylib_weather [kind] [intensity 0.1-1],
-    chat !weather; permission rhylib.weather (admin). "heavy <kind>" sets
+    chat !weather; permission rhylib.weather (admin). "noef" anywhere in
+    it (!weather blizzard noef) sets the weather without its visor effect
+    (setting visorFx off; any !weather with a kind and no noef turns it
+    back on). "heavy <kind>" sets
     that kind at full intensity, "light <kind>" at 30%; "heavy" or "heavy
     storm" alone is the heavystorm kind. No kind = says the
     current weather. It sets the same settings as the Server settings
@@ -34,6 +37,7 @@ Config.Describe("weather", { name = "Weather", category = "Server & interface" }
 Config.Register("weather", "kind", "clear", "Weather for everyone: clear, mist, fog, rain, storm, heavystorm, snow, blizzard or sandstorm")
 Config.Register("weather", "intensity", 0.7, "How strong the weather is, 0.1 (light) to 1 (heavy)")
 Config.Register("weather", "fadeTime", 12, "Seconds the old weather takes to fade out and the new one to fade in")
+Config.Register("weather", "visorFx", true, "Weather shows on the helmet visor (drops, frost, dust); !weather <kind> noef turns it off for that weather, the next !weather without noef back on")
 Config.Register("weather", "fog", true, "Weather fog (thicker in storms, blizzards and sandstorms); off keeps the map's own fog")
 Config.Register("weather", "lightning", true, "Storms have lightning strikes: a bolt and a flash lighting up the area, thunder after it (sooner and louder the closer it is)")
 Config.Register("weather", "disrupt", true, "Heavy storms, blizzards and sandstorms (from disruptFrom) now and then cut comms and the compass radar for a few seconds for everyone outdoors; a lightning strike does it briefly near it")
@@ -52,15 +56,16 @@ W.Cfg = Config.For and Config.For("weather") or function(k) return Config.Get("w
 -- count: falling things around you at full intensity; fall: units/s
 -- down; wind: sideways speed; fog: start, end (units, at full strength),
 -- max density, colour; rain / wind: loop volumes; visor: what lands on it
--- (drops, frost, dust, mist); lightning = { min, max } seconds between
+-- (drops, frost, dust, mist = small beads; sandFx scales the sand streaks,
+-- grain hits and gusts; visorRate drops / flakes / beads a second); lightning = { min, max } seconds between
 -- strikes at full intensity; disrupt: heavy enough to cut comms now and
 -- then (from disruptFrom intensity).
 W.KINDS = {
     clear = { name = "Clear" },
     mist = { name = "Mist", look = "mist", count = 50, fall = 0, wind = 18, radius = 900,
-        fog = { 0, 3200, 0.6, Color(172, 180, 188) }, rain = 0, windVol = 0, visor = "mist", mistRate = 0.02, mistMax = 0.35 },
+        fog = { 0, 3200, 0.6, Color(172, 180, 188) }, rain = 0, windVol = 0, visor = "mist", visorRate = 1.5 },
     fog = { name = "Fog", look = "mist", count = 90, fall = 0, wind = 12, radius = 800,
-        fog = { 0, 850, 0.94, Color(160, 166, 172) }, rain = 0, windVol = 0.08, visor = "mist", mistRate = 0.04, mistMax = 0.6 },
+        fog = { 0, 850, 0.94, Color(160, 166, 172) }, rain = 0, windVol = 0.08, visor = "mist", visorRate = 3 },
     rain = { name = "Rain", look = "rain", count = 420, fall = 1300, wind = 0.12, radius = 700,
         fog = { 200, 7000, 0.45, Color(105, 112, 122) }, rain = 0.55, windVol = 0, visor = "drops", visorRate = 9, wetRate = 0.03 },
     storm = { name = "Storm", look = "rain", count = 750, fall = 1600, wind = 0.35, radius = 700,
@@ -72,10 +77,10 @@ W.KINDS = {
     snow = { name = "Snow", look = "snow", count = 380, fall = 110, wind = 40, radius = 650,
         fog = { 200, 4500, 0.55, Color(200, 206, 216) }, rain = 0, windVol = 0.15, visor = "frost", frostRate = 0.018, frostMax = 0.5, visorRate = 3 },
     blizzard = { name = "Blizzard", look = "snow", count = 750, fall = 220, wind = 380, radius = 600,
-        fog = { 60, 1300, 0.85, Color(215, 222, 232) }, rain = 0, windVol = 0.75, visor = "frost", frostRate = 0.05, frostMax = 0.85, visorRate = 9,
+        fog = { 60, 1300, 0.85, Color(215, 222, 232) }, rain = 0, windVol = 0.75, visor = "frost", frostRate = 0.05, frostMax = 0.425, visorRate = 4.5,
         disrupt = true },
     sandstorm = { name = "Sandstorm", look = "sand", count = 260, fall = 40, wind = 750, radius = 650,
-        fog = { 60, 1400, 0.85, Color(176, 140, 96) }, rain = 0, windVol = 0.8, visor = "dust", dustRate = 0.035, dustMax = 0.75, visorRate = 0,
+        fog = { 60, 1400, 0.85, Color(176, 140, 96) }, rain = 0, windVol = 0.8, visor = "dust", dustRate = 0.035, dustMax = 0.375, visorRate = 0, sandFx = 0.5,
         disrupt = true },
 }
 W.ORDER = { "clear", "mist", "fog", "rain", "storm", "heavystorm", "snow", "blizzard", "sandstorm" }
@@ -96,10 +101,18 @@ Rhylib.Command.Add({
     chat = { "weather" },
     perm = "rhylib.weather",
     minAccess = "admin",
-    help = "Set the weather for everyone: clear, mist, fog, rain, storm, heavystorm, snow, blizzard, sandstorm (and an intensity 0.1-1 or 10-100). heavy <kind> = full strength, light <kind> = 30%, heavy / heavy storm = heavystorm",
-    args = "[kind] [intensity]",
+    help = "Set the weather for everyone: clear, mist, fog, rain, storm, heavystorm, snow, blizzard, sandstorm (and an intensity 0.1-1 or 10-100). heavy <kind> = full strength, light <kind> = 30%, heavy / heavy storm = heavystorm; add noef to leave out the visor effect",
+    args = "[kind] [intensity] [noef]",
     tag = "Weather",
     fn = function(ply, args)
+        -- (noef anywhere: no visor effect)
+        local noef = false
+        for i = #args, 1, -1 do
+            if string.lower(string.Trim(args[i])) == "noef" then
+                table.remove(args, i)
+                noef = true
+            end
+        end
         local kind = args[1] and string.Trim(string.lower(args[1]))
         local nArg, forceAmt = 2, nil
         -- "heavy" / "heavy storm" = heavystorm; "heavy <kind>" = that kind
@@ -123,12 +136,14 @@ Rhylib.Command.Add({
         if not (Rhylib.Settings and Rhylib.Settings.Set) then return "Settings aren't available", "bad" end
         local ok, why = Rhylib.Settings.Set("weather", "kind", kind, ply)
         if ok == false then return "Couldn't set it: " .. tostring(why), "bad" end
+        Rhylib.Settings.Set("weather", "visorFx", not noef, ply)
         local n = tonumber(args[nArg]) or forceAmt
         if n then
             if n >= 2 then n = n / 100 end   -- (70 = 70%; 0.1-1 as it is)
             Rhylib.Settings.Set("weather", "intensity", math.Clamp(n, 0.1, 1), ply)
         end
-        return string.format("Weather: %s%s (fades in over %d s)", W.KINDS[kind].name,
-            kind == "clear" and "" or string.format(" %d%%", math.Round(W.Intensity() * 100)), W.Cfg("fadeTime")), "good"
+        return string.format("Weather: %s%s (fades in over %d s)%s", W.KINDS[kind].name,
+            kind == "clear" and "" or string.format(" %d%%", math.Round(W.Intensity() * 100)), W.Cfg("fadeTime"),
+            noef and " (no visor effect)" or ""), "good"
     end,
 })

@@ -13,7 +13,11 @@
 
     Comms jammer: keying the radio inside a jammer's range plays a static
     loop instead (others only hear you as local voice; the server routes
-    that). The incoming meter goes haywire (cl_20_hud.lua).
+    that). The incoming meter goes haywire (cl_20_hud.lua). While you're
+    jammed and someone talks on a squad / channel / call you're on (radio.txev,
+    R.tx), you hear a broken transmission instead of their voice (radio
+    jamGarble sounds, one after another, with the squelch clicks), so you
+    know someone is trying to get through. Muted channels (R.ChanMuted) stay quiet.
 
     Client convars: rhylib_radio_fx (on/off, default 1),
     rhylib_radio_fx_volume (0-1, default 0.6). Sounds and timings come
@@ -61,7 +65,8 @@ local function heardOverRadio(p)
     if not IsValid(p) or p == LocalPlayer() then return false end
     local mine = R.Mine()
     if mine.off or mine.deaf or R.Jammed(LocalPlayer()) then return false end
-    return R.HeardOn(p) ~= nil
+    local slot = R.HeardOn(p)
+    return slot ~= nil and not R.ChanMuted(slot)   -- (a muted channel: only local voice reaches you)
 end
 
 local function restore(p, st)
@@ -182,6 +187,47 @@ local function staticTo(v)
     static:ChangeVolume(math.Clamp(v, 0.01, 1), 0.2)
 end
 
+-- Jammed: is anyone talking on a squad / channel / call you're on?
+local function jammedTalker(me)
+    for idx, ev in pairs(R.tx) do
+        if ev.kind ~= 0 and ev.id ~= 0 then
+            local p = Entity(idx)
+            if IsValid(p) and p:IsPlayer() and p ~= me then
+                local slot = R.HeardOn(p)
+                if slot and not (R.ChanMuted and R.ChanMuted(slot)) then return true end
+            end
+        end
+    end
+    return false
+end
+
+local garble, garbleNext, garbleOn = nil, 0, false
+local function stopGarble()
+    if garble then garble:Stop() garble = nil end
+end
+
+-- The broken transmission a jammed listener hears while someone talks.
+local function updateGarble(me, jammed)
+    local on = jammed and fxVar:GetBool() and not R.Mine().off and not R.Mine().deaf and jammedTalker(me)
+    if on ~= garbleOn then
+        garbleOn = on
+        play(on and R.Cfg("fxSquelchOn") or R.Cfg("fxSquelchOff"), 0.3, on and 90 or 85)
+        if not on then stopGarble() end
+        garbleNext = 0
+    end
+    if not on then return end
+    local now = RealTime()
+    if now < garbleNext then return end
+    local snd = pick(R.Cfg("jamGarble"))
+    if not (isstring(snd) and snd ~= "") then return end
+    stopGarble()
+    garble = CreateSound(me, snd)
+    if not garble then return end
+    garble:PlayEx(math.max(0.05, vol(0.55)), math.random(88, 104))
+    local len = SoundDuration(snd) or 0
+    garbleNext = now + (len > 0.2 and math.min(len, 4) * 0.9 or 1.5)
+end
+
 -- (weather cuts come and go: their notes at most once every 30 s)
 local wxNoteAt = -100
 local wxCut, wxShow = false, false
@@ -218,6 +264,7 @@ timer.Create("Rhylib.Radio.JamFx", 0.1, 0, function()
             elseif wxShow then R.Note("Interference passing: reconnecting...") end
         end
     end
+    updateGarble(me, jammed)
     if jammed and R.txOn then
         if not static and RealTime() > noted then
             noted = RealTime() + 10
@@ -236,6 +283,7 @@ end)
 
 Rhylib.Hook.Add("ShutDown", "radio.fx", function()
     stopStatic()
+    stopGarble()
     restoreAll()
 end)
 

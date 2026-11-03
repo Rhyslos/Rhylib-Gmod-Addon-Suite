@@ -20,6 +20,8 @@
       radio.txev    server -> everyone who hears the old or new target:
                     talker entindex (8), tx kind (2), id (9)
       radio.state   client: off, muted, deafened (3 bools). 6, 6
+      radio.chmute  client: slots whose voice you don't hear (UInt 3: 1
+                    squad, 2 channel 1, 4 channel 2), ply.rhylibChMute. 6, 6
       radio.role    client: role index (5). 3, 4
       radio.tx      client: radio key down: true + slot (2: 1 squad,
                     2 channel 1, 3 channel 2), or false (up). 12, 8
@@ -393,6 +395,11 @@ Rhylib.Net.Receive("radio.state", function(ply)
     if off and R.HangUp then R.HangUp(ply) end
 end, { rate = 6, burst = 6 })
 
+Rhylib.Net.Receive("radio.chmute", function(ply)
+    local m = net.ReadUInt(3)
+    ply.rhylibChMute = m ~= 0 and m or nil
+end, { rate = 6, burst = 6 })
+
 Rhylib.Net.Receive("radio.role", function(ply)
     local r = net.ReadUInt(5)
     if R.ROLES[r] then
@@ -493,6 +500,17 @@ Rhylib.Hook.Add("PlayerCanHearPlayersVoice", "radio.voice", function(listener, t
                 local c = R.calls and R.calls[id]
                 hear = c and c.members[listener] and c.members[talker]
             end
+            -- (a slot the listener muted: their voice only as local voice)
+            local mute = hear and listener.rhylibChMute
+            if mute and mute ~= 0 then
+                if kind == 1 then
+                    hear = band(mute, 1) == 0
+                elseif kind == 2 then
+                    local sl = listener.rhylibRadio and listener.rhylibRadio.slots
+                    if sl and sl[1] == id and band(mute, 2) ~= 0 then hear = false end
+                    if sl and sl[2] == id and band(mute, 4) ~= 0 then hear = false end
+                end
+            end
             if hear then return true, false end
         end
     end
@@ -538,6 +556,7 @@ Rhylib.Hook.Add("PlayerDisconnected", "radio.leave", function(ply)
         local id = p.slots[slot]
         local c = id and R.channels[id]
         if c and c.members[ply] then
+            clearTx(ply, R.TX_CHAN, id)   -- (the others' clients stop showing them as talking)
             c.members[ply] = nil
             c.n = c.n - 1
             if c.n <= 0 then R.channels[id] = nil end

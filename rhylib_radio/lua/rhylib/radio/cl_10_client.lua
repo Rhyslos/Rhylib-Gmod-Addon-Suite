@@ -21,7 +21,10 @@
     (channel colours, R.PALETTE ids), rhylib_radio_role (role index),
     rhylib_radio_slot (1 squad, 2 channel 1, 3 channel 2), rhylib_radio_off
     / _muted / _deaf (states, sent to the server on join and change),
-    rhylib_radio_compass (squad compass on the HUD, default off).
+    rhylib_radio_compass (squad compass on the HUD, default off),
+    rhylib_radio_chmute (channels whose voice you don't hear: bits 1
+    squad, 2 channel 1, 4 channel 2; sent with radio.chmute on join and
+    change; the Radio page's Mute buttons, R.ChanMuted / R.ToggleChanMute).
     Console command rhylib_radio opens the Radio page.
 ]]
 
@@ -64,6 +67,43 @@ local offVar = cv("rhylib_radio_off", "0", "Radio off")
 local mutedVar = cv("rhylib_radio_muted", "0", "Radio muted")
 local deafVar2 = cv("rhylib_radio_deaf", "0", "Radio deafened")
 local radarVar = cv("rhylib_radio_compass", "0", "Squad compass on the HUD (takes half the chat's room in the visor)")
+local chMuteVar = cv("rhylib_radio_chmute", "0", "Radio channels you don't hear (bits: 1 squad, 2 channel 1, 4 channel 2)")
+
+-- R.ChanMuted(slot): is that slot's voice muted for you (1 squad, 2
+-- channel 1, 3 channel 2; a call is never muted)?
+function R.ChanMuted(slot)
+    if not slot or slot < 1 or slot > 3 then return false end
+    return bit.band(chMuteVar:GetInt(), bit.lshift(1, slot - 1)) ~= 0
+end
+
+-- R.SendChanMute(v): sends radio.chmute (the muted slots; default the
+-- saved ones) to the server.
+function R.SendChanMute(v)
+    Rhylib.Net.Start("radio.chmute")
+    net.WriteUInt(bit.band(v or chMuteVar:GetInt(), 7), 3)
+    net.SendToServer()
+end
+
+local function setChanMute(v)
+    chMuteVar:SetInt(v)
+    R.SendChanMute(v)
+    if R.Changed then R.Changed() end
+end
+
+-- R.ToggleChanMute(slot): mute / unmute a slot's voice (only for you).
+function R.ToggleChanMute(slot)
+    setChanMute(bit.bxor(bit.band(chMuteVar:GetInt(), 7), bit.lshift(1, slot - 1)))
+end
+
+-- (a channel slot that now holds another channel, or none: its mute goes)
+function R.ClearChanMuteFor(oldSlots, newSlots)
+    local v = bit.band(chMuteVar:GetInt(), 7)
+    local nv = v
+    for i = 1, 2 do
+        if (oldSlots[i] or 0) ~= (newSlots[i] or 0) then nv = bit.band(nv, bit.bnot(bit.lshift(1, i))) end
+    end
+    if nv ~= v then setChanMute(nv) end
+end
 -- R.RadarOn(): is the squad compass on the HUD switched on?
 function R.RadarOn() return radarVar:GetBool() end
 
@@ -180,6 +220,7 @@ function R.SpeakerColor(ply)
     if mine.off or mine.deaf then return nil end
     local on = R.HeardOn(ply)
     if on == 4 then return R.COL.hail end
+    if on and R.ChanMuted(on) then return nil end   -- (a muted channel: only local voice)
     if on then return R.SlotColor(on) end
 end
 
@@ -222,7 +263,10 @@ Rhylib.Net.Receive("radio.dir", function()
 end)
 
 Rhylib.Net.Receive("radio.me", function()
+    local old = R.me and R.me.slots
     R.me = { slots = { net.ReadUInt(R.ID_BITS), net.ReadUInt(R.ID_BITS) }, call = net.ReadUInt(R.ID_BITS) }
+    -- (a channel muted in a slot: leaving it or a new channel there unmutes the slot)
+    if old and R.ClearChanMuteFor then R.ClearChanMuteFor(old, R.me.slots) end
     -- Selected slot gone: back to the squad.
     if not R.SlotOn(R.Selected()) then RunConsoleCommand("rhylib_radio_slot", "1") end
     R.Changed()
@@ -379,6 +423,7 @@ end
 Rhylib.Hook.Add("InitPostEntity", "radio.join", function()
     timer.Simple(2, function()
         R.SendState()
+        R.SendChanMute()
         local r = roleVar:GetInt()
         if R.ROLES[r] then R.SetRole(r) end
         Rhylib.Net.Start("radio.dirreq")
@@ -397,6 +442,11 @@ end, -100)
 Rhylib.Hook.Add("PlayerEndVoice", "radio.speaking", function(ply)
     R.speaking[ply] = nil
 end, -100)
+
+-- A player gone: their talking state goes too (R.tx is by entindex).
+Rhylib.Hook.Add("EntityRemoved", "radio.tx", function(e)
+    if e:IsPlayer() then R.tx[e:EntIndex()] = nil end
+end)
 
 --------------------------------------------------------------------------
 -- Keys

@@ -30,15 +30,36 @@ Rhylib.Perms.Register("rhylib.chat.event", "admin", "Post in the Event chat chan
 
 local lastAdvert = setmetatable({}, { __mode = "k" })  -- [ply] = CurTime of their last advert
 
-local function send(recipients, ch, sender, text, target)
-    -- Radio text doesn't reach anyone inside a comms jammer (rhylib_radio).
-    if ch.jammable then
-        local kept = {}
-        for _, p in ipairs(recipients) do
-            if not p.rhylibJammed then kept[#kept + 1] = p end
-        end
-        recipients = kept
+-- Chat.Scramble(text): the same length, but broken: most letters swapped
+-- for random letters and symbols, spaces kept (what a jammed radio
+-- reader gets). Server.
+local GARBLE = "#%&*?!@$/|~^_=+<>{}[]:;"
+function Chat.Scramble(text)
+    local out = {}
+    local codes = {}
+    if utf8.len(text) then
+        for _, c in utf8.codes(text) do codes[#codes + 1] = c end
+    else
+        for i = 1, #text do codes[i] = string.byte(text, i) < 128 and string.byte(text, i) or 63 end   -- (not UTF-8: byte by byte)
     end
+    for _, c in ipairs(codes) do
+        if c == 32 then
+            out[#out + 1] = " "
+        elseif math.random() < 0.85 then
+            if math.random() < 0.55 then
+                local i = math.random(#GARBLE)
+                out[#out + 1] = string.sub(GARBLE, i, i)
+            else
+                out[#out + 1] = string.char(math.random() < 0.5 and math.random(65, 90) or math.random(97, 122))
+            end
+        else
+            out[#out + 1] = utf8.char(c)
+        end
+    end
+    return table.concat(out)
+end
+
+local function sendTo(recipients, ch, sender, text, target)
     if #recipients == 0 then return end
     Rhylib.Net.Start("chat.msg")
     net.WriteUInt(ch.index, Chat.CHANNEL_BITS)
@@ -46,6 +67,20 @@ local function send(recipients, ch, sender, text, target)
     net.WriteEntity(target or NULL)
     net.WriteString(text)
     net.Send(recipients)
+end
+
+local function send(recipients, ch, sender, text, target)
+    -- Radio text reaching someone inside a comms jammer (rhylib_radio)
+    -- arrives scrambled, at its real length.
+    if ch.jammable then
+        local kept, jammed = {}, {}
+        for _, p in ipairs(recipients) do
+            if p.rhylibJammed and p ~= sender then jammed[#jammed + 1] = p else kept[#kept + 1] = p end
+        end
+        sendTo(jammed, ch, sender, Chat.Scramble(text), target)
+        recipients = kept
+    end
+    sendTo(recipients, ch, sender, text, target)
 end
 
 -- Chat.Note(ply, text): a grey system line in one player's chat. Server only.

@@ -57,7 +57,7 @@ local function smallButton(parent, text, fn, opts)
     b:Dock(RIGHT)
     b:DockMargin(Kit.S(4), 0, 0, 0)
     surface.SetFont(Kit.Font(12, 700))
-    b:SetWide(surface.GetTextSize(string.upper(isfunction(text) and text() or text)) + Kit.S(24))
+    b:SetWide(surface.GetTextSize(string.upper(opts.widthText or (isfunction(text) and text() or text))) + Kit.S(24))
     return b
 end
 
@@ -188,6 +188,8 @@ local function buildLeft(col)
     local sqRow = row(col, R.SlotColor(1), function() return R.SlotOn(1) and ("Squad · " .. R.SlotName(1)) or "Squad" end,
         function() return R.SlotOn(1) and "Your squad's radio" or "Join or create a squad" end)
     if R.SlotOn(1) then
+        smallButton(sqRow, function() return R.ChanMuted(1) and "Muted" or "Mute" end, function() R.ToggleChanMute(1) end,
+            { selected = function() return R.ChanMuted(1) end, widthText = "Muted" })
         smallButton(sqRow, function() return R.Selected() == 1 and "Talking" or "Talk" end, function() RunConsoleCommand("rhylib_radio_slot", "1") end,
             { selected = function() return R.Selected() == 1 end })
     end
@@ -198,6 +200,8 @@ local function buildLeft(col)
             on and ("Channel " .. (slot - 1) .. " · " .. (c and c.n or 1) .. " listening") or "Empty")
         if on then
             smallButton(r, "Leave", function() R.ChanLeave(slot - 1) end)
+            smallButton(r, function() return R.ChanMuted(slot) and "Muted" or "Mute" end, function() R.ToggleChanMute(slot) end,
+                { selected = function() return R.ChanMuted(slot) end, widthText = "Muted" })
             smallButton(r, function() return R.Selected() == slot and "Talking" or "Talk" end, function() RunConsoleCommand("rhylib_radio_slot", tostring(slot)) end,
                 { selected = function() return R.Selected() == slot end })
         else

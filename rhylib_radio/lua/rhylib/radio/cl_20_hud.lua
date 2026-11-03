@@ -171,6 +171,7 @@ local function inLevel()
             R.speaking[p] = nil   -- (the end event was missed)
         elseif IsValid(p) and p ~= LocalPlayer() then
             local on = R.HeardOn(p)
+            if on and on ~= 4 and R.ChanMuted(on) then on = nil end   -- (muted channel)
             if on then
                 local v = math.max(p:VoiceVolume() or 0, 0.05)
                 if v >= best then best, col = v, (on == 4 and R.COL.hail or R.SlotColor(on)) end
