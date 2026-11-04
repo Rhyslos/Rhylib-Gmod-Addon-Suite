@@ -40,6 +40,9 @@ local R = Rhylib.Radio
 local Config = Rhylib.Config
 
 Config.Register("radio", "showEveryone", true, "Compass radar: show every friendly player (blue), not only your squad (green). Players can hide themselves from everyone but their squad on the Radio page; sensor array beacons still show them")
+Config.Register("radio", "earIK", { pos = { -0.5, -2.5, -6 }, ang = { -175, -150, 80 }, elbow = { 13, 18, 15 }, swivel = 155, shoulder = { -14, 81, 60 },
+    viaShoulder = { -18, 125, 47 }, viaPos = { -7.2, 18, 6.7 }, viaAng = { 145, -75, -35 }, fingers = "run_all_01" },
+    "Hand to the ear while typing or talking on the radio (left arm by IK): pos = where the wrist goes, ang = the hand's turn, elbow = the point the elbow bends toward, swivel = degrees the elbow is turned on round the shoulder-to-wrist line from there, shoulder (optional) = the upper arm's turn from the chest bone (then the forearm aims at pos), viaShoulder + viaPos + viaAng (optional, chest axes: upper arm, wrist point, hand turn) = the transition point the arm passes on its way up and down, only from idle (no weapon, or a normal / passive hold type), fingers = the model sequence whose finger pose the hand takes (empty = the reference pose); all in the head bone's own axes { x, y, z } / { pitch, yaw, roll }. Line it up with rhylib_ear_editor (Rhy's Dev Tools)", { signed = true })
 Config.Register("radio", "localRange", 800, "Local voice reaches this far (units, 800 = 15 m)")
 Config.Register("radio", "maxChannels", 200, "Most custom channels on the server at once")
 Config.Register("radio", "hailCooldown", 8, "Seconds before the same player can hail again (stops hail spam)")

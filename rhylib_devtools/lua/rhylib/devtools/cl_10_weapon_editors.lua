@@ -13,6 +13,8 @@
                             orbit camera around the right hand
       rhylib_extra_editor   ExtraProps (both views), CarrierBoneMods,
                             WorldBoneMods
+      rhylib_ear_editor     the hand-to-the-ear arm IK (rhylib_radio
+                            config earIK), with the orbit camera
       rhylib_vm_info        what the held gun's viewmodel uses now
       rhylib_vm_aim r f u   AimPos;  rhylib_vm_fov n   ViewModelFOV
       rhylib_vm_tune ...    PropVMPos / PropVMAng by numbers
@@ -192,6 +194,24 @@ local function editorFrame(title, tall, w)
         end
         minus.DoClick = function() apply(get() - step) end
         plus.DoClick = function() apply(get() + step) end
+        -- (held down: keeps stepping, after a short wait)
+        local function holdRepeat(btn, d)
+            function btn:Think()
+                if self:IsDown() then
+                    local t = RealTime()
+                    if not self.rhylibHeld then
+                        self.rhylibHeld = t + 0.35
+                    elseif t >= self.rhylibHeld then
+                        self.rhylibHeld = t + 0.04
+                        apply(get() + d)
+                    end
+                else
+                    self.rhylibHeld = nil
+                end
+            end
+        end
+        holdRepeat(minus, -step)
+        holdRepeat(plus, step)
         show()
         rows[#rows + 1] = show
     end
@@ -410,11 +430,11 @@ end)
 -- Orbit camera for the third-person editors: the view circles your right
 -- hand while the editor is open (preset buttons, drag to turn, wheel to
 -- zoom). Yaw is from your body's facing: 0 = in front of you.
-local orbit = { on = false, yaw = 30, pitch = 10, dist = 45 }
+local orbit = { on = false, yaw = 30, pitch = 10, dist = 45, pan = Vector() }
 
 local function orbitCentre(ply)
     ply:SetupBones()
-    local b = ply:LookupBone("ValveBiped.Bip01_R_Hand")
+    local b = ply:LookupBone(orbit.bone or "ValveBiped.Bip01_R_Hand")
     local m = b and ply:GetBoneMatrix(b)
     return m and m:GetTranslation() or (ply:GetPos() + Vector(0, 0, 45))
 end
@@ -425,10 +445,15 @@ Rhylib.Hook.Add("CalcView", "weapons.editorcam", function(ply, pos, angles, fov)
         orbit.on = false
         return
     end
-    local centre = orbitCentre(ply)
-    local dir = Angle(orbit.pitch, ply:GetRenderAngles().y + orbit.yaw, 0):Forward()
+    -- (yaw from your facing when the camera came on, so turning doesn't
+    -- swing it; pan = right-drag offset of the centre)
+    orbit.baseYaw = orbit.baseYaw or ply:GetRenderAngles().y
+    local centre = orbitCentre(ply) + orbit.pan
+    local dir = Angle(orbit.pitch, orbit.baseYaw + orbit.yaw, 0):Forward()
     local origin = centre + dir * orbit.dist
-    return { origin = origin, angles = (centre - origin):Angle(), fov = 60, znear = 1, drawviewer = true }
+    orbit.viewAng = (centre - origin):Angle()
+    orbit.viewPos = origin
+    return { origin = origin, angles = orbit.viewAng, fov = 60, znear = 1, drawviewer = true }
 end, -60)   -- (before the body camera and third person)
 
 -- (no gun sway or first-person bits while orbiting)
@@ -436,12 +461,28 @@ Rhylib.Hook.Add("ShouldDrawLocalPlayer", "weapons.editorcam", function()
     if orbit.on and IsValid(orbit.frame) then return true end
 end, -60)
 
-local function addOrbit(f, label, startOff)
+-- bone: what the camera circles (default the right hand). The camera
+-- controls go in a column on the right of the editor (the values stay on
+-- the left): presets, a drag area (left drag turns: dragging up always
+-- moves the camera up, dragging sideways always goes round the same way;
+-- right drag pans; wheel zooms), Reset view, zoom, on / off.
+local function addOrbit(f, label, startOff, bone)
     orbit.frame = f
     orbit.on = not startOff
-    label("Camera (circles your right hand)")
-    local list = f.list
-    local row = list:Add("DPanel")
+    orbit.bone = bone
+    orbit.pan = Vector()
+    orbit.baseYaw = nil
+    f:SetWide(f:GetWide() + 300)
+    local col = vgui.Create("DPanel", f)
+    col:Dock(RIGHT)
+    col:SetWide(296)
+    col:DockMargin(4, 0, 0, 0)
+    col:SetPaintBackground(false)
+    local head = vgui.Create("DLabel", col)
+    head:SetText(bone and "Camera (circles your head)" or "Camera (circles your right hand)")
+    head:Dock(TOP)
+    head:DockMargin(4, 4, 4, 2)
+    local row = vgui.Create("DPanel", col)
     row:SetTall(24)
     row:Dock(TOP)
     row:DockMargin(4, 1, 4, 1)
@@ -450,7 +491,7 @@ local function addOrbit(f, label, startOff)
     for _, p in ipairs(presets) do
         local b = vgui.Create("DButton", row)
         b:SetText(p[1])
-        b:SetWide(50)
+        b:SetWide(46)
         b:Dock(LEFT)
         b:DockMargin(0, 0, 2, 0)
         b.DoClick = function()
@@ -458,46 +499,23 @@ local function addOrbit(f, label, startOff)
             orbit.yaw, orbit.pitch = p[2], p[3]
         end
     end
-    local pad = list:Add("DPanel")
-    pad:SetTall(90)
-    pad:Dock(TOP)
-    pad:DockMargin(4, 4, 4, 1)
-    pad:SetCursor("sizeall")
-    function pad:Paint(w, h)
-        surface.SetDrawColor(20, 24, 30, 220)
-        surface.DrawRect(0, 0, w, h)
-        surface.SetDrawColor(80, 100, 130, 255)
-        surface.DrawOutlinedRect(0, 0, w, h)
-        draw.SimpleText("Drag here to turn · wheel to zoom", "DermaDefault", w * 0.5, h * 0.42, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-        draw.SimpleText(string.format("yaw %d · pitch %d · %d units", orbit.yaw, orbit.pitch, orbit.dist), "DermaDefault", w * 0.5, h * 0.66,
-            Color(170, 180, 190), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-    end
-    function pad:OnMousePressed(code)
-        if code ~= MOUSE_LEFT then return end
-        self.drag = { gui.MouseX(), gui.MouseY() }
-        self:MouseCapture(true)
-    end
-    function pad:OnMouseReleased()
-        self.drag = nil
-        self:MouseCapture(false)
-    end
-    function pad:Think()
-        if not self.drag then return end
-        local x, y = gui.MouseX(), gui.MouseY()
-        orbit.yaw = math.NormalizeAngle(orbit.yaw - (x - self.drag[1]) * 0.5)
-        orbit.pitch = math.Clamp(orbit.pitch + (y - self.drag[2]) * 0.4, -89, 89)
-        self.drag = { x, y }
+    local bottom = vgui.Create("DPanel", col)
+    bottom:Dock(BOTTOM)
+    bottom:SetTall(84)
+    bottom:SetPaintBackground(false)
+    local reset = vgui.Create("DButton", bottom)
+    reset:SetText("Reset view (centre, distance, pan)")
+    reset:Dock(TOP)
+    reset:DockMargin(4, 2, 4, 2)
+    reset.DoClick = function()
+        orbit.pan = Vector()
+        orbit.dist, orbit.yaw, orbit.pitch = 45, 30, 10
+        orbit.baseYaw = nil
         orbit.on = true
     end
-    function pad:OnMouseWheeled(d)
-        orbit.dist = math.Clamp(orbit.dist - d * 5, 15, 200)
-        orbit.on = true
-        return true
-    end
-    -- Zoom: distance from the hand (the wheel on the pad moves it too).
-    local zoom = list:Add("DNumSlider")
+    local zoom = vgui.Create("DNumSlider", bottom)
     zoom:Dock(TOP)
-    zoom:DockMargin(4, 4, 4, 1)
+    zoom:DockMargin(4, 2, 4, 1)
     zoom:SetText("Zoom (distance)")
     zoom:SetMinMax(15, 200)
     zoom:SetDecimals(0)
@@ -509,7 +527,7 @@ local function addOrbit(f, label, startOff)
     function zoom:Think()
         if not self:IsEditing() and math.abs(self:GetValue() - orbit.dist) > 0.5 then self:SetValue(orbit.dist) end
     end
-    local off = list:Add("DCheckBoxLabel")
+    local off = vgui.Create("DCheckBoxLabel", bottom)
     off:SetText("Orbit camera on")
     off:Dock(TOP)
     off:DockMargin(4, 4, 4, 2)
@@ -517,6 +535,52 @@ local function addOrbit(f, label, startOff)
     function off:OnChange(v) orbit.on = v end
     function off:Think()
         if self:GetChecked() ~= orbit.on then self:SetChecked(orbit.on) end
+    end
+    local pad = vgui.Create("DPanel", col)
+    pad:Dock(FILL)
+    pad:DockMargin(4, 4, 4, 4)
+    pad:SetCursor("sizeall")
+    function pad:Paint(w, h)
+        surface.SetDrawColor(20, 24, 30, 220)
+        surface.DrawRect(0, 0, w, h)
+        surface.SetDrawColor(80, 100, 130, 255)
+        surface.DrawOutlinedRect(0, 0, w, h)
+        draw.SimpleText("Left drag: turn · right drag: pan · wheel: zoom", "DermaDefault", w * 0.5, h * 0.46, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText(string.format("yaw %d · pitch %d · %d units", orbit.yaw, orbit.pitch, orbit.dist), "DermaDefault", w * 0.5, h * 0.54,
+            Color(170, 180, 190), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+    function pad:OnMousePressed(code)
+        if code ~= MOUSE_LEFT and code ~= MOUSE_RIGHT then return end
+        self.drag = { gui.MouseX(), gui.MouseY() }
+        self.pan = code == MOUSE_RIGHT
+        self:MouseCapture(true)
+    end
+    function pad:OnMouseReleased()
+        self.drag = nil
+        self:MouseCapture(false)
+    end
+    function pad:Think()
+        if not self.drag then return end
+        local x, y = gui.MouseX(), gui.MouseY()
+        local dx, dy = x - self.drag[1], y - self.drag[2]
+        self.drag = { x, y }
+        orbit.on = true
+        if self.pan then
+            -- (the centre slides with the mouse, in the view's plane)
+            local view = Angle(orbit.pitch, (orbit.baseYaw or 0) + orbit.yaw, 0)
+            local k = orbit.dist * 0.004
+            orbit.pan = orbit.pan + view:Right() * (dx * k) - view:Up() * (dy * k)
+        else
+            -- (drag up: camera up, from any side; the pitch sign is fixed to
+            -- the screen, not to the side you're looking from)
+            orbit.yaw = math.NormalizeAngle(orbit.yaw - dx * 0.5)
+            orbit.pitch = math.Clamp(orbit.pitch + dy * 0.4, -89, 89)
+        end
+    end
+    function pad:OnMouseWheeled(d)
+        orbit.dist = math.Clamp(orbit.dist - d * 5, 15, 200)
+        orbit.on = true
+        return true
     end
 end
 
@@ -675,3 +739,587 @@ concommand.Add("rhylib_extra_editor", function()
     end)
 end)
 
+
+-- rhylib_ear_editor: the hand-to-the-ear IK (rhylib_radio config earIK:
+-- where the wrist goes, the hand's turn and where the elbow bends to, all
+-- fixed to the head bone). While it's open your own arm is held up
+-- (R.earPreview) and the orbit camera circles your head. Every change is
+-- saved half a second later as the Server settings value radio earIK
+-- (Rhylib.Settings.Set: needs the settings permission; everyone sees it,
+-- it stays after closing); Copy gives the Lua line for the default.
+local earEditor
+concommand.Add("rhylib_ear_editor", function()
+    if IsValid(earEditor) then earEditor:Remove() return end
+    local R = Rhylib.Radio
+    if not (R and R.EarBones and R.Cfg) then print("Needs Rhy's Radio & Squads") return end
+    -- (your last edits are also kept in data/rhylib_ear_ik.json on your
+    -- computer, so a refused or lost save never throws them away)
+    local cur = R.Cfg("earIK") or {}
+    local localCopy = util.JSONToTable(file.Read("rhylib_ear_ik.json", "DATA") or "")
+    if istable(localCopy) then cur = localCopy end
+    local DEF = { pos = { -0.5, -2.5, -6 }, ang = { -175, -150, 80 }, elbow = { 13, 18, 15 } }
+    local ik = {}
+    for key, d in pairs(DEF) do
+        local a = istable(cur[key]) and cur[key] or {}
+        ik[key] = { tonumber(a[1]) or d[1], tonumber(a[2]) or d[2], tonumber(a[3]) or d[3] }
+    end
+    ik.fingers = isstring(cur.fingers) and cur.fingers or "run_all_01"
+    ik.swivel = tonumber(cur.swivel) or 155
+    local function three(t) return istable(t) and { tonumber(t[1]) or 0, tonumber(t[2]) or 0, tonumber(t[3]) or 0 } or nil end
+    ik.shoulder, ik.viaShoulder, ik.viaPos, ik.viaAng = three(cur.shoulder), three(cur.viaShoulder), three(cur.viaPos), three(cur.viaAng)
+    R.earIKEdit, R.earPreview = ik, true
+    local me = LocalPlayer()
+    local f, label, field, rows = editorFrame("Hand to the ear (left arm IK)", 900, me)
+    earEditor = f
+    local function save()
+        timer.Remove("Rhylib.EarEditorSave")
+        local function c3(t) return t and { t[1], t[2], t[3] } or nil end
+        local out = { fingers = ik.fingers, swivel = ik.swivel, shoulder = c3(ik.shoulder), viaShoulder = c3(ik.viaShoulder), viaPos = c3(ik.viaPos), viaAng = c3(ik.viaAng) }
+        for key, a in pairs(ik) do if istable(a) then out[key] = { a[1], a[2], a[3] } end end
+        file.Write("rhylib_ear_ik.json", util.TableToJSON(out) or "")
+        local S = Rhylib.Settings
+        if S and S.Set then S.Set("radio", "earIK", out) end
+    end
+    local dirty = false
+    local function changed()
+        dirty = true
+        timer.Create("Rhylib.EarEditorSave", 0.5, 1, function() dirty = false save() end)
+    end
+    local oldRemove = f.OnRemove
+    function f:OnRemove()
+        if dirty then save() end
+        R.earPreview, R.earViaPreview = nil, nil
+        -- (your own view keeps the edited values until the saved ones come back)
+        timer.Simple(2, function() if not R.earPreview then R.earIKEdit = nil end end)
+        if oldRemove then oldRemove(self) end
+    end
+
+    -- Load a whole set of values (Reset to default, a snapshot) into the
+    -- editor: the same tables stay in use, then every row is shown again.
+    local refreshAll
+    local function loadInto(src)
+        src = istable(src) and src or {}
+        for key, d in pairs(DEF) do
+            local t = istable(src[key]) and src[key] or d
+            ik[key][1], ik[key][2], ik[key][3] = tonumber(t[1]) or d[1], tonumber(t[2]) or d[2], tonumber(t[3]) or d[3]
+        end
+        ik.fingers = isstring(src.fingers) and src.fingers or ""
+        ik.swivel = tonumber(src.swivel) or 0
+        ik.shoulder, ik.viaShoulder, ik.viaPos, ik.viaAng = three(src.shoulder), three(src.viaShoulder), three(src.viaPos), three(src.viaAng)
+        if refreshAll then refreshAll() end
+        changed()
+    end
+    local function copyOut()
+        local function c3(t) return t and { t[1], t[2], t[3] } or nil end
+        local out = { fingers = ik.fingers, swivel = ik.swivel, shoulder = c3(ik.shoulder), viaShoulder = c3(ik.viaShoulder), viaPos = c3(ik.viaPos), viaAng = c3(ik.viaAng) }
+        for key in pairs(DEF) do out[key] = c3(ik[key]) end
+        return out
+    end
+
+    -- Reset to default (the shipped earIK) and snapshots (kept in
+    -- data/rhylib_ear_ik_snapshots.json on your computer).
+    label("Default and snapshots")
+    local top = f.list:Add("DPanel")
+    top:SetTall(24)
+    top:Dock(TOP)
+    top:DockMargin(4, 1, 4, 1)
+    top:SetPaintBackground(false)
+    local resetBtn = vgui.Create("DButton", top)
+    resetBtn:SetText("Reset to default")
+    resetBtn:Dock(LEFT)
+    resetBtn:SetWide(110)
+    resetBtn.DoClick = function()
+        Derma_Query("Put every value back to the shipped default?", "Reset to default", "Reset", function()
+            local def = Rhylib.Config.defs and Rhylib.Config.defs.radio and Rhylib.Config.defs.radio.earIK
+            loadInto(def and def.default)
+        end, "Cancel")
+    end
+    local SNAP = "rhylib_ear_ik_snapshots.json"
+    local function snaps()
+        local t = util.JSONToTable(file.Read(SNAP, "DATA") or "")
+        return istable(t) and t or {}
+    end
+    local snapCombo
+    local function fillSnaps()
+        snapCombo:Clear()
+        for i, sn in ipairs(snaps()) do snapCombo:AddChoice(sn.name or ("Snapshot " .. i), i) end
+        snapCombo:SetValue("Snapshots (" .. #snaps() .. ")")
+    end
+    local saveBtn = vgui.Create("DButton", top)
+    saveBtn:SetText("Save snapshot")
+    saveBtn:Dock(LEFT)
+    saveBtn:SetWide(100)
+    saveBtn:DockMargin(4, 0, 0, 0)
+    saveBtn.DoClick = function()
+        Derma_StringRequest("Save snapshot", "Name for this snapshot", os.date("%H:%M:%S"), function(name)
+            local list = snaps()
+            list[#list + 1] = { name = string.sub(name ~= "" and name or os.date("%H:%M:%S"), 1, 40), ik = copyOut() }
+            file.Write(SNAP, util.TableToJSON(list) or "[]")
+            fillSnaps()
+        end)
+    end
+    local row2 = f.list:Add("DPanel")
+    row2:SetTall(24)
+    row2:Dock(TOP)
+    row2:DockMargin(4, 1, 4, 1)
+    row2:SetPaintBackground(false)
+    local delBtn = vgui.Create("DButton", row2)
+    delBtn:SetText("Delete")
+    delBtn:Dock(RIGHT)
+    delBtn:SetWide(54)
+    local loadBtn = vgui.Create("DButton", row2)
+    loadBtn:SetText("Load")
+    loadBtn:Dock(RIGHT)
+    loadBtn:SetWide(50)
+    loadBtn:DockMargin(4, 0, 4, 0)
+    snapCombo = vgui.Create("DComboBox", row2)
+    snapCombo:Dock(FILL)
+    fillSnaps()
+    local function picked()
+        local _, i = snapCombo:GetSelected()
+        return i
+    end
+    loadBtn.DoClick = function()
+        local i = picked()
+        local sn = i and snaps()[i]
+        if sn then loadInto(sn.ik) end
+    end
+    delBtn.DoClick = function()
+        local i = picked()
+        if not i then return end
+        local list = snaps()
+        table.remove(list, i)
+        file.Write(SNAP, util.TableToJSON(list) or "[]")
+        fillSnaps()
+    end
+    local ROWS = {
+        { "pos", "Wrist position (from the head)", { "X", "Y", "Z" }, 0.5, 30 },
+        { "ang", "Hand turn (from the head)", { "Pitch", "Yaw", "Roll" }, 5, 180 },
+        { "elbow", "Elbow bends toward (from the head)", { "X", "Y", "Z" }, 1, 60 },
+    }
+    for _, row in ipairs(ROWS) do
+        label(row[2])
+        for i, ax in ipairs(row[3]) do
+            local key = row[1]
+            field(ax, row[4], -row[5], row[5], function() return ik[key][i] end, function(v) ik[key][i] = v changed() end)
+        end
+    end
+    -- Shoulder by hand: lock the upper arm where it is now (in the chest's
+    -- axes), then turn it with these rows; unlocked, the elbow point and
+    -- swivel above decide it instead.
+    label("Shoulder (upper arm from the chest; Lock first)")
+    local lockBtn = f.list:Add("DButton")
+    lockBtn:SetTall(24)
+    lockBtn:Dock(TOP)
+    lockBtn:DockMargin(4, 2, 4, 2)
+    local function lockText() lockBtn:SetText(ik.shoulder and "Shoulder locked: click to unlock (elbow point decides)" or "Lock the shoulder where it is now") end
+    lockText()
+    lockBtn.DoClick = function()
+        if ik.shoulder then
+            ik.shoulder = nil
+        else
+            local la = R.earUpperLocal or Angle()
+            ik.shoulder = { math.Round(la.p), math.Round(la.y), math.Round(la.r) }
+        end
+        lockText()
+        for _, show in ipairs(rows) do show() end
+        changed()
+    end
+    for i, ax in ipairs({ "Pitch", "Yaw", "Roll" }) do
+        field("Shoulder " .. ax, 2, -180, 180, function() return ik.shoulder and ik.shoulder[i] or 0 end,
+            function(v) if ik.shoulder then ik.shoulder[i] = v changed() end end)
+    end
+    -- Transition point: where the arm goes first on its way to the ear
+    -- (and back), so it doesn't cut through the body. "Show it" holds your
+    -- arm there; Lock takes the arm as it is now (from the chest), then the
+    -- rows move it. Needs the shoulder locked.
+    label("Transition point (the arm passes here first; needs the shoulder locked)")
+    local via = f.list:Add("DPanel")
+    via:SetTall(24)
+    via:Dock(TOP)
+    via:DockMargin(4, 2, 4, 2)
+    via:SetPaintBackground(false)
+    local showBtn = vgui.Create("DButton", via)
+    showBtn:Dock(LEFT)
+    showBtn:SetWide(150)
+    local function showText() showBtn:SetText(R.earViaPreview and "Showing it: click to stop" or "Show the transition point") end
+    showText()
+    showBtn.DoClick = function() R.earViaPreview = not R.earViaPreview showText() end
+    local viaBtn = vgui.Create("DButton", via)
+    viaBtn:Dock(FILL)
+    viaBtn:DockMargin(4, 0, 0, 0)
+    local function viaText() viaBtn:SetText(ik.viaShoulder and "Transition set: click to clear" or "Set the transition point to the arm now") end
+    viaText()
+    -- (set from the arm as it is now; also done by itself on the first edit
+    -- of a Via row, and the shoulder gets locked if it wasn't)
+    local function setVia()
+        if not ik.shoulder then
+            local la = R.earUpperLocal or Angle()
+            ik.shoulder = { math.Round(la.p), math.Round(la.y), math.Round(la.r) }
+            if lockText then lockText() end
+        end
+        local la, wl = R.earUpperLocal or Angle(), R.earWristLocal or Vector()
+        ik.viaShoulder = { math.Round(la.p), math.Round(la.y), math.Round(la.r) }
+        ik.viaPos = { math.Round(wl.x, 1), math.Round(wl.y, 1), math.Round(wl.z, 1) }
+        local d = R.earDbg
+        if d then
+            local _, ha = WorldToLocal(vector_origin, d.hand, d.cp, d.ca)
+            ik.viaAng = { math.Round(ha.p), math.Round(ha.y), math.Round(ha.r) }
+        else
+            ik.viaAng = ik.viaAng or { 0, 0, 0 }
+        end
+    end
+    viaBtn.DoClick = function()
+        if ik.viaShoulder then
+            ik.viaShoulder, ik.viaPos, ik.viaAng = nil, nil, nil
+        else
+            setVia()
+        end
+        viaText()
+        for _, show in ipairs(rows) do show() end
+        changed()
+    end
+    local function viaEdit(key, i, v)
+        if not ik.viaShoulder then
+            setVia()
+            viaText()
+            for _, show in ipairs(rows) do show() end
+        end
+        ik[key][i] = v
+        changed()
+    end
+    for i, ax in ipairs({ "Pitch", "Yaw", "Roll" }) do
+        field("Via shoulder " .. ax, 2, -180, 180, function()
+                if ik.viaShoulder then return ik.viaShoulder[i] end
+                local la = R.earUpperLocal or Angle()
+                return math.Round(({ la.p, la.y, la.r })[i])
+            end,
+            function(v) viaEdit("viaShoulder", i, v) end)
+    end
+    for i, ax in ipairs({ "Pitch", "Yaw", "Roll" }) do
+        field("Via hand " .. ax, 5, -180, 180, function() return ik.viaAng and ik.viaAng[i] or 0 end,
+            function(v)
+                if not ik.viaShoulder then setVia() viaText() for _, show in ipairs(rows) do show() end end
+                ik.viaAng = ik.viaAng or { 0, 0, 0 }
+                ik.viaAng[i] = v
+                changed()
+            end)
+    end
+    for i, ax in ipairs({ "X", "Y", "Z" }) do
+        field("Via wrist " .. ax, 0.5, -40, 40, function()
+                if ik.viaPos then return ik.viaPos[i] end
+                local wl = R.earWristLocal or Vector()
+                return math.Round(({ wl.x, wl.y, wl.z })[i], 1)
+            end,
+            function(v) viaEdit("viaPos", i, v) end)
+    end
+    -- Elbow swivel: turns the elbow round the shoulder-to-wrist line.
+    label("Elbow swivel (turns the elbow round the arm's line)")
+    field("Degrees", 5, -180, 180, function() return ik.swivel end, function(v) ik.swivel = v changed() end)
+    -- Finger pose: any sequence of your model (the fingers as they are in
+    -- it), picked from the list or stepped with < >.
+    label("Finger pose (from one of your model's animations)")
+    local seqs = { "" }
+    for _, name in pairs(me:GetSequenceList() or {}) do seqs[#seqs + 1] = name end
+    table.sort(seqs)
+    local row = f.list:Add("DPanel")
+    row:SetTall(24)
+    row:Dock(TOP)
+    row:DockMargin(4, 1, 4, 1)
+    row:SetPaintBackground(false)
+    local combo
+    local function pick(i)
+        i = (i - 1) % #seqs + 1
+        ik.fingers = seqs[i]
+        combo:SetValue(seqs[i] == "" and "(reference pose)" or seqs[i])
+        changed()
+    end
+    local function index()
+        for i, n in ipairs(seqs) do if n == ik.fingers then return i end end
+        return 1
+    end
+    local prev = vgui.Create("DButton", row)
+    prev:SetText("<") prev:SetWide(26) prev:Dock(LEFT)
+    prev.DoClick = function() pick(index() - 1) end
+    local nxt = vgui.Create("DButton", row)
+    nxt:SetText(">") nxt:SetWide(26) nxt:Dock(RIGHT)
+    nxt.DoClick = function() pick(index() + 1) end
+    combo = vgui.Create("DComboBox", row)
+    combo:Dock(FILL)
+    combo:DockMargin(4, 0, 4, 0)
+    for i, n in ipairs(seqs) do combo:AddChoice(n == "" and "(reference pose)" or n, i) end
+    combo:SetValue(ik.fingers == "" and "(reference pose)" or ik.fingers)
+    refreshAll = function()
+        for _, show in ipairs(rows) do show() end
+        if lockText then lockText() end
+        if viaText then viaText() end
+        combo:SetValue(ik.fingers == "" and "(reference pose)" or ik.fingers)
+    end
+    function combo:OnSelect(_, _, i) pick(i) end
+    f.copyButton(function()
+        local parts = {}
+        for _, row2 in ipairs(ROWS) do
+            local a = ik[row2[1]]
+            parts[#parts + 1] = string.format("%s = { %g, %g, %g }", row2[1], a[1], a[2], a[3])
+        end
+        parts[#parts + 1] = string.format("swivel = %g", ik.swivel)
+        if ik.shoulder then parts[#parts + 1] = string.format("shoulder = { %g, %g, %g }", ik.shoulder[1], ik.shoulder[2], ik.shoulder[3]) end
+        if ik.viaShoulder then parts[#parts + 1] = string.format("viaShoulder = { %g, %g, %g }", ik.viaShoulder[1], ik.viaShoulder[2], ik.viaShoulder[3]) end
+        if ik.viaPos then parts[#parts + 1] = string.format("viaPos = { %g, %g, %g }", ik.viaPos[1], ik.viaPos[2], ik.viaPos[3]) end
+        if ik.viaAng then parts[#parts + 1] = string.format("viaAng = { %g, %g, %g }", ik.viaAng[1], ik.viaAng[2], ik.viaAng[3]) end
+        parts[#parts + 1] = string.format("fingers = %q", ik.fingers)
+        return "Rhylib.Config.Set(\"radio\", \"earIK\", { " .. table.concat(parts, ", ") .. " })"
+    end)
+
+    -- Transform mode (in the 3D view, outside the window): the arm's bones
+    -- and its handles are drawn over the model; click a dot to pick it,
+    -- then drag the gizmo: Move = three arrows (drag one to slide along it,
+    -- the middle square to slide in the view's plane), Rotate = three rings.
+    -- W / E switch the tool, Q switches local / world axes (with the window
+    -- focused), or use the buttons. Handles: Hand (move = wrist point,
+    -- rotate = hand turn, head axes), Shoulder (rotate; with "Show the
+    -- transition point" on it turns the transition shoulder), Transition
+    -- (move; only while the transition point shows).
+    local G = { mode = "move", space = "local", sel = nil, drag = nil }
+    label("Transform (click a dot on the model, then drag the gizmo)")
+    local trow = f.list:Add("DPanel")
+    trow:SetTall(24)
+    trow:Dock(TOP)
+    trow:DockMargin(4, 1, 4, 1)
+    trow:SetPaintBackground(false)
+    local function tbtn(text, w, fn, sel)
+        local b = vgui.Create("DButton", trow)
+        b:Dock(LEFT)
+        b:SetWide(w)
+        b:DockMargin(0, 0, 3, 0)
+        b:SetText(text)
+        b.DoClick = fn
+        if sel then function b:Think() self:SetText((sel() and "> " or "") .. text) end end
+        return b
+    end
+    tbtn("Move (W)", 70, function() G.mode = "move" end, function() return G.mode == "move" end)
+    tbtn("Rotate (E)", 74, function() G.mode = "rotate" end, function() return G.mode == "rotate" end)
+    local spaceBtn = tbtn("", 110, function() G.space = G.space == "local" and "world" or "local" end)
+    function spaceBtn:Think() self:SetText(G.space == "local" and "Axes: local (Q)" or "Axes: world (Q)") end
+    function f:OnKeyCodePressed(k)
+        if k == KEY_W then G.mode = "move" elseif k == KEY_E then G.mode = "rotate" elseif k == KEY_Q then G.space = G.space == "local" and "world" or "local" end
+    end
+
+    local AXCOL = { Color(235, 70, 70), Color(80, 220, 90), Color(80, 140, 255) }
+    local function handles()
+        local d = R.earDbg
+        if not d then return {} end
+        local out = { { id = "shoulder", name = R.earViaPreview and "Shoulder (transition)" or "Shoulder", pos = d.S, rotAng = d.upper } }
+        if not R.earViaPreview then
+            out[#out + 1] = { id = "hand", name = "Hand", pos = d.target, moveAng = d.ha, rotAng = d.hand }
+        elseif ik.viaPos then
+            -- (the transition point: move its wrist point, turn its hand)
+            out[#out + 1] = { id = "via", name = "Hand (transition)", pos = LocalToWorld(Vector(ik.viaPos[1], ik.viaPos[2], ik.viaPos[3]), angle_zero, d.cp, d.ca), moveAng = d.ca, rotAng = d.hand }
+        end
+        return out
+    end
+    local function selected()
+        for _, h in ipairs(handles()) do if h.id == G.sel then return h end end
+    end
+    local function toolOf(h)
+        if not h then return nil end
+        if G.mode == "move" and h.moveAng then return "move" end
+        if h.rotAng then return "rotate" end
+        return "move"
+    end
+    local function axes(h, tool)
+        if G.space == "world" then return { Vector(1, 0, 0), Vector(0, 1, 0), Vector(0, 0, 1) } end
+        local a = tool == "move" and h.moveAng or h.rotAng
+        return { a:Forward(), a:Right(), a:Up() }
+    end
+    local function scr(v) local t = v:ToScreen() return t.x, t.y end
+    local function segDist(px, py, ax, ay, bx, by)
+        local vx, vy = bx - ax, by - ay
+        local l2 = vx * vx + vy * vy
+        local t = l2 > 0 and math.Clamp(((px - ax) * vx + (py - ay) * vy) / l2, 0, 1) or 0
+        local cx, cy = ax + vx * t, ay + vy * t
+        return math.sqrt((px - cx) ^ 2 + (py - cy) ^ 2)
+    end
+    local function ringPts(p, axis, r)
+        local u = axis:Cross(math.abs(axis.z) < 0.9 and Vector(0, 0, 1) or Vector(1, 0, 0)):GetNormalized()
+        local v = axis:Cross(u)
+        local pts = {}
+        for i = 0, 32 do
+            local a = i / 32 * math.pi * 2
+            pts[#pts + 1] = p + u * (math.cos(a) * r) + v * (math.sin(a) * r)
+        end
+        return pts
+    end
+    local function gizmoLen() return math.max(3, orbit.dist * 0.18) end
+
+    Rhylib.Hook.Add("HUDPaint", "devtools.eargizmo", function()
+        if not IsValid(earEditor) or not R.earDbg then return end
+        local d = R.earDbg
+        -- the bones: shoulder - elbow - wrist, the wrist point, the head
+        surface.SetDrawColor(255, 255, 255, 160)
+        local sx, sy = scr(d.S)
+        local ex, ey = scr(d.E)
+        local wx, wy = scr(d.W)
+        local tx, ty = scr(d.target)
+        surface.DrawLine(sx, sy, ex, ey)
+        surface.DrawLine(ex, ey, wx, wy)
+        surface.SetDrawColor(255, 255, 255, 70)
+        surface.DrawLine(wx, wy, tx, ty)
+        for _, h in ipairs(handles()) do
+            local x, y = scr(h.pos)
+            local on = h.id == G.sel
+            draw.RoundedBox(4, x - 6, y - 6, 12, 12, on and Color(255, 210, 60) or Color(230, 235, 240, 220))
+            draw.SimpleTextOutlined(h.name, "DermaDefault", x + 9, y - 9, on and Color(255, 210, 60) or color_white, TEXT_ALIGN_LEFT, TEXT_ALIGN_BOTTOM, 1, color_black)
+        end
+        local h = selected()
+        if not h then return end
+        local tool = toolOf(h)
+        local ax = axes(h, tool)
+        local L = gizmoLen()
+        local px, py = scr(h.pos)
+        for i = 1, 3 do
+            local c = AXCOL[i]
+            if G.drag and G.drag.axis == i then c = Color(255, 230, 80) end
+            surface.SetDrawColor(c)
+            if tool == "move" then
+                local qx, qy = scr(h.pos + ax[i] * L)
+                surface.DrawLine(px, py, qx, qy)
+                surface.DrawLine(px + 1, py, qx + 1, qy)
+                draw.RoundedBox(2, qx - 3, qy - 3, 6, 6, c)
+            else
+                local pts = ringPts(h.pos, ax[i], L)
+                for k = 1, #pts - 1 do
+                    local ax1, ay1 = scr(pts[k])
+                    local bx1, by1 = scr(pts[k + 1])
+                    surface.DrawLine(ax1, ay1, bx1, by1)
+                end
+            end
+        end
+        if tool == "move" then
+            surface.SetDrawColor(255, 255, 255, G.drag and G.drag.plane and 255 or 150)
+            surface.DrawOutlinedRect(px - 5, py - 5, 10, 10)
+        end
+    end)
+
+    -- Writing a dragged handle back into the values.
+    local function r1(x) return math.Round(x, 1) end
+    local function applyMove(h, delta)
+        local d = R.earDbg
+        if h.id == "hand" then
+            local lp = WorldToLocal(d.target + delta, angle_zero, d.hp, d.ha)
+            ik.pos[1], ik.pos[2], ik.pos[3] = r1(lp.x), r1(lp.y), r1(lp.z)
+        elseif h.id == "via" then
+            local lp = WorldToLocal(h.pos + delta, angle_zero, d.cp, d.ca)
+            ik.viaPos[1], ik.viaPos[2], ik.viaPos[3] = r1(lp.x), r1(lp.y), r1(lp.z)
+        end
+    end
+    local function applyRotate(h, axis, deg)
+        local d = R.earDbg
+        local a = Angle(h.rotAng)
+        a:RotateAroundAxis(axis, deg)
+        if h.id == "hand" then
+            local _, la = WorldToLocal(vector_origin, a, d.hp, d.ha)
+            ik.ang[1], ik.ang[2], ik.ang[3] = r1(la.p), r1(la.y), r1(la.r)
+        elseif h.id == "via" then
+            local _, la = WorldToLocal(vector_origin, a, d.cp, d.ca)
+            ik.viaAng = ik.viaAng or { 0, 0, 0 }
+            ik.viaAng[1], ik.viaAng[2], ik.viaAng[3] = r1(la.p), r1(la.y), r1(la.r)
+        elseif h.id == "shoulder" then
+            local _, la = WorldToLocal(vector_origin, a, d.cp, d.ca)
+            local key = R.earViaPreview and "viaShoulder" or "shoulder"
+            if not ik[key] then
+                if key == "viaShoulder" then setVia() else ik.shoulder = { 0, 0, 0 } end
+            end
+            ik[key][1], ik[key][2], ik[key][3] = r1(la.p), r1(la.y), r1(la.r)
+            if lockText then lockText() end
+            if viaText then viaText() end
+        end
+    end
+
+    Rhylib.Hook.Add("GUIMousePressed", "devtools.eargizmo", function(code)
+        if not IsValid(earEditor) or code ~= MOUSE_LEFT or not R.earDbg then return end
+        local mx, my = gui.MouseX(), gui.MouseY()
+        local h = selected()
+        if h then
+            local tool = toolOf(h)
+            local ax = axes(h, tool)
+            local L = gizmoLen()
+            local px, py = scr(h.pos)
+            if tool == "move" and math.abs(mx - px) <= 7 and math.abs(my - py) <= 7 then
+                G.drag = { plane = true, h = h.id, x = mx, y = my }
+                return
+            end
+            for i = 1, 3 do
+                local hit
+                if tool == "move" then
+                    local qx, qy = scr(h.pos + ax[i] * L)
+                    hit = segDist(mx, my, px, py, qx, qy) <= 7
+                else
+                    local pts = ringPts(h.pos, ax[i], L)
+                    for k = 1, #pts - 1 do
+                        local ax1, ay1 = scr(pts[k])
+                        local bx1, by1 = scr(pts[k + 1])
+                        if segDist(mx, my, ax1, ay1, bx1, by1) <= 7 then hit = true break end
+                    end
+                end
+                if hit then
+                    G.drag = { axis = i, h = h.id, x = mx, y = my, tool = tool }
+                    return
+                end
+            end
+        end
+        for _, hh in ipairs(handles()) do
+            local x, y = scr(hh.pos)
+            if math.abs(mx - x) <= 9 and math.abs(my - y) <= 9 then
+                G.sel = hh.id
+                return
+            end
+        end
+        G.sel = nil
+    end)
+    Rhylib.Hook.Add("GUIMouseReleased", "devtools.eargizmo", function(code)
+        if code == MOUSE_LEFT then G.drag = nil end
+    end)
+    Rhylib.Hook.Add("Think", "devtools.eargizmo", function()
+        if not IsValid(earEditor) then
+            if G.drag then G.drag = nil end
+            return
+        end
+        local dr = G.drag
+        if not dr or not R.earDbg then return end
+        if not input.IsMouseDown(MOUSE_LEFT) then G.drag = nil return end
+        local h = selected()
+        if not h or h.id ~= dr.h then G.drag = nil return end
+        local mx, my = gui.MouseX(), gui.MouseY()
+        local dx, dy = mx - dr.x, my - dr.y
+        if dx == 0 and dy == 0 then return end
+        local tool = dr.tool or "move"
+        if dr.plane then
+            local va = orbit.viewAng or EyeAngles()
+            local k = orbit.dist * 0.0025
+            applyMove(h, va:Right() * (dx * k) - va:Up() * (dy * k))
+        elseif tool == "move" then
+            local ax = axes(h, "move")[dr.axis]
+            local L = gizmoLen()
+            local px, py = scr(h.pos)
+            local qx, qy = scr(h.pos + ax * L)
+            local sx, sy = qx - px, qy - py
+            local l2 = sx * sx + sy * sy
+            if l2 > 1 then applyMove(h, ax * ((dx * sx + dy * sy) / l2 * L)) end
+        else
+            local ax = axes(h, "rotate")[dr.axis]
+            local px, py = scr(h.pos)
+            local a1 = math.atan2(dr.y - py, dr.x - px)
+            local a2 = math.atan2(my - py, mx - px)
+            local dA = math.deg(a2 - a1)
+            dA = (dA + 180) % 360 - 180
+            local toCam = (orbit.viewPos or EyePos()) - h.pos
+            local facing = ax:Dot(toCam) > 0
+            applyRotate(h, ax, facing and -dA or dA)
+        end
+        dr.x, dr.y = mx, my
+        refreshAll()
+        changed()
+    end)
+    addOrbit(f, label, false, "ValveBiped.Bip01_Head1")
+end)

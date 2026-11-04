@@ -161,13 +161,14 @@ end
 -- mixed row (e.g. { "name", 3, true }) checks item i against default
 -- item i. Keyed tables check the keys both have. Anything the default
 -- doesn't show (extra keys, extra row items) only has to be no function.
-local function sameKind(new, default, depth)
+-- signed (meta.signed on the setting): negatives are fine everywhere.
+local function sameKind(new, default, depth, signed)
     depth = depth or 0
     if default == nil then return type(new) ~= "function" end
     if type(new) ~= type(default) then return false end
     if isnumber(new) then
         if new ~= new or math.abs(new) > 1e6 then return false end
-        if default >= 0 and new < 0 then return false end
+        if not signed and default >= 0 and new < 0 then return false end
     end
     if istable(new) then
         if depth >= 6 then return true end
@@ -180,11 +181,11 @@ local function sameKind(new, default, depth)
             end
             for i, v in ipairs(new) do
                 local like = oneType and default[1] or default[i]
-                if not sameKind(v, like, depth + 1) then return false end
+                if not sameKind(v, like, depth + 1, signed) then return false end
             end
         else
             for k2, v in pairs(new) do
-                if not sameKind(v, default[k2], depth + 1) then return false end
+                if not sameKind(v, default[k2], depth + 1, signed) then return false end
             end
         end
     end
@@ -225,7 +226,7 @@ local function setValue(m, k, value, by)
     local def = Config.defs[m] and Config.defs[m][k]
     if not def or PROTECTED[m] then return false, "no such setting" end
     if value ~= nil then
-        if not sameKind(value, def.default) then return false, "that isn't a valid value" end
+        if not sameKind(value, def.default, 0, def.meta and def.meta.signed) then return false, "that isn't a valid value" end
         if m == "models" or Config.IsModelDefault(def.default) then
             if isstring(value) then value = string.Trim((string.gsub(value, "\\", "/"))) end
             if m == "models" and value == "" then value = nil end   -- (empty = back to the shipped model)

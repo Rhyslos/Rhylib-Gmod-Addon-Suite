@@ -307,22 +307,247 @@ Rhylib.Net.Receive("radio.all", function()
 end)
 
 -- Hand to the ear: typing in chat (rhylib_chat NW2Bool rhylib_typing) or
--- talking on the radio (a radio tx kind set) plays the "in chat" gesture
--- (the custom chat box doesn't make the engine's IsTyping true, so the
--- gamemode's own version never fires).
+-- talking on the radio (a radio tx kind set). The left arm is taken off
+-- whatever the animation does and put there by IK (a BuildBonePositions
+-- callback on each player, drawn by everyone): the wrist goes to a point
+-- fixed to the head bone (config earIK.pos, in the head bone's own axes),
+-- the hand takes a fixed turn from the head (earIK.ang), the elbow bends
+-- toward earIK.elbow (also head space), turned earIK.swivel degrees
+-- round the shoulder-to-wrist line; or, with earIK.shoulder set, the upper
+-- arm takes that fixed turn from the chest bone and the forearm aims from
+-- the elbow at the wrist point (steady with freelook); the shoulder stays where the
+-- animation has it, the upper arm and forearm only swing (no twist), and
+-- the fingers take the pose they have in the sequence earIK.fingers ("" =
+-- the model's reference pose), so it looks the same with any weapon. Eased in and out (weight). Not while a weapon poses that
+-- player's arm (WorldBoneMods: the riot shields). R.earPreview
+-- (rhylib_devtools' rhylib_ear_editor) holds your own arm up and uses
+-- R.earIKEdit instead of the config.
+local B_UPPER, B_FORE, B_HAND, B_HEAD = "ValveBiped.Bip01_L_UpperArm", "ValveBiped.Bip01_L_Forearm", "ValveBiped.Bip01_L_Hand", "ValveBiped.Bip01_Head1"
+
 Rhylib.Hook.Add("UpdateAnimation", "radio.ear", function(ply)
     if not IsValid(ply) then return end
     local St = Rhylib.State
     local on = ply:Alive() and not ply:IsPlayingTaunt() and not (St and (St.IsDown(ply) or St.IsCuffed(ply)))
         and (ply:GetNW2Bool("rhylib_typing", false) or R.State(ply).txKind ~= 0)
-    local wgt = ply.rhylibEarW or 0
-    wgt = math.Approach(wgt, on and 1 or 0, FrameTime() * 5)
-    ply.rhylibEarW = wgt
-    if wgt > 0 then
-        ply:AnimRestartGesture(GESTURE_SLOT_VCD, ACT_GMOD_IN_CHAT, true)
-        ply:AnimSetGestureWeight(GESTURE_SLOT_VCD, wgt)
+    if R.earPreview and ply == LocalPlayer() then on = true end
+    ply.rhylibEarW = math.Approach(ply.rhylibEarW or 0, on and 1 or 0, FrameTime() * 3)
+    if ply.rhylibEarW > 0 and not ply.rhylibEarCb then
+        ply.rhylibEarCb = true
+        ply:AddCallback("BuildBonePositions", function(ent, n) if R.EarBones then R.EarBones(ent, n) end end)
     end
 end)
+
+-- Per model: bone ids, which of the arm bones each other bone hangs under
+-- (1 upper arm, 2 forearm, 3 hand), and the fingers' pose relative to the
+-- hand in the reference pose.
+local earModels = {}
+local function earInfo(ent)
+    local mdl = ent:GetModel()
+    local info = earModels[mdl]
+    if info ~= nil then return info end
+    local up, fo, ha, he = ent:LookupBone(B_UPPER), ent:LookupBone(B_FORE), ent:LookupBone(B_HAND), ent:LookupBone(B_HEAD)
+    local ch = ent:LookupBone("ValveBiped.Bip01_Spine4") or ent:LookupBone("ValveBiped.Bip01_Spine2")
+    if not (up and fo and ha and he and ch) then earModels[mdl] = false return false end
+    info = { up = up, fo = fo, ha = ha, he = he, ch = ch, under = {} }
+    for b = 0, ent:GetBoneCount() - 1 do
+        if b ~= up and b ~= fo and b ~= ha then
+            local p = ent:GetBoneParent(b)
+            while p and p >= 0 do
+                if p == ha then info.under[b] = 3 break end
+                if p == fo then info.under[b] = 2 break end
+                if p == up then info.under[b] = 1 break end
+                p = ent:GetBoneParent(p)
+            end
+        end
+    end
+    earModels[mdl] = info
+    return info
+end
+
+-- The fingers relative to the hand in one of the model's sequences
+-- (earIK.fingers = its name, "" = the reference pose), from a hidden copy
+-- of the model half way through it. Cached per model and sequence.
+local fingerCache = {}
+local function fingerPose(ent, info, seqName)
+    local key = ent:GetModel() .. "|" .. (seqName or "")
+    local ref = fingerCache[key]
+    if ref ~= nil then return ref end
+    ref = {}
+    local cm = ClientsideModel(ent:GetModel(), RENDERGROUP_OPAQUE)
+    if IsValid(cm) then
+        cm:SetNoDraw(true)
+        local seq = seqName ~= "" and cm:LookupSequence(seqName) or -1
+        if not seq or seq < 0 then seq = cm:LookupSequence("reference") end
+        cm:ResetSequence(seq and seq >= 0 and seq or 0)
+        cm:SetCycle(seqName ~= "" and 0.5 or 0)
+        cm:SetupBones()
+        local hm = cm:GetBoneMatrix(info.ha)
+        if hm then
+            local inv = hm:GetInverseTR()
+            for b, k in pairs(info.under) do
+                if k == 3 then
+                    local m = cm:GetBoneMatrix(b)
+                    if m then ref[b] = inv * m end
+                end
+            end
+        end
+        cm:Remove()
+    end
+    fingerCache[key] = ref
+    return ref
+end
+
+-- Rodrigues: v turned about unit axis k by angle a.
+local function turn(v, k, c, sn)
+    return v * c + k:Cross(v) * sn + k * (k:Dot(v) * (1 - c))
+end
+-- The matrix m swung (shortest turn) so its forward goes from dir a to dir
+-- b, moved to pos (scale kept).
+local function swing(m, a, b, pos)
+    local f, u = m:GetForward(), m:GetUp()
+    local axis = a:Cross(b)
+    local sn = axis:Length()
+    local c = a:Dot(b)
+    if sn > 1e-5 then
+        axis:Mul(1 / sn)
+        f, u = turn(f, axis, c, sn), turn(u, axis, c, sn)
+    end
+    local out = Matrix()
+    out:SetAngles(f:AngleEx(u))
+    out:SetTranslation(pos)
+    out:Scale(m:GetScale())
+    return out
+end
+
+local function v3(t, d) return Vector(tonumber(t and t[1]) or d[1], tonumber(t and t[2]) or d[2], tonumber(t and t[3]) or d[3]) end
+
+function R.EarBones(ent, n)
+    local w = ent.rhylibEarW or 0
+    if w <= 0 or ent.rhylibWorldMods then return end
+    local info = earInfo(ent)
+    if not info then return end
+    local cfg = (ent == LocalPlayer() and R.earIKEdit) or R.Cfg("earIK")
+    if not istable(cfg) then return end
+    local mU, mF, mH, mHead, mC = ent:GetBoneMatrix(info.up), ent:GetBoneMatrix(info.fo), ent:GetBoneMatrix(info.ha), ent:GetBoneMatrix(info.he), ent:GetBoneMatrix(info.ch)
+    if not (mU and mF and mH and mHead and mC) then return end
+    local S, E0, W0 = mU:GetTranslation(), mF:GetTranslation(), mH:GetTranslation()
+    local a, b = S:Distance(E0), E0:Distance(W0)
+    if a < 1 or b < 1 then return end
+    local hp, ha = mHead:GetTranslation(), mHead:GetAngles()
+    local T = LocalToWorld(v3(cfg.pos, { -0.5, -2.5, -6 }), angle_zero, hp, ha)
+    local _, handAng = LocalToWorld(vector_origin, Angle(v3(cfg.ang, { -175, -150, 80 }):Unpack()), hp, ha)
+    local target0 = Vector(T)   -- (the wrist point as set, for the editor's handles)
+    local cp, ca = mC:GetTranslation(), mC:GetAngles()
+    local pole = LocalToWorld(v3(cfg.elbow, { 13, 18, 15 }), angle_zero, hp, ha)
+    local nU, nF
+    local preview = R.earViaPreview and ent == LocalPlayer()
+    if preview then w = 0.5 end
+    -- The transition point is only used from idle (no weapon, or one held
+    -- with the normal / passive hold type: the arm hangs by the body).
+    local useVia = false
+    if istable(cfg.shoulder) and istable(cfg.viaShoulder) and istable(cfg.viaPos) and w < 1 then
+        local wep = ent:GetActiveWeapon()
+        local ht = IsValid(wep) and wep.GetHoldType and wep:GetHoldType() or "normal"
+        useVia = preview or ht == "normal" or ht == "passive"
+    end
+    -- (eased: the hand turns from where the animation has it; through the
+    -- transition point: to its own turn there first, earIK.viaAng)
+    if w < 1 then
+        if useVia then
+            local _, vh = LocalToWorld(vector_origin, Angle(v3(cfg.viaAng, { 0, 0, 0 }):Unpack()), cp, ca)
+            if not istable(cfg.viaAng) then vh = LerpAngle(0.5, mH:GetAngles(), handAng) end
+            if w < 0.5 then handAng = LerpAngle(w * 2, mH:GetAngles(), vh) else handAng = LerpAngle((w - 0.5) * 2, vh, handAng) end
+        else
+            handAng = LerpAngle(w, mH:GetAngles(), handAng)
+        end
+    end
+    if istable(cfg.shoulder) then
+        -- Shoulder set by hand (earIK.shoulder, in the chest bone's axes):
+        -- the upper arm points that way whatever the head or the animation
+        -- does, and the forearm aims from the elbow at the wrist point.
+        local _, ua = LocalToWorld(vector_origin, Angle(v3(cfg.shoulder, { 0, 0, 0 }):Unpack()), cp, ca)
+        if w < 1 then
+            -- On the way: from the animation's arm to the transition point
+            -- (earIK.viaShoulder / viaPos, chest axes) over the first half,
+            -- then on to the ear, so the hand doesn't cut through the body.
+            if useVia then
+                local _, va = LocalToWorld(vector_origin, Angle(v3(cfg.viaShoulder, { 0, 0, 0 }):Unpack()), cp, ca)
+                local vt = LocalToWorld(v3(cfg.viaPos, { 0, 0, 0 }), angle_zero, cp, ca)
+                if w < 0.5 then
+                    local k = w * 2
+                    ua, T = LerpAngle(k, mU:GetAngles(), va), LerpVector(k, W0, vt)
+                else
+                    local k = (w - 0.5) * 2
+                    ua, T = LerpAngle(k, va, ua), LerpVector(k, vt, T)
+                end
+            else
+                ua, T = LerpAngle(w, mU:GetAngles(), ua), LerpVector(w, W0, T)
+            end
+        end
+        nU = Matrix()
+        nU:SetAngles(ua)
+        nU:SetTranslation(S)
+        nU:Scale(mU:GetScale())
+        local E = S + nU:GetForward() * a
+        local dirF = (T - E):GetNormalized()
+        T = E + dirF * b
+        nF = swing(nU, nU:GetForward(), dirF, E)
+    else
+    if w < 1 then T = LerpVector(w, W0, T) end
+    -- Two-bone IK: the elbow on the circle where both bone lengths fit,
+    -- on the side of the pole.
+    local d = T - S
+    local dist = math.Clamp(d:Length(), math.abs(a - b) + 0.1, (a + b) * 0.999)
+    local dir = d:GetNormalized()
+    T = S + dir * dist
+    local cosA = math.Clamp((a * a + dist * dist - b * b) / (2 * a * dist), -1, 1)
+    local sinA = math.sqrt(1 - cosA * cosA)
+    local pp = pole - S
+    local perp = pp - dir * pp:Dot(dir)
+    if perp:LengthSqr() < 0.01 then perp = (E0 - S) - dir * (E0 - S):Dot(dir) end
+    perp:Normalize()
+    -- (swivel: the elbow turned on round the shoulder-to-wrist line)
+    local sw = math.rad(tonumber(cfg.swivel) or 0)
+    if sw ~= 0 then perp = turn(perp, dir, math.cos(sw), math.sin(sw)) end
+    local E = S + dir * (a * cosA) + perp * (a * sinA)
+    -- New matrices: the upper arm and forearm swung onto the new lines, the
+    -- hand at the wrist with the fixed turn.
+    nU = swing(mU, (E0 - S):GetNormalized(), (E - S):GetNormalized(), S)
+    nF = swing(mF, (W0 - E0):GetNormalized(), (T - E):GetNormalized(), E)
+    end
+    -- (for the editor's "lock the shoulder here": the upper arm now, in the chest's axes)
+    if ent == LocalPlayer() then
+        local _, la = WorldToLocal(vector_origin, nU:GetAngles(), cp, ca)
+        R.earUpperLocal = la
+        R.earWristLocal = WorldToLocal(T, angle_zero, cp, ca)
+        -- (what the editor's transform handles show and drag)
+        R.earDbg = { S = Vector(S), E = nF:GetTranslation(), W = Vector(T), target = target0, hand = Angle(handAng),
+            upper = nU:GetAngles(), hp = hp, ha = ha, cp = cp, ca = ca }
+    end
+    local nH = Matrix()
+    nH:SetAngles(handAng)
+    nH:SetTranslation(T)
+    nH:Scale(mH:GetScale())
+    local dU, dF, dH = nU * mU:GetInverseTR(), nF * mF:GetInverseTR(), nH * mH:GetInverseTR()
+    -- Everything hanging under them follows (fingers: the chosen pose).
+    local fingers = fingerPose(ent, info, isstring(cfg.fingers) and cfg.fingers or "")
+    for bone, k in pairs(info.under) do
+        local m = ent:GetBoneMatrix(bone)
+        if m then
+            if k == 3 then
+                local r = fingers[bone]
+                if r then ent:SetBoneMatrix(bone, nH * r) else ent:SetBoneMatrix(bone, dH * m) end
+            elseif k == 2 then
+                ent:SetBoneMatrix(bone, dF * m)
+            else
+                ent:SetBoneMatrix(bone, dU * m)
+            end
+        end
+    end
+    ent:SetBoneMatrix(info.up, nU)
+    ent:SetBoneMatrix(info.fo, nF)
+    ent:SetBoneMatrix(info.ha, nH)
+end
 
 Rhylib.Net.Receive("radio.ring", function()
     local id = net.ReadUInt(R.ID_BITS)
