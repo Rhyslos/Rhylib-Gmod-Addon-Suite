@@ -1,7 +1,6 @@
 --[[
-    View recoil: each shot really turns your aim, the way the gun's recoil
-    pattern goes (SWEP.RecoilPattern, sh_10_spread: the same climb and
-    drift every spray), so the crosshair always shows where the next shot goes. Pull down to
+    View recoil: each shot really turns your aim (up, and a little sideways),
+    so the crosshair always shows where the next shot goes. Pull down to
     control it. When you stop firing, part of the climb settles back, minus
     whatever you already pulled down yourself.
 
@@ -41,18 +40,10 @@ function R.Kick(wep)
     local K = Rhylib.Skills
     if K and K.RecoilMult then m = m * K.RecoilMult(wep:GetOwner(), wep) end   -- (Steady barrels)
     if wep.rhylibChargedShot then m = m * Rhylib.Config.Get("weapons", "chargeKick") end   -- (charged shot, rhylib_base)
-    -- The gun's recoil pattern (sh_10_spread): this shot's direction.
-    -- Up (270) climbs by cfg.up; sideways shots (0 right, 180 left) push
-    -- the view that way by up to 2.2x cfg.side, with a little climb left.
-    local Spread = W.Spread
-    local n = wep.rhylibKickShot or (Spread and Spread.PatternShot and Spread.PatternShot(wep)) or 1   -- (singleplayer: sent with the shot)
-    local a = Spread and Spread.PatternAngle and Spread.PatternAngle(wep, n) or math.rad(270)
-    local upness = math.max(0, -math.sin(a))
-    local right = math.cos(a)
-    local up = (cfg.up or 0.5) * m * (0.35 + 0.65 * upness) * math.Rand(0.95, 1.05)
+    local up = (cfg.up or 0.5) * m * math.Rand(0.85, 1.15)
     local side = (cfg.side or 0.2) * m
     pendP = pendP - up
-    pendY = pendY - right * side * 2.2 + math.Rand(-side, side) * 0.15 - side * (cfg.bias or 0)   -- (yaw + = left; bias 1 = right)
+    pendY = pendY + math.Rand(-side, side) + side * (cfg.bias or 0)
     back = math.min(back + up * (cfg.recover or 0.6), 15)
     lastShot = CurTime()
 end

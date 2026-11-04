@@ -28,6 +28,11 @@
     SP.PickModel / SP.TakePick (pick mode for the Server settings page),
     SP.NpcWeapon, SP.IconMat, SP.L, SP.BG.
 
+    Hook Rhylib.SpawnTabItems(tabId, items) runs each time the Entities
+    ("entities") or NPCs ("npcs") tab builds its tiles: add items or change
+    them (fields as SP.Tile: cat, name, extra, tip, mat, model, run, menu,
+    spec, admin, selected). rhylib_toolgun puts the droid spawner there.
+
     Client only. Spawning uses the sandbox commands gm_spawn, gm_spawnsent,
     gm_giveswep, gm_spawnswep, gmod_spawnnpc and gm_spawnvehicle.
 ]]
@@ -643,6 +648,7 @@ SP.AddTab("entities", SP.CatalogueTab(function()
             menu = function(m) m:AddOption("Copy class name", function() SetClipboardText(cls) end) end,
         }
     end
+    hook.Run("Rhylib.SpawnTabItems", "entities", items)
     return items
 end))
 SP.tabs.entities.title, SP.tabs.entities.order = "Entities", 20
@@ -679,6 +685,7 @@ SP.AddTab("npcs", SP.CatalogueTab(function()
             spec = { kind = "npc", name = key, label = L(n.Name or key), npc = n },
         }
     end
+    hook.Run("Rhylib.SpawnTabItems", "npcs", items)
     return items
 end))
 SP.tabs.npcs.title, SP.tabs.npcs.order = "NPCs", 40

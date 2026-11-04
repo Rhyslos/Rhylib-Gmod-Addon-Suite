@@ -155,6 +155,7 @@ SWEP.BurstDelay = 0.25              -- extra pause after a burst
 SWEP.BurstFireRate = nil            -- rounds per minute inside a burst (nil = FireRate)
 SWEP.SkillModes = nil               -- { [mode] = skill id }: modes that need a skill (rhylib_skills)
 SWEP.ChargedShot = false            -- true: a "Charged shot" toggle; on, semi fires charged (overcharged) bolts, slower
+SWEP.FlareGun = false               -- true: a "Flare mode" toggle in the fire-mode wheel: one signal flare in the chamber, hold R to pick its colour and load it, fire to launch it (weapons flareCooldown per player)
 SWEP.OverchargeSkill = nil          -- skill id: with Charged shot on, full auto stays and fires overcharged bolts; charged semi shots use 1 round
 SWEP.DualHoldType = nil             -- hold type for the "dual" fire mode
 SWEP.ModeHoldTypes = nil            -- { mode = hold type } for other modes (DC-15S "sidearm": revolver = two-handed pistol grip)
@@ -316,6 +317,9 @@ function SWEP:SetupDataTables()
     self:NetworkVar("Bool", 3, "Lowered")      -- lowered while sprinting
     self:NetworkVar("Bool", 4, "ChargedBurst") -- a Burst fire burst (DC-15S skill) is firing (faster; its bolts crit B2s)
     self:NetworkVar("Bool", 6, "ChargeMode")   -- the Charged shot toggle (ChargedShot guns)
+    self:NetworkVar("Bool", 7, "FlareMode")    -- Flare mode on (FlareGun guns)
+    self:NetworkVar("Int", 1, "FlareLoaded")   -- the flare in the chamber: 0 none, 1-4 its colour (W.FLARE_COLORS)
+    self:NetworkVar("Float", 3, "FlareLoadEnd") -- loading a flare until then (0 = not loading)
 
     -- Lowered hold on every client as soon as safety or sprinting changes.
     self:NetworkVarNotify("Safety", self.OnLoweredChanged)
@@ -719,7 +723,8 @@ SWEP.ModeWheelNames = {
 }
 
 -- The fire-mode key's wheel: { slot, label, sub, current } for each slot
--- the owner may use now, then { toggle = "charge" } (ChargedShot).
+-- the owner may use now, then { toggle = "charge" } (ChargedShot), then
+-- { toggle = "flare" } (FlareGun: Flare mode on / off).
 function SWEP:ModeWheel()
     local list = {}
     local cur = self:GetFireMode()
@@ -738,7 +743,85 @@ function SWEP:ModeWheel()
             sub = on and (over and "Charged semi (1 round), overcharged full auto" or "Every semi shot charged · semi only")
                 or (over and "Turn on: charged semi and overcharged full auto" or "Turn on: charged semi shots (semi only)"), on = on }
     end
+    if self.FlareGun then
+        local on = self:GetFlareMode()
+        list[#list + 1] = { toggle = "flare", label = on and "Flare mode: ON" or "Flare mode: OFF", on = on,
+            sub = on and "Hold R: pick a colour and load · turn off to shoot normally" or "Turn on: load a signal flare (hold R) and fire it" }
+    end
     return list
+end
+
+-- Flare mode (SWEP.FlareGun) --------------------------------------------
+-- On: the gun holds one signal flare instead of its magazine (the
+-- magazine is kept as it was). Hold R for the colour wheel (cl_30_reload):
+-- loading takes flareLoadTime and needs the owner's flare cooldown over
+-- (NW2Float rhylib_flareAt, set when a flare is fired). The trigger fires
+-- the loaded flare where you aim (sv_25_flare.lua W.LaunchFlare). Off:
+-- the gun shoots normally again (a loaded flare comes out; putting the gun
+-- away or dropping it empties it too).
+
+-- Text for the HUD's fire mode (rhylib_hud): "FLARE · RED", nil
+-- outside flare mode.
+function SWEP:FlareModeText()
+    if not (self.FlareGun and self:GetFlareMode()) then return nil end
+    if self:GetFlareLoadEnd() > 0 then return "FLARE · LOADING" end
+    local c = Rhylib.Weapons.FLARE_COLORS[self:GetFlareLoaded()]
+    return c and ("FLARE · " .. string.upper(c.name)) or "FLARE · EMPTY"
+end
+
+function SWEP:FireFlare()
+    local owner = self:GetOwner()
+    local cooling = IsValid(owner) and owner:GetNW2Float("rhylib_flareAt", 0) > CurTime()
+    if self:GetSafety() or self:GetFlareLoadEnd() > 0 or self:GetFlareLoaded() <= 0 or cooling then
+        self:EmitSound("weapons/2misc_non_guns/sw_noammo.ogg", 60)
+        self:SetNextPrimaryFire(CurTime() + 0.3)
+        return
+    end
+    self:SetNextPrimaryFire(CurTime() + 0.5)
+    if IsValid(owner) and owner:IsPlayer() then owner:ViewPunch(Angle(-4, math.Rand(-1, 1), 0)) end
+    -- (the launch sound: shared, so the shooter hears it too)
+    local snd = Rhylib.Weapons.FlareLaunchSound and Rhylib.Weapons.FlareLaunchSound()
+    if snd and IsFirstTimePredicted() then self:EmitSound(snd, 75, 120, 0.8, CHAN_WEAPON) end
+    if SERVER then
+        local W = Rhylib.Weapons
+        local col = self:GetFlareLoaded()
+        self:SetFlareLoaded(0)
+        if W.LaunchFlare then W.LaunchFlare(owner, self, col) end
+    end
+end
+
+if SERVER then
+    -- Flare mode on / off (net wep.flaremode, the fire-mode wheel).
+    function SWEP:ToggleFlareMode()
+        if not self.FlareGun then
+            self:EmitSound("weapons/2misc_non_guns/sw_noammo.ogg", 60)
+            return
+        end
+        if self:IsReloading() then self:CancelReload() end
+        local on = not self:GetFlareMode()
+        self:SetFlareMode(on)
+        self:SetFlareLoadEnd(0)
+        self:SetFlareLoaded(0)   -- (on: the chamber starts empty; off: the flare comes out)
+        self:SetBurstLeft(0)
+        self:EmitSound("weapons/2misc_non_guns/sw_change.ogg", 60, on and 80 or 100)
+    end
+
+    -- Load a flare of colour idx (net wep.flareload, R in flare mode).
+    function SWEP:LoadFlare(idx)
+        if not (self.FlareGun and self:GetFlareMode()) or self:GetFlareLoadEnd() > 0 then return end
+        if not Rhylib.Weapons.FLARE_COLORS[idx] or self:GetFlareLoaded() == idx then return end
+        local owner = self:GetOwner()
+        if not IsValid(owner) then return end
+        local wait = owner:GetNW2Float("rhylib_flareAt", 0) - CurTime()
+        if wait > 0 then
+            self:EmitSound("weapons/2misc_non_guns/sw_noammo.ogg", 60)
+            Rhylib.Notify(owner, string.format("Next flare in %d s", math.ceil(wait)), "bad", "Flare")
+            return
+        end
+        self.flarePending = idx
+        self:SetFlareLoadEnd(CurTime() + math.max(0.2, Rhylib.Config.Get("weapons", "flareLoadTime")))
+        self:EmitSound("weapons/shared/battlefront_standard_reload.ogg", 65, 115)
+    end
 end
 
 -- Rounds a charged shot uses (weapons chargeRounds; 1 for Overcharge owners).
@@ -828,7 +911,13 @@ function SWEP:Holster()
     self:SetSpinStart(0)
     self:SetLowered(false)
     self:CancelReload()
+    -- (flare mode: no flare stays in, or keeps loading, once it's put away)
+    if self.FlareGun and SERVER then self:SetFlareLoaded(0) self:SetFlareLoadEnd(0) end
     return true
+end
+
+function SWEP:OnDrop()
+    if self.FlareGun then self:SetFlareLoaded(0) self:SetFlareLoadEnd(0) self:SetFlareMode(false) end
 end
 
 if SERVER then
@@ -1000,6 +1089,14 @@ end
 function SWEP:PrimaryAttack()
     if self:GetBurstLeft() > 0 then return end  -- a burst is running (Think fires it)
     if self:GetLowered() then return end        -- sprinting: gun is down
+
+    -- Flare mode (FlareGun): the trigger fires the loaded flare, nothing else.
+    if self.FlareGun and self:GetFlareMode() then
+        if not self:GetTriggerReady() then return end
+        self:SetTriggerReady(false)
+        self:FireFlare()
+        return
+    end
 
     local mode = self:GetFireModeName()
     if not self.AutoModes[mode] or self:GetSafety() then
@@ -1332,6 +1429,7 @@ if SERVER then
 
     -- kind: 1 = magazine, 2 = power cell. magId: magazine type (nil = best).
     function SWEP:StartReload(kind, magId)
+        if self.FlareGun and self:GetFlareMode() then return end   -- (flare mode: R loads a flare, LoadFlare)
         if self:IsReloading() then return end
         local owner = self:GetOwner()
         if not IsValid(owner) or not owner:IsPlayer() then return end
@@ -1556,6 +1654,11 @@ function SWEP:Think()
 
     if SERVER and self:IsReloading() and CurTime() >= self:GetReloadEnd() then
         self:FinishReload()
+    end
+    -- (a flare loaded)
+    if SERVER and self.FlareGun and self:GetFlareLoadEnd() > 0 and CurTime() >= self:GetFlareLoadEnd() then
+        self:SetFlareLoadEnd(0)
+        if self:GetFlareMode() then self:SetFlareLoaded(self.flarePending or 1) end
     end
 
     -- Launchers load the next round by themselves once the shot is away.

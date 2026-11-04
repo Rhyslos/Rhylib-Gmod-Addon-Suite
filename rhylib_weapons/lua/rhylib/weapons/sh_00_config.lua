@@ -27,6 +27,7 @@ if Config.Describe then
         { "Accuracy & recoil", { "^recoilMult$", "^crouchSpread$", "^firstShotMult$" } },
         { "Ammo & reloading", { "^reloadHoldTime$", "^maxMags$", "^maxCells$", "^lowCell" } },
         { "Charged shot", { "^charge" } },
+        { "Signal flares", { "^flare" } },
         { "Explosion knockdown", { "^knock" } },
         { "Shields", { "^shield", "^cgShield", "^phalanx" } },
         { "Grenades & charges", { "^he", "^emp", "^breach", "^flash", "^smoke", "^bacta" } },
@@ -64,6 +65,15 @@ Config.Register("weapons", "knockDropChance", 0.1, "Explosions: chance a knocked
 Config.Register("weapons", "lowCellThreshold", 0.1, "Below this power cell charge (0-1), damage starts to drop")
 Config.Register("weapons", "lowCellMinDamage", 0.5, "Damage multiplier when the power cell is completely drained")
 Config.Register("weapons", "reloadHoldTime", 0.2, "Seconds R must be held to open the reload menu")
+-- Signal flares (SWEP.FlareGun, the DC-17: Flare mode in the fire-mode wheel; sv_25_flare.lua, entities/rhylib_flare.lua).
+Config.Register("weapons", "flareCooldown", 60, "Signal flare: seconds after firing one before the next can be loaded")
+Config.Register("weapons", "flareLoadTime", 1.5, "Signal flare: seconds to load a flare (hold R in flare mode)")
+Config.Register("weapons", "flareTime", 45, "Signal flare: seconds it burns once lit")
+Config.Register("weapons", "flareLight", 4000, "Signal flare: how far its light reaches (units; it hangs high, so this must reach the ground)")
+Config.Register("weapons", "flareSpeed", 2000, "Signal flare: launch speed (units a second; straight up it climbs about speed² / 1200 units)")
+Config.Register("weapons", "flareFall", 19, "Signal flare: how fast it drifts down once lit (units a second)")
+Config.Register("weapons", "flareDraw", 3000, "Signal flare: idle roaming and patrolling droid groups this close walk over to look when it lights (needs rhylib_droids; 0 = never)")
+Config.Register("weapons", "flareDrawMax", 12, "Signal flare: most droids one flare draws (whole groups)")
 Config.Register("weapons", "chargeRate", 0.4, "Charged shot on (DC-15A, DP-23): semi fire rate multiplier (every semi shot is a charged bolt)")
 Config.Register("weapons", "chargeRounds", 3, "Charged shot: rounds each charged bolt uses (1 with the DC-15A's Overcharge skill)")
 Config.Register("weapons", "chargeDamage", 3, "Charged shot: damage multiplier of its one bolt")
@@ -178,3 +188,22 @@ if CLIENT then
     for _, m in pairs(W.MagTypes) do language.Add(m.ammo .. "_ammo", m.name .. "s") end
     language.Add("rhylib_cell_ammo", "Power cells")
 end
+
+-- The flare launch sound: the first of these the game has (both realms).
+local LAUNCH = { "weapons/flaregun/fire.wav", "weapons/ar2/ar2_altfire.wav", "weapons/irifle/irifle_fire2.wav" }
+local launchSnd
+function Rhylib.Weapons.FlareLaunchSound()
+    if launchSnd == nil then
+        launchSnd = false
+        for _, p in ipairs(LAUNCH) do if file.Exists("sound/" .. p, "GAME") then launchSnd = p break end end
+    end
+    return launchSnd or nil
+end
+
+-- Signal flare colours (index 1-4, sent as UInt 2 + 1).
+Rhylib.Weapons.FLARE_COLORS = {
+    { name = "Blue", col = Color(70, 140, 255) },
+    { name = "Red", col = Color(255, 70, 50) },
+    { name = "Green", col = Color(70, 255, 100) },
+    { name = "Purple", col = Color(195, 80, 255) },
+}

@@ -19,6 +19,10 @@
     (GUARD, PATROL, ATTACK, ROAM, ASSAULT: to the side's assault point);
     Shift + wheel changes the mode, Alt + wheel the new squad's aggression.
     Droid labels add the squad number (S12) and its own aggression (A4).
+    The droid spawner also shows in the spawn window's NPCs tab ("Rhy's
+    Droid spawner") and its Entities tile picks it for the toolgun; on all
+    three, right-click > Change spawner settings (menus hook
+    Rhylib.SpawnTabItems).
 ]]
 
 local Tool = Rhylib.Tool
@@ -31,6 +35,63 @@ local cvMode = CreateClientConVar("rhylib_tool_droidmode", "1", true, false, "To
 local cvAggro = CreateClientConVar("rhylib_tool_squadaggro", "0", true, false, "Toolgun: aggression for newly placed squads (0 = the global level, 1-5)")
 local cvPhysKey = CreateClientConVar("rhylib_tool_physgun_key", "t", true, false, "Toolgun: key that switches physgun mode on and off")
 local cvCustom = CreateClientConVar("rhylib_tool_custom", "", true, false, "Toolgun: picked spawn-window thing (kind|name|skin|body|weapon|label)")
+-- The droid spawner's settings for the next one placed (right-click its tile: "Change spawner settings").
+local cvSpPreset = CreateClientConVar("rhylib_tool_sp_preset", "droid_small", true, false, "Toolgun: droid spawner preset squad")
+local cvSpMode = CreateClientConVar("rhylib_tool_sp_mode", "patrol", true, false, "Toolgun: droid spawner orders (patrol, roam, attack, guard)")
+local cvSpTotal = CreateClientConVar("rhylib_tool_sp_total", "60", true, false, "Toolgun: droid spawner droids in all")
+local cvSpCap = CreateClientConVar("rhylib_tool_sp_cap", "20", true, false, "Toolgun: droid spawner alive at once")
+local cvSpInterval = CreateClientConVar("rhylib_tool_sp_interval", "30", true, false, "Toolgun: droid spawner seconds between squads")
+local SP_MODES = { patrol = 1, roam = 2, attack = 3, guard = 4 }
+
+-- The droid spawner settings window for the next ones placed
+-- (rhylib_droids D.Spawner.Window).
+local function spawnerSettings()
+    local D = Rhylib.Droids
+    if not (D and D.Spawner and D.Spawner.Window) then return end
+    local st = { preset = cvSpPreset:GetString(), mode = cvSpMode:GetString(), total = cvSpTotal:GetInt(),
+        cap = cvSpCap:GetInt(), interval = cvSpInterval:GetInt() }   -- (no Running row: placed ones always run)
+    D.Spawner.Window(st, nil, "Droid spawner: new ones", "What the next droid spawners you place send out", function(v)
+        RunConsoleCommand("rhylib_tool_sp_preset", v.preset)
+        RunConsoleCommand("rhylib_tool_sp_mode", v.mode)
+        RunConsoleCommand("rhylib_tool_sp_total", tostring(v.total))
+        RunConsoleCommand("rhylib_tool_sp_cap", tostring(v.cap))
+        RunConsoleCommand("rhylib_tool_sp_interval", tostring(v.interval))
+    end)
+end
+
+-- Pick a toolgun entry (and get the toolgun out).
+local function pickEntry(id)
+    RunConsoleCommand("rhylib_tool_entry", id)
+    local me = LocalPlayer()
+    local w = me:GetActiveWeapon()
+    local tg = me:GetWeapon("rhylib_toolgun")
+    if IsValid(tg) and w ~= tg then input.SelectWeapon(tg) end
+end
+
+-- The droid spawner in the spawn window's NPCs tab (its own "Rhy's Droid
+-- spawner" category) and on its Entities tab tile: click picks it for the
+-- toolgun, right-click has Change spawner settings (menus hook
+-- Rhylib.SpawnTabItems).
+local SPAWNER_TIP = "Click: pick it for the toolgun, then LMB places one facing you.\nRight-click: Change spawner settings (its squad, orders, numbers, timing)"
+Rhylib.Hook.Add("Rhylib.SpawnTabItems", "toolgun.spawner", function(tabId, items)
+    local e
+    for _, x in ipairs(Tool.Entries()) do if x.spawner then e = x break end end
+    if not (e and Tool.CanEntry(LocalPlayer(), e)) then return end
+    local function menu(m) m:AddOption("Change spawner settings", spawnerSettings) end
+    if tabId == "entities" then
+        for _, it in ipairs(items) do
+            if it.extra == e.class then
+                it.tip, it.run = SPAWNER_TIP, function() pickEntry(e.id) end
+                local old = it.menu
+                it.menu = function(m) menu(m) if old then old(m) end end
+            end
+        end
+    elseif tabId == "npcs" then
+        items[#items + 1] = { cat = "Rhy's Droid spawner", name = e.name, extra = e.class, admin = true, tip = SPAWNER_TIP,
+            model = Tool.EntryModel(e), run = function() pickEntry(e.id) end, menu = menu,
+            selected = function() return cvEntry:GetString() == e.id end }
+    end
+end)
 
 -- Spawn-window things picked with "Spawn with Rhy's toolgun": entry id
 -- "@custom", the thing itself in rhylib_tool_custom.
@@ -180,18 +241,14 @@ local function buildTab(body)
                     or e.order and "Click: pick it; LMB sets the mode of every NPC of that side near where you aim"
                     or e.follow and "LMB: pick a clone (or all near the spot); RMB: they follow you, or the player you aim at"
                     or e.preset and "LMB: places the whole squad in a grid facing you (front row where you aim, commander and B2s at the back)"
+                    or e.spawner and "LMB: places a droid spawner facing you. Right-click: Change spawner settings (its squad, orders, numbers, timing)"
                     or (e.class .. "\nClick: pick it for the toolgun (LMB places)"),
                 mat = SP.IconMat({ sp.IconOverride, "entities/" .. (e.class or e.id) .. ".png" }),
                 model = Tool.EntryModel(e),   -- (3D tile picture and hover preview)
                 selected = function() return cvEntry:GetString() == e.id end,
-                run = function()
-                    RunConsoleCommand("rhylib_tool_entry", e.id)
-                    -- (back to the toolgun if something else is out)
-                    local me = LocalPlayer()
-                    local w = me:GetActiveWeapon()
-                    local tg = me:GetWeapon("rhylib_toolgun")
-                    if IsValid(tg) and w ~= tg then input.SelectWeapon(tg) end
-                end,
+                -- (right-click: the droid spawner's settings for the next ones)
+                menu = e.spawner and function(m) m:AddOption("Change spawner settings", spawnerSettings) end or nil,
+                run = function() pickEntry(e.id) end,   -- (back to the toolgun if something else is out)
             }
           end
         end
@@ -346,6 +403,13 @@ function Tool.Click(wep, which)
     net.WriteUInt(math.Clamp(cvMode:GetInt(), 1, 5), 3)
     net.WriteUInt(math.Clamp(cvAggro:GetInt(), 0, 5), 3)
     net.WriteFloat(Tool.rot or 0)   -- (the preview's turn, cl_40_ghost)
+    if e.spawner then
+        net.WriteString(cvSpPreset:GetString())
+        net.WriteUInt(SP_MODES[cvSpMode:GetString()] or 1, 3)
+        net.WriteUInt(math.Clamp(cvSpTotal:GetInt(), 1, 1000), 10)
+        net.WriteUInt(math.Clamp(cvSpCap:GetInt(), 1, 100), 7)
+        net.WriteUInt(math.Clamp(cvSpInterval:GetInt(), 5, 600), 10)
+    end
     net.SendToServer()
 end
 

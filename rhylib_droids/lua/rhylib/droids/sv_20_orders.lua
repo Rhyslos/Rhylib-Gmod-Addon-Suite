@@ -54,7 +54,7 @@ function D.SetMode(droid, mode, center)
     droid.holdAt, droid.orderAggro = nil, nil   -- (command wheel orders end with the follow)
     droid.rt, droid.lastStand, droid.retreatDir = nil, nil, nil   -- (a retreat starts over)
     droid.buddyRoam = nil
-    droid.helpUntil, droid.reinforceEnemy = nil, nil   -- (a call for help being answered)
+    droid.helpUntil, droid.reinforceEnemy, droid.reinforceWalk, droid.investigating = nil, nil, nil, nil   -- (a call for help being answered, a flare looked at)
     -- (Command mode extras: a patrol route or area, a post with a facing)
     droid.route, droid.routeIdx, droid.areaRadius = nil, nil, nil
     droid.posted, droid.holdYaw, droid.defending = nil, nil, nil

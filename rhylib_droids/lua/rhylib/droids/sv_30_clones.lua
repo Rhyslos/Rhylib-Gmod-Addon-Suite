@@ -494,11 +494,13 @@ D.PRESETS = PRESETS
 -- preset has. name = a key of D.PRESETS. origin = front row centre; rows
 -- go back 85 units each (away from yaw's forward), 75 apart sideways.
 -- Spots that aren't free, or NPCs over the caps, are skipped. Each NPC
--- gets D.ToolPlaced(e, mode). Server. Called by the toolgun.
+-- gets D.ToolPlaced(e, mode). limit (optional): at most that many, the
+-- front rows first (the droid spawner's last squad). Server. Called by
+-- the toolgun and the droid spawner.
 -- Example: Rhylib.Droids.SpawnPreset("droid_small", tr.HitPos, ply:EyeAngles().y + 180, "guard")
 -- (a new preset: add a row to PRESETS above; the toolgun needs its own
 -- entry with preset = "<name>" to place it)
-function D.SpawnPreset(name, origin, yaw, mode)
+function D.SpawnPreset(name, origin, yaw, mode, limit)
     local pr = PRESETS[name]
     if not pr then return {}, 0 end
     local ang = Angle(0, yaw, 0)
@@ -511,6 +513,7 @@ function D.SpawnPreset(name, origin, yaw, mode)
             want = want + 1
             local clone = D.KINDS[kind] and D.KINDS[kind].side == "republic"
             local room = clone and D.CloneCount() < D.Cfg("cloneMax") or not clone and D.Count() < D.Cfg("maxActive")
+            if limit and #made >= limit then room = false end   -- (limit: at most that many, front rows first)
             local p = origin - fwd * ((r - 1) * 85) + right * ((c - (w + 1) / 2) * 75)
             local g = ground(p) or p
             if room and free(g + Vector(0, 0, 4)) then

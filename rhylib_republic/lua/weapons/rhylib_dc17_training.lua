@@ -13,6 +13,7 @@
 AddCSLuaFile()
 
 SWEP.Base = "rhylib_dc17"
+SWEP.FlareGun = false   -- (no real signal flares from the training copy)
 SWEP.PrintName = "DC-17 (Training)"
 SWEP.Category = "Rhy's Training"
 SWEP.Spawnable = true

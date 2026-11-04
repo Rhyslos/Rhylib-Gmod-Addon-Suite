@@ -8,7 +8,10 @@
                    3 attack, 4 roam, 5 assault: to the side's assault point,
                    rhylib_droids D.assault), UInt 3 aggression for new squads (0 =
                    the global level, 1-5), Float turn (degrees added to
-                   the facing, from the placement preview); rate 20/s. Several NPCs at
+                   the facing, from the placement preview); for the droid
+                   spawner entry also String preset, UInt 3 mode (1 patrol,
+                   2 roam, 3 attack, 4 guard), UInt 10 total, UInt 7 alive
+                   cap, UInt 10 seconds between squads; rate 20/s. Several NPCs at
                    once become squads (rhylib_droids): count placements
                    D.MakeSquads, a preset one D.MakeSquad that keeps its
                    placed block (box); not in roam mode.
@@ -233,6 +236,10 @@ local function place(ply, e, count, name, mode)
                 local phys = ent:GetPhysicsObject()
                 if IsValid(phys) then phys:EnableMotion(false) end
             end
+            -- (a droid spawner: the settings picked for it; the entity checks them)
+            if IsValid(ent) and e.spawner and ent.ApplyConfig and ply.rhylibSpawnerCfg then
+                ent:ApplyConfig(table.Copy(ply.rhylibSpawnerCfg), true)
+            end
             -- (droids: the picked mode, then the latest markers)
             if IsValid(ent) and droid and D.ToolPlaced then D.ToolPlaced(ent, mode, count == 1, Tool.PlaceAggro(ply)) end
             if IsValid(ent) and droid then placedNpcs[#placedNpcs + 1] = ent end
@@ -280,6 +287,12 @@ Rhylib.Net.Receive("tool.place", function(ply)
     ply.rhylibToolRot = turn(net.ReadFloat())
     local e = Tool.ById(id)
     if not e then return end
+    -- (the droid spawner: its settings, from the tile's right-click window)
+    if e.spawner then
+        local modes = { "patrol", "roam", "attack", "guard" }
+        ply.rhylibSpawnerCfg = { preset = string.sub(net.ReadString(), 1, 32), mode = modes[net.ReadUInt(3)] or "patrol",
+            total = net.ReadUInt(10), cap = net.ReadUInt(7), interval = net.ReadUInt(10) }
+    end
     if not e.count then count = 1 end
     allowedEntry(ply, e, function() place(ply, e, count, name, mode) end)
 end, { rate = 20, burst = 20 })   -- (as fast as you click)

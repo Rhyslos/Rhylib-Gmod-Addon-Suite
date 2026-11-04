@@ -23,6 +23,8 @@
       W / S             climb up / down (you can look around and shoot)
       Jump              let go, with a small push away from the wall
       E                 unclip
+      Hold E on the hook  its wheel (rhylib_menus): Clip on, Pick up hook;
+                        without rhylib_menus, holding E 1 s picks it up
       Top               keep pushing W: if there's a ledge you're pulled
                         over it, otherwise you hang at the top
       Bottom            walk down until your feet touch the ground
@@ -231,13 +233,34 @@ end
 -- knockdowns and rhylib_medical's downing.
 G.Detach = detach
 
+-- G.ReachS(rope, origin): where along the rope a player standing at origin
+-- would clip on, or nil if it's too far (attachDist) or still lowering.
+function G.ReachS(rope, origin)
+    local d = IsValid(rope) and rope:GetRopeData()
+    if not d or G.ClimbLimit(d) <= 0 then return nil end
+    local s, dist = G.ClosestS(d, origin + UP * BELT)
+    if dist < cfg("attachDist") then return s, dist end
+end
+
+-- G.ClipOn(ply, rope, origin): clip ply onto rope if close enough and
+-- there's room; -> true if on it.
+function G.ClipOn(ply, rope, origin)
+    local s = G.ReachS(rope, origin)
+    if not s or G.Climbers(rope, ply) >= cfg("maxClimbers") then return false end
+    ply:SetDTEntity(G.DT_ROPE, rope)
+    ply:SetDTFloat(G.DT_S, s)
+    ply:SetDTBool(G.DT_MANTLE, false)
+    return true
+end
+
+-- E: clip onto the nearest rope in reach (tapping E on the hook too;
+-- picking the hook up is on the hook's E wheel, sv_30_grapple.lua).
 local function tryAttach(ply, mv)
     if next(G.ropes) == nil then return end
-    local tr = ply:GetEyeTrace()
     local pelvis = mv:GetOrigin() + UP * BELT
     local best, bestS, bestDist
     for rope in pairs(G.ropes) do
-        if IsValid(rope) and tr.Entity ~= rope then  -- looking at the hook = pick it up instead
+        if IsValid(rope) then
             local d = rope:GetRopeData()
             if d and G.ClimbLimit(d) > 0 then
                 local s, dist = G.ClosestS(d, pelvis)

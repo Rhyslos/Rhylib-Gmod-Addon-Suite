@@ -22,6 +22,10 @@
 
     Entities with ENT.RhylibWheel = true (the chemistry bench) open their
     own wheel at once on E: hook Rhylib.WheelEntityOptions(ent, me, add).
+    With ENT.RhylibWheelHold = true too (the grapple hook) it opens after a
+    hold like on a standing player, so a tap of E still does its own thing,
+    and the "Hold E · interact" line shows; you may be clipped onto that
+    same rope while it's open.
 
     W.OpenList(title, list, code) opens a wheel with no target: list =
     { { label, run, sub, disabled, col } } (col: a Color for a wider strip
@@ -88,7 +92,7 @@ end
 
 -- False while the wheel must not open (you're lying, cuffed, busy with a
 -- medical action or drag, on a rope, in the bacta tank, or holding R).
-local function canOpen(me)
+local function canOpen(me, t)
     if not IsValid(me) or not me:Alive() or me:InVehicle() then return false end
     local L = Rhylib.Lying
     if L and L.Is and L.Is(me) then return false end
@@ -97,7 +101,8 @@ local function canOpen(me)
     local Med = Rhylib.Medical
     if Med and ((Med.Action and Med.Action(me) ~= 0) or (Med.Dragging and Med.Dragging(me))) then return false end
     local G = Rhylib.Weapons and Rhylib.Weapons.Grapple
-    if G and G.Attached and G.Attached(me) then return false end   -- (E lets go of the rope)
+    -- (E lets go of the rope; the hook's own wheel may open on the rope you're on)
+    if G and G.Attached and G.Attached(me) and not (IsValid(t) and t.RhylibWheelHold and me:GetDTEntity(G.DT_ROPE) == t) then return false end
     if G and G.ZipOn and G.ZipOn(me) then return false end         -- (or the zipline)
     if G and G.PhookOn and G.PhookOn(me) ~= 0 then return false end -- (or the personal hook)
     if IsValid(me:GetNW2Entity("rhylib_tank")) then return false end   -- (E gets out of the tank)
@@ -187,8 +192,9 @@ Rhylib.Hook.Add("PlayerBindPress", "menus.wheel", function(ply, bind, pressed, c
     local t = W.FindTarget(ply)
     if not t then return end
     W.code = code
-    -- Downed: at once (instead of medical's E menu). Standing: after a hold.
-    if not t:IsPlayer() or isDown(t) then
+    -- Downed: at once (instead of medical's E menu). Standing (or a
+    -- RhylibWheelHold entity): after a hold.
+    if (not t:IsPlayer() and not t.RhylibWheelHold) or (t:IsPlayer() and isDown(t)) then
         if W.Open(t) then return true end
         return
     end
@@ -199,7 +205,7 @@ Rhylib.Hook.Add("Think", "menus.wheel", function()
     local me = LocalPlayer()
     local p = W.pending
     if p and not W.open then
-        if not useHeld() or not canOpen(me) or W.FindTarget(me) ~= p.target then
+        if not useHeld() or not canOpen(me, p.target) or W.FindTarget(me) ~= p.target then
             W.pending = nil
         elseif RealTime() >= p.at then
             W.pending = nil
@@ -226,7 +232,7 @@ Rhylib.Hook.Add("Think", "menus.wheel", function()
         end
         return
     end
-    if not IsValid(t) or not canOpen(me) or t:GetPos():DistToSqr(me:GetPos()) > KEEP * KEEP then
+    if not IsValid(t) or not canOpen(me, t) or t:GetPos():DistToSqr(me:GetPos()) > KEEP * KEEP then
         W.Close()
         return
     end
@@ -278,8 +284,9 @@ local function drawHint()
     local now = RealTime()
     if now >= hint.at then
         hint.at = now + 0.1
-        local t = IsValid(me) and canOpen(me) and W.FindTarget(me) or nil
-        hint.show = IsValid(t) and t:IsPlayer() and not isDown(t)
+        local t = IsValid(me) and W.FindTarget(me) or nil
+        if t and not canOpen(me, t) then t = nil end
+        hint.show = IsValid(t) and ((t:IsPlayer() and not isDown(t)) or (not t:IsPlayer() and t.RhylibWheelHold))
         local key = input.LookupBinding("+use")
         hint.key = key and string.upper(key) or "E"
     end

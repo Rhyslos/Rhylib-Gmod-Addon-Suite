@@ -151,7 +151,7 @@ local function relist(sq)
         local help = lead.helpUntil
         D.SetMode(lead, sq.jMode, sq.jHome)
         lead.helpUntil = help
-        lead.reinforceTo, lead.reinforceUntil, lead.reinforceEnemy = sq.jReinforce, sq.jReinforceUntil, sq.jReinforceEnemy
+        lead.reinforceTo, lead.reinforceUntil, lead.reinforceEnemy, lead.reinforceWalk = sq.jReinforce, sq.jReinforceUntil, sq.jReinforceEnemy, sq.jReinforceWalk
         lead.objective, lead.fallback = sq.jObjective, sq.jFallback
         lead.route, lead.routeIdx, lead.areaRadius = sq.jRoute, sq.jRouteIdx, sq.jArea
     end
@@ -373,7 +373,7 @@ timer.Create("Rhylib.Droids.Squads", 0.25, 0, function()
             -- (the leader's job, for whoever takes over)
             sq.jMode, sq.jHome, sq.jObjective, sq.jFallback = lead.mode, lead.home, lead.objective, lead.fallback
             sq.jRoute, sq.jRouteIdx, sq.jArea = lead.route, lead.routeIdx, lead.areaRadius
-            sq.jReinforce, sq.jReinforceUntil, sq.jReinforceEnemy = lead.reinforceTo, lead.reinforceUntil, lead.reinforceEnemy
+            sq.jReinforce, sq.jReinforceUntil, sq.jReinforceEnemy, sq.jReinforceWalk = lead.reinforceTo, lead.reinforceUntil, lead.reinforceEnemy, lead.reinforceWalk
             local lp = lead:GetPos()
             local t = sq.trail
             if #t == 0 or t[#t]:DistToSqr(lp) > TRAIL_STEP * TRAIL_STEP then
@@ -572,10 +572,10 @@ end
 -- Command mode post: Spread out / Defend 360), not already on
 -- its way to help, not fighting, not retreating or falling back
 -- (aggression 1 or 2, a running retreat), not following anyone.
-local function canHelp(u)
-    return IsValid(u) and u:Health() > 0 and (u.mode == "roam" or u.mode == "patrol" or u.mode == "guard") and not u.posted
+local function canHelp(u, noGuards)
+    return IsValid(u) and u:Health() > 0 and (u.mode == "roam" or u.mode == "patrol" or (u.mode == "guard" and not noGuards)) and not u.posted
         and not IsValid(u.target) and not u.leader and not u.guardDowned and not u.reviveTarget
-        and not u.artillery and not D.Helping(u) and not (u.Retreating and u:Retreating())
+        and not u.artillery and (not D.Helping(u) or u.investigating) and not (u.Retreating and u:Retreating())
         and not (u.Aggro and u:Aggro() <= 2)
 end
 
@@ -616,6 +616,7 @@ function D.CallHelp(caller, enemy)
         local lead = g.u
         lead.reinforceTo, lead.reinforceUntil = to, now + 30
         lead.reinforceEnemy = IsValid(enemy) and enemy or nil
+        lead.reinforceWalk, lead.investigating = nil, nil   -- (a real call beats looking at a flare)
         lead.roamGoal, lead.patrolGoal = nil, nil
         for _, m in ipairs(lead.squad and lead.squad.list or { lead }) do
             m.helpUntil = now + 45
@@ -626,3 +627,42 @@ function D.CallHelp(caller, enemy)
     if clone then caller:EmitSound("npc/combine_soldier/vo/on1.wav", 65, 110) end
 end
 D.CloneCall = D.CallHelp
+
+-- D.Investigate(pos, radius, most): something to look at (a signal
+-- flare, rhylib_weapons): idle roaming and patrolling droid groups within
+-- radius, nearest first, whole groups until most droids are coming
+-- (so a few more), walk over (reinforceTo with reinforceWalk; up to 60 s
+-- to get there), look round there 20 s from arriving (D.Helping, longer
+-- if they find someone), then go back to roaming or their patrol. A
+-- real call for help takes them over (npc.investigating). Guards stay
+-- at their posts; clones aren't drawn.
+-- Example: Rhylib.Droids.Investigate(flare:GetPos(), 3000, 12)
+function D.Investigate(pos, radius, most)
+    radius, most = tonumber(radius) or 0, math.floor(tonumber(most) or 0)
+    if radius <= 0 or most <= 0 then return 0 end
+    local r2 = radius * radius
+    local groups = {}
+    for u in pairs(D.active) do
+        local sq = IsValid(u) and u.squad
+        if (not sq or sq.leader == u) and canHelp(u, true) then
+            local d = u:GetPos():DistToSqr(pos)
+            if d < r2 then groups[#groups + 1] = { u = u, n = sq and #sq.list or 1, d = d } end
+        end
+    end
+    table.sort(groups, function(a, b) return a.d < b.d end)
+    local now, to, coming = CurTime(), D.SnapNav(pos), 0
+    for _, g in ipairs(groups) do
+        if coming >= most then break end
+        coming = coming + g.n
+        local lead = g.u
+        lead.reinforceTo, lead.reinforceUntil, lead.reinforceEnemy = to, now + 60, nil
+        lead.reinforceWalk, lead.investigating = true, true
+        lead.roamGoal, lead.patrolGoal = nil, nil
+        for _, m in ipairs(lead.squad and lead.squad.list or { lead }) do
+            m.helpUntil = now + 60
+            m.woken, m.planAt = true, 0
+        end
+        lead.redirect = true
+    end
+    return coming
+end

@@ -3,7 +3,8 @@
     battalion's members and ranks, and the roster log. Sergeants and up
     (manageRank) promote, demote and remove members below them, add CTs to
     the battalion and pass cadets through basic training. Admins pick any
-    battalion. Cadets get a "Request basic training" button (roster.trainreq).
+    battalion. Cadets get "Request basic training" (roster.trainreq) and a
+    note pointing to the training instructor NPC (the quiz, sh_60_quiz.lua).
     Client only; the page needs rhylib_menus. Asks with roster.get, draws
     roster.data (see R.SendRoster in sv_10_roster.lua), sends roster.act.
     Every action is checked again on the server; the buttons here only
@@ -117,8 +118,12 @@ local function build(page)
         l:DockMargin(0, 0, s(8), s(4))
     end
 
-    -- A cadet can ask for basic training (roster.trainreq).
+    -- A cadet can ask for an instructor (roster.trainreq); the quiz is at
+    -- a training instructor NPC (E on him, sh_60_quiz.lua).
     if me.has and not me.trained then
+        if R.Cfg("quiz") then
+            note("Know how to play? Find a training instructor and press E on him to take the basic training quiz.")
+        end
         local b = k.Button(sp, "Request basic training", function()
             Rhylib.Net.Start("roster.trainreq")
             net.SendToServer()

@@ -1,5 +1,7 @@
 --[[
-    DC-17 blaster pistol. Small magazines only, no power cell.
+    DC-17 blaster pistol. Small magazines only, no power cell. Fires
+    signal flares in Flare mode (SWEP.FlareGun: hold V to turn it on, hold
+    R to load a colour, fire to launch).
 
     Uses a prop model (models/jajoff/sps/cgiweapons/tc13j/dc17.mdl), held in first person by
     the trooper hands (CarrierVM). The model's addon must be installed.
@@ -60,7 +62,6 @@ SWEP.FireRate = 400
 -- side = random sideways, bias = lean -1 (left) .. 1 (right), recover = share
 -- of the climb that settles back, aimMult = multiplier while aiming.
 SWEP.Recoil = { up = 1.2, side = 0.35, bias = 0.2, recover = 0.8, aimMult = 0.7 }  -- view kick per shot
-SWEP.RecoilPattern = { 270, 265, 280, 260, 275 }   -- (shot directions in a spray: 270 up, 0 right, 180 left; rhylib_base)
 SWEP.Damage = 28
 SWEP.BoltSpeed = 7000
 SWEP.BoltColor = 1
@@ -71,6 +72,7 @@ SWEP.ReloadSound = "weapons/dc17/dc17_reload.ogg"
 SWEP.Mags = { "mag_small" }
 SWEP.Grapple = true     -- grapple fire mode while carrying a grapple hook
 SWEP.FireModes = { "semi", "dual", "stun" }   -- (stun: military police only)
+SWEP.FlareGun = true   -- (Flare mode in the fire-mode wheel: one signal flare, colour picked with R)
 SWEP.SkillModes = { dual = "dual_dc17" }     -- (rhylib_skills: Officer)
 SWEP.DualHoldType = "duel"
 -- Dual: the second pistol (first guesses, tune in game).

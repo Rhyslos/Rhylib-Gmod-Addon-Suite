@@ -846,12 +846,18 @@ if SERVER then
             elseif self.reinforceTo and CurTime() < (self.reinforceUntil or 0) and not self.guarding and not self.leader then
                 -- Answering a call for help: run over (a squad runs with
                 -- its leader); there, go for the enemy it called about.
+                -- (reinforceWalk: going to look at something, a flare: walks)
                 if self:GetPos():DistToSqr(self.reinforceTo) > 250 * 250 then
-                    self:SetPace(true)
+                    self:SetPace(not self.reinforceWalk)
                     self:GoOrWait(self.reinforceTo, 6, true)
                 else
                     local e = self.reinforceEnemy
-                    self.reinforceTo, self.reinforceEnemy = nil, nil
+                    -- (come to look at something: look round here 20 s from now)
+                    if self.reinforceWalk then
+                        local untilT = CurTime() + 20
+                        for _, m in ipairs(self.squad and self.squad.list or { self }) do m.helpUntil = untilT end
+                    end
+                    self.reinforceTo, self.reinforceEnemy, self.reinforceWalk = nil, nil, nil
                     if IsValid(e) and e:Health() > 0 then
                         self.lastSeen, self.lastSeenAt = e:GetPos(), CurTime()
                     end
@@ -881,7 +887,7 @@ if SERVER then
                 -- from); guards and patrols only within their area.
                 local pos = self:InArea(self.lastSeen)
                 self.lastSeen = nil
-                self:SetPace(L >= 5 or self.mode == "attack" or (self.helpUntil or 0) > CurTime())   -- (answering a call: runs)
+                self:SetPace(L >= 5 or self.mode == "attack" or ((self.helpUntil or 0) > CurTime() and not self.reinforceWalk))   -- (answering a call: runs)
                 self:GoOrWait(pos, 8, true)
             elseif (self.mode == "patrol" or self.mode == "roam" or self.mode == "guard") and (self.helpUntil or 0) > CurTime() then
                 -- Answered a call, nobody in sight just now: hold here a

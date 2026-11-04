@@ -110,7 +110,38 @@ local function shown(wep)
     return shownList
 end
 
+-- Flare mode (SWEP.FlareGun): R loads a signal flare instead. The wheel
+-- lists the four colours; a tap loads the last colour picked (blue at first).
+local lastFlare = 1
+local flareList = {}
+local function inFlareMode(wep) return wep.FlareGun and wep.GetFlareMode and wep:GetFlareMode() end
+local function flareOptions(wep)
+    local C = W.FLARE_COLORS
+    local wait = math.max(0, LocalPlayer():GetNW2Float("rhylib_flareAt", 0) - CurTime())
+    for i, c in ipairs(C) do
+        local o = flareList[i] or {}
+        flareList[i] = o
+        o.req, o.label, o.col = i, c.name .. " flare", c.col
+        o.shownAngle = 180 + (i - 1) * 90   -- (left, up, right, down)
+        o.count = wait > 0 and 0 or 1
+        o.loaded = wep:GetFlareLoaded() == i
+        o.sub = wait > 0 and string.format("Ready in %d s", math.ceil(wait)) or (o.loaded and "Loaded" or "Load")
+    end
+    return flareList
+end
+local function sendFlare(idx)
+    lastFlare = idx
+    Rhylib.Net.Start("wep.flareload")
+    net.WriteUInt(idx - 1, 2)
+    net.SendToServer()
+end
+
 local function sendReload(req)
+    local fw = activeRhylibWeapon()
+    if fw and inFlareMode(fw) then
+        sendFlare(req ~= 0 and req or lastFlare)
+        return
+    end
     Rhylib.Net.Start("wep.reload")
     net.WriteUInt(req, W.RELOAD_REQ_BITS)
     net.SendToServer()
@@ -229,7 +260,7 @@ Rhylib.Hook.Add("HUDPaint", "weapons.reload", function()
 
     local s = ScrH() / 1080
     local cx, cy = ScrW() * 0.5, ScrH() * 0.5
-    local list = shown(wep)
+    local list = inFlareMode(wep) and flareOptions(wep) or shown(wep)
     local pick = pickOption(list, s)
     R.selected = pick and pick.count > 0 and pick.req or nil
 
@@ -257,7 +288,7 @@ Rhylib.Hook.Add("HUDPaint", "weapons.reload", function()
             surface.SetDrawColor(COL_PICK)
             surface.DrawRect(bx + 1, by + 1, w - 2, h - 2)
         end
-        surface.SetDrawColor(empty and UI.Colors.bad or (isPick and UI.Colors.accent or UI.Colors.border))
+        surface.SetDrawColor(empty and UI.Colors.bad or (opt.col or (isPick and UI.Colors.accent or UI.Colors.border)))
         surface.DrawRect(bx + 1, by + 1, 3, h - 2)
 
         local textCol = empty and UI.Colors.textDim or UI.Colors.text
@@ -265,6 +296,7 @@ Rhylib.Hook.Add("HUDPaint", "weapons.reload", function()
         local sub = empty and "None left" or (opt.count .. " spare")
         if opt.mag and opt.mag.rounds > 1 then sub = opt.mag.rounds .. " rounds · " .. sub end
         if opt.loaded then sub = sub .. " · loaded" end
+        if opt.sub then sub = opt.sub end   -- (flare colours)
         draw.SimpleText(sub, UI.Font(15), ox, oy + 13 * s, UI.Colors.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
 
@@ -328,7 +360,8 @@ local function openModeWheel(wep, code)
     for _, it in ipairs(wep:ModeWheel()) do
         local o = { label = it.label, sub = it.sub }
         if it.toggle then
-            o.run = function() Rhylib.Net.Start("wep.chargemode") net.SendToServer() end
+            local netName = it.toggle == "flare" and "wep.flaremode" or "wep.chargemode"
+            o.run = function() Rhylib.Net.Start(netName) net.SendToServer() end
             if it.on then o.col = COL_OVER end
         else
             local slot = it.slot

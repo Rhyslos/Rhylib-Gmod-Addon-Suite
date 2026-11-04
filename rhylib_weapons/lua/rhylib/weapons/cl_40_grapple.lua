@@ -5,6 +5,8 @@
       - the short line from a climber's belt to the rope
       - zipline mode: the far-end marker (length, both ways / one way
         down, "post" with the Grapple specialist skill) and the riders' hand line
+      - the hook's E wheel (rhylib_menus, hold E on the hook): Clip on, Pick
+        up hook (net grapple.rope, sv_30_grapple.lua)
     Realm: client.
 ]]
 
@@ -190,4 +192,30 @@ Rhylib.Hook.Add("PostPlayerDraw", "weapons.grapple", function(ply)
 
     render.SetMaterial(ROPE_MAT)
     render.DrawBeam(belt, G.PosAt(d, ply:GetDTFloat(G.DT_S), false), 1.8, 0, 1, COL_ROPE)
+end)
+
+-- The hook's wheel (rhylib_menus; hold E on the hook, a tap clips on).
+Rhylib.Hook.Add("Rhylib.WheelEntityOptions", "grapple.rope", function(ent, me, add)
+    if not (IsValid(ent) and ent:GetClass() == "rhylib_rope") then return end
+    local function op(n)
+        return function()
+            Rhylib.Net.Start("grapple.rope")
+            net.WriteEntity(ent)
+            net.WriteUInt(n, 2)
+            net.SendToServer()
+        end
+    end
+    local on = me:GetDTEntity(G.DT_ROPE) == ent
+    local clip
+    if on then
+        clip = "You're clipped on"
+    elseif G.Attached(me) or G.ZipOn(me) then
+        clip = "You're on another line"
+    elseif not G.ReachS(ent, me:GetPos()) then
+        clip = "Get closer to the rope"
+    end
+    add("Clip on", not clip and op(2) or nil, { disabled = clip, sub = "W / S climb · Jump or E lets go", order = 10 })
+    local busy = G.Climbers(ent, me) > 0
+    add("Pick up hook", not busy and op(1) or nil, { disabled = busy and "Someone is on the rope" or nil,
+        sub = on and "You let go and it goes into your pouch" or "Back into your pouch", order = 30 })
 end)

@@ -26,6 +26,9 @@ local HUD = Rhylib.HUD
 local SHORT = { lockon = "LOCK-ON" }
 local function modeLabel(wep)
     if wep.HUDModeText then return wep:HUDModeText() end   -- (e.g. the grenade launcher's range)
+    -- (Flare mode, rhylib_weapons FlareGun: "FLARE · RED")
+    local fl = wep.FlareModeText and wep:FlareModeText()
+    if fl then return fl end
     local m = wep:GetFireModeName()
     -- (Charged shot on: charged semi / overcharged full auto)
     if wep.IsOverchargedShot and wep:IsOverchargedShot() then return m == "auto" and "AUTO · OC" or "CHARGED" end
@@ -38,6 +41,8 @@ local function drawContent(ply, wep, x, y, w, sizes)
     local right = x + w
     local clip = wep:Clip1()
     local ammoType = wep:GetPrimaryAmmoType()
+    local flare = wep.FlareGun and wep.GetFlareMode and wep:GetFlareMode()
+    if flare then clip = wep:GetFlareLoaded() > 0 and 1 or 0 end   -- (flare mode: the one flare)
 
     -- Weapon name, and the fire mode on the right
     HUD.Text(wep:GetPrintName() or "", 16, x, y, C.dim)
@@ -50,6 +55,7 @@ local function drawContent(ply, wep, x, y, w, sizes)
 
     -- Shots / magazine size, spares on the right
     local maxClip = wep.GetMagSize and wep:GetMagSize() or wep:GetMaxClip1()
+    if flare then maxClip = 1 end
     local low = maxClip > 0 and clip / maxClip <= 0.2
     local clipCol = clip == 0 and C.bad or (low and C.fuel or C.text)
     local mid = y + sizes.count * 0.5
@@ -138,6 +144,9 @@ function HUD.AmmoInfo(ply, wep)
     end
     info.clip = math.max(wep:Clip1(), 0)
     info.maxClip = wep.GetMagSize and wep:GetMagSize() or wep:GetMaxClip1()
+    if wep.FlareGun and wep.GetFlareMode and wep:GetFlareMode() then
+        info.clip, info.maxClip = wep:GetFlareLoaded() > 0 and 1 or 0, 1   -- (flare mode: the one flare)
+    end
     if wep.IsRhylib and wep.GetMag then
         local mag = wep:GetMag()
         info.magShort = mag and mag.short or nil

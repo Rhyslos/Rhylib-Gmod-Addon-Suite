@@ -462,12 +462,12 @@ function R.RemoveMember(id, by)
     return true
 end
 
-function R.Train(id, by)
+function R.Train(id, by, logText)
     local c = R.Char(id)
     if not c or c.trained then return false end
     c.trained = true
     R.SaveChar(id, c)
-    R.Log(c.bn or "", by .. " passed " .. fullName(c) .. " through basic training")
+    R.Log(c.bn or "", logText or (by .. " passed " .. fullName(c) .. " through basic training"))
     after(id)
     return true
 end
@@ -668,27 +668,39 @@ Rhylib.Net.Receive("roster.jobmodel", function(ply)
 end, { rate = 0.5, burst = 2 })
 
 -- Net roster.trainreq (client -> server, empty): a cadet asks for basic
--- training. Everyone online who could pass them (manageRank or higher in
--- any battalion) gets a chat line; the cadet hears how many. Once every
--- 2 minutes.
+-- training (any time; a training instructor NPC also gives the quiz,
+-- sh_60_quiz.lua). Everyone online who could pass them (manageRank or
+-- higher in any battalion) gets a "Cadet needs training" notice and a
+-- chat line; the cadet hears how many. Once every 2 minutes.
 Rhylib.Net.Receive("roster.trainreq", function(ply)
     local me = R.Get(ply)
     if not me.has or me.trained then return end
     if CurTime() < (ply.rhylibTrainReqAt or 0) then
         return Rhylib.Notify(ply, "You asked a moment ago: give them a little time", "bad", "Roster")
     end
+    R.CallTrainers(ply)
+end, { rate = 1, burst = 2 })
+
+-- R.CallTrainers(cadet, auto): every instructor online (manageRank or
+-- higher in any battalion) gets a "Cadet needs training" notice and a chat
+-- line; the cadet hears how many. auto = called for them (the quiz failed
+-- three times). Then no request for 2 minutes.
+function R.CallTrainers(ply, auto)
+    if not IsValid(ply) then return 0 end
     ply.rhylibTrainReqAt = CurTime() + 120
     local need, n = manageRank(), 0
     for _, p in ipairs(player.GetHumans()) do
         local c = R.Get(p)
         if p ~= ply and c.bn ~= "" and c.rank >= need then
-            Rhylib.Notify(p, "Cadet " .. ply:Nick() .. " is asking for basic training (Battalion page: Pass)", "info", "Roster")
+            Rhylib.Notify(p, "Cadet needs training: " .. ply:Nick() .. " (Battalion page: Pass)", "info", "Roster")
+            p:ChatPrint("[Basic training] Cadet " .. ply:Nick() .. " needs training. Find them, then pass them on the Battalion page.")
             n = n + 1
         end
     end
-    Rhylib.Notify(ply, n > 0 and ("Asked " .. n .. " instructor" .. (n == 1 and "" or "s") .. " online for basic training")
+    Rhylib.Notify(ply, n > 0 and ((auto and "Called " or "Asked ") .. n .. " instructor" .. (n == 1 and "" or "s") .. " online for basic training")
         or "Nobody who can train you is on right now; try again later", n > 0 and "good" or "bad", "Roster")
-end, { rate = 1, burst = 2 })
+    return n
+end
 
 -- !roster / /roster opens the Battalion page (console rhylib_roster_open);
 -- !look / !appearance the Appearance page (rhylib_look_open). (No

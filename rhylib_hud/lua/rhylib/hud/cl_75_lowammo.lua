@@ -32,6 +32,7 @@ local function warning(ply, wep)
         local m = W and W.MagTypes and W.MagTypes[id]
         if m and m.ammo then spare = spare + ply:GetAmmoCount(m.ammo) end
     end
+    if wep.FlareGun and wep.GetFlareMode and wep:GetFlareMode() then return nil end   -- (flare mode: no low-ammo warning)
     local clip = wep:Clip1()
     local cellLeft, cells
     if wep.UsesCell and wep.GetCell then

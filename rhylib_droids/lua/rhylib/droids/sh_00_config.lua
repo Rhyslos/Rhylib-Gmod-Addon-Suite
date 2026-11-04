@@ -438,6 +438,16 @@ Rhylib.Hook.Add("ShouldCollide", "droids.clones", function(a, b)
     if (a.IsRhylibClone and b:IsPlayer()) or (b.IsRhylibClone and a:IsPlayer()) then return false end
 end)
 
+-- Droid spawner (entities/rhylib_droid_spawner.lua): what a new one starts with
+-- (admins change each one with E on it).
+Config.Register("droids", "spawnerPreset", "droid_small", "Droid spawner: preset squad a new spawner sends (droid_small, droid_medium, droid_large, droid_b2, droid_mortar)")
+Config.Register("droids", "spawnerTotal", 60, "Droid spawner: droids a new spawner sends in all before it is empty")
+Config.Register("droids", "spawnerCap", 20, "Droid spawner: most of one spawner's droids alive at once")
+Config.Register("droids", "spawnerInterval", 30, "Droid spawner: seconds between squads")
+Config.Register("droids", "spawnerMode", "patrol", "Droid spawner: what its squads do (patrol, roam, attack, guard)")
+Config.Register("droids", "spawnerHealth", 2000, "Droid spawner: damage it takes before it breaks")
+Config.Register("droids", "spawnerModel", "models/props_combine/combine_dispenser.mdl", "Droid spawner: model (a placeholder until a droid factory model is picked)")
+
 --------------------------------------------------------------------------
 -- Server settings page: this module's name, side-bar category and
 -- sections (Config.Describe + Config.Sections: patterns over the keys, the
@@ -447,6 +457,7 @@ end)
 local PAGE_SECTIONS = {
     { "General", { "^boltSpeed$", "^maxActive$", "^aggression$", "^pathPerTick$", "^walkMult$", "^runSpread$", "^walkSpread$", "^moveSpread$", "^marchGroup$" } },
     { "Squads", { "^squad" } },
+    { "Droid spawner", { "^spawner" } },
     { "Roam, patrol & calls for help", { "^roamRadius$", "^patrolRadius$", "^wander", "^call", "^ctCall" } },
     { "Orders & areas", { "^guardRadius$", "^markerRadius$", "^brushRadius$" } },
     { "B1 grenades", { "^b1Nade" } },

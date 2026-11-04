@@ -31,8 +31,15 @@
     lost and anyone on them drops. A player hit grapple hitsToFall times
     while on a rope or a line is knocked off (EntityTakeDamage below).
 
+    The hook's E wheel (rhylib_menus; cl_40_grapple.lua adds Clip on and
+    Pick up hook) asks through net grapple.rope: Entity rope, UInt 2 op
+    (1 pick up, 2 clip on), within 160 units, rate 4/s. G.PickupRope(ply,
+    rope) puts the hook back in the pouch (not while anyone else is on
+    it). Without rhylib_menus, holding E 1 s on the hook picks it up
+    (entities/rhylib_rope.lua).
+
     Realm: server. Public: G.BuildRope, G.DropHook, G.Fire, G.ZipNear,
-    G.ZipFar, G.ZipCheck. Listens to Rhylib.ForceRelease (lets go of the
+    G.ZipFar, G.ZipCheck, G.PickupRope. Listens to Rhylib.ForceRelease (lets go of the
     rope or zipline), EntityTakeDamage, PlayerDisconnected.
 ]]
 
@@ -443,3 +450,44 @@ Rhylib.Hook.Add("Rhylib.ForceRelease", "weapons.grapple", function(ply)
     if IsValid(ply) and G.ZipOn(ply) then G.ZipDetach(ply) end
     if IsValid(ply) and G.PhookRelease then G.PhookRelease(ply) end
 end)
+
+--------------------------------------------------------------------------
+-- The hook's wheel (rhylib_menus, cl_40_grapple.lua): Clip on, Pick up hook
+--------------------------------------------------------------------------
+
+-- G.PickupRope(ply, rope): the hook back into ply's pouch (an armoury hook
+-- stays issued). Refused while anyone else is on the rope; ply on it lets go.
+function G.PickupRope(ply, rope)
+    if not (IsValid(rope) and rope:GetClass() == "rhylib_rope") or rope.taken then return end
+    if G.Climbers(rope, ply) > 0 then
+        return Rhylib.Notify(ply, "Someone is on the rope", "bad", "Grapple")
+    end
+    -- (taken: Remove() is deferred to the tick's end)
+    if Rhylib.Weapons.Pouch.Add(ply, G.ITEM, 1, false, rope.rhylibIssued) then
+        rope.taken = true
+        if ply:GetDTEntity(G.DT_ROPE) == rope then G.Detach(ply) end
+        ply:EmitSound("physics/metal/metal_solid_impact_soft1.wav", 60)
+        rope:Remove()
+    else
+        Rhylib.Notify(ply, "No room for the grapple hook", "bad", "Grapple")
+    end
+end
+
+-- Net grapple.rope (client -> server, the hook's wheel): Entity rope, UInt 2
+-- op (1 pick up, 2 clip on); within 160 units of the hook, alive, able to act.
+Rhylib.Net.Receive("grapple.rope", function(ply)
+    local rope = net.ReadEntity()
+    local op = net.ReadUInt(2)
+    if not (IsValid(rope) and rope:GetClass() == "rhylib_rope" and ply:Alive()) or rope.taken then return end
+    local S = Rhylib.State
+    if S and S.CanAct and not S.CanAct(ply) then return end
+    if ply:EyePos():DistToSqr(rope:GetPos()) > 160 * 160 then return end
+    if op == 1 then
+        G.PickupRope(ply, rope)
+    elseif op == 2 then
+        if G.Attached(ply) or G.ZipOn(ply) or ply:GetMoveType() ~= MOVETYPE_WALK then return end
+        if not G.ClipOn(ply, rope, ply:GetPos()) then
+            Rhylib.Notify(ply, "Get closer to the rope (or it's full)", "bad", "Grapple")
+        end
+    end
+end, { rate = 4, burst = 3 })

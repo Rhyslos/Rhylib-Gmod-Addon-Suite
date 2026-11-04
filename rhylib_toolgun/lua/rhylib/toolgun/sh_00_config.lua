@@ -81,6 +81,8 @@ local ALL = {
     { id = "ps_droid_large", name = "Droid squad, large (31)", cat = "Droid NPCs", preset = "droid_large" },
     { id = "ps_droid_b2", name = "B2 squad (8)", cat = "Droid NPCs", preset = "droid_b2" },
     { id = "ps_droid_mortar", name = "Mortar squad (9)", cat = "Droid NPCs", preset = "droid_mortar" },
+    -- Droid spawner (rhylib_droids): right-click its tile for its settings (sent with tool.place).
+    { id = "droid_spawner", name = "Droid spawner", cat = "Droid NPCs", class = "rhylib_droid_spawner", spawner = true },
     -- Droid orders (rhylib_droids sv_20_orders): a brush that sets the mode
     -- of droids near where you aim, and admin-only markers.
     { id = "ord_guard", name = "Order: guard here", cat = "Droid orders", order = "guard" },
@@ -106,6 +108,8 @@ local ALL = {
     { id = "tarmoury", name = "Training armoury", cat = "Training", class = "rhylib_training_armoury", save = ARMOURY },
     { id = "tammo", name = "Training ammo cabinet", cat = "Training", class = "rhylib_training_ammo", save = ARMOURY },
     { id = "tdeposit", name = "Training deposit", cat = "Training", class = "rhylib_training_deposit", save = ARMOURY },
+    { id = "cmdpost", name = "Command post (logistics)", cat = "Base", class = "rhylib_command_post", save = "rhylib_logistics_save" },
+    { id = "trainer", name = "Training instructor (basic training quiz)", cat = "Training", class = "rhylib_trainer", save = "rhylib_trainer_save" },
     { id = "armoury", name = "Weapons armoury", cat = "Armoury", class = "rhylib_armoury", save = ARMOURY },
     { id = "ammo", name = "Ammo cabinet", cat = "Armoury", class = "rhylib_ammo_cabinet", save = ARMOURY },
     { id = "gear", name = "Gear cabinet", cat = "Armoury", class = "rhylib_gear_cabinet", save = ARMOURY },
@@ -177,6 +181,9 @@ local CONFIG_MODEL = {
     rhylib_spawn_point = { "spawns", "model" },
     rhylib_event_spawn = { "spawns", "model" },
     rhylib_training_beacon = { "training", "beaconModel" },
+    rhylib_trainer = { "roster", "trainerModel" },
+    rhylib_droid_spawner = { "droids", "spawnerModel" },
+    rhylib_command_post = { "logistics", "postModel" },
 }
 
 -- Tool.ClassModel(class): the model placing that class gives, or nil.

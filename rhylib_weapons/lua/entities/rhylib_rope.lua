@@ -3,8 +3,11 @@
     surface below it (see sh_30_grapple.lua and sv_30_grapple.lua).
 
     Static: no physics, no server Think. Its points are network vars, so they
-    reach every player who comes near, once. Press E on the hook to pick
-    it back up (not while anyone is climbing). Shooting the hook (or a
+    reach every player who comes near, once. Tapping E near it clips you
+    on; holding E on the hook opens its wheel (rhylib_menus): Clip on,
+    Pick up hook (not while anyone else is climbing; G.PickupRope in
+    sv_30_grapple.lua). Without rhylib_menus, holding E 1 s on the hook
+    picks it up. Shooting the hook (or a
     blast on it) breaks the rope (ENT:OnTakeDamage): the hook is lost and
     climbers drop.
 
@@ -25,9 +28,11 @@ AddCSLuaFile()
 
 ENT.Type = "anim"
 ENT.Base = "base_anim"
-ENT.PrintName = "Grapple rope"
+ENT.PrintName = "Grapple hook"
 ENT.Spawnable = false
 ENT.RenderGroup = RENDERGROUP_OPAQUE
+ENT.RhylibWheel = true       -- (hold E on the hook: its wheel, rhylib_menus)
+ENT.RhylibWheelHold = true   -- (after a hold, so a tap still clips on)
 
 -- Only there so the engine renders the entity; never drawn.
 local HOOK_MODEL = "models/hunter/blocks/cube025x025x025.mdl"
@@ -171,21 +176,17 @@ if SERVER then
         self:Remove()
     end
 
+    -- E: a tap clips you on (sh_30_grapple.lua). Picking the hook up is on
+    -- its E wheel (rhylib_menus); without it, hold E 1 s on the hook.
     function ENT:Use(ply)
         if self.taken or not IsValid(ply) or not ply:IsPlayer() then return end
-        local G = Rhylib.Weapons.Grapple
-        if G.Climbers(self) > 0 then
-            Rhylib.Notify(ply, "Someone is on the rope", "bad", "Grapple")
-            return
-        end
-        -- (an armoury hook stays issued; taken: Remove() is deferred to the tick's end)
-        if Rhylib.Weapons.Pouch.Add(ply, G.ITEM, 1, false, self.rhylibIssued) then
-            self.taken = true
-            ply:EmitSound("physics/metal/metal_solid_impact_soft1.wav", 60)
-            self:Remove()
-        else
-            Rhylib.Notify(ply, "No room for the grapple hook", "bad", "Grapple")
-        end
+        if Rhylib.Has and Rhylib.Has("menus") then return end
+        local rope = self
+        timer.Create("Rhylib.RopeHold." .. ply:EntIndex(), 1, 1, function()
+            if not (IsValid(rope) and IsValid(ply) and ply:KeyDown(IN_USE)) then return end
+            if ply:GetEyeTrace().Entity ~= rope then return end
+            Rhylib.Weapons.Grapple.PickupRope(ply, rope)
+        end)
     end
 end
 
