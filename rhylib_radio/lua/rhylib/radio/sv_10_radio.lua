@@ -637,7 +637,7 @@ timer.Create("Rhylib.Radio.Jam", 0.5, 0, function()
                 end
             end
         end
-        -- Weather (rhylib_weather): heavy storms / blizzards / sandstorms
+        -- Weather (rhylib_weather): heavy storms / heavy snow / heavy sandstorms
         -- and lightning strikes cut comms for a few seconds outdoors.
         local W = Rhylib.Weather
         if not inside and W and W.JamFor and W.JamFor(p) then

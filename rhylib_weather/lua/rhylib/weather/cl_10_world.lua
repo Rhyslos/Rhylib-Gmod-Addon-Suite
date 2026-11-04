@@ -14,10 +14,17 @@
     and outdoors), and thunder after it, sooner, louder and sharper the
     closer it struck.
 
-    State: W.cur = { kind, amt } (what is shown now; amt fades toward
-    the server's W.Intensity() over fadeTime, and to 0 before the kind
-    changes). W.exposure = 0-1, how much you are out in it (eased; the
-    sky straight above your eyes). W.flash = 0-1 lightning on the screen.
+    State: W.cur = { kind, amt, int } (the weather coming in or shown
+    now; amt fades toward the server's W.Intensity() over fadeTime) and
+    W.prev = { kind, amt, int } or nil (the weather going out, fading to 0
+    over the same time; W.prev2 an older one still going out when a third
+    weather is set). A change cross-fades straight from one weather to
+    the next (snow to heavy snow, storm to rain) with no clear sky between:
+    fog blends between the two, both sets of falling things and sounds
+    play, each at its own share. W.Layers() -> { {kind, amt}, ... } (the
+    one coming in first). W.exposure = 0-1, how much
+    you are out in it (eased; the sky straight above your eyes). W.flash
+    = 0-1 lightning on the screen.
 
     Client convars (Settings > Interface / Audio): rhylib_weather_fx
     (world effects on), rhylib_weather_amount (0.25-1, how many falling
@@ -34,6 +41,7 @@ local cvAmount = CreateClientConVar("rhylib_weather_amount", "1", true, false, "
 local cvVolume = CreateClientConVar("rhylib_weather_volume", "0.8", true, false, "Weather: volume of rain, wind and thunder (0-1)")
 
 W.cur = W.cur or { kind = "clear", amt = 0 }
+W.cur.drops = W.cur.drops or {}
 W.exposure = W.exposure or 0
 W.flash = 0
 
@@ -80,6 +88,46 @@ local function windDir()
 end
 W.WindDir = windDir
 
+-- W.Layers() -> the weathers showing now, each { kind, amt } (the one
+-- coming in first, then the one going out). One table, reused.
+-- (W.prev2: an older one still going out when a third weather was set)
+local layers = { {}, {}, {} }
+local layerList = {}
+function W.Layers()
+    for i = #layerList, 1, -1 do layerList[i] = nil end
+    local n = 0
+    for _, src in ipairs({ W.cur, W.prev, W.prev2 }) do
+        if src and (n == 0 or src.amt > 0) then
+            n = n + 1
+            local l = layers[n]
+            l.kind, l.amt = src.kind, src.amt
+            layerList[n] = l
+        end
+    end
+    return layerList
+end
+
+-- A new weather: the one showing goes out (fading down) while the new one
+-- fades in, both at once. Back to the one going out: they swap round. A
+-- third while one is still going out: the weaker of the two old ones goes.
+local function changeTo(target)
+    local cur, prev = W.cur, W.prev
+    if prev and prev.kind == target then
+        W.prev = { kind = cur.kind, amt = cur.amt, int = cur.int, drops = cur.drops }
+        cur.kind, cur.amt, cur.int, cur.drops = prev.kind, prev.amt, prev.int, prev.drops or {}
+        return
+    end
+    if cur.kind ~= "clear" and cur.amt > 0.01 then
+        -- (one still going out keeps going out: up to two at once, the
+        -- weaker of three old ones goes)
+        if prev and prev.amt > 0.01 then
+            if not (W.prev2 and W.prev2.amt > prev.amt) then W.prev2 = prev end
+        end
+        W.prev = { kind = cur.kind, amt = cur.amt, int = cur.int, drops = cur.drops }
+    end
+    cur.kind, cur.amt, cur.drops = target, 0, {}
+end
+
 -- Fading between weathers, and how much you're out in it. (Joining
 -- during a storm: it's there at once, no fade in.)
 local expAt = 0
@@ -94,16 +142,26 @@ Rhylib.Hook.Add("Think", "weather.state", function()
         if IsValid(me) then
             started = true
             cur.kind, cur.amt = target, want
+            W.prev, W.prev2 = nil, nil
         end
     end
     local rate = FrameTime() / math.max(tonumber(W.Cfg("fadeTime")) or 12, 0.5)
-    if cur.kind ~= target then
-        cur.amt = math.max(0, cur.amt - rate)
-        if cur.amt <= 0 then cur.kind = target end
-    elseif cur.amt < want then
+    if cur.kind ~= target then changeTo(target) end
+    cur.int = W.Intensity()
+    if cur.amt < want then
         cur.amt = math.min(want, cur.amt + rate)
     else
         cur.amt = math.max(want, cur.amt - rate)
+    end
+    local prev = W.prev
+    if prev then
+        prev.amt = prev.amt - rate
+        if prev.amt <= 0 then W.prev = nil end
+    end
+    local old = W.prev2
+    if old then
+        old.amt = old.amt - rate
+        if old.amt <= 0 then W.prev2 = nil end
     end
     local me = LocalPlayer()
     if not IsValid(me) then return end
@@ -121,7 +179,8 @@ end)
 
 local GLOW = Material("sprites/light_glow02_add")
 local SMOKE = Material("particle/particle_smokegrenade")
-local drops = {}     -- { p0, v, born, tEnd, s, ph, puff, land }
+-- (each weather layer has its own list: layer.drops = { { p0, v, born,
+-- tEnd, s, ph, puff, land }, ... })
 local splashes = {}  -- { pos, t }
 local RAIN_COL = Color(185, 195, 215, 70)
 local SPLASH_COL = Color(200, 210, 230, 60)
@@ -172,20 +231,17 @@ local function spawn(k, eye, wx, wy)
         puff = math.random(3) == 1, land = tr.Hit and (tr.HitPos + Vector(0, 0, 2)) or nil }
 end
 
-Rhylib.Hook.Add("PostDrawTranslucentRenderables", "weather.world", function(depth, sky)
-    if depth or sky then return end
-    local cur = W.cur
-    local k = W.KINDS[cur.kind]
-    if not (on() and k and k.count and cur.amt > 0.01) then
-        if #drops > 0 then drops = {} end
+-- One weather layer's falling things: old ones out, new ones in (up to
+-- its share of count), drawn by its look.
+local function drawLayer(layer, eye, now, wx, wy)
+    local k = W.KINDS[layer.kind]
+    local drops = layer.drops
+    if not drops then drops = {} layer.drops = drops end
+    if not (k and k.count and layer.amt > 0.01) then
+        for i = #drops, 1, -1 do drops[i] = nil end
         return
     end
-    local me = LocalPlayer()
-    if not IsValid(me) then return end
-    local eye = EyePos()
-    local now = CurTime()
-    local wx, wy = windDir()
-    local amt = cur.amt
+    local amt = layer.amt
     local want = math.floor(k.count * amt * math.Clamp(cvAmount:GetFloat(), 0.25, 1))
     -- Old ones out (landed, or far from you after a teleport).
     for i = #drops, 1, -1 do
@@ -198,6 +254,8 @@ Rhylib.Hook.Add("PostDrawTranslucentRenderables", "weather.world", function(dept
             drops[#drops] = nil
         end
     end
+    -- (a layer fading out thins out as it goes, not all at the end)
+    for _ = 1, math.min(#drops - want, 20) do drops[#drops] = nil end
     -- New ones (a fair number a frame; sky cells are cached).
     for _ = 1, math.min(want - #drops, 100) do
         local d = spawn(k, eye, wx, wy)
@@ -210,18 +268,6 @@ Rhylib.Hook.Add("PostDrawTranslucentRenderables", "weather.world", function(dept
             P:Set(d.v) P:Mul(now - d.born) P:Add(d.p0)
             Q:Set(d.v) Q:Mul(-0.035 * d.s) Q:Add(P)
             render.DrawBeam(P, Q, 1.1, 0, 1, RAIN_COL)
-        end
-        render.SetMaterial(GLOW)
-        for i = #splashes, 1, -1 do
-            local sp = splashes[i]
-            local f = (now - sp.t) / 0.18
-            if f >= 1 then
-                table.remove(splashes, i)
-            else
-                SPLASH_COL.a = 70 * (1 - f)
-                local size = 4 + 10 * f
-                render.DrawSprite(sp.pos, size, size * 0.5, SPLASH_COL)
-            end
         end
     elseif look == "snow" then
         render.SetMaterial(GLOW)
@@ -265,17 +311,70 @@ Rhylib.Hook.Add("PostDrawTranslucentRenderables", "weather.world", function(dept
             end
         end
     end
+end
+
+Rhylib.Hook.Add("PostDrawTranslucentRenderables", "weather.world", function(depth, sky)
+    if depth or sky then return end
+    local cur, prev = W.cur, W.prev
+    if not on() then
+        if cur.drops and #cur.drops > 0 then cur.drops = {} end
+        if prev then prev.drops = {} end
+        if W.prev2 then W.prev2.drops = {} end
+        if #splashes > 0 then splashes = {} end
+        return
+    end
+    local me = LocalPlayer()
+    if not IsValid(me) then return end
+    local eye = EyePos()
+    local now = CurTime()
+    local wx, wy = windDir()
+    -- (the one going out first, so the one coming in draws on top)
+    local old = W.prev2
+    if old then drawLayer(old, eye, now, wx, wy) end
+    if prev then drawLayer(prev, eye, now, wx, wy) end
+    drawLayer(cur, eye, now, wx, wy)
+    -- Rain splashes (shared by every rain layer, drawn once).
+    if #splashes > 0 then
+        render.SetMaterial(GLOW)
+        for i = #splashes, 1, -1 do
+            local sp = splashes[i]
+            local f = (now - sp.t) / 0.18
+            if f >= 1 then
+                table.remove(splashes, i)
+            else
+                SPLASH_COL.a = 70 * (1 - f)
+                local size = 4 + 10 * f
+                render.DrawSprite(sp.pos, size, size * 0.5, SPLASH_COL)
+            end
+        end
+    end
 end)
 
 --------------------------------------------------------------------------
 -- Fog: from the map's own fog toward the weather's
 --------------------------------------------------------------------------
 
+-- Both weathers' fog blended by their share while one fades into the
+-- other (strength = the two added up, so a cross-fade doesn't thin out).
+local blendFog = { 0, 0, 0, Color(0, 0, 0) }
 local function fogStrength()
     if not on() or not W.Cfg("fog") then return 0 end
-    local k = W.KINDS[W.cur.kind]
-    if not (k and k.fog) then return 0 end
-    return W.cur.amt * (0.4 + 0.6 * W.exposure), k.fog
+    local sum, s, e, d, r, g, b = 0, 0, 0, 0, 0, 0, 0
+    for _, l in ipairs(W.Layers()) do
+        local k = W.KINDS[l.kind]
+        local f = k and k.fog
+        if f and l.amt > 0 then
+            local a = l.amt
+            sum = sum + a
+            s, e, d = s + f[1] * a, e + f[2] * a, d + f[3] * a
+            r, g, b = r + f[4].r * a, g + f[4].g * a, b + f[4].b * a
+        end
+    end
+    if sum <= 0 then return 0 end
+    blendFog[1], blendFog[2], blendFog[3] = s / sum, e / sum, d / sum
+    local c = blendFog[4]
+    c.r, c.g, c.b = r / sum, g / sum, b / sum
+    return math.min(1, sum) * (0.4 + 0.6 * W.exposure), blendFog
 end
 
 -- The map's fog, read while the weather isn't changing it.
@@ -371,12 +470,21 @@ end
 timer.Create("Rhylib.Weather.Sound", 0.1, 0, function()
     local me = LocalPlayer()
     if not IsValid(me) then return end
-    local k = W.KINDS[W.cur.kind]
-    local amt = (on() and k and k.count) and W.cur.amt or 0
     local master = math.Clamp(cvVolume:GetFloat(), 0, 1)
     local out = 0.3 + 0.7 * W.exposure
-    loop("rain", "rainSounds", (k and k.rain or 0) * amt * out * master)
-    loop("wind", "windSounds", (k and k.windVol or 0) * amt * out * master)
+    -- (both weathers while one fades into the other)
+    local rain, wind = 0, 0
+    if on() then
+        for _, l in ipairs(W.Layers()) do
+            local k = W.KINDS[l.kind]
+            if k and k.count then
+                rain = rain + (k.rain or 0) * l.amt
+                wind = wind + (k.windVol or 0) * l.amt
+            end
+        end
+    end
+    loop("rain", "rainSounds", math.min(1, rain) * out * master)
+    loop("wind", "windSounds", math.min(1, wind) * out * master)
 end)
 
 --------------------------------------------------------------------------
@@ -438,8 +546,12 @@ Rhylib.Net.Receive("weather.bolt", function()
     local me = LocalPlayer()
     if not IsValid(me) then return end
     -- (only once your sky shows the storm; nothing from the far side of the map)
-    local k = W.KINDS[W.cur.kind]
-    if not (k and k.lightning and W.cur.amt > 0.2) then return end
+    local storm = false
+    for _, l in ipairs(W.Layers()) do
+        local k = W.KINDS[l.kind]
+        if k and k.lightning and l.amt > 0.2 then storm = true end
+    end
+    if not storm then return end
     if ground:Distance(me:EyePos()) > 15000 then return end
     local pts, branches = boltShape(top, ground, seed)
     local dist = ground:Distance(me:EyePos())

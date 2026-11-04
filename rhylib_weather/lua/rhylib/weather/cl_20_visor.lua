@@ -15,19 +15,22 @@
         wavy wet trail and a few tiny beads, swallowing small drops on the
         way; a fine wet film builds up. A lightning flash glints in every
         drop. Indoors no new ones land and it dries off over a few seconds.
-      Snow / blizzard: (inside the visor's clear opening only, never over
+      Snow / heavy snow: (inside the visor's clear opening only, never over
         the helmet's brow and cheek pads: rhylib_hud HUD.VisorShellTris,
         the same mask as the sun visor) frosted glass grows in from the edges and corners
         with a ragged edge (blurred and pale, whiter further in, fine
         grain), ice crystals branch in from its edge; flakes stick as
         little stars and melt into drops; your breath fogs the bottom of
         the visor every few seconds. Indoors it thaws.
-      Sandstorm: (inside the clear opening too) sand streaks whip across with the wind, gusts of dust
+      Sandstorm / heavy sandstorm: (inside the clear opening too) sand streaks whip across with the wind, gusts of dust
         sweep over, grains tick against the visor, a dusty blurred film
         builds up (heaviest at the bottom) with stuck grains and fine
         scratches; indoors it slowly settles off.
       Mist / fog: a few small water drops form here and there and fade
         away (no fogging over).
+    Normal snow and sandstorm put half the frost / dust / sand of their
+    heavy versions on the visor (their W.KINDS rates). While one weather
+    cross-fades into another both count, each by its share (W.Layers).
     Weather setting visorFx off (!weather <kind> noef): no visor effect
     for that weather.
     While the weather cuts comms (rhylib_radio NW2Bool rhylib_jamWx), thin
@@ -334,8 +337,12 @@ local function drawFlake(x, y, r, a)
 end
 
 -- (build up while out in it, wear off otherwise)
+-- (above a lower limit, e.g. heavy snow to snow: it eases down to it)
 local function level(cur_, on_, outside, dt, rate, max, off)
-    if on_ and outside then return math.min(max, cur_ + dt * rate) end
+    if on_ and outside then
+        if cur_ > max then return math.max(max, cur_ - dt * off) end
+        return math.min(max, cur_ + dt * rate)
+    end
     return math.max(0, cur_ - dt * off)
 end
 
@@ -345,13 +352,30 @@ local function setBase(t, b, l, r)
     return base4
 end
 
-local spawnAcc, streakAcc = 0, 0
+local spawnAcc, streakAcc = { 0, 0, 0 }, 0
 Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
     local dt = math.min(FrameTime(), 0.1)
     local cur = W.cur
     if not cur then return end
-    local k = W.KINDS[cur.kind] or W.KINDS.clear
-    local amt = cur.amt
+    -- Each weather showing (two while one cross-fades into the other), at
+    -- its share: build-up rates and limits add up;
+    -- kF / aF and kD / aD = the strongest frost / dust weather and its share.
+    local L = W.Layers and W.Layers() or { { kind = cur.kind, amt = cur.amt } }
+    local fRate, fMax, dRate, dMax, wRate, wMax = 0, 0, 0, 0, 0, 0
+    local kF, aF, kD, aD = nil, 0, nil, 0
+    for _, l in ipairs(L) do
+        local lk = W.KINDS[l.kind]
+        local e = l.amt
+        if lk and lk.visor == "frost" then
+            fRate, fMax = fRate + (lk.frostRate or 0) * e, fMax + (lk.frostMax or 0) * e
+            if e > aF then kF, aF = lk, e end
+        elseif lk and lk.visor == "dust" then
+            dRate, dMax = dRate + (lk.dustRate or 0) * e, dMax + (lk.dustMax or 0) * e
+            if e > aD then kD, aD = lk, e end
+        elseif lk and lk.visor == "drops" then
+            wRate, wMax = wRate + (lk.wetRate or 0) * l.amt, wMax + 0.8 * l.amt
+        end
+    end
     local out = W.exposure or 0
     local show = cvVisor:GetBool() and W.Cfg("visorFx") ~= false and visorView()
     if not show then
@@ -377,18 +401,21 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
     local glint = 1 + (W.flash or 0) * 2.5
 
     -- Build up / wear off.
-    V.frost = level(V.frost, k.visor == "frost", outside, dt, (k.frostRate or 0) * amt, (k.frostMax or 0) * amt, 0.04)
-    V.dust = level(V.dust, k.visor == "dust", outside, dt, (k.dustRate or 0) * amt, (k.dustMax or 0) * amt, 0.012)
-    V.wet = level(V.wet, k.visor == "drops", outside, dt, (k.wetRate or 0) * amt, 0.8 * amt, 0.08)
+    V.frost = level(V.frost, fMax > 0, outside, dt, fRate, fMax, 0.04)
+    V.dust = level(V.dust, dMax > 0, outside, dt, dRate, dMax, 0.012)
+    V.wet = level(V.wet, wMax > 0, outside, dt, wRate, wMax, 0.08)
     V.mist = math.max(0, V.mist - dt * 0.05)   -- (mist / fog: small drops now, no fogging)
 
-    -- New drops / flakes: more looking up and moving.
-    if (k.visorRate or 0) > 0 and outside then
+    -- New drops / flakes: more looking up and moving (each weather its own).
+    for li = 1, 3 do
+    local l = L[li]
+    local k = l and W.KINDS[l.kind]
+    if k and (k.visorRate or 0) > 0 and outside then
         local up = math.Clamp(-me:EyeAngles().p / 60, 0, 1)
         local speed = math.Clamp(me:GetVelocity():Length2D() / 300, 0, 1)
-        spawnAcc = spawnAcc + dt * k.visorRate * amt * (0.6 + up * 1.2 + speed * 0.6)
-        while spawnAcc >= 1 do
-            spawnAcc = spawnAcc - 1
+        spawnAcc[li] = spawnAcc[li] + dt * k.visorRate * l.amt * (0.6 + up * 1.2 + speed * 0.6)
+        while spawnAcc[li] >= 1 do
+            spawnAcc[li] = spawnAcc[li] - 1
             if #drops < 90 then
                 local snow = k.visor == "frost"
                 local mist = k.visor == "mist"   -- (small beads that don't run, fading out)
@@ -403,7 +430,8 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
             end
         end
     else
-        spawnAcc = 0
+        spawnAcc[li] = 0
+    end
     end
 
     -- Dust: a blurred brown film from the edges (most at the bottom),
@@ -438,7 +466,8 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
     end
 
     -- Sand whipping across the visor with the wind, gusts, grains ticking.
-    if k.visor == "dust" and outside and amt > 0.05 then
+    if kD and outside and aD > 0.05 then
+        local amt, k = aD, kD
         local wx, wy = 1, 0
         if W.WindDir then wx, wy = W.WindDir() end
         local right = me:EyeAngles():Right()
@@ -466,7 +495,7 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
             -- (a soft band of dust sweeping across)
             local cx = g.dir > 0 and (-0.3 + f * 1.6) * w or (1.3 - f * 1.6) * w
             local bw = w * 0.4
-            local a = 38 * amt * (g.a or 1) * math.sin(f * math.pi)
+            local a = 38 * aD * (g.a or 1) * math.sin(f * math.pi)
             for j = -6, 5 do
                 local o = (j + 0.5) / 6
                 surface.SetDrawColor(160, 126, 84, a * (1 - math.abs(o)))
@@ -557,7 +586,7 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
     end
 
     -- Breath fogging the bottom of the visor in the cold.
-    if k.visor == "frost" and outside and amt > 0.1 then
+    if kF and outside and aF > 0.1 then
         if now >= nextBreath then
             nextBreath = now + math.Rand(3.2, 4.4)
             breath = { t = now }
@@ -576,8 +605,8 @@ Rhylib.Hook.Add("HUDPaintBackground", "weather.visor", function()
                     circle(w * 0.38, h * 1.1, rr * 0.8, 255, 255, 255, 255)
                     circle(w * 0.62, h * 1.1, rr * 0.8, 255, 255, 255, 255)
                 end, function()
-                    blur(3 * a * amt + 0.5, 1)
-                    surface.SetDrawColor(226, 232, 238, 45 * a * amt)
+                    blur(3 * a * aF + 0.5, 1)
+                    surface.SetDrawColor(226, 232, 238, 45 * a * aF)
                     surface.DrawRect(0, 0, w, h)
                 end, true)
             end

@@ -1,6 +1,8 @@
 --[[
     Weather on the server: lightning strikes and comms disruption (the
-    look of the weather is all client side).
+    look of the weather is all client side), and the reset to clear at the
+    start of each map (the weather kind and noef aren't kept over a map
+    change; intensity is).
 
     Lightning (storm, heavystorm; setting lightning): every few seconds
     (W.KINDS[kind].lightning, closer together when stronger) a strike
@@ -11,7 +13,7 @@
     disruptFrom) players outdoors within strikeJamRadius lose comms for
     1.5 s. Nothing starts until clients have faded the new weather in.
 
-    Disruption (heavystorm, blizzard, sandstorm from disruptFrom; setting
+    Disruption (heavystorm, heavysnow, heavysandstorm from disruptFrom; setting
     disrupt): about every disruptEvery seconds / intensity, a burst of 3-7
     s cuts comms and the compass radar for everyone outdoors.
 
@@ -24,6 +26,18 @@
 local W = Rhylib.Weather
 
 Rhylib.Net.Register("weather.bolt")
+
+-- Each map starts clear: the weather set on the last map (kind, and noef)
+-- isn't kept. Once per map (W survives a Lua refresh, not a map change).
+-- Intensity is kept, so the next !weather comes in at the same strength.
+if not W.mapReset then
+    W.mapReset = true
+    local o = Rhylib.Config.overrides and Rhylib.Config.overrides.weather
+    if o and Rhylib.Settings and Rhylib.Settings.Set then
+        if o.kind ~= nil then Rhylib.Settings.Set("weather", "kind", nil) end
+        if o.visorFx ~= nil then Rhylib.Settings.Set("weather", "visorFx", nil) end
+    end
+end
 
 W.burstUntil = W.burstUntil or 0
 local nextBurst, nextBolt = 0, 0
@@ -98,8 +112,8 @@ local function strike()
     end
 end
 
--- (clients fade a new weather in over fadeTime: no strikes or bursts
--- under a sky that hasn't changed yet)
+-- (clients cross-fade to a new weather over fadeTime: no strikes or
+-- bursts under a sky that hasn't changed yet)
 local lastKind, settledAt = nil, 0
 timer.Create("Rhylib.Weather.Server", 0.5, 0, function()
     local kind = W.Kind()
@@ -107,7 +121,7 @@ timer.Create("Rhylib.Weather.Server", 0.5, 0, function()
     local amt = W.Intensity()
     local now = CurTime()
     if kind ~= lastKind then
-        settledAt = lastKind and now + (tonumber(W.Cfg("fadeTime")) or 12) * (lastKind == "clear" and 1 or 2) or now
+        settledAt = lastKind and now + (tonumber(W.Cfg("fadeTime")) or 12) or now
         lastKind = kind
         nextBurst, nextBolt = 0, 0
     end
