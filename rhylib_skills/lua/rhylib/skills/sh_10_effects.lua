@@ -185,6 +185,7 @@ reg("arcSprint", 1.05, "ARC conditioning: sprint speed multiplier")
 reg("arcAll", 0.95, "ARC fieldcraft: reload time, spread and draw time multiplier on every gun")
 reg("arcRegen", 1.05, "ARC fieldcraft: stamina refill multiplier")
 reg("eodBlastMult", 0.7, "EOD Blast hardened: explosion damage multiplier")
+reg("ammoBearerWeight", 0.5, "Ammo pack skill: weight multiplier of magazines and power cells carried in the backpack")
 reg("eodPackWeight", 0.5, "EOD Explosives pack: weight multiplier of grenades, charges, rockets and mines")
 reg("eodPackStack", 1, "EOD Explosives pack: extra per stack of grenades, charges and mines")
 reg("eodDemoDamage", 1.25, "EOD Demolitions: thermal detonator and HE charge damage multiplier")
@@ -507,7 +508,8 @@ local function isGun(class)
     local v = gunCache[class]
     if v == nil then
         local t = weapons.Get(class)
-        v = t and t.IsRhylib and t.Mags ~= nil and not t.Stun or false
+        -- (not shields, worn on the back, nor launchers with no magazines)
+        v = t and t.IsRhylib and t.Mags ~= nil and next(t.Mags) ~= nil and not t.Stun and not t.InvSlot and not t.IsShield or false
         gunCache[class] = v
     end
     return v
@@ -516,20 +518,22 @@ end
 -- K.AdjustWeight(ply, state, weight, cap): carry weight and limit after
 -- skills. Load bearer raises the limit; Gun runner (Z-6), Long gun
 -- (DC-15X), Shotgun drills (short guns) and Explosives pack lower item
--- weights (the lightest that applies). state is the inventory state
+-- weights (the lightest that applies); Ammo pack: magazines and power
+-- cells in the backpack weigh ammoBearerWeight. state is the inventory state
 -- ({ cont = { [cid] = { items } } }). Returns weight, cap.
 function K.AdjustWeight(ply, state, weight, cap)
     if not isPly(ply) then return weight, cap end
     local set = K.Set(ply)
     if set.load_bearer then cap = cap + cfg("loadBearerCarry") end
-    if set.gun_runner or set.long_gun or set.shotgun_drills or set.eod_pack or set.med_carbine or set.med_shotgun then
+    if set.gun_runner or set.long_gun or set.shotgun_drills or set.eod_pack or set.med_carbine or set.med_shotgun or set.ammo_pack then
         local Items = Rhylib.Items
         if not (Items and Items.defs) then return weight, cap end
         for cid, c in pairs(state.cont or {}) do
             if cid ~= Items.EXT then
                 for _, o in pairs(c.items) do
                     local def = Items.defs[o.id]
-                    if def and def.weight and (def.weapon or (set.eod_pack and K.ExplosiveItem(def))) then
+                    local bearer = set.ammo_pack and cid == Items.BACK and K.AmmoItem(def)
+                    if def and def.weight and (def.weapon or bearer or (set.eod_pack and K.ExplosiveItem(def))) then
                         -- The lightest that applies (they don't stack).
                         local mult = 1
                         if def.weapon then
@@ -540,8 +544,9 @@ function K.AdjustWeight(ply, state, weight, cap)
                             if (set.med_carbine and g == K.DC15S) or (set.med_shotgun and g == K.DP23) then mult = math.min(mult, cfg("medGunWeight")) end
                         end
                         if set.eod_pack and K.ExplosiveItem(def) then mult = math.min(mult, cfg("eodPackWeight")) end
+                        if bearer then mult = math.min(mult, cfg("ammoBearerWeight")) end
                         -- (backpack contents count at backpackWeightMult in Items.Weight)
-                        local share = cid == Items.BACK and (Config.Get("inventory", "backpackWeightMult") or 0.8) or 1
+                        local share = cid == Items.BACK and (Config.Get("inventory", "backpackWeightMult") or 1) or 1
                         if mult < 1 then weight = weight - def.weight * (1 - mult) * (o.count or 1) * share end
                     end
                 end
@@ -551,10 +556,23 @@ function K.AdjustWeight(ply, state, weight, cap)
     return math.max(0, weight), cap
 end
 
+-- K.AmmoItem(def): a magazine (not a rocket) or a power cell: what the
+-- Ammo pack skill's backpack lightens.
+function K.AmmoItem(def)
+    if not def or def.weapon then return false end
+    if def.id == "cell" then return true end
+    local W = Rhylib.Weapons
+    local m = W and W.MagTypes and W.MagTypes[def.id]
+    return m ~= nil and (W.BaseMag(def.id) ~= "rocket")
+end
+
 -- K.ExplosiveItem(def): is this item an explosive for the EOD Explosives
--- pack? Grenades and charges (armoury shelf "grenade"), rockets, Republic mines.
+-- pack? Grenades and charges (armoury shelf "grenade"; not smoke or bacta
+-- grenades), rockets, Republic mines.
+local NOT_EXPLOSIVE = { rhylib_smokegrenade = true, rhylib_bactagrenade = true }
 function K.ExplosiveItem(def)
     if not def then return false end
+    if NOT_EXPLOSIVE[def.id] or NOT_EXPLOSIVE[def.weapon or ""] then return false end
     if def.group == "grenade" or def.id == "rhylib_rep_mine" then return true end
     local W = Rhylib.Weapons
     return W ~= nil and W.BaseMag ~= nil and not def.weapon and W.BaseMag(def.id) == "rocket"

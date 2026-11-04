@@ -44,10 +44,10 @@ SWEP.GrenadeKind = "he"
 SWEP.ImpactMode = false
 SWEP.ThrowDelay = 1
 
-SWEP.InvW = 2
+SWEP.InvW = 1
 SWEP.InvH = 2
 SWEP.InvStack = 2
-SWEP.InvWeight = 2.5
+SWEP.InvWeight = 2.0
 
 -- HL2's SLAM as the charge (ships with GMod; tune with rhylib_vm_editor (Rhy's Dev Tools) /
 -- rhylib_wm_editor).

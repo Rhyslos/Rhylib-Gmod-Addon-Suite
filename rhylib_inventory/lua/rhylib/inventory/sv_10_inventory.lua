@@ -66,7 +66,7 @@ local Config = Rhylib.Config
 local MAIN, BACK, SLOT_BACK, RACK, BELT, HOLSTER = Items.MAIN, Items.BACK, Items.SLOT_BACK, Items.RACK, Items.BELT, Items.HOLSTER
 local IsWorn = Items.IsWorn
 
-Config.Register("inventory", "beltCells", 1, "Power cells every clone's belt cell pouch holds (under Combine munitions; 0-2, 0 = none; one cell is a 1x2 slot). Takes effect for players who join after a change", { section = "Size & weight" })
+Config.Register("inventory", "beltCells", 1, "Power cells every clone's belt cell pouch holds (under Combine munitions; 0-2, 0 = none; one cell is a 1x1 slot). Takes effect for players who join after a change", { section = "Size & weight" })
 Config.Register("inventory", "width", 6, "Personal inventory width in cells (the long guns are 6 long)", { section = "Size & weight" })
 Config.Register("inventory", "height", 3, "Personal inventory height in cells", { section = "Size & weight" })
 Config.Register("inventory", "saveInterval", 2, "Seconds between saves of changed inventories", { section = "Rules" })
@@ -140,6 +140,10 @@ Rhylib.Hook.Add("Tick", "inventory.changed", function()
                 if K and K.AdjustWeight then weight, cap = K.AdjustWeight(ply, st, weight, cap) end
                 ply:SetNW2Float(Rhylib.NW.WEIGHT, math.Round(weight, 2))
                 ply:SetNW2Float(Rhylib.NW.CARRY, cap)
+                -- (crossing the cap: no sprinting; said once each time)
+                local over = cap > 0 and weight > cap
+                if over and not st.wasOver and st.ready and Inv.Note then Inv.Note(ply, "Over your carry limit: no sprinting (drop something to sprint again)") end
+                st.wasOver = over
             end
             hook.Run("Rhylib.InventoryChanged", ply)
         end
@@ -371,8 +375,8 @@ function Inv.Get(ply)
     end
     -- The belt cell pouch: every clone carries one.
     local bc = math.floor(Config.Get("inventory", "beltCells"))
-    -- (cells are 1x2, so the pouch is 2 rows tall; at most 2 wide to fit under the button)
-    if bc > 0 then st.cont[Items.CELLBELT] = { w = math.min(bc, 2), h = 2, items = {} } end
+    -- (cells are 1x1: one row, at most 2 wide to fit under the button)
+    if bc > 0 then st.cont[Items.CELLBELT] = { w = math.min(bc, 2), h = 1, items = {} } end
     -- Grids from skills (the cell rack), before the saved items go in.
     local K = Rhylib.Skills
     if K and K.ExtraGrids then
@@ -446,8 +450,44 @@ function Inv.HoldReason(id)
     return "You need the " .. (n and n.name or "right") .. " skill to carry that"
 end
 
+-- Inv.CarryNow(ply) -> weight, cap (after skills), as the stamina sees it.
+function Inv.CarryNow(ply)
+    local st = Inv.Get(ply)
+    local w, cap = Items.Weight(st)
+    local K = Rhylib.Skills
+    if K and K.AdjustWeight then w, cap = K.AdjustWeight(ply, st, w, cap) end
+    return w, cap
+end
+
+-- Inv.WeightRoom(ply, id, n) -> how many of n this player may take before
+-- passing config weightCeiling x their carry cap (0 = no ceiling). Used
+-- where items come in from outside: storages, pickups, gifts, ammo packs.
+function Inv.WeightRoom(ply, id, n)
+    local def = Items.defs[id]
+    local lim = Config.Get("inventory", "weightCeiling") or 0
+    if not def or (def.weight or 0) <= 0 or lim <= 0 then return n end
+    local w, cap = Inv.CarryNow(ply)
+    -- (what one more really weighs for this player: skills and gun belts
+    -- can make it lighter; a probe item in the main grid for a moment)
+    local st = Inv.Get(ply)
+    local main = st.cont[Items.MAIN]
+    local unit = def.weight
+    if main and main.items then
+        main.items.__probe = { id = id, count = 1, data = {} }
+        local w1 = Inv.CarryNow(ply)
+        main.items.__probe = nil
+        unit = math.max(0.01, w1 - w)
+    end
+    -- (a pack or jetpack you'd wear raises the cap it's weighed against)
+    if def.slot and def.carry then cap = cap + def.carry end
+    local room = math.floor((cap * lim - w) / unit + 1e-6)
+    return math.Clamp(room, 0, n)
+end
+Inv.TOO_HEAVY = "Too heavy: you can't carry any more"
+
 -- Inv.CanAdd(ply, id): would one item of this type fit right now (room,
--- carry limit and carry skill all checked)? Returns true/false.
+-- carry limit and carry skill checked; not the weight ceiling: Inv.WeightRoom)?
+-- Returns true/false.
 function Inv.CanAdd(ply, id)
     local st = Inv.Get(ply)
     local def = Items.defs[id]

@@ -105,8 +105,8 @@ function S.Exhausted(ply)
     return ply:GetDTBool(S.DT_EXHAUSTED)
 end
 
--- S.Load(ply): load (weight / carry cap) and whether a backpack raises the
--- cap. Reads NW2 rhylib_weight / rhylib_carry from rhylib_inventory (0 and
+-- S.Load(ply): load (weight / carry cap) and whether worn gear (a
+-- backpack, the jetpack's harness) raises the cap (skills don't count). Reads NW2 rhylib_weight / rhylib_carry from rhylib_inventory (0 and
 -- the base cap without it).
 function S.Load(ply)
     local weight = ply:GetNW2Float(Rhylib.NW.WEIGHT, 0)
@@ -114,7 +114,11 @@ function S.Load(ply)
     local base = (Config.defs.inventory and Config.Get("inventory", "baseCarry")) or 20
     local cap = ply:GetNW2Float(Rhylib.NW.CARRY, base)
     if cap <= 0 then cap = base end
-    return weight / cap, cap > base
+    -- (Load bearer's extra cap isn't a backpack: only worn gear counts here)
+    local skillCap = 0
+    local K = Rhylib.Skills
+    if K and K.Has and K.Has(ply, "load_bearer") and Config.defs.skills then skillCap = Config.Get("skills", "loadBearerCarry") or 0 end
+    return weight / cap, cap > base + skillCap + 0.01
 end
 
 -- S.Penalty(ply): penalty from 0 to maxPenalty, and whether the player is

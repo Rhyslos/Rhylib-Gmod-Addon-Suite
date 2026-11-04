@@ -83,15 +83,22 @@ return function(SWEP, env)
         local mdl = owner:GetModel() or ""
         local bone = boneId(rightHand, owner, mdl, "ValveBiped.Bip01_R_Hand")
         local matrix = bone and owner:GetBoneMatrix(bone)
-        local ent = self:GetPropEntity("propWM")
+        -- (the hold, size and muzzle, with the pose editor's per-weapon
+        -- values over the file's: SWEP:PropHold, Rhylib.Poses.WeaponProp)
+        local hp, ha, hs = self:PropHold()
+        local ent = self:GetPropEntity("propWM", hs)
         if not matrix or not ent then return end
 
-        local pos, ang = offsetTransform(matrix:GetTranslation(), matrix:GetAngles(), self.PropWMPos, self.PropWMAng)
+        local pos, ang = offsetTransform(matrix:GetTranslation(), matrix:GetAngles(), hp, ha)
+        -- (a body pose that moves the gun, Rhylib.Poses: drawn where it puts it)
+        local pg = owner.rhylibPoseGun
+        if pg and pg.f == FrameNumber() then pos, ang = pg.pos, pg.ang end
         ent:SetPos(pos)
         ent:SetAngles(ang)
         ent:SetupBones()
         ent:DrawModel()
-        self.propMuzzleWM = ent:LocalToWorld(self.PropMuzzle)
+        self.propMuzzleWM = ent:LocalToWorld(self:MuzzlePoint())
+        self.rhylibMuzzleF = FrameNumber()
 
         local extras = self.ExtraProps
         if extras then
@@ -134,7 +141,7 @@ return function(SWEP, env)
                 le:SetAngles(la)
                 le:SetupBones()
                 le:DrawModel()
-                self.propMuzzleWML = le:LocalToWorld(self.PropMuzzle)
+                self.propMuzzleWML = le:LocalToWorld(self:MuzzlePoint())
             end
         end
     end

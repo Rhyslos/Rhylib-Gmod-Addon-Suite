@@ -929,33 +929,53 @@ function PANEL:PaintExtControls()
     end)
 end
 
--- Carried weight in the header: "12.4 / 20 kg" over a thin bar.
+-- Carried weight in the header: "12.4 / 20 kg" over a bar with zones up
+-- to the weight ceiling: normal, slower (stamina heavyFrom to the cap),
+-- no sprinting (over the cap), and a tick at each edge.
 -- Worked out from the local copy, so it updates the moment items move.
 local COL_TRACK = Color(255, 255, 255, 28)
-function PANEL:PaintWeight(pw)
-    local s = self.s
+function PANEL:CarryNow()
     local weight, cap = Items.Weight(Inv)
     local K = Rhylib.Skills
     if K and K.AdjustWeight then weight, cap = K.AdjustWeight(LocalPlayer(), Inv, weight, cap) end
-    local over = weight > cap
-    local frac = math.min(weight / cap, 1)
-    local col = over and UI.Colors.bad or (frac > 0.8 and UI.Colors.warn or UI.Colors.text)
+    return weight, cap
+end
+function PANEL:PaintWeight(pw)
+    local s = self.s
+    local weight, cap = self:CarryNow()
+    local load = cap > 0 and weight / cap or 0
+    local ceil = math.max(1, Rhylib.Config.Get("inventory", "weightCeiling") or 1.25)
+    local slowFrom = (Rhylib.Config.defs.stamina and Rhylib.Config.Get("stamina", "heavyFrom")) or 0.75
+    local over = load > 1
+    local col = over and UI.Colors.bad or (load > slowFrom and UI.Colors.warn or UI.Colors.text)
 
-    local barW = math.floor(160 * s)
-    local barH = math.max(2, math.floor(4 * s))
+    local barW = math.floor(180 * s)
+    local barH = math.max(3, math.floor(5 * s))
     local right = pw - self.pad
     local x = right - barW
     local midY = self.header * 0.5
+    local function px(f) return x + math.floor(barW * math.Clamp(f / ceil, 0, 1)) end
 
     draw.SimpleText(string.format("%.1f / %d kg", weight, cap), self:Font(15), right, midY - barH,
         col, TEXT_ALIGN_RIGHT, TEXT_ALIGN_BOTTOM)
-    if over then
-        draw.SimpleText("Overloaded", self:Font(13), x - math.floor(8 * s), midY - barH, UI.Colors.bad, TEXT_ALIGN_RIGHT, TEXT_ALIGN_BOTTOM)
+    local tag = over and "No sprinting" or (load > slowFrom and "Slower" or nil)
+    if tag then
+        draw.SimpleText(tag, self:Font(13), x - math.floor(8 * s), midY - barH, col, TEXT_ALIGN_RIGHT, TEXT_ALIGN_BOTTOM)
     end
+    local y = midY + barH
+    -- (the zones, faint, then the load over them)
     surface.SetDrawColor(COL_TRACK)
-    surface.DrawRect(x, midY + barH, barW, barH)
-    surface.SetDrawColor(over and UI.Colors.bad or UI.Colors.accent)
-    surface.DrawRect(x, midY + barH, math.floor(barW * frac), barH)
+    surface.DrawRect(x, y, barW, barH)
+    local warn, bad = UI.Colors.warn, UI.Colors.bad
+    surface.SetDrawColor(warn.r, warn.g, warn.b, 50)
+    surface.DrawRect(px(slowFrom), y, px(1) - px(slowFrom), barH)
+    surface.SetDrawColor(bad.r, bad.g, bad.b, 60)
+    surface.DrawRect(px(1), y, px(ceil) - px(1), barH)
+    surface.SetDrawColor(over and bad or (load > slowFrom and warn or UI.Colors.accent))
+    surface.DrawRect(x, y, px(load) - x, barH)
+    surface.SetDrawColor(255, 255, 255, 150)
+    surface.DrawRect(px(slowFrom), y - 1, 1, barH + 2)
+    surface.DrawRect(px(1), y - 2, 1, barH + 4)
 end
 
 -- Where the dragged item would land: region, x, y (or nil). d.offX/offY:
@@ -1058,8 +1078,19 @@ function PANEL:PaintTooltip()
     if def.desc then lines[#lines + 1] = def.desc end
     if def.weight then
         local w = def.weight * inst.count
-        local note = inst.c == BACK and string.format(" (counts as %.2f in the backpack)", w * Rhylib.Config.Get("inventory", "backpackWeightMult")) or ""
+        local pm = Rhylib.Config.Get("inventory", "backpackWeightMult")
+        local note = (inst.c == BACK and pm ~= 1) and string.format(" (counts as %.2f in the backpack)", w * pm) or ""
         lines[#lines + 1] = string.format("%.2f kg", w) .. note
+        -- (in a storage: what taking it would do to your load)
+        if inst.c == EXT and def.weight > 0 then
+            local cw, cap = self:CarryNow()
+            local ceil = Rhylib.Config.Get("inventory", "weightCeiling") or 1.25
+            if ceil > 0 and cw + def.weight > cap * ceil then
+                lines[#lines + 1] = "Too heavy to take: you're carrying too much"
+            elseif cw + w > cap then
+                lines[#lines + 1] = "Taking it puts you over your carry limit: no sprinting"
+            end
+        end
     end
     if def.carry then lines[#lines + 1] = "+" .. def.carry .. " kg carry cap when worn" end
     if def.grid then lines[#lines + 1] = "Adds " .. def.grid[1] .. " x " .. def.grid[2] .. " cells when worn" end

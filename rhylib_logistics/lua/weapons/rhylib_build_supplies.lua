@@ -26,7 +26,7 @@ SWEP.InvGroup = "gear"
 SWEP.InvW = 2
 SWEP.InvH = 2
 SWEP.InvStack = 4
-SWEP.InvWeight = 4
+SWEP.InvWeight = 2.5
 
 SWEP.Primary = { ClipSize = -1, DefaultClip = -1, Automatic = false, Ammo = "none" }
 SWEP.Secondary = { ClipSize = -1, DefaultClip = -1, Automatic = false, Ammo = "none" }

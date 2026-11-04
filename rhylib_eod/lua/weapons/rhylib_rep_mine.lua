@@ -25,7 +25,7 @@ SWEP.ThrowDelay = 0.8
 SWEP.InvW = 1
 SWEP.InvH = 1
 SWEP.InvStack = 3
-SWEP.InvWeight = 1.2
+SWEP.InvWeight = 0.9
 
 SWEP.RequiresSkill = "eod_mines"
 SWEP.CarrySkill = "eod_mines"

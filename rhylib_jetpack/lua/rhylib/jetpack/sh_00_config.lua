@@ -99,7 +99,8 @@ Rhylib.After("inventory", function()
         w = 2, h = 2,
         category = "gear",
         slot = "back",
-        weight = 8,
+        weight = 6,
+        carry = 4,   -- (its harness takes some of the load)
         model = "models/thrusters/jetpack.mdl",  -- placeholder (GMod thruster model)
     })
 end)

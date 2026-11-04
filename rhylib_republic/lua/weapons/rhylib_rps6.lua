@@ -97,7 +97,7 @@ SWEP.StartCells = 0
 SWEP.InvW = 6   -- (long guns are 6 long, the inventory is 6 wide)
 SWEP.InvH = 1
 SWEP.InvLarge = true
-SWEP.InvWeight = 8           -- kg
+SWEP.InvWeight = 7           -- kg
 
 -- Spread: cone angles in degrees (rhylib_weapons sh_10_spread): hip / aim =
 -- resting cone, kickMain / kickSide = how far the crosshair arcs move per shot,

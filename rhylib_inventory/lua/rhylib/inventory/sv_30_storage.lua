@@ -518,6 +518,10 @@ function Inv.Take(ply, suid, cid, x, y, rot, single)
     local depot = storage.kind == "depot"
     local n = single and 1 or so.count
     local data = depot and { fill = def.fill and 1 or nil, issued = true } or table.Copy(so.data or {})
+    -- (the weight ceiling: inventory weightCeiling)
+    local roomW = Inv.WeightRoom(ply, so.id, n)
+    if roomW < 1 then return Inv.Note(ply, Inv.TOO_HEAVY) end
+    n = roomW
 
     -- Merge onto a matching stack of yours, or place at x, y.
     local c = st.cont[cid]
@@ -542,7 +546,7 @@ function Inv.Take(ply, suid, cid, x, y, rot, single)
     if depot then
         -- (a gun you may carry two of, e.g. an officer's DC-17s: both at once)
         if Items.Unique(def) then
-            local more = Inv.Limit(ply, so.id) - Inv.Count(ply, so.id)
+            local more = Inv.WeightRoom(ply, so.id, Inv.Limit(ply, so.id) - Inv.Count(ply, so.id))
             if more > 0 then Inv.AddItem(ply, so.id, more, table.Copy(data)) end
         end
         return   -- endless: nothing leaves the depot
@@ -592,6 +596,9 @@ function Inv.QuickTake(ply, suid, single)
     if depot then n = math.min(n, Items.StackFor(def, ply)) end
     if depot and Items.Unique(def) then n = math.max(1, Inv.Limit(ply, so.id) - Inv.Count(ply, so.id)) end
     local data = depot and { fill = def.fill and 1 or nil, issued = true } or table.Copy(so.data or {})
+    local roomW = Inv.WeightRoom(ply, so.id, n)
+    if roomW < 1 then return Inv.Note(ply, Inv.TOO_HEAVY) end
+    n = roomW
     local taken = n - Inv.AddItem(ply, so.id, n, data)
     if taken <= 0 then
         Inv.Note(ply, Items.SlotTakenText(Inv.Get(ply), so.id) or "No room for that")
@@ -686,15 +693,20 @@ local function takeAll(ply, st, storage)
         return a.x < b.x
     end)
     local took, left = false, false
+    local heavy = false
     for _, so in ipairs(list) do
-        local n = so.count - Inv.AddItem(ply, so.id, so.count, table.Copy(so.data or {}))
+        -- (a deposit of your own gear, bulk only, gives it all back: no ceiling)
+        local want = storage.bulkOnly and so.count or Inv.WeightRoom(ply, so.id, so.count)
+        if want < so.count then heavy = true end
+        local n = want > 0 and (want - Inv.AddItem(ply, so.id, want, table.Copy(so.data or {}))) or 0
         if n > 0 then
             took = true
             if n >= so.count then storage.items[so.uid] = nil else so.count = so.count - n end
         end
         if storage.items[so.uid] then left = true end
     end
-    if left then Inv.Note(ply, "Not everything fit: the rest is still stored") end
+    if heavy then Inv.Note(ply, Inv.TOO_HEAVY .. ": the rest is still stored")
+    elseif left then Inv.Note(ply, "Not everything fit: the rest is still stored") end
     return took
 end
 

@@ -433,6 +433,8 @@ end)
 local orbit = { on = false, yaw = 30, pitch = 10, dist = 45, pan = Vector() }
 
 local function orbitCentre(ply)
+    -- (orbit.ent: circle another model instead, e.g. the pose editor's stand-in)
+    if IsValid(orbit.ent) then ply = orbit.ent end
     ply:SetupBones()
     local b = ply:LookupBone(orbit.bone or "ValveBiped.Bip01_R_Hand")
     local m = b and ply:GetBoneMatrix(b)
@@ -466,8 +468,9 @@ end, -60)
 -- the left): presets, a drag area (left drag turns: dragging up always
 -- moves the camera up, dragging sideways always goes round the same way;
 -- right drag pans; wheel zooms), Reset view, zoom, on / off.
-local function addOrbit(f, label, startOff, bone)
+local function addOrbit(f, label, startOff, bone, headText)
     orbit.frame = f
+    orbit.ent = nil
     orbit.on = not startOff
     orbit.bone = bone
     orbit.pan = Vector()
@@ -479,7 +482,7 @@ local function addOrbit(f, label, startOff, bone)
     col:DockMargin(4, 0, 0, 0)
     col:SetPaintBackground(false)
     local head = vgui.Create("DLabel", col)
-    head:SetText(bone and "Camera (circles your head)" or "Camera (circles your right hand)")
+    head:SetText(headText or bone and "Camera (circles your head)" or "Camera (circles your right hand)")
     head:Dock(TOP)
     head:DockMargin(4, 4, 4, 2)
     local row = vgui.Create("DPanel", col)
@@ -1323,3 +1326,9 @@ concommand.Add("rhylib_ear_editor", function()
     end)
     addOrbit(f, label, false, "ValveBiped.Bip01_Head1")
 end)
+
+-- (for the other editors in this addon: cl_20_pose_editor.lua)
+Rhylib.Devtools = Rhylib.Devtools or {}
+Rhylib.Devtools.editorFrame = editorFrame
+Rhylib.Devtools.addOrbit = addOrbit
+Rhylib.Devtools.orbit = orbit

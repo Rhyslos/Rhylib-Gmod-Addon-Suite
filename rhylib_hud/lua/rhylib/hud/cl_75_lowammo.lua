@@ -58,6 +58,11 @@ Rhylib.Hook.Add("HUDPaint", "hud.lowammo", function()
     local ply = LocalPlayer()
     local G = Rhylib.Gear
     if G and G.Looking and G.Looking(ply) then return end   -- (looking through binoculars)
+    -- (not while a dev tools editor window is open, rhylib_devtools)
+    local DTU = Rhylib.Devtools and Rhylib.Devtools.UI
+    if DTU and DTU.windows then
+        for win in pairs(DTU.windows) do if IsValid(win) then return end end
+    end
     local text, col = warning(ply, ply:GetActiveWeapon())
     if not text then return end
     local s = HUD.Scale()

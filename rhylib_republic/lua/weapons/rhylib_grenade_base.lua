@@ -75,7 +75,7 @@ SWEP.Secondary = { ClipSize = -1, DefaultClip = -1, Automatic = false, Ammo = "n
 SWEP.InvW = 1
 SWEP.InvH = 1
 SWEP.InvStack = 3
-SWEP.InvWeight = 0.6
+SWEP.InvWeight = 0.45
 SWEP.InvCategory = "gear"
 
 SWEP.GrenadeKind = "fuse"     -- see the header: fuse / impact / emp / flash / smoke / bacta

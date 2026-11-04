@@ -88,7 +88,7 @@ SWEP.StartCells = 1
 SWEP.InvW = 4
 SWEP.InvH = 1
 SWEP.InvLarge = true
-SWEP.InvWeight = 5.5         -- kg
+SWEP.InvWeight = 4.5         -- kg
 
 -- Spread: cone angles in degrees (rhylib_weapons sh_10_spread): hip / aim =
 -- resting cone, kickMain / kickSide = how far the crosshair arcs move per shot,

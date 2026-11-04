@@ -215,7 +215,7 @@ Items.Register("backpack", {
     slot = "back",
     grid = { 6, 2 },   -- (as wide as the main grid)
     weight = 1.5,
-    carry = 6,
+    carry = 4,
     model = "models/props_c17/suitcase001a.mdl",
 })
 
@@ -223,7 +223,8 @@ Items.Register("backpack", {
 -- Weight
 --
 -- Total = every item's weight x count. Items inside a backpack count at
--- backpackWeightMult, because the pack spreads the load. The carry cap is
+-- backpackWeightMult (1 by default: a pack gives space and a little cap,
+-- not lighter kit). The carry cap is
 -- baseCarry plus the `carry` of whatever is worn on the back.
 -- The server sends both numbers to the stamina module through two NW2
 -- vars; the inventory window works them out itself from its own copy.
@@ -231,9 +232,10 @@ Items.Register("backpack", {
 
 local Config = Rhylib.Config
 Config.Describe("inventory", { name = "Inventory", category = "Soldiers", sections = { "Size & weight", "Dropped items", "Rules" } })
-Config.Register("inventory", "baseCarry", 18, "Carry cap in kg without a backpack", { section = "Size & weight" })
+Config.Register("inventory", "baseCarry", 20, "Carry cap in kg without a backpack", { section = "Size & weight" })
 Config.Register("inventory", "giveRange", 130, "How close you must be to give someone an item", { section = "Rules" })
-Config.Register("inventory", "backpackWeightMult", 0.8, "Items inside a backpack count at this fraction of their weight", { section = "Size & weight" })
+Config.Register("inventory", "weightCeiling", 1.25, "Taking from storages, picking up and being given items stops once your load would pass this share of your carry cap (0 = no limit; over 1 = you can't sprint)", { section = "Size & weight" })
+Config.Register("inventory", "backpackWeightMult", 1, "Items inside a backpack count at this fraction of their weight", { section = "Size & weight" })
 Config.Register("inventory", "contraband", {}, "Contraband item ids: players can hide up to 3 of them from searches, and they're never returned from jail", { section = "Rules" })
 
 -- Items.IsContraband(id): true if id is in config inventory "contraband".

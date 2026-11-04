@@ -292,7 +292,7 @@ end
 -- R.CleanName(s): a squad / channel name with control characters
 -- removed, trimmed, cut to R.NAME_LEN.
 function R.CleanName(s)
-    s = string.Trim(string.gsub(tostring(s or ""), "[%c]", ""))
+    s = string.Trim((string.gsub(tostring(s or ""), "[%c]", "")))
     return string.sub(s, 1, R.NAME_LEN)
 end
 

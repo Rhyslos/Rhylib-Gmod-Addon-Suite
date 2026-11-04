@@ -1,7 +1,7 @@
 --[[
     Ammo pack (rhylib_skills: Autorifleman > Ammo pack; needs rhylib_inventory).
 
-    A 2x2 item holding a pool of rounds (config skills ammoPackPool, 300;
+    A 2x2 item holding a pool of rounds (config skills ammoPackPool, 400;
     the item's fill). LMB: the teammate you look at, RMB: yourself. For the
     blaster in their hands (or their first Rhylib blaster) it
       1. tops up the loaded magazine,
@@ -34,7 +34,7 @@ SWEP.Secondary = { ClipSize = -1, DefaultClip = -1, Automatic = false, Ammo = "n
 
 SWEP.InvW = 2
 SWEP.InvH = 2
-SWEP.InvWeight = 3
+SWEP.InvWeight = 2.5
 SWEP.InvCharge = true
 SWEP.InvCategory = "ammo"
 
@@ -44,7 +44,7 @@ SWEP.Range = 110
 SWEP.Cooldown = 1.5
 SWEP.Spares = 4
 
-Rhylib.Config.Register("skills", "ammoPackPool", 300, "Ammo pack: rounds in a full pack")
+Rhylib.Config.Register("skills", "ammoPackPool", 400, "Ammo pack: rounds in a full pack")
 Rhylib.Config.Register("skills", "ammoPackLargeCost", 0.72, "Ammo pack: pool cost of one large-magazine round")
 
 function SWEP:Initialize()
@@ -124,6 +124,7 @@ if SERVER then
         local POOL = cfg("ammoPackPool")
         local pool = (pack.data and pack.data.fill or 1) * POOL
         local spent = 0
+        local heavy = false
         local function cost(id) return W.BaseMag(id) == "mag_large" and cfg("ammoPackLargeCost") or 1 end
         local function left(id) return math.floor((pool - spent) / cost(id)) end
         local takes = {}
@@ -169,6 +170,11 @@ if SERVER then
             while have < self.Spares do
                 local give = math.min(rounds, left(best))
                 if give < rounds * 0.25 or not Inv.CanAdd(t, best) then break end
+                -- (the weight ceiling: they're carrying too much already)
+                if Inv.WeightRoom and Inv.WeightRoom(t, best, 1) < 1 then
+                    heavy = true
+                    break
+                end
                 local data = { issued = issued }
                 if give < rounds then data.fill = give / rounds end
                 if Inv.AddItem(t, best, 1, data) > 0 then break end   -- (no room after all)
@@ -178,6 +184,7 @@ if SERVER then
         end
 
         if spent < 0.5 then
+            if heavy then return Rhylib.Notify(o, (t == o and "You're" or t:Nick() .. " is") .. " carrying too much to take more", "bad", "Weapons") end
             return Rhylib.Notify(o, (t == o and "You're" or t:Nick() .. " is") .. " full (or the pack is empty)", "bad", "Weapons")
         end
         local rest = pool - spent

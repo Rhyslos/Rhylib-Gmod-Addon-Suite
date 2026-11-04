@@ -157,6 +157,26 @@ return function(SWEP, env)
         return p, a
     end
 
+    -- SWEP:PropHold() -> PropWMPos, PropWMAng, PropScale and
+    -- SWEP:MuzzlePoint() -> PropMuzzle, with rhylib_core's per-weapon values
+    -- from the pose editor over them (Rhylib.Poses.WeaponProp).
+    function SWEP:PropHold()
+        local P = Rhylib.Poses
+        if P and P.WeaponProp then
+            local p, a, sc = P.WeaponProp(self)
+            return p, a, sc
+        end
+        return self.PropWMPos, self.PropWMAng, self.PropScale
+    end
+    function SWEP:MuzzlePoint()
+        local P = Rhylib.Poses
+        if P and P.WeaponProp then
+            local _, _, _, m = P.WeaponProp(self)
+            return m
+        end
+        return self.PropMuzzle
+    end
+
     function SWEP:GetPropEntity(key, scale)
         scale = scale or self.PropScale
         local ent = self[key]
@@ -364,7 +384,7 @@ return function(SWEP, env)
         ent:SetAngles(ang)
         ent:SetupBones()
         ent:DrawModel()
-        self.propMuzzleVM = ent:LocalToWorld(self.PropMuzzle * (scale or self.PropScale) / self.PropScale)
+        self.propMuzzleVM = ent:LocalToWorld(self:MuzzlePoint() * (scale or self.PropScale) / self.PropScale)
     end
 
     -- Proxy viewmodels: a clientside copy of a viewmodel plus the player's
@@ -543,7 +563,7 @@ return function(SWEP, env)
         ent:SetAngles(la)
         ent:SetupBones()
         ent:DrawModel()
-        self.propMuzzleVML = ent:LocalToWorld(self.PropMuzzle * (scale or self.PropScale) / self.PropScale)
+        self.propMuzzleVML = ent:LocalToWorld(self:MuzzlePoint() * (scale or self.PropScale) / self.PropScale)
     end
 
     -- A fire mode's proxy viewmodel (ModeProxies): its hands, its fire and
@@ -597,7 +617,7 @@ return function(SWEP, env)
         ent:SetAngles(ang)
         ent:SetupBones()
         ent:DrawModel()
-        self.propMuzzleVML = ent:LocalToWorld(self.PropMuzzle)
+        self.propMuzzleVML = ent:LocalToWorld(self:MuzzlePoint())
     end
 
     -- First person. Carrier: it draws (gun bone shrunk) and the prop goes
@@ -674,8 +694,8 @@ return function(SWEP, env)
                         ent:SetAngles(ang)
                         ent:SetupBones()
                         ent:DrawModel()
-                        if side == "right" then self.propMuzzleVM = ent:LocalToWorld(self.PropMuzzle)
-                        else self.propMuzzleVML = ent:LocalToWorld(self.PropMuzzle) end
+                        if side == "right" then self.propMuzzleVM = ent:LocalToWorld(self:MuzzlePoint())
+                        else self.propMuzzleVML = ent:LocalToWorld(self:MuzzlePoint()) end
                     end
                 end
             end

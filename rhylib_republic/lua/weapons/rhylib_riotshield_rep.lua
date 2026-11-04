@@ -17,7 +17,7 @@ SWEP.ShieldKind = "rep"
 SWEP.ShieldProficiency = false
 SWEP.BashStun = false
 SWEP.BashSkill = false
-SWEP.InvWeight = 9.0      -- (the CG shield is lighter and faster: rhylib_riotshield)
+SWEP.InvWeight = 8.0      -- (the CG shield is lighter and faster: rhylib_riotshield)
 SWEP.MoveMult = 0.85
 -- Aiming: the gun drops down and right, below the viewport (before,
 -- it sat in front of the shield). (AimPos: right, forward, up.)

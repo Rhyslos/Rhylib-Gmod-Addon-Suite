@@ -58,6 +58,11 @@ function Inv.GiveTo(ply, target, uid, single)
         return 0
     end
     local n = (single and inst.count > 1) and 1 or inst.count
+    n = Inv.WeightRoom(target, inst.id, n)
+    if n < 1 then
+        Inv.Note(ply, target:Nick() .. " is carrying too much already")
+        return 0
+    end
     I.captureWeapon(ply, inst)
     local left = Inv.AddItem(target, inst.id, n, table.Copy(inst.data or {}))
     local given = n - left

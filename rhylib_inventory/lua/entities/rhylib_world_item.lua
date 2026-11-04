@@ -61,7 +61,14 @@ if SERVER then
         -- taken: Remove() only happens at the end of the frame, so a second
         -- player pressing E in the same tick must not get it too.
         if self.taken or not IsValid(ply) or not ply:IsPlayer() or not self.itemId then return end
-        local left = Rhylib.Inventory.AddItem(ply, self.itemId, self.itemCount, self.itemData)
+        local Inv0 = Rhylib.Inventory
+        local want = Inv0.WeightRoom and Inv0.WeightRoom(ply, self.itemId, self.itemCount) or self.itemCount
+        if want < 1 then
+            if Inv0.Note then Inv0.Note(ply, Inv0.TOO_HEAVY) end
+            return
+        end
+        local left = Inv0.AddItem(ply, self.itemId, want, self.itemData) + (self.itemCount - want)
+        if want < self.itemCount and Inv0.Note then Inv0.Note(ply, Inv0.TOO_HEAVY .. ": the rest stays here") end
         if left <= 0 then
             self.taken = true
             ply:EmitSound("items/ammo_pickup.wav", 60)
