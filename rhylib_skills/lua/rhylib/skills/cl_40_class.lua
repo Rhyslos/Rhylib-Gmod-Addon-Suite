@@ -6,7 +6,7 @@
     class mode off (switching it on is on the Skills page or
     rhylib_classmode).
     Client only; needs rhylib_menus. Sends skills.classpick (class index
-    UInt 4, order index UInt 3, 0 = none), skills.classleave, and
+    UInt K.CLASS_BITS = 5, order index UInt 3, 0 = none), skills.classleave, and
     skills.classmode (bool; the server checks the permission).
 ]]
 
@@ -106,7 +106,7 @@ local function build(page)
         end
         local btn = Kit.Button(card, playing and (cls.orders and "Change order" or "Playing") or "Play this class", function()
             send("skills.classpick", function()
-                net.WriteUInt(cls.index, 4)
+                net.WriteUInt(cls.index, K.CLASS_BITS)
                 net.WriteUInt(chosen, 3)
             end)
         end, { accent = true, enabled = function()

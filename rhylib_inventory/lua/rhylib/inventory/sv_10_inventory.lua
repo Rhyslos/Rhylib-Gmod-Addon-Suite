@@ -28,6 +28,12 @@
     anything else, but the world item despawns sooner (config
     issuedDropLife). Job loadout gear (data.loadout) just vanishes.
 
+    Loading: worn items go in first (old helmet slot ids Items.OLD_WORN
+    with them), lowest def.wornRank first, so when a save has several
+    items for one worn slot (helmet parts from before they shared one)
+    the first keeps it and the rest move to the first free spot, or onto
+    the ground at the player's feet if there's no room.
+
     Saving: changed inventories are marked dirty and serialised every
     saveInterval seconds (read live); Rhylib.Data batches the SQLite
     writes further.
@@ -155,7 +161,7 @@ end
 -- The backpack grid's rows are multiplied by rhylib_skills
 -- K.BackpackMult(ply) (Load bearer: 2). A grid that gets smaller moves
 -- what no longer fits (Inv.SetGrid).
-local GRID_CIDS = { BACK, HOLSTER, Items.POUCH, Items.CELLPACK }
+local GRID_CIDS = { BACK, HOLSTER, Items.POUCH, Items.CELLPACK, Items.GUNBELT }
 local function packSize(ply, grid)
     local K = Rhylib.Skills
     local m = K and K.BackpackMult and K.BackpackMult(ply) or 1
@@ -241,7 +247,7 @@ end
 -- First free spot for a new item: worn slot if it fits there, then the
 -- main grid, then the backpack.
 local ROTS_SQUARE, ROTS_BOTH = { false }, { false, true }
-local SEARCH = { Items.CELLBELT, RACK, Items.CELLPACK, HOLSTER, MAIN, BACK, BELT, Items.POUCH }   -- (the belt pouch, rack and cell pouch only take cells, the holster pistols)
+local SEARCH = { Items.CELLBELT, RACK, Items.CELLPACK, HOLSTER, MAIN, BACK, Items.GUNBELT, BELT, Items.POUCH }   -- (the belt pouch, rack and cell pouch only take cells, the holster pistols)
 
 local function findSpot(st, id)
     local def = Items.defs[id]
@@ -278,31 +284,60 @@ local function load(ply, st)
     local saved = Rhylib.Data.Get("inventory", ply:SteamID64())
     if not istable(saved) then return end
     -- Worn items first, so the backpack grid exists before its contents.
+    -- (lowest wornRank first: of several saved for one worn slot, that one
+    -- stays worn and the others move; old helmet slot ids count as worn)
+    local rows = {}
+    for i, row in ipairs(saved) do
+        if istable(row) then rows[#rows + 1] = { row = row, i = i } end
+    end
+    local function rank(r)
+        local d = Items.defs[r.row[1]]
+        return d and tonumber(d.wornRank) or 0
+    end
+    table.sort(rows, function(a, b)
+        local ra, rb = rank(a), rank(b)
+        if ra ~= rb then return ra < rb end
+        return a.i < b.i
+    end)
+    -- Somewhere else, never lost: the first free spot (its worn slot if
+    -- that's free), else on the ground once they're in.
+    local function elsewhere(id, count, data, hb)
+        local c2, x2, y2, r2 = findSpot(st, id)
+        if c2 then
+            place(ply, st, { uid = nextUid(st), id = id, count = count, data = data, hb = hb }, c2, x2, y2, r2)
+        elseif not data.loadout then
+            timer.Simple(2, function()
+                if IsValid(ply) then Inv.SpawnWorldItem(ply, id, count, data) end
+            end)
+        end
+    end
+    -- (a worn item that lost its slot waits until the grids are filled, so
+    -- it takes a free spot instead of one a saved grid item needs)
+    local later = {}
     for pass = 1, 2 do
-        for _, row in ipairs(saved) do
+        for _, r in ipairs(rows) do
+            local row = r.row
             local cid = row[7] or MAIN
-            if (pass == 1) == IsWorn(cid) then
+            local oldWorn = Items.OLD_WORN[cid] == true
+            if (pass == 1) == (IsWorn(cid) or oldWorn) then
                 local id, x, y, rot, count = row[1], row[2], row[3], row[4] == 1, row[5]
-                if Items.defs[id] and Items.CanPlace(st, id, cid, x, y, rot) then
-                    local inst = { uid = nextUid(st), id = id, count = count, data = istable(row[6]) and row[6] or {}, hb = tonumber(row[8]) }
-                    place(ply, st, inst, cid, x, y, rot)
-                elseif Items.defs[id] then
+                local def = Items.defs[id]
+                local data = istable(row[6]) and row[6] or {}
+                local wcid = oldWorn and def and def.slot and Items.WORN_BY_SLOT[def.slot]
+                if wcid then cid, x, y, rot = wcid, 0, 0, false end   -- (old helmet slot: the shared one)
+                if def and Items.CanPlace(st, id, cid, x, y, rot) then
+                    place(ply, st, { uid = nextUid(st), id = id, count = count, data = data, hb = tonumber(row[8]) }, cid, x, y, rot)
+                elseif def and pass == 1 then
+                    later[#later + 1] = { id, count, data, tonumber(row[8]) }
+                elseif def then
                     -- Its spot is gone or taken (a smaller grid, a removed rack or
-                    -- slot, an item that grew): anywhere else, never lost.
-                    local c2, x2, y2, r2 = findSpot(st, id)
-                    local data = istable(row[6]) and row[6] or {}
-                    if c2 then
-                        place(ply, st, { uid = nextUid(st), id = id, count = count, data = data, hb = tonumber(row[8]) }, c2, x2, y2, r2)
-                    elseif not data.loadout then
-                        -- No room anywhere: on the ground once they're in.
-                        timer.Simple(2, function()
-                            if IsValid(ply) then Inv.SpawnWorldItem(ply, id, count, data) end
-                        end)
-                    end
+                    -- slot, an item that grew).
+                    elsewhere(id, count, data, tonumber(row[8]))
                 end
             end
         end
     end
+    for _, l in ipairs(later) do elsewhere(l[1], l[2], l[3], l[4]) end
     -- Saved before the hotbar existed: give the weapons slots once.
     local any = false
     for _, o in pairs(st.byUid) do
@@ -658,6 +693,15 @@ function Inv.Move(ply, uid, cid, x, y, rot, single)
             sendSet(ply, st, inst)
             return
         end
+        -- (the slot already holds something else, e.g. another helmet part)
+        local wc = st.cont[cid]
+        local _, other = next(wc and wc.items or {})
+        if other and other.uid ~= uid and Items.defs[inst.id] and Items.ContainerAllows(cid, Items.defs[inst.id]) then
+            local od = Items.defs[other.id]
+            Inv.Note(ply, "Take off the " .. string.lower(od and od.name or "item") .. " first")
+            sendSet(ply, st, inst)
+            return
+        end
     end
 
     if single and inst.count > 1 then
@@ -808,7 +852,7 @@ end
 
 local function partials(st)
     local groups, n = {}, 0
-    for _, cid in ipairs({ MAIN, BACK, RACK, BELT, Items.POUCH, Items.CELLPACK, Items.CELLBELT }) do
+    for _, cid in ipairs({ MAIN, BACK, Items.GUNBELT, RACK, BELT, Items.POUCH, Items.CELLPACK, Items.CELLBELT }) do
         local c = st.cont[cid]
         if c then
             for _, o in pairs(c.items) do

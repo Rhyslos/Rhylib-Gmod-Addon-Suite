@@ -16,6 +16,8 @@
 local K = Rhylib.Skills
 
 K.CLASS_PICKS = 2   -- (one pick and one re-pick)
+-- (skills.classpick sends a class's index in K.CLASS_BITS bits: up to 31 classes)
+K.CLASS_BITS = 5
 
 -- Presets are worked out from the tree: every skill of the category, of
 -- that specialisation and end branch; never Adaptable; the Officer adds
@@ -28,7 +30,7 @@ K.CLASSES = {
     { id = "autorifleman", name = "Autorifleman", cat = "trooper", spec = "autorifleman", who = "Anyone",
       desc = "The DC-15A at its strongest: full auto, Overcharge and the squad's ammo packs." },
     { id = "marksman", name = "Marksman", cat = "support", spec = "marksman", who = "Anyone",
-      desc = "Picks off priority targets with the DC-15X or a steady DC-15S, and marks them for the squad." },
+      desc = "Picks off priority targets with the DC-15X or a steady DC-15S, marks them for the squad, and mines the approaches." },
     { id = "heavy", name = "Heavy", cat = "support", spec = "heavy", who = "Anyone",
       desc = "Z-6 and DP-24 anchor who soaks hits and suppresses droids." },
     { id = "officer", name = "Pistol officer", cat = "officer", spec = "pistol", branch = "command", who = "Anyone", orders = true,
@@ -39,18 +41,18 @@ K.CLASSES = {
       desc = "Locks targets for the squad through the sun visor, steadies everyone nearby and gives a stronger command order of your choice." },
     { id = "airborne", name = "Airborne", cat = "airborne", spec = "airborne", who = "Anyone",
       desc = "Jetpack trooper: long flights, hard landings, grenades from above and slamming into droids." },
-    { id = "eod_demo", name = "Demolitions engineer", cat = "airborne", spec = "eod", branch = "demo", who = "Anyone",
-      desc = "Repairs the squad's armour, the grenade launcher, bigger blasts and the RPS-6 top attack." },
-    { id = "eod_sapper", name = "Sapper", cat = "airborne", spec = "eod", branch = "sapper", who = "Anyone",
-      desc = "Repairs the squad's armour, the grenade launcher, Republic mines and jamming droids." },
+    { id = "eod_demo", name = "Field technician", cat = "airborne", spec = "eod", who = "Anyone",
+      desc = "Repairs the squad's armour, builds field structures, the grenade launcher, bigger blasts, the RPS-6 top attack; the wideband device jams droids." },
     { id = "combat_medic", name = "Combat medic", cat = "medic", spec = "combat_medic", who = "Medics",
       desc = "Fast frontline revives and dragging the wounded to cover." },
     { id = "chemist", name = "Chemist", cat = "medic", spec = "chemist", who = "Medics",
       desc = "Crafts medical supplies and runs the med bay." },
     { id = "shocktrooper", name = "Riot trooper", cat = "shocktrooper", spec = "shield_wall", who = "Military police",
       desc = "Riot shield, breaching charges and arrests, holding the line together." },
-    { id = "shock_rifle", name = "Shock rifleman", cat = "shocktrooper", spec = "shock_rifle", who = "Military police",
+    { id = "shock_rifle", name = "Shock rifleman", cat = "shocktrooper", spec = "shock_rifle", branch = "dc15a", who = "Military police",
       desc = "Breaching and arrests with the DC-15A: longer stuns, steady under fire, and one last stand." },
+    { id = "shock_gunner", name = "Shock gunner", cat = "shocktrooper", spec = "shock_rifle", branch = "z6", who = "Military police",
+      desc = "Breaching and arrests with the Z-6: no spin-up wait, stun shots in every burst, harder hits up close, and one last stand." },
 }
 K.classById = {}
 for i, c in ipairs(K.CLASSES) do

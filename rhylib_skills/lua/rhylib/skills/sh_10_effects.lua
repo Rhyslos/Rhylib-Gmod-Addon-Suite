@@ -18,6 +18,8 @@
         K.ModeDamageMult(ply, wep)       fire mode damage (Overcharge)               weapons: cl_70_stats
         K.ShotDamageMult(ply, wep)       per shot (First shot, Overcharge)           weapons: rhylib_base
         K.SpinMoveMult(ply, wep, base)   walk speed while the barrels spin           weapons: rhylib_base
+        K.SpinSkip(ply, wep, t)          fires before spun up (Breacher's drum)      weapons: rhylib_base SpunUp
+        K.StunShot(ply, wep, n)          shot n of a burst is a stun shot (Shock rounds)  weapons: rhylib_base FireShot
         K.MagAllowed(ply, wep, magId)    SWEP.MagSkills (Heavy feed: Z-6 large mags) weapons: rhylib_base, cl_70_stats
         K.PelletConeMult(ply, wep)       shotgun pellet cone (Shotgun drills)        weapons: rhylib_base
         K.FlyFire(ply, wep)              DP-23 fires while flying                    weapons: rhylib_base
@@ -169,6 +171,10 @@ reg("holdLineMult", 0.8, "Hold the line: damage multiplier with the shield up an
 reg("holdLineRange", 200, "Hold the line: how close the other MP must be (units)")
 reg("bashDamage", 30, "Shield bash: damage to droids")
 reg("searchMult", 1.2, "Thorough search: search roll multiplier")
+reg("z6DrumTime", 1, "Breacher's drum: seconds at the start of a Z-6 burst that fire with no spin-up wait")
+reg("z6ShockEvery", 10, "Shock rounds: every this many Z-6 bolts in a burst, one is a stun shot")
+reg("z6RoomRange", 525, "Room clearer: Z-6 hits within this many units do more damage (525 = about 10 m)")
+reg("z6RoomMult", 1.25, "Room clearer: Z-6 damage multiplier within z6RoomRange")
 -- EOD (Field technician)
 reg("arcWestar", 0.85, "ARC training: Westar-M5 spread, kick and reload time multiplier")
 reg("arcWestarDamage", 1.05, "ARC training: Westar-M5 damage multiplier")
@@ -373,6 +379,26 @@ function K.ShockOk(ply)
     local MP = Rhylib.MP
     if not (MP and MP.IsMP) then return true end
     return MP.IsMP(ply) and true or false
+end
+
+-- K.SpinSkip(ply, wep, t): Breacher's drum (Shock Tactics, Z-6 branch):
+-- the Z-6 fires before it has spun up, for the first z6DrumTime seconds of
+-- a burst (t = seconds since the barrels started). rhylib_base SpunUp asks.
+-- Shared (predicted).
+function K.SpinSkip(ply, wep, t)
+    if not (isPly(ply) and IsValid(wep) and K.GunClass(wep) == K.Z6) then return false end
+    return t < cfg("z6DrumTime") and K.Has(ply, "z6_drum") and K.ShockOk(ply)
+end
+
+-- K.StunShot(ply, wep, n): Shock rounds (Shock Tactics, Z-6 branch): is
+-- shot n of this burst (1 = the first) a stun shot? Every z6ShockEvery-th
+-- one is; not on training copies. rhylib_base FireShot asks and fires it
+-- as a stun bolt (rhylib_mp stuns a player it hits). Shared (predicted).
+function K.StunShot(ply, wep, n)
+    if not (isPly(ply) and IsValid(wep) and not wep.Training and K.GunClass(wep) == K.Z6) then return false end
+    local every = math.floor(cfg("z6ShockEvery"))
+    if every < 1 or n % every ~= 0 then return false end
+    return K.Has(ply, "z6_shock") and K.ShockOk(ply)
 end
 
 -- K.LastStand(ply): For The Republic is running (NW2Float rhylib_lastStand

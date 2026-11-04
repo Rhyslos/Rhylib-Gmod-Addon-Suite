@@ -16,6 +16,7 @@ for i = 8, 17 do CONT_NAMES[i] = "Worn gear" end
 CONT_NAMES[18] = "Belt pouches"
 CONT_NAMES[19] = "Cell pouch"
 CONT_NAMES[20] = "Belt cells"
+CONT_NAMES[21] = "Gun belt"
 
 -- MP.OpenSearch(target): asks the server to search target (net mp.search).
 -- The server checks everything and answers with mp.list. Client only.

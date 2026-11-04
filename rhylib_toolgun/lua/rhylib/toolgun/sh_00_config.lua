@@ -90,6 +90,8 @@ local ALL = {
     { id = "tammo", name = "Training ammo cabinet", cat = "Training", class = "rhylib_training_ammo", save = ARMOURY },
     { id = "tdeposit", name = "Training deposit", cat = "Training", class = "rhylib_training_deposit", save = ARMOURY },
     { id = "cmdpost", name = "Command post (logistics)", cat = "Base", class = "rhylib_command_post", save = "rhylib_logistics_save" },
+    { id = "cmdpostfield", name = "Command post, field (big, for outdoors)", cat = "Base", class = "rhylib_command_post_field", save = "rhylib_logistics_save" },
+    { id = "buildcrate", name = "Building supplies crate (logistics, full)", cat = "Base", class = "rhylib_build_crate" },
     { id = "sensor", name = "Sensor array beacon (logistics, full power)", cat = "Base", class = "rhylib_sensor_beacon" },
     { id = "trainer", name = "Training instructor (basic training quiz)", cat = "Training", class = "rhylib_trainer", save = "rhylib_trainer_save" },
     { id = "armoury", name = "Weapons armoury", cat = "Armoury", class = "rhylib_armoury", save = ARMOURY },
@@ -166,6 +168,8 @@ local CONFIG_MODEL = {
     rhylib_trainer = { "roster", "trainerModel" },
     rhylib_droid_spawner = { "droids", "spawnerModel" },
     rhylib_command_post = { "logistics", "postModel" },
+    rhylib_command_post_field = { "logistics", "postFieldModel" },
+    rhylib_build_crate = { "logistics", "crateModel" },
 }
 
 -- Tool.ClassModel(class): the model placing that class gives, or nil.

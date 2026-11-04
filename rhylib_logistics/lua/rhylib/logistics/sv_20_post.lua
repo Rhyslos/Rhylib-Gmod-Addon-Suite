@@ -97,7 +97,7 @@ end
 
 Rhylib.Net.Receive("logi.postreq", function(ply)
     local post = net.ReadEntity()
-    if not (IsValid(post) and post:GetClass() == "rhylib_command_post") then return end
+    if not (IsValid(post) and post.IsRhylibCommandPost) then return end
     if ply:GetPos():DistToSqr(post:GetPos()) > 300 * 300 then return end
     send(ply, post)
 end, { rate = 1, burst = 2 })
@@ -105,7 +105,7 @@ end, { rate = 1, burst = 2 })
 -- Command posts stay where they're placed (made permanent).
 if Rhylib.Perma and Rhylib.Perma.Placements then
     L.PostPlaces = Rhylib.Perma.Placements("logistics", {
-        classes = { "rhylib_command_post" },
+        classes = { "rhylib_command_post", "rhylib_command_post_field" },
         dataModule = "logistics_places",
         command = "rhylib_logistics_save",
         perm = "rhylib.logistics.admin",

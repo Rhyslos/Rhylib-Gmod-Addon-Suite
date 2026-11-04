@@ -28,7 +28,7 @@ function E.RepCountClient()
     for _, m in ipairs(repMines()) do
         if IsValid(m) and m:GetPlanter() == me then n = n + 1 end
     end
-    local field = E.Skill(me, "eod_minefield")
+    local field = E.Skill(me, "eod_mines")
     return n, field and (E.Cfg("repLimitField")) or (E.Cfg("repLimit"))
 end
 

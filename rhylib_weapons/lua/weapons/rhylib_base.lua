@@ -62,6 +62,7 @@
       InfiniteAmmo, NoAmmoUse, UsesCarrier, GetInventoryData /
       SetInventoryData (rhylib_inventory), CarriedCount
       IsOverchargedShot, IsChargedSemi, ChargedOn, CanOvercharge, ChargeShotCost, ModeSlotOk(i)
+      SpunUp (rotary guns; rhylib_skills K.SpinSkip may let it fire early)
       server: CycleFireMode, SetModeChecked(i), ToggleChargeMode, ToggleSafety, StartReload(kind, magId),
               FinishReload, ChooseMag, TrimClip, LeaveGrappleMode
       client: GetAimFrac, Scoped, GetPropMuzzle, CarrierPose(key), DrawScope
@@ -85,7 +86,9 @@
       SpinSound            sound when the barrels start spinning (SpinUp)
       PlayerFireAnim       false = no third-person firing gesture
       Training, TrainingOf training copy of a gun (rhylib_training)
-      Stun                 every bolt is a stun bolt (rhylib_mp)
+      Stun                 every bolt is a stun bolt (rhylib_mp); FireShot also
+                           fires a stun bolt when rhylib_skills K.StunShot(owner,
+                           wep, n) says shot n of the burst is one
     Fields other addons read: InvW/InvH/InvWeight/InvLarge/InvGroup/
     InvSlot/InvCategory (rhylib_inventory items), CarrySkill /
     RequiresSkill (rhylib_skills), NoArmoury (rhylib_armoury),
@@ -1248,7 +1251,18 @@ function SWEP:FireShot()
         self:SetCell(math.max(0, self:GetCell() - 1 / shots))
     end
 
+    -- Shots in this burst (rhylibBurstShots, 1 = the first): since the
+    -- barrels started spinning (SpinUp guns), else since a 0.3 s gap.
+    if SERVER or IsFirstTimePredicted() then
+        local from = self.SpinUp and self:GetSpinStart() or nil
+        local fresh
+        if from then fresh = from ~= self.rhylibBurstFrom else fresh = now - (self.rhylibLastShot or 0) > 0.3 end
+        self.rhylibBurstFrom = from
+        self.rhylibBurstShots = fresh and 1 or (self.rhylibBurstShots or 0) + 1
+    end
     local stun = self:GetFireModeName() == "stun"
+    -- (rhylib_skills Shock rounds: some shots of a burst are stun shots)
+    if not stun and K and K.StunShot and K.StunShot(owner, self, self.rhylibBurstShots or 1) then stun = true end
     local over = self:IsOverchargedShot()
     -- (Overcharge: the same shot, pitched down so it sounds heavier)
     local snd = self.FireSound
@@ -1373,7 +1387,12 @@ end
 function SWEP:SpunUp()
     if not self.SpinUp then return true end
     local start = self:GetSpinStart()
-    return start > 0 and CurTime() - start >= self.SpinUp
+    if start <= 0 then return false end
+    local t = CurTime() - start
+    if t >= self.SpinUp then return true end
+    -- (rhylib_skills Breacher's drum: fires at once for the start of a burst)
+    local K = skills()
+    return K and K.SpinSkip and K.SpinSkip(self:GetOwner(), self, t) or false
 end
 
 -- Walk speed multiplier for this weapon right now (see sh_20_move.lua).

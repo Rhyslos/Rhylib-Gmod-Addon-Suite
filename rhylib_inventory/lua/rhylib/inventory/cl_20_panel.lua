@@ -5,7 +5,8 @@
     Left to right: gear slots, your player model (drag to turn it), helmet
     button and gear slots, the Back slot (Combine munitions and the belt
     cell pouch under it), then the main grid with the backpack grid and
-    any other grids (cell rack, ammo belt, holster, pouches) under it.
+    any other grids (cell rack, ammo belt, holster, pouches, gun belt)
+    under it. The helmet side has one helmet gear slot (one helmet part).
 
     Drag items to move them, press R while dragging to rotate, drop onto a
     matching stack to merge. Let go anywhere that isn't a grid or slot
@@ -42,8 +43,8 @@ local UI = Rhylib.UI
 
 local MAIN, BACK, SLOT_BACK, EXT, RACK, BELT, HOLSTER = Items.MAIN, Items.BACK, Items.SLOT_BACK, Items.EXT, Items.RACK, Items.BELT, Items.HOLSTER
 -- Short names inside the gear slots.
-local GEAR_SHORT = { kama = "Kama", pauldron = "Pauldron", binos = "Binos", rangefinder = "Range", light = "Light", holster = "Holster",
-    visor = "Visor", forearm = "Forearm", comms = "Antenna", belt = "Belt" }
+local GEAR_SHORT = { kama = "Kama", pauldron = "Pauldron", helmet = "Helmet", holster = "Holster",
+    forearm = "Forearm", comms = "Antenna", belt = "Belt" }
 
 local keyVar = CreateClientConVar("rhylib_inventory_key", "g", true, false, "Key that opens the Rhylib inventory")
 local sizeVar = CreateClientConVar("rhylib_inventory_cellsize", "100", true, false, "Inventory cell size in pixels at 1080p (48-128); everything else scales with it. Reopen the inventory to apply.")
@@ -272,6 +273,7 @@ function PANEL:LayoutKey()
         .. "|" .. (bl and (bl.w .. "x" .. bl.h) or "-") .. "|" .. (ho and (ho.w .. "x" .. ho.h) or "-")
         .. "|" .. table.concat(gear) .. "|" .. (LocalPlayer():GetModel() or "")
         .. "|" .. dims(Inv.cont[Items.POUCH]) .. "|" .. dims(Inv.cont[Items.CELLPACK]) .. "|" .. dims(Inv.cont[Items.CELLBELT])
+        .. "|" .. dims(Inv.cont[Items.GUNBELT])
 end
 
 -- Works out where every region sits and sizes the window; shrinks the
@@ -333,9 +335,9 @@ function PANEL:LayoutOnce()
         gridsH = gridsH + label + self:SpanPx(belt.h)
         gridsW = math.max(gridsW, self:SpanPx(belt.w))
     end
-    -- Grids from worn gear, under that: holster, belt pouches, the ARC
-    -- backpack's cell pouch.
-    for _, g in ipairs({ { HOLSTER, "Holster" }, { Items.POUCH, "Belt pouches" }, { Items.CELLPACK, "Cell pouch" } }) do
+    -- Grids from worn gear, under that: gun belt, holster, belt pouches,
+    -- the ARC backpack's cell pouch.
+    for _, g in ipairs({ { Items.GUNBELT, "Gun belt" }, { HOLSTER, "Holster" }, { Items.POUCH, "Belt pouches" }, { Items.CELLPACK, "Cell pouch" } }) do
         local c = Inv.cont[g[1]]
         if c then
             self.regions[#self.regions + 1] = { cid = g[1], x = gridX, y = top + gridsH + label, gw = c.w, gh = c.h, title = g[2] }
@@ -348,7 +350,7 @@ function PANEL:LayoutOnce()
     -- Gear slots (rhylib_gear) either side of the model: body on the left,
     -- helmet on the right (spread over the model's height below).
     local gearRegions = {}
-    local SIDES = { kama = 1, pauldron = 1, holster = 1, forearm = 1, belt = 1, comms = 1, binos = 2, rangefinder = 2, light = 2, visor = 2 }
+    local SIDES = { kama = 1, pauldron = 1, holster = 1, forearm = 1, belt = 1, comms = 1, helmet = 2 }
     -- Helmet on/off toggle (rhylib_gear), at the top of the helmet side.
     self.helmetRect = nil
     local G = Rhylib.Gear
@@ -660,7 +662,7 @@ function PANEL:PaintRegion(r, dragUid)
             draw.SimpleText("Empty", self:Font(14), r.x + r.pw * 0.5, r.y + r.ph * 0.5, UI.Colors.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         end
     else
-        local isBack, isExt = r.cid == BACK or r.cid == RACK or r.cid == BELT or r.cid == HOLSTER or r.cid == Items.POUCH or r.cid == Items.CELLPACK or r.cid == Items.CELLBELT, r.cid == EXT
+        local isBack, isExt = r.cid == BACK or r.cid == RACK or r.cid == BELT or r.cid == HOLSTER or r.cid == Items.POUCH or r.cid == Items.CELLPACK or r.cid == Items.CELLBELT or r.cid == Items.GUNBELT, r.cid == EXT
         local cellCol = isExt and COL_EXT_CELL or (isBack and COL_BACK_CELL or COL_CELL)
         local borderCol = isExt and COL_EXT_BORDER or (isBack and COL_BACK_BORDER or COL_BORDER)
         for y = 0, r.gh - 1 do
@@ -689,6 +691,8 @@ function PANEL:PaintRegion(r, dragUid)
             label(self, "Cell pouch · power cells only", r.x, r.y - self.label * 0.5)
         elseif r.cid == Items.CELLBELT then
             label(self, "Belt cells", r.x, r.y - self.label * 0.5)
+        elseif r.cid == Items.GUNBELT then
+            label(self, "Gun belt · no long guns", r.x, r.y - self.label * 0.5)
         end
         ticks(r.x - 3, r.y - 3, self:SpanPx(r.gw) + 6, self:SpanPx(r.gh) + 6, self.s)
     end

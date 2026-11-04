@@ -404,7 +404,7 @@ local function build(content, k)
         left = function(w, h) drawChip("WIDEBAND", COL.device, s(10), math.min(h / 2, s(15)) - s(10), s(20)) end })
     row({ leftW = s(110), text = "Blocks one frequency (read it with the probe or the scanner), lasts four times longer and leaves your radio alone. A hopping receiver jumps away every ~" .. (E.Cfg("hopEvery")) .. " s.", strip = COL.device,
         left = function(w, h) drawChip("TUNED", COL.device, s(10), math.min(h / 2, s(15)) - s(10), s(20)) end })
-    note("Signal blackout (Sapper skill): your wideband device also jams droids inside it. Their commanders' boost stops, they react half as fast, and their artillery can't fire on anyone inside.", C.textDim)
+    note("Signal blackout (field technicians): your wideband device also jams droids inside it. Their commanders' boost stops, they react half as fast, and their artillery can't fire on anyone inside.", C.textDim)
     header("Radius", "Wideband per cell", "Tuned per cell", s(80))
     for _, r in ipairs({ 3, 5, 8, 10, 15 }) do
         local wide = string.FormattedTime(E.CellLife(r, false, false), "%02i:%02i")
@@ -428,7 +428,7 @@ local function build(content, k)
         left = function(w, h) drawChip("SCANNER", COL.mines, s(10), math.min(h / 2, s(15)) - s(10), s(20)) end })
     row({ leftW = s(110), text = "Grenades and other blasts set mines off from a distance, and so does shooting one you can see. Mines close together set each other off.", strip = COL.mines,
         left = function(w, h) drawChip("CLEARING", COL.mines, s(10), math.min(h / 2, s(15)) - s(10), s(20)) end })
-    row({ leftW = s(110), text = "Blue outline = one of ours (Sapper skill). Only droids set them off and the blast only hurts droids: walk over them. Whoever planted one picks it up with E.", strip = COL.mines,
+    row({ leftW = s(110), text = "Blue outline = one of ours (Republic mines skill). Only droids set them off and the blast only hurts droids: walk over them. Whoever planted one picks it up with E.", strip = COL.mines,
         left = function(w, h) drawChip("REPUBLIC", COL_80_160_255, s(10), math.min(h / 2, s(15)) - s(10), s(20)) end })
 
     -- 10. Training ---------------------------------------------------------------------

@@ -27,6 +27,12 @@
 
     This file: the module table Rhylib.Radio (R), config settings, jammer
     sizes, roles, and the state packing helpers used on both realms.
+
+    Shoulder antenna (rhylib_gear, worn in the "comms" slot; optional):
+    a wearer is only fully jammed a part of the way into a jammer's range
+    (config antennaResist / antennaResistMedium / antennaResistLarge; a
+    whole-map jammer has no edge, so none), and the fringe moves inward
+    with it (R.AntennaResist, used by the jam timer in sv_10_radio).
 ]]
 
 Rhylib.Radio = Rhylib.Radio or {}
@@ -77,6 +83,9 @@ Config.Register("radio", "jammerChargeWindow", 3, "Comms jammers needing several
 Config.Register("radio", "jammerModelMap", "models/props/starwars/tech/imperial_deflector.mdl", "Map-wide comms jammer: model")
 Config.Register("radio", "jammerFallbackModel", "models/props_lab/reciever01a.mdl", "Comms jammers: model used when a jammer's own model isn't installed")
 Config.Register("radio", "jammerFringe", 0.35, "Comms jammers: interference zone outside the range, as a part of the range (0.35 = 35% further out; the compass breaks up and radio gets static as you get closer)")
+Config.Register("radio", "antennaResist", 0.3, "Shoulder antenna (rhylib_gear): part of a small comms jammer's range the wearer can go into before being fully jammed (0.3 = jammed only within 70% of the range; the fringe moves inward with it)")
+Config.Register("radio", "antennaResistMedium", 0.3, "Shoulder antenna: the same for a medium comms jammer")
+Config.Register("radio", "antennaResistLarge", 0.1, "Shoulder antenna: the same for a large comms jammer (whole-map jammers: no resistance)")
 Config.Register("radio", "jamReconnect", 4, "Comms jammers: seconds the radio stays jammed and reconnects after leaving the range")
 Config.Register("radio", "jamStatic", "ambient/energy/electric_loop.wav", "Comms jammer: the static loop you hear when you key the radio while jammed")
 Config.Register("radio", "jamGarble", { "ambient/levels/prison/radio_random6.wav", "ambient/levels/prison/radio_random7.wav", "ambient/levels/prison/radio_random8.wav", "ambient/levels/prison/radio_random9.wav", "ambient/levels/prison/radio_random10.wav", "ambient/levels/prison/radio_random11.wav" },
@@ -114,6 +123,20 @@ function R.JammerRange(ent)
     local s = R.JammerSize(ent)
     if s.wholeMap then return math.huge end
     return R.Cfg("jammerRange" .. s.key) or 1800
+end
+
+-- R.AntennaResist(ply, ent) -> 0-0.95: part of this jammer's range the
+-- player can go into before being fully jammed. Only with a shoulder
+-- antenna worn and working (rhylib_gear G.Active(ply, "comms")), only for
+-- the comms jammer classes (not rhylib_eod's interference device), and
+-- never for the whole-map one. Server (worn gear is known there).
+function R.AntennaResist(ply, ent)
+    local G = Rhylib.Gear
+    if not (G and G.Active and IsValid(ent)) then return 0 end
+    local s = R.JAMMER_SIZES[ent:GetClass()]
+    if not s or s.wholeMap or ent.JamRange then return 0 end
+    if not G.Active(ply, "comms") then return 0 end
+    return math.Clamp(tonumber(R.Cfg("antennaResist" .. s.key)) or 0, 0, 0.95)
 end
 
 -- R.Jammed(ply): is this player jammed? True inside an active jammer's

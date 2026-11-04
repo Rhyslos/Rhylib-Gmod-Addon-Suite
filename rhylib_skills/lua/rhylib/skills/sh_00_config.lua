@@ -94,14 +94,10 @@ K.CATEGORIES = {
     -- Airborne page : also holds the Field technician
     -- (EOD) path, which isn't Airborne; it's here because the Support page
     -- is full. The two are separate specialisations: pick one.
-    { id = "airborne", name = "Specialist", desc = "Airborne (jetpacks and getting in close) or Field technician (combat engineer: demolitions or sapper)",
+    { id = "airborne", name = "Specialist", desc = "Airborne (jetpacks and getting in close) or Field technician (combat engineer: building, demolitions and jamming droids)",
       specs = {
           { id = "airborne", name = "Airborne", desc = "Jetpacks, hard landings and getting in close (indoors too)" },
-          { id = "eod", name = "Field technician", desc = "Combat engineer (EOD): armour repair, explosives, mines and jamming. Not Airborne: it only shares the page",
-            branches = {
-                { id = "demo", name = "Demolitions", desc = "Bigger blasts, the RPS-6 top attack and cracking armour" },
-                { id = "sapper", name = "Sapper", desc = "Republic mines and jamming droids" },
-            } },
+          { id = "eod", name = "Field technician", desc = "Combat engineer (EOD): armour repair, building, explosives and cracking armour; your wideband device also jams droids. Not Airborne: it only shares the page" },
       } },
     { id = "medic", name = "Medic", desc = "Medic jobs only: revives, treatment and the med bay", medicOnly = true,
       specs = {
@@ -111,7 +107,11 @@ K.CATEGORIES = {
     { id = "shocktrooper", name = "Shock Trooper", desc = "Military police only: the riot shield, breaching and searches", mpOnly = true,
       specs = {
           { id = "shield_wall", name = "Riot Trooper", desc = "The riot shield: holding the line together" },
-          { id = "shock_rifle", name = "Shock Tactics", desc = "The DC-15A: longer stuns, steady under fire, and a last stand" },
+          { id = "shock_rifle", name = "Shock Tactics", desc = "The DC-15A or the Z-6 for breaching, and a last stand",
+            branches = {
+                { id = "dc15a", name = "DC-15A", desc = "Longer stuns and steady under fire" },
+                { id = "z6", name = "Z-6", desc = "No spin-up wait, stun shots in a burst, close-range damage" },
+            } },
       } },
 }
 
@@ -193,16 +193,21 @@ K.NODES = {
     { id = "called_shot", cat = "support", spec = "marksman", tier = 3, cost = 3, name = "Called shot",
       desc = "Your headshots mark the target for you and your squad for 6 s.",
       needsGroups = { { "steady_aim" }, { "carbine_disc" } }, needsLabel = "Needs Steady aim or Carbine discipline" },
-    { id = "bolt_drills", cat = "support", spec = "marksman", tier = 4, cost = 2, name = "Bolt drills", icon = "bolt",
+    { id = "bolt_drills", cat = "support", spec = "marksman", tier = 4, cost = 1, name = "Bolt drills", icon = "bolt",
       desc = "The DC-15X fires 20% faster.", needs = { "headhunter", "long_gun" } },
     { id = "priority_target", cat = "support", spec = "marksman", tier = 4, cost = 3, name = "Priority target",
       desc = "+20% damage against heavy droids (B2s, heavy and commander B1s) and anything marked.",
       needsGroups = { { "headhunter" }, { "called_shot" } }, needsLabel = "Needs Headhunter or Called shot" },
-    { id = "precision_rhythm", cat = "support", spec = "marksman", tier = 4, cost = 2, name = "Precision rhythm",
+    { id = "precision_rhythm", cat = "support", spec = "marksman", tier = 4, cost = 1, name = "Precision rhythm",
       desc = "Aimed DC-15S hits on the same target within 1.5 s add 5% damage each, up to +10%.",
       needs = { "called_shot", "carbine_disc" } },
-    { id = "first_shot", cat = "support", spec = "marksman", tier = 5, cost = 4, name = "First shot", icon = "crosshair",
+    { id = "first_shot", cat = "support", spec = "marksman", tier = 5, cost = 3, name = "First shot", icon = "crosshair",
       desc = "Aimed, after 3 s without firing: your next shot goes exactly where you aim, with +50% damage from the DC-15X or +30% from other guns.",
+      needsGroups = { { "bolt_drills", "priority_target" }, { "bolt_drills", "precision_rhythm" }, { "priority_target", "precision_rhythm" } },
+      needsLabel = "Needs two of Bolt drills, Priority target and Precision rhythm" },
+    -- (id eod_mines: rhylib_eod checks it)
+    { id = "eod_mines", cat = "support", spec = "marksman", tier = 5, cost = 3, name = "Republic mines", icon = "down",
+      desc = "Plant your own Republic mines (ammo cabinet): click the ground. Only droids set them off and the blast only hurts droids; players see them outlined in blue. Up to 6 out at a time, with a 30% wider blast; E on your own mine picks it up.",
       needsGroups = { { "bolt_drills", "priority_target" }, { "bolt_drills", "precision_rhythm" }, { "priority_target", "precision_rhythm" } },
       needsLabel = "Needs two of Bolt drills, Priority target and Precision rhythm" },
 
@@ -212,7 +217,7 @@ K.NODES = {
     { id = "heavy_feed", cat = "support", spec = "heavy", tier = 2, cost = 2, name = "Heavy feed", icon = "stack",
       desc = "Load large 250-round magazines into the Z-6 (nobody else can).", needs = { "reinforced" } },
     { id = "heavy_lifter", cat = "support", spec = "heavy", tier = 2, cost = 1, name = "Heavy lifter", icon = "box",
-      desc = "Moving cargo (coming later: no effect yet).", needs = { "reinforced" } },
+      desc = "Carry a heavy supply crate on your own, and running out of stamina never makes you drop a crate.", needs = { "reinforced" } },
     { id = "planted", cat = "support", spec = "heavy", tier = 3, cost = 3, name = "Planted", icon = "anchor",
       desc = "Crouched with the Z-6: half the spread and half the kick.", needs = { "heavy_feed" } },
     { id = "hunker_down", cat = "support", spec = "heavy", tier = 3, cost = 2, name = "Hunker down", icon = "crouch",
@@ -403,8 +408,9 @@ K.NODES = {
     -- Field technician (EOD, rhylib_eod; no
     -- skill makes defusing easier, they're too niche: the defusal is the
     -- same for everyone). A combat engineer: shared trunk (12), then the
-    -- Demolitions or Sapper branch (12 each). Every path 24.
-    { id = "eod_manual", cat = "airborne", spec = "eod", tier = 1, cost = 2, name = "Bomb manual", icon = "search",
+    -- Demolitions skills (12). One path of 24. (A field technician's
+    -- wideband device jams droids without a skill: rhylib_eod.)
+    { id = "eod_manual", cat = "airborne", spec = "eod", tier = 1, cost = 1, name = "Bomb manual", icon = "search",
       desc = "An EOD manual tab on your datapad (every rule, reading, safeguard and module), and the datapad's Call the bomb squad reaches you." },
     { id = "eod_armor", cat = "airborne", spec = "eod", tier = 2, cost = 3, name = "Armour repair", icon = "shield",
       desc = "Carry an armour repair kit (ammo cabinet): left click a clone in front of you, right click yourself, or use the E wheel. It patches armour back up to their spawn armour; the kit's charge runs down.",
@@ -412,35 +418,29 @@ K.NODES = {
     { id = "eod_blast", cat = "airborne", spec = "eod", tier = 3, cost = 3, name = "Blast hardened", icon = "burst",
       desc = "30% less damage from every explosion (bombs, mines, grenades, rockets, mortars), and explosions never knock you down.",
       needs = { "eod_armor" } },
-    { id = "eod_launcher", cat = "airborne", spec = "eod", tier = 3, cost = 2, name = "Grenade launcher", icon = "grenade",
+    { id = "eod_launcher", cat = "airborne", spec = "eod", tier = 3, cost = 1, name = "Grenade launcher", icon = "grenade",
       desc = "Carry the T-19 grenade launcher. It fires your thermal detonators on impact in a high arc out to 60 m; the range for your aim shows by the ammo counter.",
       needs = { "eod_armor" } },
     { id = "eod_pack", cat = "airborne", spec = "eod", tier = 4, cost = 2, name = "Explosives pack", icon = "weight",
       desc = "Grenades, high explosive charges, mines and rockets weigh half for you, and you stack one more grenade, charge or mine.",
       needsGroups = { { "eod_blast" }, { "eod_launcher" } }, needsLabel = "Needs Blast hardened or Grenade launcher" },
+    -- (the effect is in rhylib_logistics: K.Has(ply, "eod_etool"))
+    { id = "eod_etool", cat = "airborne", spec = "eod", tier = 4, cost = 2, name = "E-tool drills", icon = "wall",
+      desc = "With an E-tool or repair tool, you build structures faster, and placing one uses 20% fewer building supplies.",
+      needsGroups = { { "eod_blast" }, { "eod_launcher" } }, needsLabel = "Needs Blast hardened or Grenade launcher" },
     -- Demolitions
-    { id = "eod_demo", cat = "airborne", spec = "eod", branch = "demo", tier = 5, cost = 3, name = "Demolitions", icon = "charge",
+    { id = "eod_demo", cat = "airborne", spec = "eod", tier = 5, cost = 3, name = "Demolitions", icon = "charge",
       desc = "Your thermal detonators (thrown or launched) and high explosive charges do 25% more damage over a 15% wider blast.",
       needs = { "eod_pack" } },
-    { id = "eod_lockon", cat = "airborne", spec = "eod", branch = "demo", tier = 6, cost = 3, name = "Top attack", icon = "target",
+    { id = "eod_lockon", cat = "airborne", spec = "eod", tier = 6, cost = 3, name = "Top attack", icon = "target",
       desc = "RPS-6 lock-on mode (V): hold aim on a jammer or a droid until it locks, then fire. The rocket climbs first and dives onto the target from above.",
       needs = { "eod_demo" } },
-    { id = "eod_antiarmor", cat = "airborne", spec = "eod", branch = "demo", tier = 6, cost = 3, name = "Anti-armour", icon = "bolt",
+    { id = "eod_antiarmor", cat = "airborne", spec = "eod", tier = 6, cost = 3, name = "Anti-armour", icon = "bolt",
       desc = "Your explosives do 25% more to B2s, heavy and commander droids.",
       needs = { "eod_demo" } },
-    { id = "eod_render", cat = "airborne", spec = "eod", branch = "demo", tier = 7, cost = 3, name = "Render safe", icon = "box",
+    { id = "eod_render", cat = "airborne", spec = "eod", tier = 7, cost = 3, name = "Render safe", icon = "box",
       desc = "Recover the charge from a bomb you made safe: a high explosive charge (two from a large bomb).",
       needsGroups = { { "eod_lockon" }, { "eod_antiarmor" } }, needsLabel = "Needs Top attack or Anti-armour" },
-    -- Sapper
-    { id = "eod_mines", cat = "airborne", spec = "eod", branch = "sapper", tier = 5, cost = 4, name = "Republic mines", icon = "down",
-      desc = "Plant your own Republic mines (ammo cabinet): click the ground. Only droids set them off and the blast only hurts droids; players see them outlined in blue. Up to 3 out at a time; E on your own mine picks it up.",
-      needs = { "eod_pack" } },
-    { id = "eod_blackout", cat = "airborne", spec = "eod", branch = "sapper", tier = 6, cost = 4, name = "Signal blackout", icon = "cell",
-      desc = "Your wideband interference device also jams droids inside it: commanders lose their boost, droids react half as fast, and artillery can't fire on anyone in the bubble.",
-      needs = { "eod_mines" } },
-    { id = "eod_minefield", cat = "airborne", spec = "eod", branch = "sapper", tier = 7, cost = 4, name = "Minefield", icon = "stack",
-      desc = "Up to 6 Republic mines at a time, and their blast is 30% wider.",
-      needs = { "eod_blackout" } },
 
     -- Medic (medic jobs only). Tier 1 also has the weapon choice (exclusive
     -- group "medic_gun": one or the other).
@@ -516,16 +516,27 @@ K.NODES = {
     { id = "phalanx", cat = "shocktrooper", spec = "shield_wall", tier = 6, cost = 5, name = "Phalanx",
       desc = "Your raised shield also stops bolts aimed at teammates right behind you.",
       needs = { "hold_line", "flash_charge" } },
-    -- Shock Tactics (shock_rifle; after Shock Assault). Every path 24.
-    { id = "stun_rounds", cat = "shocktrooper", spec = "shock_rifle", tier = 5, cost = 3, name = "Stun rounds", icon = "bolt",
+    -- Shock Tactics (shock_rifle; after Shock Assault): the DC-15A or the
+    -- Z-6 branch (6 points each), then For The Republic for both. Every
+    -- path 24. Every Shock Tactics skill works in an MP job only (K.ShockOk).
+    { id = "stun_rounds", cat = "shocktrooper", spec = "shock_rifle", branch = "dc15a", tier = 5, cost = 3, name = "Stun rounds", icon = "bolt",
       desc = "DC-15A stun shots keep people down twice as long.",
       needs = { "shock_assault" } },
-    { id = "braced", cat = "shocktrooper", spec = "shock_rifle", tier = 5, cost = 3, name = "Braced", icon = "shield",
+    { id = "braced", cat = "shocktrooper", spec = "shock_rifle", branch = "dc15a", tier = 5, cost = 3, name = "Braced", icon = "shield",
       desc = "Aiming with the DC-15A: 20% less damage taken and 25% less kick.",
       needs = { "shock_assault" } },
-    { id = "for_republic", cat = "shocktrooper", spec = "shock_rifle", tier = 6, cost = 5, name = "For The Republic", icon = "star",
+    { id = "z6_drum", cat = "shocktrooper", spec = "shock_rifle", branch = "z6", tier = 5, cost = 2, name = "Breacher's drum", icon = "barrels",
+      desc = "Z-6: when you start firing it fires at once, as if already spun up, for the first second of every burst.",
+      needs = { "shock_assault" } },
+    { id = "z6_room", cat = "shocktrooper", spec = "shock_rifle", branch = "z6", tier = 5, cost = 2, name = "Room clearer", icon = "door",
+      desc = "Z-6 bolts that hit within about 10 m do 25% more damage.",
+      needs = { "shock_assault" } },
+    { id = "z6_shock", cat = "shocktrooper", spec = "shock_rifle", branch = "z6", tier = 6, cost = 2, name = "Shock rounds", icon = "bolt",
+      desc = "Every 10th Z-6 bolt in a burst is a stun shot: it stuns a player it hits like a DC-15A stun shot (no damage).",
+      needs = { "z6_drum", "z6_room" } },
+    { id = "for_republic", cat = "shocktrooper", spec = "shock_rifle", tier = 7, cost = 5, name = "For The Republic", icon = "star",
       desc = "Once per life, when you would go down you fight on for 5 s instead: no damage taken, infinite ammo, double damage and 25% more kick, but you can't move. Then you go down.",
-      needs = { "stun_rounds", "braced" } },
+      needsGroups = { { "stun_rounds", "braced" }, { "z6_shock" } }, needsLabel = "Needs Stun rounds and Braced, or Shock rounds" },
 }
 
 -- Lookups (rebuilt on refresh): K.byId[id] = node, K.catById[id] =
@@ -946,7 +957,7 @@ local PAGE_SECTIONS = {
     { "Reinforcements & squad wheel", { "^reinf", "^squadSignal" } },
     { "Airborne", { "^rush", "^grenade", "^airborne", "^fallMult$", "^tankMult$", "^springJump$", "^hover", "^afterburner", "^combatDrop", "^blastMult$", "^airMult$", "^slam" } },
     { "Medic", { "^underFire", "^medGun" } },
-    { "Shock Trooper", { "^holdLine", "^bash", "^searchMult$", "^stunRounds", "^braced", "^republic" } },
+    { "Shock Trooper", { "^holdLine", "^bash", "^searchMult$", "^stunRounds", "^braced", "^republic", "^z6" } },
 }
 
 Config.Describe("skills", { name = "Skills", category = "Soldiers" })

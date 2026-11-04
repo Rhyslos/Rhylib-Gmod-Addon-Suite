@@ -106,13 +106,13 @@ reg("mineModelLarge", "models/props/starwars/weapons/lasertrap.mdl", "LAP (large
 reg("mineSize", 20, "AP mine: width it is drawn at (units; the model is scaled to fit, LAP ×1.4)")
 reg("mineSink", 0.55, "Mines: share of a mine's height drawn below the ground (0 = sits on top, 0.9 = almost hidden)")
 reg("mineChain", 140, "Mines: another mine within this (units) of an explosion goes off too")
--- Republic mines (EOD Republic mines skill)
+-- Republic mines (the Marksman skill Republic mines, rhylib_skills eod_mines)
 reg("repDamage", 260, "Republic mine: blast damage to droids at the centre")
-reg("repRadius", 280, "Republic mine: blast radius (units; Minefield ×repFieldRadius)")
+reg("repRadius", 280, "Republic mine: blast radius (units; planted with the Republic mines skill ×repFieldRadius)")
 reg("repTrigger", 45, "Republic mine: how close a droid must come to set it off (units)")
-reg("repLimit", 3, "Republic mines: how many one player may have out")
-reg("repLimitField", 6, "Republic mines: how many with the Minefield skill")
-reg("repFieldRadius", 1.3, "Republic mines: blast radius multiplier with Minefield")
+reg("repLimit", 3, "Republic mines: how many someone without the Republic mines skill may have out (staff testing)")
+reg("repLimitField", 6, "Republic mines: how many one player with the Republic mines skill may have out")
+reg("repFieldRadius", 1.3, "Republic mines: blast radius multiplier with the Republic mines skill")
 
 -- Item / weapon class names used across the addon.
 E.KIT = "eod_kit"                       -- item: needed to open and work on a bomb or mine
@@ -226,11 +226,23 @@ E.CAUSES = {
 -- technician path on the Specialist page; category id "airborne").
 -- False without rhylib_skills. Shared. No skill makes defusing easier;
 -- skills only unlock extras (manual, Render safe recovery, Republic
--- mines, Minefield, Signal blackout).
+-- mines: the Marksman skill eod_mines, 6 out and a wider blast).
 -- Example: if Rhylib.EOD.Skill(ply, "eod_manual") then ... end
 function E.Skill(ply, id)
     local K = Rhylib.Skills
     return K and K.Has and IsValid(ply) and K.Has(ply, id) or false
+end
+
+-- E.IsFieldTech(ply): any Field technician skill (rhylib_skills spec
+-- "eod"). A field technician's wideband interference device also jams
+-- droids (sv_20_world.lua). False without rhylib_skills. Shared.
+function E.IsFieldTech(ply)
+    local K = Rhylib.Skills
+    if not (K and K.NODES and K.Has and IsValid(ply)) then return false end
+    for _, n in ipairs(K.NODES) do
+        if n.spec == "eod" and K.Has(ply, n.id) then return true end
+    end
+    return false
 end
 
 -- Permission for the GM window and the EOD toolgun entries (default rank

@@ -4,7 +4,8 @@
     (rhylib/logistics/sv_20_post.lua, cl_20_post.lua). Make it permanent
     with the toolgun's Permanent tool to keep it on the map (Data
     "logistics_places", console rhylib_logistics_save). Model: logistics
-    postModel. Can't be hurt.
+    postModel (ENT.ModelKey; the field variant,
+    entities/rhylib_command_post_field.lua, uses postFieldModel). Can't be hurt.
 ]]
 
 AddCSLuaFile()
@@ -16,13 +17,15 @@ ENT.Category = "Rhy's Logistics"
 ENT.Spawnable = true
 ENT.AdminOnly = true
 ENT.RenderGroup = RENDERGROUP_BOTH
+ENT.ModelKey = "postModel"
+ENT.IsRhylibCommandPost = true
 
 local FALLBACK = "models/props_lab/monitor01b.mdl"
 
 if SERVER then
     function ENT:Initialize()
         local L = Rhylib.Logistics
-        local m = L and L.Cfg("postModel") or FALLBACK
+        local m = L and L.Cfg(self.ModelKey) or FALLBACK
         if not (isstring(m) and util.IsValidModel(m)) then m = FALLBACK end
         self:SetModel(m)
         self:PhysicsInit(SOLID_VPHYSICS)

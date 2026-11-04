@@ -37,9 +37,11 @@ Config.Describe("logistics", { name = "Logistics", category = "Soldiers", sectio
     { "Command post", { "^post" } },
     { "Sensor arrays", { "^sensor" } },
     { "Who sees what", { "^officerRank$" } },
+    { "Building", { "^build", "^etool", "^repair", "^skill", "^crate", "^carry", "^staffCrate" } },
 } })
 Config.Register("logistics", "postRadius", 3000, "Command post: supplies within this range are listed (units)")
 Config.Register("logistics", "postModel", "models/ace/sw/rh/cgi_holotable_bottom.mdl", "Command post: model (the battalion computer's for now)")
+Config.Register("logistics", "postFieldModel", "models/fisher/command/command.mdl", "Field command post (the big outdoor one): model")
 Config.Register("logistics", "sensorRadius", 1800, "Sensor array: how far a beacon senses droids (units, through walls; 1800 = the small comms jammer's range). Field technicians, officers and staff holding the toolgun see it as a ring on the ground")
 Config.Register("logistics", "sensorPower", 720, "Sensor array: seconds one full power cell keeps a beacon running (12 min)")
 Config.Register("logistics", "sensorHealth", 150, "Sensor array: damage a beacon takes before it breaks")

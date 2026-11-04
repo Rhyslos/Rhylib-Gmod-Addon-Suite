@@ -755,10 +755,10 @@ local function tick()
             if dev:GetActive() then devs[#devs + 1] = dev end
         end
     end
-    -- Signal blackout (EOD skill): wideband devices whose owner has it.
+    -- Signal blackout: wideband devices set down by a field technician.
     local bo = {}
     for _, dev in ipairs(devs) do
-        if not dev:GetTuned() and IsValid(dev.eodOwner) and E.Skill(dev.eodOwner, "eod_blackout") then bo[#bo + 1] = dev end
+        if not dev:GetTuned() and IsValid(dev.eodOwner) and E.IsFieldTech(dev.eodOwner) then bo[#bo + 1] = dev end
     end
     E.blackouts = bo
     local scan = now - lastScan >= 0.5

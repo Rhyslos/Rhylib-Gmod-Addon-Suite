@@ -255,6 +255,13 @@ function Inv.RequestMove(inst, cid, x, y, rot, single)
                 if Inv.ShowNote then Inv.ShowNote(wearWhy) end
                 return
             end
+            -- (the slot already holds something else, e.g. another helmet part)
+            local _, other = next(c.items)
+            if other and other.uid ~= inst.uid and Items.defs[inst.id] and Items.ContainerAllows(cid, Items.defs[inst.id]) then
+                local od = Items.defs[other.id]
+                if Inv.ShowNote then Inv.ShowNote("Take off the " .. string.lower(od and od.name or "item") .. " first") end
+                return
+            end
         end
     end
     single = single and inst.count > 1

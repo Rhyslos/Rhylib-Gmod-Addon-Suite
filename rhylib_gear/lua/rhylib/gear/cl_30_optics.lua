@@ -31,7 +31,9 @@
     night vision (the flashlight key still does too); a tap acts when the
     key is let go.
     The helmet gear key (L) steps through it all: off -> binoculars ->
-    sun visor -> off. With rhylib_inventory the binoculars / rangefinder
+    sun visor -> off (the helmet slot holds one part at a time, so in
+    practice binoculars / rangefinder -> off, or visor -> off, or lights
+    on / off). With rhylib_inventory the binoculars / rangefinder
     follow your hands (G.AutoMode): a weapon out = weapon mode, gun put
     away = looking. Without it, L steps looking -> weapon mode -> visor.
     Middle mouse is freelook's alone (rhylib_thirdperson).
@@ -122,7 +124,7 @@ local keyDown = G.KeyDown   -- (sh_00_config.lua)
 -- A tap of the helmet gear key: optics up (binoculars first) or down, the
 -- sun visor, or the helmet lights (see the header for the order).
 local function gearTap(me)
-    -- (worn with binoculars too: off -> binoculars -> visor -> off)
+    -- (order: binoculars -> visor -> off; one helmet part is worn at a time)
     if kindUp() == 3 then
         send(0)   -- (handheld binoculars: just lowered)
     elseif kindUp() ~= 0 and looking() and not G.AutoMode() then

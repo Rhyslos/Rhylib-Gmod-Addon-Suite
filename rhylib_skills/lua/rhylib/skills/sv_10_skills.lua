@@ -2,8 +2,9 @@
     Skills on the server: saving, learning, resetting, and the effects
     that only the server works out (damage, Momentum, inventory grids).
 
-    Data "skills" key "s"..SteamID64 = { n = { ids } } (sorted ids; a
-    reset deletes the row). Class mode rows: sv_40_class.lua.
+    Data "skills" key "s"..SteamID64 = { n = { ids }, tv = tree version }
+    (sorted ids; a reset deletes the row; an older tv refunds the trees in
+    REWORKED once). Class mode rows: sv_40_class.lua.
     Nets: skills.learn (node index, 8 bits), skills.unlearn (node index:
     right-click undo, K.CanUnlearn + K.UndoAllowed or the reset hook),
     skills.reset (empty), skills.note (server -> player: bad bool, text;
@@ -23,8 +24,8 @@
     chat + console line to every superadmin who joins.
     K.SetSkills(ply, set) applies a set (NW2String, save, inventory grids).
     K.DamageMult(ply, bolt, ent, tr, group) for rhylib_weapons (Focus fire,
-    Carbine sidearm, Point blank, Headhunter, Shotgun drills, crits /
-    Light rounds);
+    Carbine sidearm, Point blank, Room clearer, Headhunter, Shotgun drills,
+    crits / Light rounds);
     returns mult, crit.
     K.ExtraGrids(ply) for rhylib_inventory: { [cid] = { w, h } } the
     player's skills open (Ammo belt); K.BackpackMult(ply) (Load bearer
@@ -50,13 +51,16 @@ local RENAMED = { burst_fire = "rapid_fire", thruster_dodge = "combat_drop" }
 
 -- Tree version saved with each set (tv). A save from before a rework of a
 -- tree loses that tree's skills (points back) on join, with a note:
--- REWORKED[v] = the trees reworked in version v.
-K.TREE_VERSION = 3
+-- REWORKED[v] = the trees reworked in version v: a category id (the whole
+-- tab) or a specialisation id (only that spec's skills, e.g. eod for the
+-- Field technician, which shares the Specialist tab with Airborne).
+K.TREE_VERSION = 4
 local REWORKED = {
     [2] = { trooper = true, support = true, officer = true, shocktrooper = true },
     [3] = { support = true, shocktrooper = true },
+    [4] = { shocktrooper = true, eod = true, marksman = true },
 }
-local TREE_NAMES = { trooper = "Trooper", support = "Support", officer = "Officer", shocktrooper = "Shock Trooper" }
+local TREE_NAMES = { trooper = "Trooper", support = "Support", officer = "Officer", shocktrooper = "Shock Trooper", eod = "Field technician", marksman = "Marksman" }
 
 local function setString(set)
     local ids = {}
@@ -86,10 +90,11 @@ function K.Stored(ply)
                 local gone = {}
                 for v = from + 1, K.TREE_VERSION do
                     for id in pairs(set) do
-                        local cat = K.byId[id].cat
-                        if REWORKED[v] and REWORKED[v][cat] then
+                        local n, r = K.byId[id], REWORKED[v]
+                        local tree = r and ((r[n.cat] and n.cat) or (n.spec and r[n.spec] and n.spec))
+                        if tree then
                             set[id] = nil
-                            gone[cat] = true
+                            gone[tree] = true
                         end
                     end
                 end
@@ -507,6 +512,11 @@ function K.DamageMult(ply, bolt, ent, tr, group)
         local near, far = K.Cfg("pointBlankNear"), K.Cfg("pointBlankFar")
         local f = d <= near and 1 or (d >= far and 0 or 1 - (d - near) / math.max(far - near, 1))
         m = m * (1 + (K.Cfg("pointBlankMult") - 1) * f)
+    end
+    -- Room clearer (Shock Tactics, Z-6): close hits do more.
+    if set.z6_room and bolt.start and IsValid(wep) and K.GunClass(wep) == K.Z6 and K.ShockOk(ply)
+        and bolt.start:DistToSqr(tr.HitPos) <= K.Cfg("z6RoomRange") ^ 2 then
+        m = m * K.Cfg("z6RoomMult")
     end
     if set.headhunter and group == HITGROUP_HEAD then m = m * K.Cfg("headhunterMult") end
     -- Marksman: Priority target, Precision rhythm (DC-15S hits in a row), Called shot.

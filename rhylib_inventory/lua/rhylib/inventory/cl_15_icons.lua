@@ -63,9 +63,10 @@ local Icons = Inv.Icons
 local FALLBACK = "models/props_junk/cardboard_box004a.mdl"
 
 -- Camera around a gear part: yaw (0 = in front of the model, + = its
--- left) and pitch (degrees above).
+-- left) and pitch (degrees above). By the part's `part` name (helmet
+-- parts: binos, rangefinder, light, visor), else its slot.
 Icons.PART_VIEW = {
-    kama = { 20, 5 }, pauldron = { 25, 10 }, binos = { 30, 8 }, rangefinder = { 30, 8 }, light = { 30, 8 }, visor = { 25, 5 },
+    kama = { 20, 5 }, pauldron = { 25, 10 }, binos = { 30, 8 }, rangefinder = { 30, 8 }, light = { 30, 8 }, visor = { 25, 5 }, helmet = { 30, 8 },
     holster = { 15, 5 }, forearm = { -40, 5 }, comms = { 35, 10 }, belt = { 15, 5 }, back = { 205, 12 },
 }
 Icons.ANGLED = { 35, 25 }   -- other items: front left, a little above
@@ -419,7 +420,7 @@ local function shootPart(ent, spec, tx, ty, tw, th)
         end
     end
     if not any then error("part not on this model") end
-    local view = Icons.PART_VIEW[sh.slot] or { 20, 5 }
+    local view = Icons.PART_VIEW[sh.part or sh.slot] or Icons.PART_VIEW[sh.slot] or { 20, 5 }
     local auto = (-Angle(-view[2], view[1], 0):Forward()):Angle()
     spec.autoAng = auto
     local ang = viewAngle(spec, auto)

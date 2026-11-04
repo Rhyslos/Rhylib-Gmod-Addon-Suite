@@ -4,7 +4,7 @@
     Exhausted, Load, Penalty, LoadSpeedMult, SpreadPenalty. Movement is in
     sh_10_move.lua; the stamina bar is drawn by rhylib_hud.
 
-    Stamina runs from 0 to max. Sprinting and jumping use it; it comes
+    Stamina runs from 0 to max (130 by default). Sprinting and jumping use it; it comes
     back after a short rest. Running completely dry leaves you exhausted:
     no sprinting until you're back to exhaustedUntil.
 
@@ -47,8 +47,8 @@ S.DT_RATE = DT.Claim("Float", "stamina.rate", 26)
 S.DT_EXHAUSTED = DT.Claim("Bool", "stamina.exhausted", 28)
 
 local Config = Rhylib.Config
-Config.Register("stamina", "max", 100, "Full stamina", { section = "Stamina" })
-Config.Register("stamina", "sprintDrain", 12, "Stamina per second while sprinting with no load (100 / 12 = about 8 s of sprint)", { section = "Stamina" })
+Config.Register("stamina", "max", 130, "Full stamina", { section = "Stamina" })
+Config.Register("stamina", "sprintDrain", 12, "Stamina per second while sprinting with no load (130 / 12 = about 11 s of sprint)", { section = "Stamina" })
 Config.Register("stamina", "jumpCost", 8, "Stamina per jump", { section = "Stamina" })
 Config.Register("stamina", "regen", 20, "Stamina per second while resting, with no load", { section = "Stamina" })
 Config.Register("stamina", "regenDelay", 1, "Seconds after sprinting or jumping before stamina comes back", { section = "Stamina" })

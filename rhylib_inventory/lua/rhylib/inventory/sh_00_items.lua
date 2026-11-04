@@ -34,6 +34,9 @@
         weightMults { [id] = mult }: worn, makes those items lighter
         stackMax    highest stack a skill may give (see Items.StackFor)
         carrySkill  skill needed to carry it (rhylib_skills)
+        wornRank    saved items competing for one worn slot on join: the
+                    lowest rank stays worn, the rest move (rhylib_gear's
+                    helmet parts)
 
     Weapons become items automatically if their SWEP table sets InvW/InvH.
     Optional SWEP fields: InvStack (stack size, e.g. medical kits),
@@ -392,12 +395,16 @@ end
 --   5  cell rack: only power cells (no longer opened; old saves move out)
 --   6  ammo belt (rhylib_skills)
 --   7  holster: pistols, while a holster is worn
---   8-17 worn gear slots (kama, pauldron, binoculars, rangefinder, helmet
---      light, holster, sun visor, forearm, shoulder antenna, belt pouches),
---      one item each with that `slot` (rhylib_gear)
+--   8-17 worn gear slots (kama, pauldron, helmet, holster, forearm,
+--      shoulder antenna, belt pouches), one item each with that `slot`
+--      (rhylib_gear). 10 is the one helmet slot (macrobinoculars,
+--      rangefinder, helmet lights or sun visor); 11, 12 and 14 were their
+--      own slots once and are no longer made: what a save still has in
+--      them moves on join (Items.OLD_WORN).
 --   18 belt pouches' grid, while they're worn
 --   19 ARC backpack's cell pouch (cells only), while it's worn
 --   20 belt cell pouch every player has (config inventory beltCells)
+--   21 gun belt's grid (backpack rules), while a gun belt is worn
 -- Worn slots (the back slot and the gear slots) hold one item each; a worn
 -- item with `grid` adds a container (gridCid, default the backpack grid)
 -- and can only come off while that container is empty.
@@ -415,23 +422,25 @@ Items.HOLSTER = 7    -- pistols (def.holster), while a holster is worn (2x2: bot
 Items.POUCH = 18     -- belt pouches (worn belt pouches): like the ammo belt
 Items.CELLPACK = 19  -- ARC backpack's side pouch: power cells only
 Items.CELLBELT = 20  -- belt cell pouch every clone carries (config inventory beltCells): power cells only
-Items.CONT_BITS = 5   -- (containers 0-31; gear slots 8-17; free ids: 0, 21-31)
+Items.GUNBELT = 21   -- gun belt's grid (rhylib_gear gun belts): like the backpack (no large items)
+Items.CONT_BITS = 5   -- (containers 0-31; gear slots 8-17; free ids: 0, 22-31; 11, 12, 14 kept for old saves)
 
 -- Worn slots: [cid] = { slot = def.slot, title }. GEAR_SLOTS in display order.
 Items.WORN = {
     [Items.SLOT_BACK] = { slot = "back", title = "Back" },
     [8] = { slot = "kama", title = "Kama" },
     [9] = { slot = "pauldron", title = "Pauldron" },
-    [10] = { slot = "binos", title = "Binoculars" },
-    [11] = { slot = "rangefinder", title = "Rangefinder" },
-    [12] = { slot = "light", title = "Helmet light" },
+    [10] = { slot = "helmet", title = "Helmet gear" },
     [13] = { slot = "holster", title = "Holster" },
-    [14] = { slot = "visor", title = "Sun visor" },
     [15] = { slot = "forearm", title = "Forearm" },
     [16] = { slot = "comms", title = "Shoulder antenna" },
     [17] = { slot = "belt", title = "Belt pouches" },
 }
-Items.GEAR_SLOTS = { 8, 9, 15, 17, 13, 16, 10, 11, 12, 14 }
+Items.GEAR_SLOTS = { 8, 9, 15, 17, 13, 16, 10 }
+-- Old worn slot ids (the helmet parts' own slots before they shared 10).
+-- Saved items in them load with the worn items, so the helmet slot is
+-- settled (def.wornRank) before anything else.
+Items.OLD_WORN = { [11] = true, [12] = true, [14] = true }
 Items.WORN_BY_SLOT = {}
 for cid, w in pairs(Items.WORN) do Items.WORN_BY_SLOT[w.slot] = cid end
 
@@ -473,7 +482,7 @@ function Items.ContainerAllows(cid, def)
     if def.slotOnly and cid ~= Items.EXT then return false end
     if cid == Items.HOLSTER then return def.holster == true end
     if cid == Items.EXT then return true end  -- the storage itself decides (sv_30_storage.lua)
-    if cid == Items.BACK then return not def.large and not def.grid end
+    if cid == Items.BACK or cid == Items.GUNBELT then return not def.large and not def.grid end
     if cid == Items.RACK or cid == Items.CELLPACK or cid == Items.CELLBELT then return def.id == "cell" end
     if cid == Items.BELT or cid == Items.POUCH then return not def.grid and not def.slot and not (def.weapon and def.w >= 5) end
     return true

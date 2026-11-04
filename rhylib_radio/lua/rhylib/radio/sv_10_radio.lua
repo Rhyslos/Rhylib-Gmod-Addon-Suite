@@ -585,6 +585,8 @@ R.jammers = R.jammers or {}
 -- outer edge towards 1 at the range (the client breaks up the compass and
 -- adds static). Leaving the range keeps the radio jammed for
 -- jamReconnect seconds (NW2Float rhylib_jamUntil = when it reconnects).
+-- A shoulder antenna (R.AntennaResist) pulls the full-jam distance in to
+-- range × (1 - resist), and the fringe band moves in with it (same width).
 local function setLevel(p, lvl)
     lvl = math.floor(lvl * 20 + 0.5) / 20   -- (5% steps: no NW2 spam)
     if p.rhylibJamLevel ~= lvl then
@@ -614,7 +616,7 @@ timer.Create("Rhylib.Radio.Jam", 0.5, 0, function()
             R.jammers[j] = nil
         elseif j:GetActive() then
             local r = R.JammerRange(j)
-            if r == math.huge then wholeMap = true else list[#list + 1] = { j:GetPos(), r } end
+            if r == math.huge then wholeMap = true else list[#list + 1] = { j:GetPos(), r, j } end
         end
     end
     local fringe = math.max(0, R.Cfg("jammerFringe") or 0.35)
@@ -629,10 +631,13 @@ timer.Create("Rhylib.Radio.Jam", 0.5, 0, function()
                 local pos = p:GetPos()
                 for _, e in ipairs(list) do
                     local d = e[1]:Distance(pos)
-                    if d <= e[2] then inside = true break end
                     local band = e[2] * fringe
-                    if band > 0 and d < e[2] + band then
-                        lvl = math.max(lvl, 1 - (d - e[2]) / band)
+                    -- (the antenna is only asked when the player is near this jammer)
+                    local full = e[2]
+                    if d < e[2] + band then full = e[2] * (1 - R.AntennaResist(p, e[3])) end
+                    if d <= full then inside = true break end
+                    if band > 0 and d < full + band then
+                        lvl = math.max(lvl, 1 - (d - full) / band)
                     end
                 end
             end

@@ -425,7 +425,7 @@ local function removable(ent)
     -- Grapple ropes and ziplines (staff with the full toolgun only: no entry);
     -- a zipline's far end stands for its line.
     local cls = ent:GetClass()
-    if cls == "rhylib_rope" or cls == "rhylib_zipline" then return { class = cls } end
+    if cls == "rhylib_rope" or cls == "rhylib_zipline" or cls == "rhylib_structure" then return { class = cls } end   -- (and built field structures)
     if cls == "rhylib_zipline_end" and IsValid(ent.zip) then return { class = "rhylib_zipline", ent = ent.zip } end
     return Tool.ByClass(cls)
 end

@@ -5,7 +5,7 @@
     current one and class mode is on). A class's skills are applied with
     K.SetSkills(ply, set, true), which doesn't save, so the player's own
     tree stays in Data "skills" "s"..sid and is simply loaded back.
-    Nets: skills.classpick (class index 4 bits, order index 3 bits),
+    Nets: skills.classpick (class index K.CLASS_BITS = 5 bits, order index 3 bits),
     skills.classleave, skills.classmode (bool, staff).
     Console: rhylib_classmode [0|1] (perm rhylib.skills.admin).
 ]]
@@ -57,7 +57,7 @@ end
 
 -- Picking a class (or switching to another one) uses a pick.
 Rhylib.Net.Receive("skills.classpick", function(ply)
-    local cls = K.CLASSES[net.ReadUInt(4)]
+    local cls = K.CLASSES[net.ReadUInt(K.CLASS_BITS)]
     local order = K.ORDERS[net.ReadUInt(3)]
     if not (cls and K.ClassMode()) then return end
     local ok, why = K.ClassAllowed(ply, cls)

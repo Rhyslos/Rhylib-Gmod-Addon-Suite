@@ -2,10 +2,11 @@
     Wearable gear (bodygroups):
 
       Parts are items from the gear cabinet, worn in the inventory's gear
-      slots (rhylib_inventory Items.WORN): kama, pauldron, binoculars,
-      rangefinder, helmet lights, sun visor, holster, forearm, shoulder
-      antenna, belt pouches, plus back-slot items (ARC / comms backpack,
-      gun belts, strap). Every bodygroup in the scan is an item. The
+      slots (rhylib_inventory Items.WORN): kama, pauldron, the helmet slot
+      (macrobinoculars, rangefinder, helmet lights or sun visor: one at a
+      time), holster, forearm, shoulder antenna, belt pouches, plus
+      back-slot items (ARC / comms backpack, gun belts, strap). Every
+      bodygroup in the scan is an item. The
       cabinet only offers what your model shows and you may take.
       Wearing one turns its bodygroup
       on, matched by group NAME and option (.smd) NAME, because models
@@ -26,9 +27,19 @@
       flashlight key (cl_40_lights.lua); holster = a pistol slot
       (Items.HOLSTER, two pistols); belt pouches = 5 slots (Items.POUCH);
       ARC backpack = 4x4 backpack + a cell pouch for two power cells
-      (Items.CELLPACK); comms backpack = a backpack; gun belts = the
-      DC-15A and RPS-6 weigh half (def.weightMults). The rest are
-      cosmetic for now.
+      (Items.CELLPACK); comms backpack = a backpack; gun belts = a 6x1
+      grid (Items.GUNBELT) and the DC-15A and RPS-6 weigh half
+      (def.weightMults); shoulder antenna = jammer resistance (read by
+      rhylib_radio through G.Active(ply, "comms")). The rest are cosmetic
+      for now.
+
+    Helmet slot: the four helmet parts share one worn slot ("helmet").
+    Each keeps its own part name (it.part: binos, rangefinder, light,
+    visor), and G.Worn / G.Active still answer for those names, so
+    G.Active(ply, "visor") is true only while the sun visor is the part
+    worn. Old saves with several parts worn keep one (G.ORDER: macro-
+    binoculars, rangefinder, sun visor, helmet lights; def.wornRank) and
+    the rest move into the inventory or onto the ground (rhylib_inventory).
 
     rhylib_gear_scan (sv_10_scan.lua) lists every job model's bodygroups.
 
@@ -54,7 +65,8 @@ Rhylib.Perms.Register("rhylib.gear.admin", "admin", "Run the bodygroup scan")
 -- use) = option names, lower case without ".smd". Several items can share
 -- a slot (kama / ARC kama); G.ORDER decides who gets a shared group.
 -- Effects belong to the slot (an ARC kama works like a kama).
--- Fields: slot (worn slot, rhylib_inventory Items.WORN), name, desc, groups,
+-- Fields: slot (worn slot, rhylib_inventory Items.WORN), part (helmet parts:
+-- the name effects use, see G.Worn), name, desc, groups,
 -- on, down (optics only), optics (1 binoculars, 2 rangefinder), w / h
 -- (cells), weight (kg), model (inventory picture), grid / gridName /
 -- gridCid / extraGrids (containers it adds), carry, weightMults
@@ -72,16 +84,16 @@ G.ITEMS = {
     rhylib_pauldron_arc = { slot = "pauldron", name = "ARC pauldron", desc = "Worn: your armour lasts longer",
         groups = { "pauldron" }, on = { "arc2_arcpauldron" },
         w = 1, h = 1, weight = 0.9, model = "models/props_junk/garbage_metalcan002a.mdl" },
-    rhylib_macrobinoculars = { slot = "binos", name = "Macrobinoculars", desc = "Worn on the helmet: zoom, range and night vision (optics key)",
+    rhylib_macrobinoculars = { slot = "helmet", part = "binos", name = "Macrobinoculars", desc = "Helmet slot (one helmet part at a time): zoom, range and night vision (optics key)",
         groups = { "binos" }, on = { "trooper_binosup" }, down = { "trooper_binosdown" }, optics = 1,
         w = 1, h = 1, weight = 0.6, model = "models/props_lab/binderblue.mdl" },
-    rhylib_rangefinder = { slot = "rangefinder", name = "Rangefinder", desc = "Worn on the helmet: zoom, range and night vision (optics key)",
+    rhylib_rangefinder = { slot = "helmet", part = "rangefinder", name = "Rangefinder", desc = "Helmet slot (one helmet part at a time): zoom, range and night vision (optics key)",
         groups = { "rangefinder", "antenna" }, on = { "co_antennaup" }, down = { "co_antennadown" }, optics = 2,
         w = 1, h = 1, weight = 0.4, model = "models/props_lab/reciever01d.mdl" },
-    rhylib_helmet_light = { slot = "light", name = "Helmet lights", desc = "Worn on the helmet: two lamps (flashlight key)",
+    rhylib_helmet_light = { slot = "helmet", part = "light", name = "Helmet lights", desc = "Helmet slot (one helmet part at a time): two lamps (flashlight key)",
         groups = { "flashlighthelmet" }, on = { "trooper_flashlight" },
         w = 1, h = 1, weight = 0.2, model = "models/props_junk/garbage_metalcan001a.mdl" },
-    rhylib_sunvisor = { slot = "visor", name = "Sun visor", desc = "Helmet gear key (L): visor down for a red tactical view, 3x zoom while aiming, night vision on the flashlight key; with Mark target it spots enemies every 5 s. Not with macrobinoculars on models where they share a mount.",
+    rhylib_sunvisor = { slot = "helmet", part = "visor", name = "Sun visor", desc = "Helmet slot (one helmet part at a time). Helmet gear key (L): visor down for a red tactical view, 3x zoom while aiming, night vision on the flashlight key; with Mark target it spots enemies every 5 s.",
         groups = { "sunvisor", "binos" }, on = { "sunvisor" },
         w = 1, h = 1, weight = 0.1, model = "models/props_lab/binderblue.mdl" },
     rhylib_holster = { slot = "holster", name = "Holster", desc = "Worn: holsters for two pistols",
@@ -90,7 +102,7 @@ G.ITEMS = {
     rhylib_forearm_arc = { slot = "forearm", name = "ARC forearm guard", desc = "Worn on the right forearm",
         groups = { "forearms" }, on = { "arc2_arc_forearm_right_reference" },
         w = 1, h = 1, weight = 0.5, model = "models/props_junk/garbage_metalcan002a.mdl" },
-    rhylib_shoulder_antenna = { slot = "comms", name = "Shoulder antenna", desc = "Worn on the shoulder",
+    rhylib_shoulder_antenna = { slot = "comms", name = "Shoulder antenna", desc = "Worn on the shoulder: resists comms jammers. You're only fully jammed once you're 30% of the way into a small or medium jammer's range (10% for a large one); a whole-map jammer still jams you",
         groups = { "shoulderantenna" }, on = { "s_ant" },
         w = 1, h = 1, weight = 0.4, model = "models/props_lab/reciever01d.mdl" },
     rhylib_belt_pouches = { slot = "belt", name = "Belt pouches", desc = "Worn on the belt: 5 more slots (no rifles or launchers)",
@@ -105,12 +117,12 @@ G.ITEMS = {
     rhylib_comms_backpack = { slot = "back", name = "Comms backpack", desc = "Worn on the back: a radio pack with a little room",
         groups = { "backpack", "back" }, on = { "comms_backpackcomms_2" },
         w = 2, h = 2, weight = 3, carry = 4, grid = { 3, 2 }, gridName = "backpack", model = "models/props_lab/reciever01b.mdl" },
-    rhylib_gunbelt = { slot = "back", name = "Gun belt", desc = "Worn on the back: the DC-15A and RPS-6 weigh half",
+    rhylib_gunbelt = { slot = "back", name = "Gun belt", desc = "Worn on the back: 6 slots (no long guns), and the DC-15A and RPS-6 weigh half",
         groups = { "backpack", "back" }, on = { "gunbelt" },
-        w = 2, h = 1, weight = 0.5, model = "models/props_junk/garbage_bag001a.mdl", weightMults = { rhylib_dc15a = 0.5, rhylib_dc15a_training = 0.5, rhylib_rps6 = 0.5, rhylib_rps6_training = 0.5 } },
-    rhylib_gunbelt_rifle = { slot = "back", name = "Rifle gun belt", desc = "Worn on the back: the DC-15A and RPS-6 weigh half",
+        w = 2, h = 1, weight = 0.5, model = "models/props_junk/garbage_bag001a.mdl", grid = { 6, 1 }, gridName = "gun belt", gridCid = "GUNBELT", weightMults = { rhylib_dc15a = 0.5, rhylib_dc15a_training = 0.5, rhylib_rps6 = 0.5, rhylib_rps6_training = 0.5 } },
+    rhylib_gunbelt_rifle = { slot = "back", name = "Rifle gun belt", desc = "Worn on the back: 6 slots (no long guns), and the DC-15A and RPS-6 weigh half",
         groups = { "backpack", "back" }, on = { "gunbelt_rifle" },
-        w = 2, h = 1, weight = 0.6, model = "models/props_junk/garbage_bag001a.mdl", weightMults = { rhylib_dc15a = 0.5, rhylib_dc15a_training = 0.5, rhylib_rps6 = 0.5, rhylib_rps6_training = 0.5 } },
+        w = 2, h = 1, weight = 0.6, model = "models/props_junk/garbage_bag001a.mdl", grid = { 6, 1 }, gridName = "gun belt", gridCid = "GUNBELT", weightMults = { rhylib_dc15a = 0.5, rhylib_dc15a_training = 0.5, rhylib_rps6 = 0.5, rhylib_rps6_training = 0.5 } },
     rhylib_strap = { slot = "back", name = "Chest strap", desc = "Worn on the back",
         groups = { "backpack", "back" }, on = { "strap" },
         w = 1, h = 1, weight = 0.3, model = "models/props_junk/garbage_bag001a.mdl" },
@@ -124,7 +136,9 @@ G.SHOWS = {
 }
 for id, it in pairs(G.ITEMS) do G.SHOWS[id] = it end
 
--- Who gets a shared group first (binoculars before the sun visor).
+-- Who gets a shared group first (binoculars before the sun visor). The
+-- first four are also the helmet slot's order for old saves that had
+-- several helmet parts worn: the first one listed stays worn (def.wornRank).
 G.ORDER = { "rhylib_macrobinoculars", "rhylib_rangefinder", "rhylib_sunvisor", "rhylib_helmet_light",
     "rhylib_kama", "rhylib_kama_arc", "rhylib_pauldron", "rhylib_pauldron_arc", "rhylib_holster",
     "rhylib_forearm_arc", "rhylib_shoulder_antenna", "rhylib_belt_pouches",
@@ -142,7 +156,11 @@ for _, s in pairs(G.SHOWS) do
 end
 
 -- Parts mounted on the helmet: hidden and unusable with the helmet off.
-G.ON_HELMET = { binos = true, rangefinder = true, light = true, visor = true }
+-- "helmet" is the worn slot; the rest are the part names inside it.
+G.ON_HELMET = { helmet = true, binos = true, rangefinder = true, light = true, visor = true }
+-- Part names that live in the one helmet slot (G.Worn / G.Active take them
+-- as slot names).
+G.HELMET_PARTS = { binos = true, rangefinder = true, light = true, visor = true }
 
 -- G.HelmetOn(ply): false while the helmet is off (NW2Bool rhylib_helmetOff). Shared.
 function G.HelmetOn(ply) return not ply:GetNW2Bool("rhylib_helmetOff", false) end
@@ -243,19 +261,23 @@ function G.ItemShown(ply, id)
     return false
 end
 
--- Does it show any item for this slot? (The inventory hides empty gear
--- slots it can't show.)
+-- Does it show any item for this slot (or helmet part)? (The inventory
+-- hides empty gear slots it can't show.)
 function G.ModelHas(ply, slot)
     for id, it in pairs(G.ITEMS) do
-        if it.slot == slot and G.ItemShown(ply, id) then return true end
+        if (it.slot == slot or it.part == slot) and G.ItemShown(ply, id) then return true end
     end
     return false
 end
 
 -- G.Worn(ply, slot) -> the item instance worn in a gear slot ({ id, uid,
 -- data, ... }), or nil. Server: any player's inventory; client: only your
--- own (others always nil).
+-- own (others always nil). A helmet part name (binos, rangefinder, light,
+-- visor) answers for the helmet slot, but only while that part is the one
+-- worn there: G.Worn(ply, "visor") is the sun visor or nil.
 function G.Worn(ply, slot)
+    local part = G.HELMET_PARTS[slot] and slot
+    if part then slot = "helmet" end
     local Items, Inv = Rhylib.Items, Rhylib.Inventory
     local cid = Items and Items.WORN_BY_SLOT and Items.WORN_BY_SLOT[slot]
     if not (cid and Inv) then return nil end
@@ -268,6 +290,10 @@ function G.Worn(ply, slot)
     end
     if not cont then return nil end
     local _, inst = next(cont.items)
+    if part and inst then
+        local it = G.ITEMS[inst.id]
+        if not (it and it.part == part) then return nil end
+    end
     return inst
 end
 
@@ -281,31 +307,23 @@ function G.Active(ply, slot)
     local inst = G.Worn(ply, slot)
     if inst == nil then return false end
     if G.ON_HELMET[slot] and not G.HelmetOn(ply) then return false end
-    if slot == "visor" and G.VisorBlocked(ply) then return false end
     return G.ItemShown(ply, inst.id)
 end
 
--- Models whose sun visor is only an option of the binoculars' group: with
--- macrobinoculars worn the group shows them, so the visor can't be used.
+-- G.VisorBlocked(ply): always false now. (The sun visor and the
+-- macrobinoculars share the one helmet slot, so the binoculars can no
+-- longer take the visor's bodygroup.) Kept for callers.
 function G.VisorBlocked(ply)
-    if not G.Worn(ply, "binos") then return false end
-    local g = G.ModelInfo(ply).groups.sunvisor
-    return not G.Option(g, { "sunvisor" })
+    return false
 end
 
 -- Answers rhylib_inventory's Rhylib.CanWear(ply, def): return false,
 -- reason to refuse.
--- You have to see it to wear it, and helmet lights rule out optics (the back slot is free: a backpack works
--- whatever the model shows).
+-- You have to see it to wear it (the back slot is free: a backpack works
+-- whatever the model shows). The helmet parts share one slot, so only one
+-- of them can be worn anyway.
 Rhylib.Hook.Add("Rhylib.CanWear", "gear.model", function(ply, def)
     if not (def and def.slot and def.slot ~= "back") then return end
-    -- Helmet lights and optics share the helmet mount: one or the other.
-    if def.slot == "light" and (G.Worn(ply, "binos") or G.Worn(ply, "rangefinder")) then
-        return false, "Take off the macrobinoculars or rangefinder first: they use the same helmet mount"
-    end
-    if (def.slot == "binos" or def.slot == "rangefinder") and G.Worn(ply, "light") then
-        return false, "Take off the helmet lights first: they use the same helmet mount"
-    end
     local gid = def.id
     if gid and G.ITEMS[gid] and not G.ItemShown(ply, gid) then
         return false, "Your model can't show the " .. string.lower(G.ITEMS[gid].name)
@@ -375,15 +393,23 @@ end
 
 -- Items go in once the inventory module exists (Rhylib.After: now or
 -- right after it loads): Items.Register(id, def) for each G.ITEMS entry,
--- category "gear", shelf group "helmet" / "body" (back items keep their default).
+-- category "gear", shelf group "helmet" / "body" (back items keep their
+-- default). wornRank = place in G.ORDER (which of several saved parts
+-- keeps a shared worn slot on join). A grid whose container this
+-- inventory doesn't have (gridCid unknown) is left out rather than
+-- becoming a backpack.
 local function registerItems()
     local Items = Rhylib.Items
     if not (Items and Items.Register) then return false end
+    local rank = {}
+    for i, id in ipairs(G.ORDER) do rank[id] = i end
     for id, it in pairs(G.ITEMS) do
+        local gcid = it.gridCid and Items[it.gridCid] or nil
+        local grid = (not it.gridCid or gcid) and it.grid or nil
         Items.Register(id, {
             name = it.name, desc = it.desc, w = it.w, h = it.h, weight = it.weight, model = it.model,
-            category = "gear", slot = it.slot, grid = it.grid, gridCid = it.gridCid and Items[it.gridCid] or nil, gridName = it.gridName,
-            carry = it.carry, weightMults = it.weightMults, extraGrids = extraGrids(it),
+            category = "gear", slot = it.slot, part = it.part, grid = grid, gridCid = grid and gcid or nil, gridName = it.gridName,
+            carry = it.carry, weightMults = it.weightMults, extraGrids = extraGrids(it), wornRank = rank[id],
             group = it.slot ~= "back" and (G.ON_HELMET[it.slot] and "helmet" or "body") or nil,
         })
     end

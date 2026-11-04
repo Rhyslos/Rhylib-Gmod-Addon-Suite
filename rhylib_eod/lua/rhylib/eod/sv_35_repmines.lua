@@ -1,5 +1,6 @@
 --[[
-    Republic mines (server; EOD Republic mines / Minefield skills).
+    Republic mines (server; the Marksman skill Republic mines, eod_mines:
+    repLimitField out and the repFieldRadius blast).
     Planting (rhylib_rep_mine weapon), the limit per player, droids setting
     them off (a 0.1 s check, droids only), the blast (droids only), and
     picking your own back up (E, the client finds it and asks).
@@ -14,9 +15,9 @@ local Net = Rhylib.Net
 
 E.repMines = E.repMines or {}   -- [planted mine entity] = true
 
--- How many one player may have out: repLimit, or repLimitField with Minefield.
+-- How many one player may have out: repLimitField with the skill, else repLimit.
 local function limit(ply)
-    return E.Skill(ply, "eod_minefield") and (E.Cfg("repLimitField")) or (E.Cfg("repLimit"))
+    return E.Skill(ply, "eod_mines") and (E.Cfg("repLimitField")) or (E.Cfg("repLimit"))
 end
 
 -- E.RepCount(ply) -> how many Republic mines ply has out. Server.
@@ -44,7 +45,7 @@ end
 -- Plant one where tr hit (the weapon checked the ground). Returns the mine.
 -- E.RepPlace(ply, trace, issued) -> mine or nil. issued = the item came
 -- from the armoury (it goes back as issued when picked up). Wide (the
--- Minefield blast) is fixed when planted.
+-- skill's wider blast) is fixed when planted.
 function E.RepPlace(ply, tr, issued)
     local ok, why = E.RepCanPlace(ply, tr.HitPos)
     if not ok then E.Msg(ply, why, true) return nil end
@@ -54,7 +55,7 @@ function E.RepPlace(ply, tr, issued)
     m:SetAngles(Angle(0, ply:EyeAngles().y, 0))
     m:Spawn()
     m:SetPlanter(ply)
-    m:SetWide(E.Skill(ply, "eod_minefield"))
+    m:SetWide(E.Skill(ply, "eod_mines"))
     m.repIssued = issued or nil   -- (an armoury mine stays issued when picked back up)
     -- (on the ground; the client draws it partly sunk, E.MineMatrix)
     sound.Play("weapons/slam/mine_mode.wav", tr.HitPos, 65, 110)
