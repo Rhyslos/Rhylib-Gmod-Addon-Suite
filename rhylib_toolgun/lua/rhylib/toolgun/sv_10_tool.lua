@@ -240,6 +240,8 @@ local function place(ply, e, count, name, mode)
             if IsValid(ent) and e.spawner and ent.ApplyConfig and ply.rhylibSpawnerCfg then
                 ent:ApplyConfig(table.Copy(ply.rhylibSpawnerCfg), true)
             end
+            -- (entities with their own staff setup, e.g. a sensor beacon's full power)
+            if IsValid(ent) and ent.StaffPlaced then ent:StaffPlaced(ply) end
             -- (droids: the picked mode, then the latest markers)
             if IsValid(ent) and droid and D.ToolPlaced then D.ToolPlaced(ent, mode, count == 1, Tool.PlaceAggro(ply)) end
             if IsValid(ent) and droid then placedNpcs[#placedNpcs + 1] = ent end

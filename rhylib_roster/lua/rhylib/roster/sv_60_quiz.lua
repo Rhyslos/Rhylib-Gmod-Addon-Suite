@@ -5,8 +5,10 @@
       (start: R.QuizStart(ply), pressing E on a training instructor,
                         entities/rhylib_trainer.lua. Checked: quiz on, has
                         a character, not trained, the lock-out over,
-                        questions on the list. A quiz started before and
-                        never answered counts as a failed try.)
+                        questions on the list. With a quiz already open
+                        the same one is sent again (no new questions); one
+                        open over 10 min, or left by disconnecting, counts
+                        as a failed try. At most 30 questions.)
       roster.quiz       server -> that cadet: UInt 6 count, then per
                         question String text, UInt 3 answers, Strings.
       roster.quizclose  client -> server, empty: the quiz window closed
@@ -42,10 +44,28 @@
 local R = Rhylib.Roster
 local Data = Rhylib.Data
 
+-- A starting set (server only: clients never get the answers) until staff write their own (Staff > Training quiz).
+-- { q = question, a = { answers }, c = the right one (index) }
+R.QUIZ_STARTER = {
+    { q = "An officer gives you an order. What do you do?", a = { "Acknowledge it and carry it out", "Ask why first", "Wait until someone else does it", "Ignore it if you're busy" }, c = 1 },
+    { q = "How do you answer a Sergeant who calls your name?", a = { "\"Sir, yes sir\" (or \"Sergeant\")", "\"What?\"", "\"Yeah\"", "Say nothing" }, c = 1 },
+    { q = "What does \"Roger\" mean on the radio?", a = { "Message received and understood", "Repeat that", "I'm in trouble", "Over and out" }, c = 1 },
+    { q = "Someone steps into your line of fire. What do you do?", a = { "Stop firing until the shot is clear", "Keep shooting", "Shout at them and keep firing", "Throw a grenade instead" }, c = 1 },
+    { q = "How do you carry your weapon on base?", a = { "Lowered, on safety", "Aimed at the door", "Firing at targets you like", "It doesn't matter" }, c = 1 },
+    { q = "You're hurt and down in a fight. What do you do?", a = { "Call for a medic and wait for help", "Leave the game", "Shout over everyone on the radio", "Nothing, it's over" }, c = 1 },
+    { q = "Who do you report to first?", a = { "Your squad leader", "Anyone you like", "A droid", "Nobody" }, c = 1 },
+    { q = "The squad is marching in formation. Where are you?", a = { "In your place in the formation", "Running ahead to scout", "Wherever you like", "Back at base" }, c = 1 },
+}
+
+-- Most questions in one quiz (the whole quiz goes in one net message).
+local QUIZ_ASK_MAX = 30
+-- An open quiz nobody answered: after this it counts as a failed try.
+local QUIZ_EXPIRE = 600
+
 for _, n in ipairs({ "roster.quiz", "roster.quizres", "roster.quizlist" }) do Rhylib.Net.Register(n) end
 
--- (forward: a failed try, defined below)
-local failTry
+-- (forward: a failed try and the quiz sender, defined below)
+local failTry, sendQuiz
 
 local function sid(ply) return ply:SteamID64() or "" end
 
@@ -60,11 +80,11 @@ end
 local function valid(e)
     if not (istable(e) and isstring(e.q) and istable(e.a)) then return false end
     local q = string.Trim(e.q)
-    if q == "" or #q > R.QUIZ_Q_LEN then return false end
+    if q == "" or (utf8.len(q) or #q) > R.QUIZ_Q_LEN then return false end
     local n = #e.a
     if n < 2 or n > 6 then return false end
     for i = 1, n do
-        if not isstring(e.a[i]) or string.Trim(e.a[i]) == "" or #e.a[i] > R.QUIZ_A_LEN then return false end
+        if not isstring(e.a[i]) or string.Trim(e.a[i]) == "" or (utf8.len(e.a[i]) or #e.a[i]) > R.QUIZ_A_LEN then return false end
     end
     local c = tonumber(e.c)
     return c ~= nil and c >= 1 and c <= n and math.floor(c) == c
@@ -101,7 +121,7 @@ end
 -- A failed try: after quizTries in a row, locked out for quizRetry s
 -- and the instructors online are called for them (R.CallTrainers).
 -- -> tries left (0 = locked out), seconds locked out.
-function failTry(ply)
+function failTry(ply, quiet)
     ply:SetNW2Bool("rhylib_quizFailed", true)
     local most = math.max(1, math.floor(R.Cfg("quizTries")))
     local n = getTries(ply) + 1
@@ -112,13 +132,25 @@ function failTry(ply)
     setTries(ply, 0)
     local retry = math.max(0, math.floor(R.Cfg("quizRetry")))
     setWait(ply, retry)
-    if R.CallTrainers then R.CallTrainers(ply, true) end
+    if R.CallTrainers and not quiet then R.CallTrainers(ply, true) end   -- (quiet: they left)
     return 0, retry
 end
 
 -- R.QuizOn() -> the quiz can be taken (setting on, questions on the list).
 function R.QuizOn()
     return R.Cfg("quiz") and #R.QuizList() > 0
+end
+
+-- Sends a quiz session's questions (answers already shuffled) to the cadet.
+function sendQuiz(ply, s)
+    Rhylib.Net.Start("roster.quiz")
+    net.WriteUInt(#s.qs, 6)
+    for _, e in ipairs(s.qs) do
+        net.WriteString(e.q)
+        net.WriteUInt(#e.a, 3)
+        for _, a in ipairs(e.a) do net.WriteString(a) end
+    end
+    net.Send(ply)
 end
 
 -- R.QuizStart(ply): a cadet starts the quiz (pressing E on a training
@@ -128,10 +160,19 @@ function R.QuizStart(ply)
     local me = R.Get(ply)
     if not me.has or me.trained then return end
     if not R.QuizOn() then return Rhylib.Notify(ply, "The basic training quiz is off: ask an instructor", "bad", "Roster") end
-    -- (a quiz already open: finish that one; closing it counts as a try,
-    -- roster.quizclose)
-    if ply.rhylibQuiz then
-        return Rhylib.Notify(ply, "Finish the quiz you have open first", "info", "Roster")
+    -- (a quiz already open: the same one is sent again, so a window that
+    -- never opened can't leave them stuck and there are no fresh questions
+    -- to fish for; one left open past QUIZ_EXPIRE counts as a failed try)
+    local open = ply.rhylibQuiz
+    if open and CurTime() - open.at > QUIZ_EXPIRE then
+        ply.rhylibQuiz = nil
+        local left = failTry(ply)
+        Rhylib.Notify(ply, left > 0 and ("Your last quiz was never finished and counted as a try: " .. left .. " left") or "Your last quiz was never finished and used your last try", "info", "Roster")
+        open = nil
+    end
+    if open then
+        sendQuiz(ply, open)
+        return
     end
     local wait = waitLeft(ply)
     if wait > 0 then
@@ -142,24 +183,22 @@ function R.QuizStart(ply)
     local order = {}
     for i = 1, #list do order[i] = i end
     for i = #order, 2, -1 do local j = math.random(i) order[i], order[j] = order[j], order[i] end
-    local n = math.min(math.max(1, math.floor(R.Cfg("quizCount"))), #order, 63)
-    local session = { right = {}, at = CurTime() }
-    Rhylib.Net.Start("roster.quiz")
-    net.WriteUInt(n, 6)
+    local n = math.min(math.max(1, math.floor(R.Cfg("quizCount"))), #order, QUIZ_ASK_MAX)
+    local session = { right = {}, qs = {}, at = CurTime() }
     for i = 1, n do
         local e = list[order[i]]
         local idx = {}
         for k = 1, #e.a do idx[k] = k end
         for k = #idx, 2, -1 do local j = math.random(k) idx[k], idx[j] = idx[j], idx[k] end
-        net.WriteString(e.q)
-        net.WriteUInt(#idx, 3)
+        local shown = { q = e.q, a = {} }
         for k, src in ipairs(idx) do
-            net.WriteString(e.a[src])
+            shown.a[k] = e.a[src]
             if src == e.c then session.right[i] = k end
         end
+        session.qs[i] = shown
     end
-    net.Send(ply)
     ply.rhylibQuiz = session
+    sendQuiz(ply, session)
 end
 
 -- Training instructors stay where they're placed (made permanent with
@@ -263,4 +302,12 @@ Rhylib.Hook.Add("PlayerInitialSpawn", "roster.quiz", function(ply)
     timer.Simple(2, function()
         if IsValid(ply) and waitLeft(ply) > 0 then ply:SetNW2Bool("rhylib_quizFailed", true) end
     end)
+end)
+
+-- (leaving mid-quiz counts as a failed try, like closing it)
+Rhylib.Hook.Add("PlayerDisconnected", "roster.quiz", function(ply)
+    if ply.rhylibQuiz then
+        ply.rhylibQuiz = nil
+        failTry(ply, true)
+    end
 end)

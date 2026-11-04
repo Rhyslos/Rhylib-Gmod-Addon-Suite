@@ -168,3 +168,13 @@ local function addSettings()
 end
 addSettings()
 Rhylib.Hook.Add("InitPostEntity", "weather.quakesettings", addSettings)
+
+-- (joined during a quake: ask for it once the game is ready, sv_20_quake)
+Rhylib.Hook.Add("InitPostEntity", "weather.quakereq", function()
+    timer.Simple(1, function()
+        if Rhylib.Net and Rhylib.Net.Start then
+            Rhylib.Net.Start("weather.quakereq")
+            net.SendToServer()
+        end
+    end)
+end)

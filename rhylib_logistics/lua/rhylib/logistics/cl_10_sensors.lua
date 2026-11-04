@@ -7,7 +7,9 @@
     ("SENSOR · Sensor 3 · 6 droids · 140 m NE"), newest first, a soft beep
     when a beacon first picks some up or the count goes up. On the compass
     (rhylib_radio R.radarExtras): an arrow on the rim toward each one, or
-    a red ring at the beacon when it is within the compass. Cleared when
+    a red ring at the beacon when it is within the compass. Every player's
+    compass also shows each beacon itself as a blue radar mark (a dot with
+    two waves; L.beaconEnts, kept by the beacon entity). Alerts are cleared when
     the count drops to 0 (or the beacon is gone / jammed / out of power),
     and all of them on net logi.clear (you stopped being a technician or
     officer).
@@ -18,6 +20,7 @@
 
 local L = Rhylib.Logistics
 L.alerts = L.alerts or {}
+L.beaconEnts = L.beaconEnts or {}   -- [beacon] = true (entities/rhylib_sensor_beacon.lua)
 
 local UNITS_PER_M = 52.49   -- (Source units in a metre)
 
@@ -104,7 +107,50 @@ local function addCompass()
         end
     end
 end
+-- Every beacon on the compass for everyone: a blue dot with two radar
+-- waves over it (dimmer with no power), only when within the compass.
+local BLUE = Color(70, 150, 255)
+local function radarMark(x, y, s, a)
+    surface.SetDrawColor(BLUE.r, BLUE.g, BLUE.b, a)
+    surface.DrawRect(x - s * 0.3, y - s * 0.3 + s * 0.35, s * 0.6, s * 0.6)
+    for w = 1, 2 do
+        local rad = s * 0.45 * w + s * 0.2
+        local lx, ly
+        for i = 0, 6 do
+            local ang = math.rad(-135 + i * 15)   -- (an arc opening upward)
+            local px, py = x + math.cos(ang) * rad, y + s * 0.35 + math.sin(ang) * rad
+            if lx then surface.DrawLine(lx, ly, px, py) end
+            lx, ly = px, py
+        end
+    end
+end
+
+local function addBeacons()
+    local R = Rhylib.Radio
+    if not (R and R.radarExtras) then return end
+    R.radarExtras["logistics.beacons"] = function(cx, cy, r, mp, fx, fy, k)
+        if not next(L.beaconEnts) then return end
+        draw.NoTexture()
+        local s = math.max(6, math.floor(r * 0.11))
+        for e in pairs(L.beaconEnts) do
+            if IsValid(e) then
+                local pos = e:GetPos()
+                local dx, dy = pos.x - mp.x, pos.y - mp.y
+                local px, py = (dx * fy - dy * fx) * k, -(dx * fx + dy * fy) * k
+                if px * px + py * py < (r * 0.88) ^ 2 then
+                    radarMark(cx + px, cy + py, s, e.Powered and e:Powered() and 235 or 110)
+                end
+            else
+                L.beaconEnts[e] = nil
+            end
+        end
+    end
+end
+
 addCompass()
+addBeacons()
+Rhylib.Hook.Add("InitPostEntity", "logistics.beacons", addBeacons)
+if Rhylib.After then Rhylib.After("radio", addBeacons) end
 Rhylib.Hook.Add("InitPostEntity", "logistics.compass", addCompass)
 if Rhylib.After then Rhylib.After("radio", addCompass) end
 

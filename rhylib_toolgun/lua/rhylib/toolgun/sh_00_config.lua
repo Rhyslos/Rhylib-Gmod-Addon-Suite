@@ -83,25 +83,6 @@ local ALL = {
     { id = "ps_droid_mortar", name = "Mortar squad (9)", cat = "Droid NPCs", preset = "droid_mortar" },
     -- Droid spawner (rhylib_droids): right-click its tile for its settings (sent with tool.place).
     { id = "droid_spawner", name = "Droid spawner", cat = "Droid NPCs", class = "rhylib_droid_spawner", spawner = true },
-    -- Droid orders (rhylib_droids sv_20_orders): a brush that sets the mode
-    -- of droids near where you aim, and admin-only markers.
-    { id = "ord_guard", name = "Order: guard here", cat = "Droid orders", order = "guard" },
-    { id = "ord_patrol", name = "Order: patrol here", cat = "Droid orders", order = "patrol" },
-    { id = "ord_attack", name = "Order: attack", cat = "Droid orders", order = "attack" },
-    { id = "ord_roam", name = "Order: spread out (roam the map in groups)", cat = "Droid orders", order = "roam" },
-    { id = "ord_retreat", name = "Order: retreat (get away from the enemy, last stand if cornered)", cat = "Droid orders", order = "retreat" },
-    { id = "mk_attack", name = "Marker: attack here", cat = "Droid orders", class = "rhylib_droid_marker", marker = 1 },
-    { id = "mk_defend", name = "Marker: defend this", cat = "Droid orders", class = "rhylib_droid_marker", marker = 2 },
-    { id = "mk_fallback", name = "Marker: fall back here", cat = "Droid orders", class = "rhylib_droid_marker", marker = 3 },
-    -- Clone orders: same brush and markers for clone NPCs.
-    { id = "cord_guard", name = "Clones: guard here", cat = "Clone orders", order = "guard", side = 1 },
-    { id = "cord_patrol", name = "Clones: patrol here", cat = "Clone orders", order = "patrol", side = 1 },
-    { id = "cord_attack", name = "Clones: attack", cat = "Clone orders", order = "attack", side = 1 },
-    { id = "cord_roam", name = "Clones: spread out (roam the map in pairs)", cat = "Clone orders", order = "roam", side = 1 },
-    { id = "cord_retreat", name = "Clones: retreat (get away from the enemy, last stand if cornered)", cat = "Clone orders", order = "retreat", side = 1 },
-    { id = "cord_follow", name = "Clones: follow (LMB pick clones, RMB: follow you / the player you aim at)", cat = "Clone orders", follow = true },
-    { id = "cmk_attack", name = "Clone marker: attack here", cat = "Clone orders", class = "rhylib_droid_marker", marker = 1, side = 1 },
-    { id = "cmk_defend", name = "Clone marker: defend this", cat = "Clone orders", class = "rhylib_droid_marker", marker = 2, side = 1 },
     { id = "spawn", name = "Spawn point (set battalion with E)", cat = "Spawns", class = "rhylib_spawn_point", named = true, save = SPAWNS },
     { id = "eventspawn", name = "Event spawn (open it with E)", cat = "Spawns", class = "rhylib_event_spawn", named = true, save = SPAWNS },
     { id = "beacon", name = "Training respawn beacon", cat = "Training", class = "rhylib_training_beacon", named = true, save = TRAIN },
@@ -109,6 +90,7 @@ local ALL = {
     { id = "tammo", name = "Training ammo cabinet", cat = "Training", class = "rhylib_training_ammo", save = ARMOURY },
     { id = "tdeposit", name = "Training deposit", cat = "Training", class = "rhylib_training_deposit", save = ARMOURY },
     { id = "cmdpost", name = "Command post (logistics)", cat = "Base", class = "rhylib_command_post", save = "rhylib_logistics_save" },
+    { id = "sensor", name = "Sensor array beacon (logistics, full power)", cat = "Base", class = "rhylib_sensor_beacon" },
     { id = "trainer", name = "Training instructor (basic training quiz)", cat = "Training", class = "rhylib_trainer", save = "rhylib_trainer_save" },
     { id = "armoury", name = "Weapons armoury", cat = "Armoury", class = "rhylib_armoury", save = ARMOURY },
     { id = "ammo", name = "Ammo cabinet", cat = "Armoury", class = "rhylib_ammo_cabinet", save = ARMOURY },
@@ -138,7 +120,7 @@ local ALL = {
 
 -- The Rhy's tab's categories, top to bottom (NPCs on their own,
 -- not alphabetical); others follow alphabetically.
-Tool.CAT_ORDER = { "Staff tools", "Clone NPCs", "Clone orders", "Droid NPCs", "Droid orders", "EOD", "Spawns", "Armoury", "Medical", "Base", "Training", "Testing" }
+Tool.CAT_ORDER = { "Staff tools", "Clone NPCs", "Droid NPCs", "EOD", "Spawns", "Armoury", "Medical", "Base", "Training", "Testing" }
 
 -- Tool.Entries(): the installed entries (built once on first call, after
 -- entities are registered; fires hook Rhylib.ToolEntries(list) then).

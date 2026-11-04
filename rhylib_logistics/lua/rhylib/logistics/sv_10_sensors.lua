@@ -70,6 +70,13 @@ function L.PlaceBeacon(ply, tr)
         Rhylib.Notify(ply, "You have " .. most .. " sensor beacons out already: pick one up first", "bad", "Logistics")
         return nil
     end
+    -- (and a cap for the whole server; staff placing with the toolgun aren't held to it)
+    local all = 0
+    for e in pairs(L.beacons) do if IsValid(e) then all = all + 1 end end
+    if all >= math.max(1, math.floor(L.Cfg("sensorMaxTotal"))) then
+        Rhylib.Notify(ply, "There are as many sensor beacons out as the server allows: pick one up first", "bad", "Logistics")
+        return nil
+    end
     local e = ents.Create("rhylib_sensor_beacon")
     if not IsValid(e) then return nil end
     e:SetPos(tr.HitPos)
@@ -89,6 +96,17 @@ function L.PlaceBeacon(ply, tr)
         Rhylib.Notify(ply, e:GetLabel() .. " set down, but you have no power cell: press E on it with one", "info", "Logistics")
     end
     return e
+end
+
+-- L.StaffBeacon(ply, e): a beacon staff placed with the toolgun: a label
+-- and a full sensorPower of power, no owner. Called by ENT:StaffPlaced.
+function L.StaffBeacon(ply, e)
+    if not IsValid(e) then return end
+    L.AddBeacon(e)
+    e:SetLabel("Sensor " .. L.nextLabel)
+    L.nextLabel = L.nextLabel % 999 + 1
+    e:SetPowerEnd(CurTime() + math.max(10, L.Cfg("sensorPower")))
+    if IsValid(ply) then Rhylib.Notify(ply, e:GetLabel() .. " set down, full power", "good", "Logistics") end
 end
 
 function L.PowerBeacon(ply, e)
@@ -113,6 +131,12 @@ local function isAdmin(p)
     return adminOk[p].ok
 end
 
+-- (asked once on join, so the first check already has the answer)
+Rhylib.Hook.Add("PlayerInitialSpawn", "logistics.admin", function(p)
+    timer.Simple(2, function() if IsValid(p) then isAdmin(p) end end)
+end)
+Rhylib.Hook.Add("PlayerDisconnected", "logistics.admin", function(p) adminOk[p] = nil end)
+
 local function mayAct(ply)
     if not (IsValid(ply) and ply:Alive()) then return false end
     local S = Rhylib.State
@@ -131,7 +155,7 @@ function L.PickupBeacon(ply, e)
     end
     e.takenBy = ply   -- (Remove happens at the end of the tick)
     e:Remove()
-    I.AddItem(ply, L.KIT, 1)
+    I.AddItem(ply, L.KIT, 1, e.rhylibIssued and { issued = true } or nil)
 end
 
 -- E without the wheel: a cell if it's below 90% and you carry one, else pick up.

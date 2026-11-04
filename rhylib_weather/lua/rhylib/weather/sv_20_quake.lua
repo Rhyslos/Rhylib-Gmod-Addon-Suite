@@ -10,21 +10,37 @@
     Net weather.quake (server -> everyone, once): UInt 2 level, UInt 7
     seconds, Float start (CurTime). Each client shakes its own screen,
     plays the rumble and drops ceiling dust (cl_40_quake.lua); nothing is
-    sent while it runs. A player who joins during one gets it too.
+    sent while it runs. A player who joins during one gets it too: their
+    game asks once it's ready (net weather.quakereq, client -> server,
+    empty, rate 1/s).
 
     Loose props (setting quakeProps): every 0.5 s, unfrozen prop_physics
     near players (500 units, the players taken in turns) get a small
     random shove and spin that follows the quake's build-up and fade, at
-    most 40 props a tick in all. Frozen props (placements, perma props),
-    breakable and explosive ones (any with health) and ones already
-    moving fast are left alone. Nobody is hurt or knocked over: damage
-    from a shoved prop (for 3 s after its shove) is blocked
-    (EntityTakeDamage "weather.quake").
+    most 40 props a tick in all. Frozen props (placements), permanent
+    props (Rhylib.Perma, frozen or not), breakable and explosive ones (any
+    with health) and ones already moving fast are left alone. Nobody is
+    hurt or knocked over: from the start of a quake until 4 s after it
+    ends, crush damage from any physics prop and blasts set off by a prop
+    (a barrel knocked over, not one a player shot) are blocked
+    (EntityTakeDamage "weather.quake", W.quakeSafeUntil).
 ]]
 
 local W = Rhylib.Weather
 
 Rhylib.Net.Register("weather.quake")
+
+-- (a client that has just finished loading asks; sent if one is going)
+Rhylib.Net.Receive("weather.quakereq", function(ply)
+    local q = W.quake
+    if IsValid(ply) and q and CurTime() < q.start + q.secs then
+        Rhylib.Net.Start("weather.quake")
+        net.WriteUInt(q.level, 2)
+        net.WriteUInt(q.secs, 7)
+        net.WriteFloat(q.start)
+        net.Send(ply)
+    end
+end, { rate = 1, burst = 2 })
 
 W.quake = W.quake or nil   -- { level, start, secs }
 
@@ -52,17 +68,11 @@ function W.Quake(level, secs)
     secs = math.Clamp(math.floor(tonumber(secs)), 3, 16)
     local q = { level = level, start = now, secs = secs }
     W.quake = q
+    W.quakeSafeUntil = now + secs + 4   -- (props still landing after it ends hurt nobody)
     send(q)
     return true, secs
 end
 
--- (joining mid-quake: it shakes for them too)
-Rhylib.Hook.Add("PlayerInitialSpawn", "weather.quake", function(ply)
-    timer.Simple(3, function()
-        local q = W.quake
-        if IsValid(ply) and q and CurTime() < q.start + q.secs then send(q, ply) end
-    end)
-end)
 
 -- Loose props rattling.
 local PUSH = { 0, 35, 70, 110 }   -- (shove per unit of mass, by level)
@@ -89,7 +99,9 @@ timer.Create("Rhylib.Weather.Quake", 0.5, 0, function()
         if p:Alive() then
             for _, e in ipairs(ents.FindInSphere(p:GetPos(), 500)) do
                 if n >= 40 then break end
-                if not done[e] and (e:GetClass() == "prop_physics" or e:GetClass() == "prop_physics_multiplayer") then
+                local P = Rhylib.Perma
+                if not done[e] and (e:GetClass() == "prop_physics" or e:GetClass() == "prop_physics_multiplayer")
+                    and not (P and P.Is and P.Is(e)) then
                     done[e] = true
                     local phys = e:GetPhysicsObject()
                     if IsValid(phys) and phys:IsMotionEnabled() and not e:IsPlayerHolding()
@@ -107,11 +119,18 @@ timer.Create("Rhylib.Weather.Quake", 0.5, 0, function()
     end
 end)
 
--- (a prop the quake just shoved hurts nobody)
+-- (props hurt nobody during a quake and for 4 s after: crush damage from
+-- any physics prop, and a blast a prop set off itself, like a barrel
+-- knocked off a shelf; a barrel a player shot still counts as theirs)
+local function isProp(e)
+    if not IsValid(e) then return false end
+    local c = e:GetClass()
+    return c == "prop_physics" or c == "prop_physics_multiplayer"
+end
 Rhylib.Hook.Add("EntityTakeDamage", "weather.quake", function(target, dmg)
-    if not W.quake then return end
-    local inf = dmg:GetInflictor()
-    if IsValid(inf) and inf.rhylibQuakeAt and CurTime() - inf.rhylibQuakeAt < 3 then return true end
-    local att = dmg:GetAttacker()
-    if IsValid(att) and att.rhylibQuakeAt and CurTime() - att.rhylibQuakeAt < 3 then return true end
+    if CurTime() > (W.quakeSafeUntil or 0) then return end
+    local inf, att = dmg:GetInflictor(), dmg:GetAttacker()
+    if (isProp(inf) or isProp(att)) and (dmg:IsDamageType(DMG_CRUSH) or (dmg:IsExplosionDamage() and not (IsValid(att) and att:IsPlayer()))) then
+        return true
+    end
 end)

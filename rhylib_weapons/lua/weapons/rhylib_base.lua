@@ -806,6 +806,17 @@ if SERVER then
         self:EmitSound("weapons/2misc_non_guns/sw_change.ogg", 60, on and 80 or 100)
     end
 
+    -- Picking any fire mode (V tap, the wheel, the stun key) ends flare
+    -- mode, so stun, dual, grapple, zipline and hook fire as themselves.
+    -- -> true if it was on.
+    function SWEP:FlareModeOff()
+        if not (self.FlareGun and self:GetFlareMode()) then return false end
+        self:SetFlareMode(false)
+        self:SetFlareLoadEnd(0)
+        self:SetFlareLoaded(0)
+        return true
+    end
+
     -- Load a flare of colour idx (net wep.flareload, R in flare mode).
     function SWEP:LoadFlare(idx)
         if not (self.FlareGun and self:GetFlareMode()) or self:GetFlareLoadEnd() > 0 then return end
@@ -927,6 +938,7 @@ if SERVER then
         local cur = self:GetFireMode()
         local n = #self.FireModes
         if i > n and cur <= n then self.preGrappleMode = cur end
+        if self.FlareModeOff then self:FlareModeOff() end
         self:SetFireMode(i)
         self:SetBurstLeft(0)
         self:EmitSound("weapons/2misc_non_guns/sw_change.ogg", 60)
@@ -943,6 +955,11 @@ if SERVER then
             nextMode = nextMode % total + 1
             if self:ModeSlotOk(nextMode) then break end
         end
+        -- (only one mode, in flare mode: the tap ends flare mode)
+        if not self:GetSafety() and nextMode == cur and self:FlareModeOff() then
+            self:EmitSound("weapons/2misc_non_guns/sw_change.ogg", 60)
+            return
+        end
         if self:GetSafety() or nextMode == cur then
             self:EmitSound("weapons/2misc_non_guns/sw_noammo.ogg", 60)
             return
@@ -953,7 +970,11 @@ if SERVER then
     -- Picked in the fire-mode wheel (net wep.modeset): slot i if the owner
     -- may use it now.
     function SWEP:SetModeChecked(i)
-        if i == self:GetFireMode() then return end
+        if i == self:GetFireMode() then
+            -- (the mode it's already in, picked while in flare mode: back to it)
+            if self:FlareModeOff() then self:EmitSound("weapons/2misc_non_guns/sw_change.ogg", 60) end
+            return
+        end
         if self:GetSafety() or not self:ModeSlotOk(i) then
             self:EmitSound("weapons/2misc_non_guns/sw_noammo.ogg", 60)
             return
@@ -996,6 +1017,12 @@ if SERVER then
         end
         if self:GetSafety() or not idx or not self:ModeAllowed(idx) then
             self:EmitSound("weapons/2misc_non_guns/sw_noammo.ogg", 60)
+            return
+        end
+        -- (in flare mode already on stun: just back to shooting stun)
+        if self:FlareModeOff() and self:GetFireMode() == idx then
+            self:SetBurstLeft(0)
+            self:EmitSound("weapons/2misc_non_guns/sw_change.ogg", 60)
             return
         end
         local cur = self:GetFireMode()

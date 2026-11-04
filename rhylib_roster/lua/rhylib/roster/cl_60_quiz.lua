@@ -57,6 +57,9 @@ Rhylib.Net.Receive("roster.quiz", function()
     if not k or #qs == 0 then return end
     local s = k.S
     local picks = {}
+    -- (the same quiz sent again, E on the instructor with it open: the old
+    -- window goes without telling the server it was left)
+    if IsValid(R.quizPanel) then R.quizPanel.done = true end
     local f = frame("Basic training quiz", "")
     -- (closed before the last answer: the server counts it as a try)
     function f:OnRemove()

@@ -15,7 +15,8 @@
     ceiling in flight starts the drift there, a wall while drifting
     drifts on straight down, the ground (or a second wall) is where it
     rests. Lit, it lights the area in its colour (a dynamic light
-    flareLight units across, drawn by each client) with a soft flicker,
+    flareLight units across, drawn by each client; only the nearest
+    flareLightsMax lit flares in reach light up, the rest still glow) with a soft flicker,
     a big bright glow and a burning hiss, for weapons flareTime seconds.
     A smoke trail follows it from the muzzle (puffs every ~14 units of
     path, at most 10 a frame, each lasting 5-8 s).
@@ -178,6 +179,35 @@ function ENT:Initialize()
     self.nextSmoke = 0
 end
 
+-- Only the nearest few lit flares cast a light on each client (weapons
+-- flareLightsMax, and only those whose light can reach you): the engine
+-- has room for few dynamic lights. Picked every 0.25 s.
+local lightOk, lightAt = {}, 0
+local function mayLight(e)
+    local now = CurTime()
+    if now >= lightAt then
+        lightAt = now + 0.25
+        lightOk = {}
+        local me = LocalPlayer()
+        if IsValid(me) then
+            local eye = me:EyePos()
+            local reach = Rhylib.Config.Get("weapons", "flareLight") * 1.25
+            local list = {}
+            for _, f in ipairs(ents.FindByClass("rhylib_flare")) do
+                if IsValid(f) and f:GetLitAt() > 0 then
+                    local d = (f.drawPos or f:GetPos()):DistToSqr(eye)
+                    if d < reach * reach then list[#list + 1] = { f = f, d = d } end
+                end
+            end
+            table.sort(list, function(a, b) return a.d < b.d end)
+            for i = 1, math.min(#list, math.max(0, math.floor(Rhylib.Config.Get("weapons", "flareLightsMax")))) do
+                lightOk[list[i].f] = true
+            end
+        end
+    end
+    return lightOk[e]
+end
+
 function ENT:Think()
     local now = CurTime()
     if self:GetPhase() == 0 then return end
@@ -192,7 +222,7 @@ function ENT:Think()
     -- (a soft flicker; it fades in over half a second)
     local up = math.Clamp((now - lit) / 0.5, 0, 1)
     local flick = 0.88 + 0.12 * math.sin(now * 23 + self:EntIndex()) * math.sin(now * 7.3)
-    local dl = DynamicLight(self:EntIndex())
+    local dl = mayLight(self) and DynamicLight(self:EntIndex())
     if dl then
         dl.pos = pos
         dl.r, dl.g, dl.b = c.r, c.g, c.b

@@ -188,9 +188,8 @@ Rhylib.Hook.Add("PlayerBindPress", "menus.wheel", function(ply, bind, pressed, c
     end
     if not pressed or not string.find(bind, "+use", 1, true) then return end
     if W.open then return true end
-    if not canOpen(ply) then return end
     local t = W.FindTarget(ply)
-    if not t then return end
+    if not t or not canOpen(ply, t) then return end   -- (with the target: the hook's wheel opens from its own rope)
     W.code = code
     -- Downed: at once (instead of medical's E menu). Standing (or a
     -- RhylibWheelHold entity): after a hold.

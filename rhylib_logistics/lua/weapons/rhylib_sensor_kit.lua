@@ -52,12 +52,19 @@ function SWEP:Place()
     end
     local L = Rhylib.Logistics
     if not (L and L.PlaceBeacon) then return end
-    if not L.PlaceBeacon(o, tr) then return end
-    -- (one from the stack)
+    if not (IsValid(o) and o:Alive()) or (Rhylib.State and Rhylib.State.CanAct and not Rhylib.State.CanAct(o)) then return end
+    local e = L.PlaceBeacon(o, tr)
+    if not e then return end
+    -- (one from the stack; the beacon remembers whether it was issued
+    -- armoury kit, so picking it up gives the same kind back)
     local Inv = Rhylib.Inventory
     if Inv and Inv.Get and Inv.Remove then
         for _, inst in pairs(Inv.Get(o).byUid) do
-            if inst.id == self:GetClass() then Inv.Remove(o, inst.uid, 1) return end
+            if inst.id == self:GetClass() then
+                e.rhylibIssued = inst.data and inst.data.issued or nil
+                Inv.Remove(o, inst.uid, 1)
+                return
+            end
         end
     end
     o:StripWeapon(self:GetClass())

@@ -71,6 +71,7 @@ Config.Register("weapons", "flareLoadTime", 1.5, "Signal flare: seconds to load 
 Config.Register("weapons", "flareTime", 45, "Signal flare: seconds it burns once lit")
 Config.Register("weapons", "flareLight", 4000, "Signal flare: how far its light reaches (units; it hangs high, so this must reach the ground)")
 Config.Register("weapons", "flareSpeed", 2000, "Signal flare: launch speed (units a second; straight up it climbs about speed² / 1200 units)")
+Config.Register("weapons", "flareLightsMax", 8, "Signal flare: most flares that light up the area at once on each player's screen (the nearest; the others still glow)")
 Config.Register("weapons", "flareFall", 19, "Signal flare: how fast it drifts down once lit (units a second)")
 Config.Register("weapons", "flareDraw", 3000, "Signal flare: idle roaming and patrolling droid groups this close walk over to look when it lights (needs rhylib_droids; 0 = never)")
 Config.Register("weapons", "flareDrawMax", 12, "Signal flare: most droids one flare draws (whole groups)")
