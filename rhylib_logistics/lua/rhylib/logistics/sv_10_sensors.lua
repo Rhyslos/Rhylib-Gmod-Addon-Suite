@@ -242,6 +242,17 @@ local function jammedAt(pos)
     return false
 end
 
+-- L.InSensorRange(pos) -> true if a powered beacon that isn't jammed
+-- covers pos (sensorRadius). rhylib_radio asks it: players hidden on the
+-- compass still show inside a beacon's range. Server.
+function L.InSensorRange(pos)
+    local r = math.max(100, L.Cfg("sensorRadius"))
+    for e in pairs(L.beacons) do
+        if IsValid(e) and e:Powered() and not e:GetJammed() and e:GetPos():DistToSqr(pos) <= r * r then return true end
+    end
+    return false
+end
+
 timer.Create("Rhylib.Logistics.Sensors", 1, 0, function()
     if not next(L.beacons) then return end
     refreshRecipients()

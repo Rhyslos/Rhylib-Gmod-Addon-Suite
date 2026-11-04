@@ -19,6 +19,8 @@
       sound                 { path, level, pitch } via sound.Play at pos
       shake                 { amplitude, frequency, duration, radius }
       decal                 true = a "Scorch" decal under pos (decalFilter)
+      direct                { ent, damage }: blast damage to ent first (the
+                            thing a rocket hit itself), then the blast
       knock                 false = this blast never knocks anyone down
                             (sv_60_knockdown checks W.explodeNoKnock);
                             default: blasts of knockMin damage or more do
@@ -57,6 +59,17 @@ function W.Explode(o)
         if W.TrainingBlast then W.TrainingBlast(pos, o.radius, o.damage, attacker, inflictor) end
     else
         if o.knock == false then W.explodeNoKnock = true end
+        local d = o.direct
+        if d and IsValid(d.ent) and (d.damage or 0) > 0 then
+            local di = DamageInfo()
+            di:SetDamage(d.damage)
+            di:SetDamageType(DMG_BLAST)
+            di:SetAttacker(attacker)
+            di:SetInflictor(inflictor)
+            di:SetDamagePosition(pos)
+            di:SetDamageForce((d.ent:WorldSpaceCenter() - pos):GetNormalized() * d.damage * 20)
+            d.ent:TakeDamageInfo(di)
+        end
         util.BlastDamage(inflictor, attacker, pos, o.radius, o.damage)
         W.explodeNoKnock = false
         if o.tier then

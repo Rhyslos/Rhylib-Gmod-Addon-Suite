@@ -3,7 +3,10 @@
     servers don't send them to every player). Hold the gun, then:
       rhylib_vm_editor      first person: prop offset / size, VMOffset, AimPos,
                             FOV, the SafePose and ModeProxies blocks, and
-                            grenades (PropVMPos / PropVMAng / PropVMScale);
+                            grenades (PropVMPos / PropVMAng / PropVMScale),
+                            the logistics build tools (VMOffset / VMAngle /
+                            VMScale; WMOffset / WMAngle / WMScale in the
+                            third-person editor);
                             Copy prints the lines for the weapon file
       rhylib_wm_editor      third person: PropWMPos / PropWMAng / PropScale
                             (and the left pistol's DualPropWM*), with an
@@ -236,9 +239,41 @@ local function grenadeEditor(w)
     end)
 end
 
+-- Build tools (rhylib_logistics E-tool / repair tool): the tool model on
+-- the hand bone (VMOffset / VMAngle / VMScale in first person, WMOffset /
+-- WMAngle / WMScale in third person).
+local function isBuildTool(w)
+    return IsValid(w) and w.ToolModel ~= nil and w.VMOffset ~= nil and w.WMOffset ~= nil and not w.IsRhylib
+end
+local function toolEditor(w, key, title, extra)
+    local P, A, S = key .. "Offset", key .. "Angle", key .. "Scale"
+    w[P] = Vector(w[P]:Unpack())
+    w[A] = Angle(w[A]:Unpack())
+    w[S] = w[S] or 1
+    local f, label, field = editorFrame(title .. ": " .. w:GetClass(), extra and 520 or 360, w)
+    local R = 30
+    label("Tool from the right hand")
+    field("Forward", 0.1, -R, R, function() return w[P].x end, function(v) w[P].x = v end)
+    field("Right", 0.1, -R, R, function() return w[P].y end, function(v) w[P].y = v end)
+    field("Up", 0.1, -R, R, function() return w[P].z end, function(v) w[P].z = v end)
+    field("Pitch", 1, -180, 180, function() return w[A].p end, function(v) w[A].p = v end)
+    field("Yaw", 1, -180, 180, function() return w[A].y end, function(v) w[A].y = v end)
+    field("Roll", 1, -180, 180, function() return w[A].r end, function(v) w[A].r = v end)
+    field("Size", 0.05, 0.1, 3, function() return w[S] end, function(v) w[S] = v end)
+    f.copyButton(function()
+        return string.format("SWEP.%s = %g\nSWEP.%s = Vector(%g, %g, %g)\nSWEP.%s = Angle(%g, %g, %g)",
+            S, w[S], P, w[P].x, w[P].y, w[P].z, A, w[A].p, w[A].y, w[A].r)
+    end)
+    return f, label
+end
+
 concommand.Add("rhylib_vm_editor", function()
     if IsValid(editor) then editor:Remove() return end
     local g = LocalPlayer():GetActiveWeapon()
+    if isBuildTool(g) then
+        editor = toolEditor(g, "VM", "First person")
+        return
+    end
     if IsValid(g) and not g.IsRhylib and g.PropModel and g.PropVMPos and g.PropVMAng then
         grenadeEditor(g)
         return
@@ -491,8 +526,14 @@ end
 local wmEditor
 concommand.Add("rhylib_wm_editor", function()
     if IsValid(wmEditor) then wmEditor:Remove() return end
-    -- Any weapon with a third-person prop (guns, grenades).
+    -- Any weapon with a third-person prop (guns, grenades), or a build tool.
     local w = LocalPlayer():GetActiveWeapon()
+    if isBuildTool(w) then
+        local f, label = toolEditor(w, "WM", "Third person", true)
+        wmEditor = f
+        addOrbit(f, label)
+        return
+    end
     if not IsValid(w) or not w.PropModel or not w.PropWMPos then print("Hold a Rhy's weapon or grenade first") return end
     w.PropScale = w.PropScale or 1
     w.PropWMPos = Vector(w.PropWMPos:Unpack())

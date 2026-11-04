@@ -2,7 +2,12 @@
     RPS-6 rocket launcher. One rocket at a time; in the normal ("semi")
     mode it flies straight (unguided).
     The rocket is a slow explosive bolt: blast damage where it hits.
-    Reload with R after each shot.
+    Reload with R after each shot. A direct hit also does Explosive.direct
+    blast damage to what it hit (rhylib_weapons W.Explode direct).
+    Aiming looks through the launcher sight (about x2.5; rhylib_weapons
+    cl_scope DrawLauncherScope: cut-corner window, compass, readout boxes); the flashlight key switches night vision in it.
+    Lock-on only takes targets inside the sight's hexagon (SWEP:InLockHex,
+    weapons lockCone = its half width in degrees).
     Too heavy to fire while flying.
     Lock-on mode (EOD Top attack skill, V): aim at a comms jammer or a
     droid until it locks (box on the HUD), then fire: rhylib_topattack
@@ -75,7 +80,7 @@ SWEP.BoltLife = 5
 SWEP.FireSound = { "weapons/explosives_cannons_superlazers/wpn_rocket_launcher_shoot_01.ogg", "weapons/explosives_cannons_superlazers/wpn_rocket_launcher_shoot_02.ogg", "weapons/explosives_cannons_superlazers/wpn_rocket_launcher_shoot_03.ogg" }
 SWEP.FireSoundLevel = 150
 
-SWEP.Explosive = { radius = 200, damage = 250 }   -- blast where the rocket lands (units, damage at the centre)
+SWEP.Explosive = { radius = 200, damage = 250, direct = 800 }   -- blast where the rocket lands (units, damage at the centre); direct = extra blast damage to what it hits itself
 
 SWEP.Mags = { "rocket" }
 SWEP.FireModes = { "semi", "lockon" }
@@ -111,7 +116,10 @@ SWEP.Spread = {
 }
 
 SWEP.AimPos = Vector(-3.5, 0, 0.5)
-SWEP.AimFov = 0.75
+SWEP.AimFov = 0.4             -- about x2.5 through the scope
+SWEP.Scope = true             -- (anyone; no ScopeSkill)
+SWEP.ScopeStyle = "launcher"  -- range readout under the centre
+SWEP.ScopeNightVision = true  -- flashlight key while scoped
 
 --------------------------------------------------------------------------
 -- Lock-on (Top attack)
@@ -121,7 +129,7 @@ local Config = Rhylib.Config
 -- Settings (module "weapons"). Registered here, so they exist only while
 -- rhylib_republic is installed.
 Config.Register("weapons", "lockRange", 6000, "RPS-6 lock-on: longest lock (units)")
-Config.Register("weapons", "lockCone", 6, "RPS-6 lock-on: how close to the crosshair a target must be (degrees)")
+Config.Register("weapons", "lockCone", 3.33, "RPS-6 lock-on: half the width of the lock-on hexagon in the sight (degrees from the crosshair); only targets inside it lock")
 Config.Register("weapons", "lockTime", 1.2, "RPS-6 lock-on: seconds of aiming at a target to lock it")
 
 -- LockTarget: what the lock is on (NULL = nothing). LockStart: CurTime()
@@ -135,6 +143,40 @@ end
 -- SWEP:LockOn(): true while the fire mode is "lockon". Shared.
 function SWEP:LockOn()
     return self:GetFireModeName() == "lockon"
+end
+
+-- The lock-on area: a hexagon (points up and down, flat sides left and
+-- right) round the crosshair, lockCone degrees to each side. Worked out
+-- on the view plane (offsets / distance ahead), so the sight draws it
+-- exactly where the test is.
+-- SWEP:InLockHex(eye, ang, point) -> score (smaller = nearer the centre)
+-- or nil when point is outside. Shared.
+function SWEP:InLockHex(eye, ang, point)
+    local d = point - eye
+    local x = d:Dot(ang:Forward())
+    if x <= 1 then return nil end
+    local R = math.tan(math.rad(math.Clamp(Config.Get("weapons", "lockCone"), 0.5, 40)))
+    local a, b = d:Dot(ang:Right()) / x / R, d:Dot(ang:Up()) / x / R
+    local p, q = math.abs(a), math.abs(b)
+    if p > 1 or q > 1 - p * 0.5 then return nil end
+    return a * a + b * b
+end
+
+-- SWEP:LockHexScreen(owner) -> the hexagon's six screen points (top,
+-- upper right, lower right, bottom, lower left, upper left) for the sight
+-- (base cl_scope DrawLauncherScope). Client.
+local HEX = { { 0, 1 }, { 1, 0.5 }, { 1, -0.5 }, { 0, -1 }, { -1, -0.5 }, { -1, 0.5 } }
+function SWEP:LockHexScreen(owner)
+    if not CLIENT then return nil end
+    local eye, ang = owner:EyePos(), owner:EyeAngles()
+    local R = math.tan(math.rad(math.Clamp(Config.Get("weapons", "lockCone"), 0.5, 40)))
+    local f, r, u = ang:Forward(), ang:Right(), ang:Up()
+    local out = {}
+    for i, v in ipairs(HEX) do
+        local sp = (eye + (f + r * (v[1] * R) + u * (v[2] * R)) * 1000):ToScreen()
+        out[i] = { x = sp.x, y = sp.y }
+    end
+    return out
 end
 
 -- SWEP:LockedTarget(): the locked target, or nil (still locking / none).
@@ -208,25 +250,24 @@ if SERVER then
 
     -- Lockable: a live, non-training Rhylib droid, or a jammer that isn't
     -- destroyed.
-    -- SWEP:FindLockTarget(owner): best target within lockRange and lockCone,
-    -- in sight (brushes only), nearest the crosshair; or nil. Server only.
+    -- SWEP:FindLockTarget(owner): best target within lockRange and inside
+    -- the lock-on hexagon (SWEP:InLockHex), in sight (brushes only),
+    -- nearest the crosshair; or nil. Server only.
     function SWEP:FindLockTarget(owner)
         local eye = owner:GetShootPos()
-        local aim = owner:GetAimVector()
+        local ang = owner:EyeAngles()
         local range = Config.Get("weapons", "lockRange")
-        local cosCone = math.cos(math.rad(Config.Get("weapons", "lockCone")))
-        local best, bestDot
+        local best, bestScore
         local function try(e)
             if not lockable(e) then return end
             local c = e:WorldSpaceCenter()
-            local d = c - eye
-            local len = d:Length()
+            local len = c:Distance(eye)
             if len > range or len < 1 then return end
-            local dot = aim:Dot(d / len)
-            if dot < cosCone or (bestDot and dot <= bestDot) then return end
+            local sc = self:InLockHex(eye, ang, c)
+            if not sc or (bestScore and sc >= bestScore) then return end
             local tr = util.TraceLine({ start = eye, endpos = c, mask = MASK_SOLID_BRUSHONLY })
             if tr.Hit then return end
-            best, bestDot = e, dot
+            best, bestScore = e, sc
         end
         for _, e in ipairs(jammerList()) do try(e) end
         local D = Rhylib.Droids
@@ -296,7 +337,9 @@ if CLIENT then
             end
             local text = guiding and "GUIDING · KEEP YOUR AIM ON THE TARGET"
                 or (self:GetAiming() and "NO LOCK · FIRE TO GUIDE IT BY LASER" or "LOCK-ON · HOLD AIM ON A JAMMER OR DROID, OR FIRE TO GUIDE BY LASER")
-            draw.SimpleTextOutlined(text, font, cx, cy + 70 * s, guiding and Color(255, 90, 80, 230) or Color(220, 220, 220, 200),
+            -- (in the sight: under the hexagon, clear of the range)
+            local ty = self.Scoped and self:Scoped() and cy + ScrH() * 0.17 or cy + 70 * s
+            draw.SimpleTextOutlined(text, font, cx, ty, guiding and Color(255, 90, 80, 230) or Color(220, 220, 220, 200),
                 TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, Color(0, 0, 0, 160))
             return
         end

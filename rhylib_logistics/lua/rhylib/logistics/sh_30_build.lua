@@ -10,13 +10,20 @@
       - R (hold) with a tool out: the build menu (rhylib_menus list wheel;
         without menus R steps through the list). The picked structure
         follows your aim as a see-through ghost; E / Q turn it 45 degrees.
+      - Snap dots (L.SnapDots: the corners and side middles of the box's
+        bottom): one of the ghost's within buildSnap of another
+        structure's turns green and the ghost moves so they meet, keeping
+        its own facing (L.SnapPlace).
       - RMB places it: a hologram everyone sees, nothing collides with it.
         Placing spends its supplies at once from building supply crates
         within buildSupplyRange of the spot (none while buildSupplies is
         off). Refused past buildMaxTotal on the server or buildMaxPlayer
         of yours.
-      - LMB held on a hologram builds it (a progress bar; several builders
-        add up). The E-tool builds at etoolSpeed, the repair tool at
+      - Only the E-tool places (the menu, the ghost, RMB, E / Q turning);
+        the repair tool helps build holograms already placed and repairs.
+      - LMB held on a hologram (within buildWorkReach, about 2 m) builds
+        it (a progress bar; several builders
+        add up: two builders twice as fast). The E-tool builds at etoolSpeed, the repair tool at
         repairBuildSpeed; Field technicians with E-tool drills (rhylib_skills
         eod_etool) build skillSpeed faster and pay skillCost of the price.
         Done: it turns into a solid, frozen prop with its own health,
@@ -49,7 +56,9 @@ Config.Register("logistics", "buildMaxTotal", 60, "Building: most structures (ho
 Config.Register("logistics", "buildMaxPlayer", 10, "Building: most structures one player can have placed at once", S)
 Config.Register("logistics", "buildSupplyRange", 600, "Building: how close a building supply crate must be to the spot to pay for a structure (units)", S)
 Config.Register("logistics", "buildSupplyUnit", 50, "Building supplies: how much one item puts into a crate", S)
-Config.Register("logistics", "buildReach", 300, "Building: how far away you can place and build (units)", S)
+Config.Register("logistics", "buildSnap", 40, "Building: a snap dot of the ghost this close to a snap dot of another structure snaps the two together (units; 0 = no snapping)", S)
+Config.Register("logistics", "buildReach", 300, "Building: how far away you can place (and remove) a structure (units)", S)
+Config.Register("logistics", "buildWorkReach", 110, "Building: how close you must be to a structure to build it up or repair it (units from your eyes to its edge; 110 = about 2 m)", S)
 Config.Register("logistics", "etoolSpeed", 1, "Building: E-tool build speed (1 = a structure's own build time)", S)
 Config.Register("logistics", "repairBuildSpeed", 0.6, "Building: repair tool build speed (share of the E-tool's)", S)
 Config.Register("logistics", "repairRate", 40, "Building: health a second the repair tool gives back to a damaged structure", S)
@@ -109,6 +118,61 @@ end
 -- L.BuildTools = the tool classes and their build speed key.
 L.BuildTools = { rhylib_etool = true, rhylib_repairtool = true }
 
+-- Snap dots: 8 on the bottom of a structure's box (the 4 corners and the
+-- middle of each side). L.SnapDots(mins, maxs) -> local points.
+function L.SnapDots(mins, maxs)
+    local z = mins.z
+    local cx, cy = (mins.x + maxs.x) * 0.5, (mins.y + maxs.y) * 0.5
+    return {
+        Vector(mins.x, mins.y, z), Vector(cx, mins.y, z), Vector(maxs.x, mins.y, z), Vector(maxs.x, cy, z),
+        Vector(maxs.x, maxs.y, z), Vector(cx, maxs.y, z), Vector(mins.x, maxs.y, z), Vector(mins.x, cy, z),
+    }
+end
+
+-- L.StructureDots(e) -> e's snap dots in the world.
+function L.StructureDots(e)
+    local pos, ang = e:GetPos(), e:GetAngles()
+    local out = {}
+    for i, d in ipairs(L.SnapDots(e:OBBMins(), e:OBBMaxs())) do out[i] = LocalToWorld(d, angle_zero, pos, ang) end
+    return out
+end
+
+-- L.SnapPlace(mins, maxs, origin, yaw, ignore) -> origin, neighbour, the
+-- point where the two dots meet (or nil): snapping. mins / maxs = the
+-- new structure's box, origin / yaw = where it would stand unsnapped (the
+-- facing is kept). When one of its snap dots is within buildSnap of a snap
+-- dot of another structure (any but ignore, bottoms within 150 units of
+-- height), the nearest pair is joined: the new one moves so the two dots
+-- meet. Shared: the client's ghost and the server's placing use the same.
+function L.SnapPlace(mins, maxs, origin, yaw, ignore)
+    local dist = L.Cfg("buildSnap")
+    if not dist or dist <= 0 then return nil end
+    local ang = Angle(0, yaw, 0)
+    local mine = {}
+    for i, d in ipairs(L.SnapDots(mins, maxs)) do mine[i] = LocalToWorld(d, angle_zero, origin, ang) end
+    local reach = math.max(maxs.x - mins.x, maxs.y - mins.y) + dist
+    local best, bestD, bestE, bestG, bestS
+    for e in pairs(L.structures) do
+        if IsValid(e) and e ~= ignore then
+            local emn, emx = e:OBBMins(), e:OBBMaxs()
+            local far = reach + math.max(emx.x - emn.x, emx.y - emn.y)
+            if e:GetPos():DistToSqr(origin) < far * far then
+                for _, sd in ipairs(L.StructureDots(e)) do
+                    for _, gd in ipairs(mine) do
+                        local dx, dy = sd.x - gd.x, sd.y - gd.y
+                        local d = dx * dx + dy * dy
+                        if d <= dist * dist and math.abs(sd.z - gd.z) < 150 and (not bestD or d < bestD) then
+                            bestD, bestE, bestG, bestS = d, e, gd, sd
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if not bestE then return nil end
+    return origin + (bestS - bestG), bestE, bestS
+end
+
 -- L.HeldTool(ply) -> the build tool in ply's hands, or nil.
 function L.HeldTool(ply)
     if not IsValid(ply) then return nil end
@@ -116,12 +180,20 @@ function L.HeldTool(ply)
     if IsValid(w) and L.BuildTools[w:GetClass()] then return w end
 end
 
--- L.AimedStructure(ply, list) -> the structure ply's aim ray hits within
--- buildReach (holograms have no collision, so the ray is tested against
--- each one's box), and the distance. list = the structures to test.
-function L.AimedStructure(ply, list)
+-- L.HeldPlacer(ply) -> the tool in ply's hands if it can place structures
+-- (the E-tool; the repair tool only helps build placed ones and repairs).
+function L.HeldPlacer(ply)
+    local w = L.HeldTool(ply)
+    if w and w.CanPlace then return w end
+end
+
+-- L.AimedStructure(ply, list, reach) -> the structure ply's aim ray hits
+-- within reach (default buildReach; holograms have no collision, so the
+-- ray is tested against each one's box), and the distance. list = the
+-- structures to test.
+function L.AimedStructure(ply, list, reach)
     local start = ply:GetShootPos()
-    local dir = ply:GetAimVector() * L.Cfg("buildReach")
+    local dir = ply:GetAimVector() * (reach or L.Cfg("buildReach"))
     local best, bestD
     for e in pairs(list) do
         if IsValid(e) then

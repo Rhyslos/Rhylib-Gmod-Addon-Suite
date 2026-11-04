@@ -27,7 +27,8 @@
     and the "Hold E · interact" line shows; you may be clipped onto that
     same rope while it's open.
 
-    W.OpenList(title, list, code) opens a wheel with no target: list =
+    W.OpenList(title, list, code, opts) opens a wheel with no target
+    (opts.bottom = the index of the option to put straight at the bottom): list =
     { { label, run, sub, disabled, col } } (col: a Color for a wider strip
     on the left edge), held while button code is down (rhylib_skills'
     squad wheel and rhylib_radio's ping wheel use it); let go on an
@@ -151,9 +152,14 @@ end
 --       { label = "Enemy", run = function() ping(1) end, col = Color(225, 90, 90) },
 --       { label = "Regroup", run = function() ping(2) end, disabled = soloReason },
 --   }, code)
-function W.OpenList(title, list, code)
+-- opts.bottom = an index in list: the ring is turned so that option sits
+-- straight at the bottom.
+function W.OpenList(title, list, code, opts)
     if W.open or #list == 0 then return false end
-    for i, o in ipairs(list) do o.angle = -90 + (i - 1) * 360 / #list end
+    local turn = 0
+    local b = opts and opts.bottom
+    if b and list[b] then turn = 180 - (b - 1) * 360 / #list end
+    for i, o in ipairs(list) do o.angle = -90 + (i - 1) * 360 / #list + turn end
     W.open, W.target, W.list, W.title, W.code = true, nil, list, title, code
     W.cx, W.cy = 0, 0
     W.openedAt = RealTime()

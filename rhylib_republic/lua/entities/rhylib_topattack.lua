@@ -7,7 +7,11 @@
       no lock  laser guided: the spot the shooter aims at (ENT:LaserSpot),
                while they live and hold the same gun; after that, the last
                spot
-    Moved by hand each tick with one trace, like rhylib_b2_rocket. Blast
+    Moved by hand each tick with one trace, like rhylib_b2_rocket. It flies
+    like a heavy rocket: it eases into and out of turns (weapons
+    topTurnAccel) and turns at most topTurn; laser guided, the point it
+    heads for follows the dot at topLaserFollow, so flicking your aim
+    doesn't swing it round. Blast
     (rhylib_weapons W.Explode) =
     the RPS-6's (Explosive radius / damage), hook Rhylib.Explosion strength
     2 for comms jammers (kind "rocket"). Gives up after 12 s (explodes
@@ -22,7 +26,10 @@ AddCSLuaFile()
 -- Settings (module "weapons"; registered here, so only with rhylib_republic).
 local Config = Rhylib.Config
 Config.Register("weapons", "topClimb", 900, "RPS-6 top attack: highest climb before the dive (units)")
-Config.Register("weapons", "topSpeed", 1500, "RPS-6 top attack: rocket speed (units/s)")
+Config.Register("weapons", "topSpeed", 2000, "RPS-6 top attack: rocket speed (units/s)")
+Config.Register("weapons", "topTurn", 100, "RPS-6 top attack: fastest turn in the dive (degrees/s; the climb turns at 70% of it)")
+Config.Register("weapons", "topTurnAccel", 220, "RPS-6 top attack: how quickly the rocket gets into and out of a turn (degrees/s each second)")
+Config.Register("weapons", "topLaserFollow", 1200, "RPS-6 top attack, laser guided: how fast the point the rocket heads for follows the laser dot (units/s)")
 
 ENT.Type = "anim"
 ENT.Base = "base_anim"
@@ -97,7 +104,7 @@ if SERVER then
         self:EmitSound("weapons/rpg/rocket1.wav", 75, 110)
     end
 
-    function ENT:Explode(pos)
+    function ENT:Explode(pos, hit)
         if self.done then return end
         self.done = true
         local owner = IsValid(self.owner) and self.owner or game.GetWorld()
@@ -109,6 +116,7 @@ if SERVER then
             tier = ex.tier or 2, kind = "rocket",
             effectData = { magnitude = 1, scale = 1 },
             decal = true, decalFilter = self,
+            direct = ex.direct and { ent = hit, damage = ex.direct } or nil,
         })
         self:StopSound("weapons/rpg/rocket1.wav")
         self:Remove()
@@ -133,9 +141,18 @@ if SERVER then
         if IsValid(self.target) and (not self.target.destroyed) then
             self.lastSpot = self.target:WorldSpaceCenter()
         elseif IsValid(self:GetGuide()) then
-            -- laser: follow the dot; the guide put the gun away / died = its last spot
+            -- laser: head for a point that follows the dot at topLaserFollow
+            -- (a flick of the aim doesn't swing the rocket round); the guide
+            -- put the gun away / died = it keeps heading for that point
             local spot = self:LaserSpot()
-            if spot then self.lastSpot = spot else self:SetGuide(NULL) end
+            if spot then
+                local d = spot - self.lastSpot
+                local len = d:Length()
+                local step = Config.Get("weapons", "topLaserFollow") * dt
+                if len > step then self.lastSpot = self.lastSpot + d * (step / len) else self.lastSpot = spot end
+            else
+                self:SetGuide(NULL)
+            end
         end
         local goal
         if self.phase == 1 then
@@ -146,9 +163,13 @@ if SERVER then
         end
         if self.phase == 2 then goal = self.lastSpot end
         local want = (goal - from):GetNormalized()
-        -- climbing turns gently, the dive hard (so it comes down steeply)
-        local rate = (self.phase == 1 and 2.2 or 4.5) * dt
-        self.dir = steer(self.dir, want, rate)
+        -- A heavy rocket: it eases into a turn and out of it (turnV, the
+        -- turn rate now, rad/s, changes by topTurnAccel a second) and never
+        -- turns faster than topTurn (the climb at 70% of it).
+        local maxRate = math.rad(Config.Get("weapons", "topTurn")) * (self.phase == 1 and 0.7 or 1)
+        local need = math.acos(math.Clamp(self.dir:Dot(want), -1, 1)) / dt
+        self.turnV = math.Approach(self.turnV or 0, math.min(need, maxRate), math.rad(Config.Get("weapons", "topTurnAccel")) * dt)
+        self.dir = steer(self.dir, want, self.turnV * dt)
         local to = from + self.dir * self.speed * dt
         trData.start, trData.endpos = from, to
         trData.filter = self.filterFn
@@ -165,12 +186,12 @@ if SERVER then
             return
         end
         if tr.Hit then
-            self:Explode(tr.HitPos + tr.HitNormal * 4)
+            self:Explode(tr.HitPos + tr.HitNormal * 4, tr.Entity)
             return
         end
         -- close enough to the target: go off (a jammer's centre may sit in its hull)
         if self.phase == 2 and to:DistToSqr(self.lastSpot) < 40 * 40 then
-            self:Explode(to)
+            self:Explode(to, IsValid(self.target) and self.target or nil)
             return
         end
         self:SetPos(to)

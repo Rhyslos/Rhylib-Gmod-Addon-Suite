@@ -17,6 +17,11 @@
                     (9 bits each, 0 = none)
       radio.pos     server -> squad members, every second: count (8), per
                     mate entindex (8) + x, y, z (Int 16 each)
+      radio.all     server -> each player, every second while config
+                    showEveryone is on: the same for the players the
+                    compass may show near them (within 40 m + a little;
+                    not their squad; not hidden, or hidden inside a sensor
+                    beacon's range; not cloaked); nothing to jammed players
       radio.txev    server -> everyone who hears the old or new target:
                     talker entindex (8), tx kind (2), id (9)
       radio.state   client: off, muted, deafened (3 bools). 6, 6
@@ -49,7 +54,7 @@ local RX_BLOCK = bit.bor(R.BIT_OFF, R.BIT_DEAF)    -- 5
 R.squads = R.squads or {}
 R.channels = R.channels or {}
 
-for _, n in ipairs({ "radio.dir", "radio.me", "radio.pos", "radio.txev" }) do Rhylib.Net.Register(n) end
+for _, n in ipairs({ "radio.dir", "radio.me", "radio.pos", "radio.txev", "radio.all" }) do Rhylib.Net.Register(n) end
 
 -- R.P(ply): the server-side radio table of a player (made on first use):
 -- { slots = { [1] = chanId, [2] = chanId }, call = callId }.
@@ -539,6 +544,53 @@ timer.Create("Rhylib.Radio.Pos", 1, 0, function()
                     net.WriteInt(math.Clamp(math.floor(pos.z), -32767, 32767), 16)
                 end
                 net.Send(list)
+            end
+        end
+    end
+end)
+
+-- Everyone's positions for the compass, once a second, to everyone
+-- (config showEveryone). Left out: dead and cloaked players, and those
+-- who hide (client convar rhylib_radio_hidden, userinfo) unless they're
+-- inside a running sensor array beacon's range (rhylib_logistics
+-- L.InSensorRange). Squad mates still get each other through radio.pos.
+timer.Create("Rhylib.Radio.All", 1, 0, function()
+    if not R.Cfg("showEveryone") then return end
+    local all = player.GetAll()
+    if #all < 2 then return end
+    local L = Rhylib.Logistics
+    local S = Rhylib.State
+    local list = {}
+    for _, p in ipairs(all) do
+        if p:Alive() and not (S and S.IsCloaked and S.IsCloaked(p)) then
+            local show = p:GetInfoNum("rhylib_radio_hidden", 0) == 0
+            if not show and L and L.InSensorRange and L.InSensorRange(p:GetPos()) then show = true end
+            if show then list[#list + 1] = p end
+        end
+    end
+    if #list == 0 then return end
+    -- To each player only the others within the compass (40 m, plus a
+    -- little), not their own squad (radio.pos has them); nobody jammed.
+    local reach = R.RADAR_M_UNITS + 300
+    local reach2 = reach * reach
+    for _, rec in ipairs(all) do
+        if rec:Alive() and not rec.rhylibJammed then
+            local rp, sq = rec:GetPos(), R.SquadOf(rec)
+            local near = {}
+            for _, p in ipairs(list) do
+                if p ~= rec and (sq == 0 or R.SquadOf(p) ~= sq) and p:GetPos():DistToSqr(rp) <= reach2 then near[#near + 1] = p end
+            end
+            if #near > 0 then
+                Rhylib.Net.Start("radio.all")
+                net.WriteUInt(#near, 8)
+                for _, p in ipairs(near) do
+                    local pos = p:GetPos()
+                    net.WriteUInt(p:EntIndex(), 8)
+                    net.WriteInt(math.Clamp(math.floor(pos.x), -32767, 32767), 16)
+                    net.WriteInt(math.Clamp(math.floor(pos.y), -32767, 32767), 16)
+                    net.WriteInt(math.Clamp(math.floor(pos.z), -32767, 32767), 16)
+                end
+                net.Send(rec)
             end
         end
     end

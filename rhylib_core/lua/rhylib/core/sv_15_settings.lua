@@ -256,7 +256,7 @@ Rhylib.Net.Receive("core.cfgset", function(ply)
         local value
         if has then
             local t = util.JSONToTable(raw or "")
-            value = istable(t) and fixColors(t.v) or nil
+            if istable(t) then value = fixColors(t.v) end   -- (not "and ... or nil": false is a value)
             if value == nil then
                 if IsValid(ply) then ply:ChatPrint("[Settings] " .. m .. "." .. k .. ": that isn't a valid value") end
                 return

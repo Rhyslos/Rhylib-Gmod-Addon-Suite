@@ -170,8 +170,13 @@ local function buildLeft(col)
         { "Mute", function() return R.Mine().muted end, function() R.Toggle("muted") end },
         { "Deafen", function() return R.Mine().deaf end, function() R.Toggle("deaf") end },
     }
+    -- (the compass shows everyone: a player may hide from all but their squad)
+    if R.Cfg("showEveryone") then
+        defs[#defs + 1] = { "Hide on radar", function() return R.Hidden() end, function() R.ToggleHidden() end }
+    end
     function btns:PerformLayout(w, h)
-        local bw = math.floor((w - S(8)) / 3)
+        local n = #self:GetChildren()
+        local bw = math.floor((w - S(4) * (n - 1)) / n)
         for i, b in ipairs(self:GetChildren()) do b:SetPos((i - 1) * (bw + S(4)), 0) b:SetSize(bw, h) end
     end
     for _, d in ipairs(defs) do

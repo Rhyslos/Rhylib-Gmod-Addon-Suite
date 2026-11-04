@@ -175,7 +175,7 @@ function W.TrainingBlast(pos, radius, damage, attacker, inflictor)
 end
 
 -- Rockets: blast damage and an explosion where they hit.
-local function explode(bolt, pos, normal)
+local function explode(bolt, pos, normal, hit)
     local owner = bolt.owner
     local attacker = IsValid(owner) and owner or game.GetWorld()
     local inflictor = IsValid(bolt.weapon) and bolt.weapon or attacker
@@ -187,6 +187,7 @@ local function explode(bolt, pos, normal)
         attacker = attacker, inflictor = inflictor, training = bolt.training,
         tier = ex.tier or 2, kind = "rocket",
         effectData = { normal = normal, magnitude = 1, scale = 1 },
+        direct = ex.direct and not bolt.training and { ent = hit, damage = ex.direct } or nil,
     })
 end
 
@@ -251,7 +252,7 @@ local function applyHit(bolt, tr, group)
         return
     end
     if bolt.explosive then
-        explode(bolt, tr.HitPos, tr.HitNormal)
+        explode(bolt, tr.HitPos, tr.HitNormal, (hitTarget(tr)))
         return
     end
     local ent, rag = hitTarget(tr)

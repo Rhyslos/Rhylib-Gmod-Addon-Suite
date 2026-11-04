@@ -408,8 +408,10 @@ function R.MatePos(p)
 end
 
 --------------------------------------------------------------------------
--- Compass: squad mates around you, you in the middle facing up, 40 m to
--- the rim (the visor's left cheek, the third-person panel, the page).
+-- Compass: squad mates around you (green), with config showEveryone every
+-- other friendly inside the rim (blue, radio.all), you in the middle
+-- facing up, 40 m to the rim (the visor's left cheek, the third-person
+-- panel, the page).
 --------------------------------------------------------------------------
 
 R.RADAR_M = 40   -- metres from the compass centre to its rim
@@ -610,6 +612,29 @@ local function drawCore(cx, cy, r, names)
     for _, fn in pairs(R.radarExtras) do fn(cx, cy, r, mp, fx, fy, k) end
     draw.NoTexture()
     local sq = R.SquadOf(me)
+    -- Everyone else (config showEveryone, radio.all): blue, only inside
+    -- the rim; squad mates are drawn after, in green.
+    if R.Cfg("showEveryone") then
+        local now = CurTime()
+        for idx, e in pairs(R.everyone) do
+            if now - e.at > 2.5 then
+                R.everyone[idx] = nil
+            else
+                local p = Entity(idx)
+                if IsValid(p) and p ~= me and p:IsPlayer() and p:Alive() and (sq == 0 or R.SquadOf(p) ~= sq) then
+                    local pos = p:IsDormant() and e.pos or p:GetPos()
+                    local dx, dy = pos.x - mp.x, pos.y - mp.y
+                    local sx, sy = (dx * fy - dy * fx) * k, -(dx * fx + dy * fy) * k
+                    if sx * sx + sy * sy < (r - 4) * (r - 4) then
+                        local px, py = cx + sx, cy + sy
+                        local m = math.max(3, math.floor(r * 0.055))
+                        setCol(R.COL.ch1, 220)
+                        surface.DrawPoly({ { x = px, y = py - m }, { x = px + m, y = py }, { x = px, y = py + m }, { x = px - m, y = py } })
+                    end
+                end
+            end
+        end
+    end
     if sq == 0 then return end
     local font = UI.Font(11, 600)
     for _, p in ipairs(player.GetAll()) do

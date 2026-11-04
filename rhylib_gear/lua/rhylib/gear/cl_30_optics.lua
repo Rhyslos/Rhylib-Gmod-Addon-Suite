@@ -48,7 +48,10 @@
     looking <-> weapon mode, and toggles the visor zoom; unbound by
     default); both in Settings > Gear.
     Sends rhylib.gear.optics, rhylib.gear.visor, rhylib.gear.lights.
-    Sets for other client code: G.NightVision() (is it on?), G.opticsFov
+    Night vision also shows while rhylib_weapons' W.ScopeNV() is on (a
+    scope with SWEP.ScopeNightVision, its own flashlight-key toggle).
+    Sets for other client code: G.NightVision() (is it on?), G.NVLayer
+    (the viewer's night vision picture), G.opticsFov
     (view FOV while looking), G.visorFov (visor zoom factor; the crosshair
     uses it).
 ]]
@@ -282,7 +285,19 @@ end, -110)
 -- 1 and 2 fade into dark green beyond nvRange, so it has a reach.
 -- (the sun visor's night vision is always on while it's down: owner, it
 -- only lifts the dark, so it's fine in daylight too)
-local function nvOn() return (nv and kindUp() ~= 0) or (kindUp() == 0 and visorDown()) end
+-- (also a Rhy's gun's scope with ScopeNightVision on: rhylib_weapons W.ScopeNV)
+local function scopeNV()
+    local W = Rhylib.Weapons
+    return W and W.ScopeNV and W.ScopeNV() or false
+end
+-- (a gun's own scope or sight in use: the optics' night vision rests, the
+-- scope's own switch decides)
+local function gunScoped()
+    local me = LocalPlayer()
+    local w = IsValid(me) and me:GetActiveWeapon()
+    return IsValid(w) and w.Scoped and w:Scoped() or false
+end
+local function nvOn() return (nv and kindUp() ~= 0 and not gunScoped()) or (kindUp() == 0 and visorDown()) or scopeNV() end
 local function nvMode()
     local m = G.Cfg("nvMode")
     return math.Clamp(math.floor(m), 0, 2)
@@ -610,6 +625,9 @@ local function nvLayer(w, h, x0, y0, x1, y1)
         surface.DrawRect(math.random(gx0, gx1), math.random(gy0, gy1), px, px)
     end
 end
+-- G.NVLayer(w, h, x0, y0, x1, y1): the viewer's night vision picture
+-- (rhylib_weapons' launcher sight draws it too).
+G.NVLayer = nvLayer
 
 -- The sun visor's picture (reference: the clones' red helmet
 -- view): a square grid over the screen, a red scan line climbing up it,
@@ -738,6 +756,9 @@ end, 200)
 Rhylib.Hook.Add("HUDPaint", "gear.optics.under", function()
     local me = LocalPlayer()
     if kindUp() == 0 or looking() then return end
+    -- (looking through a gun's own scope or sight: only that shows)
+    local wep = me:GetActiveWeapon()
+    if IsValid(wep) and wep.Scoped and wep:Scoped() then return end
     if not me:ShouldDrawLocalPlayer() then
         drawViewer(true)
     elseif nv then

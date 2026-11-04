@@ -39,6 +39,7 @@ Rhylib.Radio = Rhylib.Radio or {}
 local R = Rhylib.Radio
 local Config = Rhylib.Config
 
+Config.Register("radio", "showEveryone", true, "Compass radar: show every friendly player (blue), not only your squad (green). Players can hide themselves from everyone but their squad on the Radio page; sensor array beacons still show them")
 Config.Register("radio", "localRange", 800, "Local voice reaches this far (units, 800 = 15 m)")
 Config.Register("radio", "maxChannels", 200, "Most custom channels on the server at once")
 Config.Register("radio", "hailCooldown", 8, "Seconds before the same player can hail again (stops hail spam)")
@@ -169,6 +170,8 @@ function R.JamLevel(ply)
     local total = math.max(0.1, R.Cfg("jamReconnect") or 4)
     return math.max(fringe, math.Clamp(left / total, 0, 1))
 end
+
+R.RADAR_M_UNITS = 40 / 0.01905   -- (the compass rim, R.RADAR_M in cl_20_hud: 40 m)
 
 R.ID_BITS = 9      -- bits for squad / channel / call ids on the wire
 R.MAX_ID = 511     -- highest id (ids are 1..511; 0 = none)

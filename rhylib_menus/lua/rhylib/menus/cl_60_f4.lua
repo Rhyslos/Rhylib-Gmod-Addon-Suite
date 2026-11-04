@@ -2,7 +2,10 @@
     F4 menu (DarkRP), as pages of the pause menu: F4 opens the pause menu
     on Jobs (a fresh F4 press closes it). Replaces DarkRP's own F4 menu.
       Jobs       jobs by category; pick one to see its model, description
-                 and weapons, then become it (or start a vote).
+                 and weapons, then become it (or start a vote). With
+                 rhylib_roster: a Skin row under the model (the skins that
+                 model has; saved to your character like the Appearance
+                 page, net roster.look).
       Shop       entities, shipments, single weapons, ammo and vehicles you
                  can buy as your current job (only shown when the server
                  has anything to sell).
@@ -236,10 +239,52 @@ local function buildJobs(body, frame)
         mp:Dock(LEFT)
         mp:SetWide(s(260))
         mp:SetFOV(36)
+        -- Skin (rhylib_roster looks, the same one as the Appearance page):
+        -- one button per skin the shown model has; picking one saves it to
+        -- your character at once (all jobs).
+        local R = Rhylib.Roster
+        local skinRow
+        local function mySkin() return LocalPlayer():GetNW2Int("rhylib_skin", 0) end
+        local function buildSkins(ent)
+            if not IsValid(skinRow) then return end
+            skinRow:Clear()
+            local n = math.min(#R.SKINS, IsValid(ent) and ent:SkinCount() or 1)
+            skinRow:SetVisible(n > 1)
+            if n <= 1 then return end
+            local opts = {}
+            for i = 1, n do opts[i] = R.SKINS[i] end
+            local lbl = K.Label(skinRow, "Skin", 12, 700, C.textDim)
+            lbl:Dock(LEFT)
+            lbl:SetWide(s(40))
+            local ch = K.Choices(skinRow, opts, mySkin, function(v)
+                local me = LocalPlayer()
+                if v == mySkin() then return end
+                Rhylib.Net.Start("roster.look")
+                R.WriteLook({ hair = me:GetNW2String("rhylib_hair", "hair_reg"), fhair = me:GetNW2String("rhylib_fhair", ""),
+                    hcol = me:GetNW2Int("rhylib_haircol", 0), skin = v })
+                net.SendToServer()
+                local e = mp:GetEntity()
+                if IsValid(e) then e:SetSkin(v) end
+            end)
+            ch:Dock(FILL)
+        end
+        if R and R.SKINS and R.WriteLook and LocalPlayer():GetNW2Bool("rhylib_char", false) then
+            skinRow = vgui.Create("DPanel", mp)
+            skinRow:Dock(BOTTOM)
+            skinRow:DockMargin(0, s(4), 0, 0)
+            skinRow:SetTall(s(26))
+            skinRow.Paint = nil
+        end
+
         local function setModel(m)
             if not m then return end
             mp:SetModel(m)
             local ent = mp:GetEntity()
+            if IsValid(ent) and skinRow then
+                local sk = mySkin()
+                if sk < (ent:SkinCount() or 1) then ent:SetSkin(sk) end
+                buildSkins(ent)
+            end
             if IsValid(ent) then
                 local mn, mx = ent:GetRenderBounds()
                 local size = math.max(mx.z - mn.z, 1)

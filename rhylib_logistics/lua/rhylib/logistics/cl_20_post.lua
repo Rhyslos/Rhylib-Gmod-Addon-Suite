@@ -1,7 +1,7 @@
 --[[
     Command post window (client; net logi.post from sv_20_post.lua). What
     shows depends on who you are (access 1 everyone, 2 field technician,
-    3 officer): Respawn tickets and Garrison (stage 2), Logistics (nearby
+    3 officer): Respawn tickets (rhylib_spawns' shared pool), Garrison (stage 2), Logistics (nearby
     supplies), Sensor arrays (technicians and officers), Orders (officers,
     stage 2). Refresh asks again (logi.postreq). Esc or Close shuts it (UI
     closer "logistics.post").
@@ -81,7 +81,14 @@ Rhylib.Net.Receive("logi.post", function()
     end
 
     heading("Respawn tickets")
-    note("Not set up yet (logistics stage 2).")
+    local SP = Rhylib.Spawns
+    if SP and SP.TicketsOn and SP.TicketsOn() then
+        row("Shared pool", "each respawn after a death uses one", SP.Tickets() .. " left")
+    elseif SP and SP.TicketsOn then
+        note("Not in use: respawning as normal (staff switch them on for events: !tickets on).")
+    else
+        note("Not available (needs Rhy's Spawn Points).")
+    end
     heading("Garrison")
     note("Not set up yet (logistics stage 2).")
 

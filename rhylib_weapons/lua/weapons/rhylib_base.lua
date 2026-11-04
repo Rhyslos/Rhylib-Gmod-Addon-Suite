@@ -212,7 +212,8 @@ SWEP.AutoReload = false             -- reload by itself when empty (off everywhe
 SWEP.SpinUp = nil                   -- seconds, nil = fires at once
 SWEP.SpinMoveMult = 0.6
 
--- Explosive bolts (rockets): { radius = units, damage = at the centre }.
+-- Explosive bolts (rockets): { radius = units, damage = at the centre,
+-- direct = extra blast damage to whatever the rocket hits itself (optional) }.
 -- The bolt then does blast damage where it hits instead of a direct hit.
 SWEP.Explosive = nil
 SWEP.BoltLife = nil                 -- seconds before a bolt that hit nothing is gone; nil = config
@@ -252,6 +253,8 @@ SWEP.AimPos = Vector(-2, 0, 1)      -- viewmodel offset when aiming (right, forw
 SWEP.AimFov = 0.85                  -- FOV multiplier when aiming
 SWEP.Scope = nil                    -- true: aiming looks through a scope (gun hidden, AimFov zoom, scope overlay)
 SWEP.ScopeSkill = nil               -- skill needed to use the scope (rhylib_skills); without it, a normal aim
+SWEP.ScopeStyle = nil               -- nil = the rifle reticle; "launcher" = launcher reticle, range under the centre
+SWEP.ScopeNightVision = nil         -- true: the flashlight key switches night vision while scoped (needs rhylib_gear)
 SWEP.ClipCap = nil                  -- most rounds loaded from one magazine (the rest stays in it)
 SWEP.Pellets = nil                  -- bolts per shot (shotguns), each uses one round
 SWEP.PelletCone = 0                 -- extra spread of the pellets, degrees

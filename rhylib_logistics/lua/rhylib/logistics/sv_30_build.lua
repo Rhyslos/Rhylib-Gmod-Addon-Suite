@@ -7,9 +7,10 @@
       UInt 2 op: 1 place = UInt 5 structure index (L.STRUCTURES), UInt 3
         turn (45 degree steps added to your facing snapped to 45); the
         server traces your own aim. 2 remove = Entity (a structure).
-      Checked: a build tool in hand, alive and able to act, in reach,
-      flat enough ground, the caps (buildMaxTotal / buildMaxPlayer),
-      the supplies nearby (unless buildSupplies is off), and for remove
+      Checked: a build tool in hand (the E-tool to place), alive and
+      able to act, in reach, flat enough ground (or snapped next to
+      another structure, L.SnapPlace), the caps (buildMaxTotal /
+      buildMaxPlayer), the supplies nearby (unless buildSupplies is off), and for remove
       that you placed it (or are staff).
     Building and repairing run in the tool's Think while LMB is held
     (L.BuildTick); progress goes out at most every 0.1 s, health every
@@ -121,10 +122,10 @@ end
 
 function L.PlaceStructure(ply, index, turn)
     local def = L.StructureAt(index)
-    if not def or not L.HeldTool(ply) or not mayAct(ply) then return end
+    if not def or not L.HeldPlacer(ply) or not mayAct(ply) then return end
     local reach = L.Cfg("buildReach")
     local tr = util.TraceLine({ start = ply:GetShootPos(), endpos = ply:GetShootPos() + ply:GetAimVector() * reach, filter = ply, mask = MASK_SOLID })
-    if not tr.Hit or tr.HitSky or tr.HitNormal.z < 0.6 then
+    if not tr.Hit or tr.HitSky then
         return Rhylib.Notify(ply, "Look at flat ground close by to place it", "bad", "Logistics")
     end
     local all, mine = counts(ply)
@@ -134,18 +135,32 @@ function L.PlaceStructure(ply, index, turn)
     if mine >= math.max(1, math.floor(L.Cfg("buildMaxPlayer"))) then
         return Rhylib.Notify(ply, "You have " .. mine .. " structures out already: remove one first (Z)", "bad", "Logistics")
     end
-    local cost = L.CostFor(ply, def)
-    if cost > 0 and not L.TakeSupplies(tr.HitPos, cost) then
-        return Rhylib.Notify(ply, string.format("%s needs %d building supplies in a crate close by (%d here)", def.name, cost, L.SuppliesNear(tr.HitPos)), "bad", "Logistics")
-    end
     local e = ents.Create("rhylib_structure")
     if not IsValid(e) then return end
     e:SetKind(index)
     e:SetPos(tr.HitPos)
-    e:SetAngles(Angle(0, L.PlaceYaw(ply, turn), 0))
+    local yaw = L.PlaceYaw(ply, turn)
+    e:SetAngles(Angle(0, yaw, 0))
     e:Spawn()
     local mins = e:OBBMins()
-    if mins.z < 0 then e:SetPos(e:GetPos() - Vector(0, 0, mins.z)) end
+    -- (next to another structure: flush against it, lined up)
+    local base = mins.z < 0 and (tr.HitPos - Vector(0, 0, mins.z)) or tr.HitPos
+    local spos
+    if ply:GetInfoNum("rhylib_build_snap", 1) ~= 0 then spos = L.SnapPlace(mins, e:OBBMaxs(), base, yaw, e) end
+    if spos then
+        e:SetPos(spos)
+    elseif tr.HitNormal.z < 0.6 then
+        e:Remove()
+        return Rhylib.Notify(ply, "Look at flat ground close by to place it", "bad", "Logistics")
+    else
+        e:SetPos(base)
+    end
+    local cost = L.CostFor(ply, def)
+    if cost > 0 and not L.TakeSupplies(e:GetPos(), cost) then
+        local have = L.SuppliesNear(e:GetPos())
+        e:Remove()
+        return Rhylib.Notify(ply, string.format("%s needs %d building supplies in a crate close by (%d here)", def.name, cost, have), "bad", "Logistics")
+    end
     e:SetOwnerSid(sid(ply))
     e.paid = cost
     e.prog = 0
@@ -167,7 +182,7 @@ end
 -- or (repair tool) repair the built structure you aim at.
 function L.BuildTick(ply, tool, dt)
     if not mayAct(ply) then return end
-    local e = L.AimedStructure(ply, L.structures)
+    local e = L.AimedStructure(ply, L.structures, L.Cfg("buildWorkReach"))
     if not IsValid(e) then return end
     local now = CurTime()
     local repair = tool:GetClass() == "rhylib_repairtool"

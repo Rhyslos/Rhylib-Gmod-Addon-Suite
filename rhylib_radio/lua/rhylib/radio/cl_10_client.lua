@@ -22,6 +22,8 @@
     rhylib_radio_slot (1 squad, 2 channel 1, 3 channel 2), rhylib_radio_off
     / _muted / _deaf (states, sent to the server on join and change),
     rhylib_radio_compass (squad compass on the HUD, default off),
+    rhylib_radio_hidden (userinfo: hidden on the compass from everyone but
+    your squad; R.Hidden / R.ToggleHidden, the Radio page's Hide button),
     rhylib_radio_chmute (channels whose voice you don't hear: bits 1
     squad, 2 channel 1, 4 channel 2; sent with radio.chmute on join and
     change; the Radio page's Mute buttons, R.ChanMuted / R.ToggleChanMute).
@@ -67,6 +69,13 @@ local offVar = cv("rhylib_radio_off", "0", "Radio off")
 local mutedVar = cv("rhylib_radio_muted", "0", "Radio muted")
 local deafVar2 = cv("rhylib_radio_deaf", "0", "Radio deafened")
 local radarVar = cv("rhylib_radio_compass", "0", "Squad compass on the HUD (takes half the chat's room in the visor)")
+-- (userinfo: the server leaves you out of everyone's compass, radio.all)
+local hiddenVar = CreateClientConVar("rhylib_radio_hidden", "0", true, true, "Hide yourself on the compass from everyone but your squad (sensor array beacons still show you)")
+function R.Hidden() return hiddenVar:GetBool() end
+function R.ToggleHidden()
+    hiddenVar:SetBool(not hiddenVar:GetBool())
+    if R.Changed then R.Changed() end
+end
 local chMuteVar = cv("rhylib_radio_chmute", "0", "Radio channels you don't hear (bits: 1 squad, 2 channel 1, 4 channel 2)")
 
 -- R.ChanMuted(slot): is that slot's voice muted for you (1 squad, 2
@@ -283,6 +292,35 @@ Rhylib.Net.Receive("radio.pos", function()
         local idx = net.ReadUInt(8)
         local x, y, z = net.ReadInt(16), net.ReadInt(16), net.ReadInt(16)
         R.mates[idx] = { pos = Vector(x, y, z), at = now }
+    end
+end)
+
+-- R.everyone[entindex] = { pos, at }: who the compass may show (radio.all).
+R.everyone = R.everyone or {}
+Rhylib.Net.Receive("radio.all", function()
+    local now = CurTime()
+    for _ = 1, net.ReadUInt(8) do
+        local idx = net.ReadUInt(8)
+        local x, y, z = net.ReadInt(16), net.ReadInt(16), net.ReadInt(16)
+        R.everyone[idx] = { pos = Vector(x, y, z), at = now }
+    end
+end)
+
+-- Hand to the ear: typing in chat (rhylib_chat NW2Bool rhylib_typing) or
+-- talking on the radio (a radio tx kind set) plays the "in chat" gesture
+-- (the custom chat box doesn't make the engine's IsTyping true, so the
+-- gamemode's own version never fires).
+Rhylib.Hook.Add("UpdateAnimation", "radio.ear", function(ply)
+    if not IsValid(ply) then return end
+    local St = Rhylib.State
+    local on = ply:Alive() and not ply:IsPlayingTaunt() and not (St and (St.IsDown(ply) or St.IsCuffed(ply)))
+        and (ply:GetNW2Bool("rhylib_typing", false) or R.State(ply).txKind ~= 0)
+    local wgt = ply.rhylibEarW or 0
+    wgt = math.Approach(wgt, on and 1 or 0, FrameTime() * 5)
+    ply.rhylibEarW = wgt
+    if wgt > 0 then
+        ply:AnimRestartGesture(GESTURE_SLOT_VCD, ACT_GMOD_IN_CHAT, true)
+        ply:AnimSetGestureWeight(GESTURE_SLOT_VCD, wgt)
     end
 end)
 
