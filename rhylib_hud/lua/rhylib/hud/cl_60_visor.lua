@@ -21,6 +21,8 @@
     HUD.VisorActive, HUD.VisorCheekX/Y, HUD.VisorStrip, HUD.VISOR_BAR_*,
     HUD.VisorShellTris (rhylib_gear masks the sun visor with it) and
     HUD.OpticsWeaponMode. Settings rows for the brow sliders at the end.
+    With the "real" layout the helmet and bars are cl_62_realistic.lua's
+    (this file's HUDPaint skips; VisorShellTris hands out its shell).
 ]]
 
 local HUD = Rhylib.HUD
@@ -256,6 +258,7 @@ end
 -- Read only. rhylib_gear masks the sun visor layer with them.
 function HUD.VisorShellTris()
     if not HUD.VisorActive() then return nil end
+    if HUD.RealisticActive and HUD.RealisticActive() then return HUD.RealShellTris() end   -- (cl_62_realistic.lua)
     return ensureShell().tris
 end
 
@@ -263,6 +266,7 @@ end
 -- Armour is drawn against GetMaxArmor (100 if the game has none).
 Rhylib.Hook.Add("HUDPaint", "hud.visor", function()
     if not HUD.VisorActive() then return end
+    if HUD.RealisticActive and HUD.RealisticActive() then return end   -- (its own helmet: cl_62_realistic.lua)
     local shell = ensureShell()
     draw.NoTexture()
     surface.SetDrawColor(COL_SHELL)

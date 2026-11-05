@@ -42,6 +42,7 @@ end
 -- ammo (cl_30_ammo.lua then skips its own box): visor showing and
 -- rhylib_inventory loaded.
 function HUD.LayoutDrawsAmmo()
+    if HUD.RealisticActive and HUD.RealisticActive() then return true end   -- (cl_62_realistic.lua draws it)
     return HUD.VisorActive and HUD.VisorActive() and inventory() ~= nil and HUD.VisorLayout() ~= "console"
 end
 
@@ -502,11 +503,16 @@ local function drawF5(entries, active, alpha, s, ai)
 end
 
 -- HUD.DrawVisorLayout(name, entries, active, alpha, s): draws layout
--- "f5", or f4 for any other name. Called by cl_40_hotbar.lua's HUDPaint
+-- "f5", the realistic hotbar for "real" (cl_62_realistic.lua), or f4 for
+-- any other name. Called by cl_40_hotbar.lua's HUDPaint
 -- in the visor (with the inventory). entries = the hotbar entries,
 -- active = the held weapon, alpha = the hotbar's fade (the ammo parts
 -- ignore it), s = HUD.Scale().
 function HUD.DrawVisorLayout(name, entries, active, alpha, s)
+    if name == "real" and HUD.DrawRealHotbar then
+        HUD.DrawRealHotbar(entries, active, alpha)
+        return
+    end
     local ply = LocalPlayer()
     local ai = HUD.AmmoInfo(ply, ply:GetActiveWeapon())
     if name == "f5" then

@@ -521,6 +521,11 @@ Rhylib.Hook.Add("HUDPaint", "hud.hotbar", function()
         alpha = since < 2.5 and 255 or math.max(90, 255 - (since - 2.5) * 400)
     end
 
+    -- (the realistic layout draws its tiles with or without the inventory)
+    if visor and HUD.RealisticActive and HUD.RealisticActive() and HUD.DrawRealHotbar then
+        HUD.DrawRealHotbar(entries, active, alpha)
+        return
+    end
     if visor and inventory() then
         -- Visor layouts (picked by an admin with rhylib_hud_layout).
         local layout = HUD.VisorLayout and HUD.VisorLayout() or "console"

@@ -220,12 +220,17 @@ Menus.AddSetting("HUD", {
     title = "First-person HUD",
     desc = "How the hotbar and ammo look in first person",
     kind = "choice", convar = "rhylib_hud_firstperson",
-    options = { { "", "Server default" }, { "f5", "F5 tiles" }, { "f4", "F4 strip" }, { "thirdperson", "Third-person" } },
+    options = { { "", "Server default" }, { "f5", "F5 tiles" }, { "f4", "F4 strip" }, { "real", "Realistic" }, { "thirdperson", "Third-person" } },
     get = function()
         local v = cvGet("rhylib_hud_firstperson")
         local HUD = Rhylib.HUD
         if HUD and HUD.Layouts and not HUD.Layouts[v] then return "" end
         return v
+    end,
+    -- (refill: the realistic layout's own row shows only with it picked)
+    set = function(v)
+        RunConsoleCommand("rhylib_hud_firstperson", v)
+        timer.Simple(0.1, function() if Menus.RefillSettings then Menus.RefillSettings() end end)
     end,
 })
 Menus.AddSetting("HUD", {

@@ -5,7 +5,7 @@
     when they haven't.
         rhylib_hud_layout            shows the current one and the choices
                                      (anyone may ask)
-        rhylib_hud_layout <name>     switches (f5, f4, thirdperson);
+        rhylib_hud_layout <name>     switches (f5, f4, real, thirdperson);
                                      needs perm rhylib.hud.layout (admin)
     Works from the server console too (no player = console). The choice
     is saved in Data "hud" / "layout", so it survives restarts, and sent

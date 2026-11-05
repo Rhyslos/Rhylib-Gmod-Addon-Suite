@@ -93,6 +93,7 @@ end
 Rhylib.Hook.Add("HUDPaint", "hud.stamina", function()
     local S = Rhylib.Stamina
     if not S or HUD.Hidden() then return end
+    if HUD.RealisticActive and HUD.RealisticActive() then return end   -- (drawn on its cheek edges: cl_62_realistic.lua)
     local ply = LocalPlayer()
     local frac = S.Frac(ply)
     local now = RealTime()

@@ -193,16 +193,29 @@ local function bezier(t, p0, p1, p2, p3)
     return u * u * u * p0 + 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t * p3
 end
 
+-- (rhylib_hud's realistic layout has its own straight cheek pad:
+-- HUD.RealCheekY, cl_62_realistic.lua)
 local curveCache = { w = 0, h = 0 }
 local function visorCurve()
     local W, H = ScrW(), ScrH()
-    if curveCache.w == W and curveCache.h == H then return curveCache.pts end
+    local HUD = Rhylib.HUD
+    local real = HUD and HUD.RealisticActive and HUD.RealisticActive() and HUD.RealCheekY and true or false
+    local tall = real and HUD.RealGeo().key or ""
+    if curveCache.w == W and curveCache.h == H and curveCache.real == real and curveCache.tall == tall then return curveCache.pts end
     local pts = {}
-    for i = 0, 48 do
-        local t = i / 48
-        pts[#pts + 1] = { bezier(t, 0, 0.3, 0.39, 0.4) * W, (bezier(t, 0.75, 0.8, 0.86, 1.0) + VISOR_INSET) * H }
+    if real then
+        local g = HUD.RealGeo()
+        local xs = { 0 }
+        for i = 1, 24 do xs[#xs + 1] = g.cornerX * i / 24 end
+        for i = 1, 24 do xs[#xs + 1] = g.cornerX + (g.bottomX - g.cornerX) * i / 24 end
+        for _, x in ipairs(xs) do pts[#pts + 1] = { x, HUD.RealCheekY(x, -1) + VISOR_INSET * H } end
+    else
+        for i = 0, 48 do
+            local t = i / 48
+            pts[#pts + 1] = { bezier(t, 0, 0.3, 0.39, 0.4) * W, (bezier(t, 0.75, 0.8, 0.86, 1.0) + VISOR_INSET) * H }
+        end
     end
-    curveCache = { w = W, h = H, pts = pts }
+    curveCache = { w = W, h = H, pts = pts, real = real, tall = tall }
     return pts
 end
 

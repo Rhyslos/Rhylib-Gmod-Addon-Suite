@@ -19,6 +19,11 @@
     Also: diamond markers over squad mates, a card while a hail rings, and
     a line while you're on a call.
 
+    rhylib_hud's realistic layout (HUD.RealisticActive): the squares stand
+    against the chin opening's edge (their right edge slanting with it),
+    the compass just left of them, the chat up to the compass; no voice
+    meters (the squares still light up while someone talks).
+
     Public: R.CompassChatWidth, R.VisorGeo, R.MatePos, R.RADAR_M,
     R.JamShown, R.DrawRadar, R.radarExtras (other addons add radar blips:
     R.radarExtras[id] = fn(cx, cy, r, myPos, fx, fy, k); a point's screen
@@ -46,13 +51,44 @@ end
 
 -- Works out every visor shape once per screen size (geo.key) and caches
 -- it in `geo`: squares, compass spot, chat widths, meter bars.
+-- The realistic layout's left cheek (rhylib_hud cl_62_realistic.lua;
+-- positions from its 1600 x 900 design, d = ScrH / 900).
+local function buildReal(HUD, key)
+    local W, H = ScrW(), ScrH()
+    local g = HUD.RealGeo()
+    local d = g.s
+    geo = { key = key, s = H / 1080, YB = 868 * d, real = true }
+    local function xr(y) return HUD.RealChinX(y, -1) - 8 * d end
+    local function xl(y) return xr(y) - 38 * d end
+    local rows = { { 724, 763 }, { 768, 798 }, { 803, 833 }, { 838, 868 } }
+    geo.sq = {}
+    for i, r in ipairs(rows) do
+        local y0, y1 = r[1] * d, r[2] * d
+        local t0, t1 = y0, y0
+        if i == 1 then   -- (cut to the cheek pad's slope)
+            t0 = HUD.RealCheekY(xl(y0), -1) + 5 * d
+            t1 = HUD.RealCheekY(xr(y0), -1) + 5 * d
+        end
+        geo.sq[i] = { { x = xl(t0), y = t0 }, { x = xr(t1), y = t1 }, { x = xr(y1), y = y1 }, { x = xl(y1), y = y1 } }
+    end
+    geo.sqX0, geo.sqX1 = xl(rows[1][1] * d), xr(rows[4][2] * d)
+    local mx = HUD.Margins("ammo")
+    geo.radar = { x = g.cornerX - 120 * d, y = 795 * d, r = math.floor(75 * d) }
+    geo.chatW = math.max(math.floor(W * 0.08), math.floor(g.cornerX - 205 * d - mx))
+    geo.chatWNoCompass = math.max(math.floor(W * 0.08), math.floor(xl(rows[1][1] * d) - 12 * d - mx))
+    geo.bars, geo.barsR, geo.bw = {}, {}, 1
+    return geo
+end
+
 local function buildVisor(HUD)
     local W, H = ScrW(), ScrH()
     local s = H / 1080
     local _, my = HUD.Margins("ammo")
     local YB = H - my
-    local key = W .. "x" .. H
+    local real = HUD.RealisticActive and HUD.RealisticActive() and HUD.RealGeo
+    local key = W .. "x" .. H .. (real and HUD.RealGeo().key or "")
     if geo.key == key then return geo end
+    if real then return buildReal(HUD, key) end
     geo = { key = key, s = s, YB = YB }
     local barB = ((HUD.VISOR_BAR_OFFSET or 0.005) + (HUD.VISOR_BAR_THICK or 0.009)) * H + math.floor(7 * s)
     local function armourBottom(x) return HUD.VisorCheekY(x, -1) + barB end
@@ -317,6 +353,10 @@ end
 local function drawVisor(HUD)
     local g = buildVisor(HUD)
     drawSquares(g.sq, g.s)
+    if g.real then
+        if R.RadarOn() and g.radar.r > 20 then R.DrawRadar(g.radar.x, g.radar.y, g.radar.r, false) end
+        return
+    end
     local l, lc = ownLevel()
     drawMeter(g.bars, g.bw, g.YB, -1, l, lc, "level")
     local r, rc, mode = inLevel()
@@ -595,7 +635,8 @@ local function drawCore(cx, cy, r, names)
     -- ground; a point's forward part goes up the screen, its right part
     -- (dot with (fy, -fx), Source's right vector) goes right.
     local me = LocalPlayer()
-    local yaw = math.rad(me:EyeAngles().y)
+    -- (the view's yaw, not the aim's: freelook turns the radar with your head)
+    local yaw = math.rad(EyeAngles().y)
     local fx, fy = math.cos(yaw), math.sin(yaw)
     -- North (+y) on the rim.
     local nx, ny = -fx, -fy
