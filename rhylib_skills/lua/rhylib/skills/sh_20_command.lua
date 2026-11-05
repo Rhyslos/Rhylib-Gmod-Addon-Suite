@@ -39,6 +39,7 @@ reg("focusDamage", 1.2, "Focus fire: damage multiplier")
 reg("focusRecoil", 0.5, "Focus fire: view kick multiplier")
 reg("pressSprint", 1.2, "Press forward: sprint speed multiplier")
 reg("presenceMult", 1.5, "Command presence: order radius multiplier")
+reg("antennaReachMult", 1.5, "Shoulder antenna (rhylib_gear) worn: command comlink orders reach this many times further")
 reg("seasonedCooldown", 240, "Seasoned command: order cooldown (seconds)")
 reg("standingTime", 10, "Standing orders: seconds orders last")
 reg("reinfCooldown", 900, "Reinforcements (Commander capstone): seconds between calls")
@@ -126,6 +127,9 @@ end
 function K.OrderRadius(ply)
     local r = cfg("commandRadius")
     if K.Has(ply, "cmd_presence") then r = r * cfg("presenceMult") end
+    -- (a shoulder antenna worn: the comlink reaches further, rhylib_gear)
+    local G = Rhylib.Gear
+    if G and G.Active and G.Active(ply, "comms") then r = r * cfg("antennaReachMult") end
     return r
 end
 

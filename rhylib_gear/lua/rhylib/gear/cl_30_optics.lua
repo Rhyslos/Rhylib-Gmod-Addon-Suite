@@ -354,7 +354,8 @@ end
 -- colours (nvColour) with no per-channel mul (a negative mul turned
 -- orange markings blue and blue ones red) and gets its green from a
 -- multiply tint afterwards (greenTint, nvTint), which keeps every hue
--- where it was. The visor's red one is a plain grey picture, tinted red.
+-- where it was. The visor's red one does the same with its own amounts
+-- (visorColour, visorTint) and a red multiply (redTint).
 -- Both are boosted (less where it's already bright).
 local tab = {
     ["$pp_colour_addr"] = 0, ["$pp_colour_addg"] = 0, ["$pp_colour_addb"] = 0,
@@ -368,11 +369,11 @@ local function filter(mode)
     if mode == 0 then boost = boost + 0.6 end   -- (filter only: nothing else brightens it)
     -- (the sun visor's night vision is red, the optics' green)
     local red = kindUp() == 0 and visorDown()
-    -- (red: a plain grey picture here, tinted afterwards by redTint())
+    -- (red: colours kept by visorColour, tinted afterwards by redTint())
     tab["$pp_colour_addr"] = 0
     tab["$pp_colour_addg"] = red and 0 or lift * g
     tab["$pp_colour_addb"] = 0
-    tab["$pp_colour_colour"] = red and 0 or math.Clamp(G.Cfg("nvColour"), 0, 1)
+    tab["$pp_colour_colour"] = math.Clamp(G.Cfg(red and "visorColour" or "nvColour"), 0, 1)
     tab["$pp_colour_mulr"] = 0
     tab["$pp_colour_mulg"] = 0
     tab["$pp_colour_mulb"] = 0
@@ -454,11 +455,16 @@ Rhylib.Hook.Add("SetupSkyboxFog", "gear.optics.nvfog", function(scale) return nv
 
 -- The visor's red night vision: the grey picture multiplied by red (the
 -- screen times the colour), so it reads clearly red like the optics' green.
+-- The visor's red: the screen times a pale red (visorTint: how red), so
+-- colours keep their hue and only lean red, as the optics' green does.
 local function redTint()
+    local t = math.Clamp(G.Cfg("visorTint"), 0, 1)
+    if t <= 0 then return end
     cam.Start2D()
     render.OverrideBlend(true, BLEND_DST_COLOR, BLEND_ZERO, BLENDFUNC_ADD)
     draw.NoTexture()
-    surface.SetDrawColor(255, 110, 95, 255)
+    local o = 255 * (1 - t)
+    surface.SetDrawColor(255, o, o * 0.9, 255)
     surface.DrawRect(0, 0, ScrW(), ScrH())
     render.OverrideBlend(false)
     cam.End2D()

@@ -30,7 +30,8 @@
       (Items.CELLPACK); comms backpack = a backpack; gun belts = a 6x1
       grid (Items.GUNBELT) and the DC-15A and RPS-6 weigh half
       (def.weightMults); shoulder antenna = jammer resistance (read by
-      rhylib_radio through G.Active(ply, "comms")). The rest are cosmetic
+      rhylib_radio through G.Active(ply, "comms")) and a longer command
+      comlink reach (rhylib_skills K.OrderRadius, antennaReachMult). The rest are cosmetic
       for now.
 
     Helmet slot: the four helmet parts share one worn slot ("helmet").
@@ -102,7 +103,7 @@ G.ITEMS = {
     rhylib_forearm_arc = { slot = "forearm", name = "ARC forearm guard", desc = "Worn on the right forearm",
         groups = { "forearms" }, on = { "arc2_arc_forearm_right_reference" },
         w = 1, h = 1, weight = 0.5, model = "models/props_junk/garbage_metalcan002a.mdl" },
-    rhylib_shoulder_antenna = { slot = "comms", name = "Shoulder antenna", desc = "Worn on the shoulder: resists comms jammers. You're only fully jammed once you're 30% of the way into a small or medium jammer's range (10% for a large one); a whole-map jammer still jams you",
+    rhylib_shoulder_antenna = { slot = "comms", name = "Shoulder antenna", desc = "Worn on the shoulder: resists comms jammers (you're only fully jammed once you're 30% of the way into a small or medium jammer's range, 10% for a large one; a whole-map jammer still jams you), and an officer's command comlink reaches 50% further",
         groups = { "shoulderantenna" }, on = { "s_ant" },
         w = 1, h = 1, weight = 0.4, model = "models/props_lab/reciever01d.mdl" },
     rhylib_belt_pouches = { slot = "belt", name = "Belt pouches", desc = "Worn on the belt: 5 more slots (no rifles or launchers)",
@@ -195,6 +196,12 @@ Config.Register("gear", "nvGain", 2.5, "Night vision (amplified): strength of th
 Config.Register("gear", "nvLift", 0.04, "Night vision: how much the darkest parts are lifted (the green floor)", { section = "Night vision" })
 Config.Register("gear", "nvColour", 0.6, "Night vision: how much of the real colours stays (0 = plain green picture, 1 = full colour under the green tint); colours keep their own hue, so unit markings stay readable", { section = "Night vision" })
 Config.Register("gear", "nvTint", 0.3, "Night vision: how strong the green tint is (0 = none, 1 = only green)", { section = "Night vision" })
+Config.Register("gear", "visorColour", 0.6, "Sun visor: how much of the real colours stays in its red view (0 = plain red picture, 1 = full colour under the red tint); colours keep their own hue", { section = "Night vision" })
+Config.Register("gear", "visorTint", 0.5, "Sun visor: how strong the red tint is (0 = none, 1 = only red)", { section = "Night vision" })
+Config.Meta("gear", "nvColour", { min = 0, max = 1 })
+Config.Meta("gear", "nvTint", { min = 0, max = 1 })
+Config.Meta("gear", "visorColour", { min = 0, max = 1 })
+Config.Meta("gear", "visorTint", { min = 0, max = 1 })
 Config.Register("gear", "nvBoost", 1.5, "Night vision: how much brighter the picture is made in the dark (1 = no boost; eased off in lit places)", { section = "Night vision" })
 Config.Register("gear", "nvRange", 0, "Night vision: fade the picture into dark green beyond this distance (units; 0 = off)", { section = "Night vision" })
 Config.Register("gear", "nvFadeFrom", 600, "Night vision: where that fade starts (units)", { section = "Night vision" })

@@ -205,6 +205,10 @@ local function drawCornerTimer(c)
     local HUD = Rhylib.HUD
     local visor = HUD and HUD.VisorActive and HUD.VisorActive()
     local x, y = S(24), visor and math.floor(ScrH() * 0.075) or S(24)
+    -- (Realistic helmet: under its brow, which comes lower at the sides)
+    if HUD and HUD.RealisticActive and HUD.RealisticActive() and HUD.RealBrowY then
+        y = math.floor(math.max(HUD.RealBrowY(x), HUD.RealBrowY(x + w)) + S(14))
+    end
     draw.NoTexture()
     surface.SetDrawColor(COL_PLATE)
     surface.DrawRect(x, y, w, h)

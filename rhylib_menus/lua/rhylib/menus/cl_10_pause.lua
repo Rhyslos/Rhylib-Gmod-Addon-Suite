@@ -27,7 +27,8 @@
     hint on the entry), visible() (hidden when it returns false),
     build(panel) (called every time the page is shown, into a cleared
     panel; errors are caught and printed), sub (optional dim text on the
-    page's header; may be set by build), beforeLeave(go) (optional: return
+    page's header; may be set by build), wide (true: the page fills the
+    room right of the side bar instead of at most 980 px), beforeLeave(go) (optional: return
     false to stay on the page when another is picked, and call go() later
     to switch after all).
     group fields: title, order, section, icon, key, tabs (true: one side
@@ -442,6 +443,13 @@ function PANEL:ShowPage(id)
     end
     self:BuildNav()
     self.page:Clear()
+    -- (wide = true: the page takes the whole room right of the side bar)
+    local s = K.S
+    local pw = pg.wide and (ScrW() - s(440)) or math.min(ScrW() - s(440), s(980))
+    if self.page:GetWide() ~= pw then
+        self.page:SetWide(pw)
+        self.page:InvalidateLayout(true)
+    end
     local ok, err = pcall(pg.build, self.page)
     if not ok then Rhylib.Error("menus", "page %s: %s", id, tostring(err)) end
     self:BuildTabs(pg)

@@ -117,6 +117,10 @@ Rhylib.Hook.Add("HUDPaint", "menus.killfeed", function()
     local visor = HUD and HUD.VisorActive and HUD.VisorActive()
     local x1 = ScrW() - s(24)
     local y = visor and math.floor(ScrH() * 0.075) or s(24)
+    -- (Realistic helmet: under its brow, which comes lower at the sides)
+    if HUD and HUD.RealisticActive and HUD.RealisticActive() and HUD.RealBrowY then
+        y = math.floor(math.max(HUD.RealBrowY(x1), HUD.RealBrowY(x1 - s(400))) + s(14))
+    end
     local h = s(28)
     local pad = s(10)
     local nameFont, wepFont = K.Font(14, 700), K.Font(12, 500)

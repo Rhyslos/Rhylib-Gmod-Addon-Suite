@@ -460,6 +460,12 @@ function HUD.RealChinX(y, side)
     return side < 0 and x or g.W - x
 end
 
+-- HUD.RealBrowY(x): screen y of the line under the brow's rim at screen x
+-- (things placed under the brow go below it: the killfeed, call timers).
+function HUD.RealBrowY(x)
+    return HUD.RealGeo().baseY(x)
+end
+
 -- HUD.RealCheekY(x, side): screen y of the helmet's edge (cheek pad, then
 -- chin edge) at screen x; past the chin edge the bottom of the screen.
 function HUD.RealCheekY(x, side)

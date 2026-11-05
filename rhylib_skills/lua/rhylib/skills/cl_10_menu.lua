@@ -1289,6 +1289,7 @@ local function addPage()
     Menus.AddPage("skills", {
         title = "Skills",
         order = 20,
+        wide = true,   -- (the trees need the room)
         section = "you",
         icon = "skills",
         key = function() return menuKey:GetString() end,
