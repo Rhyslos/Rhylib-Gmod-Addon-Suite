@@ -248,15 +248,17 @@ local function fitHeight(storage)
 end
 
 -- Inv.StorageLoad(storage, rows): replaces the contents with saved rows
--- (from Inv.StorageSerialize). Unknown item ids are skipped.
+-- (from Inv.StorageSerialize). Old ids load as Items.RENAMED says;
+-- unknown item ids are skipped.
 function Inv.StorageLoad(storage, rows)
     storage.items = {}
     if storage.grow then storage.h = GROW_MAX end
     if istable(rows) then
         Items.EnsureReady()
         for _, row in ipairs(rows) do
-            if Items.defs[row[1]] then
-                Inv.StorageAdd(storage, row[1], row[5] or 1, istable(row[6]) and row[6] or {}, row[2], row[3], row[4] == 1)
+            local id = Items.RENAMED[row[1]] or row[1]
+            if Items.defs[id] then
+                Inv.StorageAdd(storage, id, row[5] or 1, istable(row[6]) and row[6] or {}, row[2], row[3], row[4] == 1)
             end
         end
     end

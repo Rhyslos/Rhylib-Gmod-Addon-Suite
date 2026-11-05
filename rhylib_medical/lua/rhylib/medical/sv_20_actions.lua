@@ -1,5 +1,5 @@
 --[[
-    Medical actions (server): stabilise, revive, heal and treat a part.
+    Medical actions (server): stabilise, revive, and treat with a kit.
 
     Every action is one row in Med.acts[helper] and four NW2 values on the
     helper (sh_00_config.lua), set when it starts and cleared when it ends.
@@ -10,30 +10,32 @@
     the effect applied. Stabilising has no end; it pauses the target's
     bleed-out until the helper stops. Reviving pauses it too.
 
-    Kits:
-      medkit         one per use. Heals medkitHeal (medic: medkitHealMedic)
-                     and stops bleeding (trooper: the worst part; medic: all).
-                     On one part (H menu): stops its bleeding (medics also
-                     repair damage and burns).
-      first aid kit  medics. Charge = health it can still heal (fill x
+    Kits (worst problem first, Med.TreatWounds in sv_30_injuries.lua):
+      medkit         one per use. Trooper: stops the worst bleed, heals
+                     medkitHeal. Medic: stops all bleeding, ends a limp,
+                     repairs medkitLimbRepair on every part, heals
+                     medkitHealMedic.
+      first aid kit  medics. Fixes every wound and heals what's missing.
+                     Charge = health it can still heal (fill x
                      firstAidCharge); each use costs the health it heals
                      (at least firstAidMinCost). Empty kits are used up.
       revive kit     medics. One per revive.
-      field items    splint, burn gel, painkillers (anyone, H menu), blood
-                     pack (medics, E menu on a downed player).
+      blood pack     medics, E menu on a downed player.
     Skills (Med.Skill): Steady hands (treatments) and Quick revive
     (revives) shorten the timers, Hands-on revive needs no kit, Efficient
-    care spends less first aid charge.
+    care spends less first aid charge, Field surgeon patches up whoever
+    you treat (patchedMult damage for patchedTime s; ply.rhylibPatchedUntil,
+    EntityTakeDamage "medical.patched").
 
     Started by the kit weapons (left click: someone else, right click:
-    yourself, selfMult times longer), the E menu on a downed player
-    (med.act) or the H menu (med.treat in sv_30_injuries.lua).
+    yourself, selfMult times longer) or the E menu on a downed player
+    (med.act).
 
     Public: Med.Has, Med.Consume, Med.KitCharge, Med.SpendCharge,
     Med.Start, Med.Cancel, Med.CheckActions, Med.UseKit, Med.DragRevive,
     Med.OpenMenuFor.
-    Hook fired: Rhylib.PlayerHealed(patient, helper) after a heal or a
-    part treatment (rhylib_datapad counts it).
+    Hook fired: Rhylib.PlayerHealed(patient, helper) after a treatment
+    (rhylib_datapad counts it).
     Nets: med.act (client -> server) kind Med.ACT_BITS (4) + target
     entity index 8 bits; med.open (server -> client) entity: open the
     injury menu on that patient (NULL = your own).
@@ -59,8 +61,8 @@ function Med.Has(ply, class)
 end
 
 -- Med.Consume(ply, class): uses up one of an item (medkit, revive kit,
--- field item). Returns false if there was none.
--- Example: if Rhylib.Medical.Consume(ply, "rhylib_splint") then ... end
+-- blood pack). Returns false if there was none.
+-- Example: if Rhylib.Medical.Consume(ply, "rhylib_bloodpack") then ... end
 function Med.Consume(ply, class)
     local Inv = inventory()
     if not Inv then
@@ -168,7 +170,7 @@ local function setPatient(target, helper)
     target:SetNW2Entity("rhylib_healBy", helper or NULL)
 end
 
--- The kit each action uses up (A_TREAT carries its own in a.kit).
+-- The kit each action uses up.
 local KIT = {
     [Med.A_REVIVE] = Med.REVIVE_KIT,
     [Med.A_FA_REVIVE] = Med.FIRST_AID,
@@ -177,14 +179,9 @@ local KIT = {
     [Med.A_BLOOD] = Med.BLOOD_PACK,
 }
 
-local function kitOf(a) return a.kit or KIT[a.kind] end
+local function kitOf(a) return KIT[a.kind] end
 
-local TREAT_TIME = {
-    [Med.FIRST_AID] = "firstAidLimbTime", [Med.MEDKIT] = "medkitLimbTime", [Med.SPLINT] = "splintTime",
-    [Med.BURN_GEL] = "burnGelTime", [Med.PAINKILLER] = "pillTime",
-}
-
-local function baseDuration(kind, self, kit)
+local function baseDuration(kind, self)
     local mult = self and math.max(1, tonumber(Med.Cfg("selfMult")) or 2) or 1
     if kind == Med.A_REVIVE then return Med.Cfg("reviveKitTime") end
     if kind == Med.A_FA_REVIVE then return Med.Cfg("firstAidReviveTime") end
@@ -192,14 +189,11 @@ local function baseDuration(kind, self, kit)
     if kind == Med.A_BLOOD then return Med.Cfg("bloodPackTime") end
     if kind == Med.A_FA_HEAL then return Med.Cfg("firstAidHealTime") * mult end
     if kind == Med.A_MEDKIT then return Med.Cfg("medkitHealTime") * mult end
-    if kind == Med.A_TREAT then
-        return Med.Cfg(TREAT_TIME[kit] or "medkitLimbTime") * mult
-    end
     return 0
 end
 
-local function duration(helper, kind, self, kit)
-    local d = baseDuration(kind, self, kit)
+local function duration(helper, kind, self)
+    local d = baseDuration(kind, self)
     if not Med.REVIVES[kind] and Med.Skill(helper, "steady_hands") then d = d * Med.Cfg("steadyMult") end
     if Med.REVIVES[kind] and Med.Skill(helper, "quick_revive") then d = d * Med.Cfg("quickReviveMult") end
     return d
@@ -221,16 +215,15 @@ local function share(t, frac)
     return math.ceil(t:GetMaxHealth() * math.Clamp(tonumber(frac) or 0, 0, 1))
 end
 
-local function bleeding(target)
-    local t = Med.inj and Med.inj[target]
-    if not t then return false end
-    for _, l in ipairs(Med.LIMBS) do
-        if t[l].bleed > 0 then return true end
-    end
-    return false
+-- Something for this kit to do besides health? A trooper's medkit only
+-- stops bleeding; a medic's kits also end a limp and repair part damage.
+local function hasWounds(helper, target, kind)
+    if not Med.HasWounds or Med.Simple() then return false end
+    local full = kind == Med.A_FA_HEAL or Med.IsMedic(helper)
+    return Med.HasWounds(target, full)
 end
 
--- Why this can't start, or nil if it can. opts: { kit, limb } for A_TREAT.
+-- Why this can't start, or nil if it can.
 -- "" = refused without a message (nonsense requests).
 local function refuse(helper, kind, target, opts)
     if not helper:Alive() or helper.rhylibDown then return "" end
@@ -243,11 +236,10 @@ local function refuse(helper, kind, target, opts)
     if kind == Med.A_STAB or Med.REVIVES[kind] or kind == Med.A_BLOOD then
         if self or not down then return "" end
         if kind == Med.A_BLOOD and Med.Simple() then return "Blood packs aren't used in the simplified medical system" end
-    elseif kind == Med.A_FA_HEAL or kind == Med.A_MEDKIT or kind == Med.A_TREAT then
+    elseif kind == Med.A_FA_HEAL or kind == Med.A_MEDKIT then
         if down then return "Revive them first" end
-        if kind == Med.A_TREAT and Med.Simple() then return "" end
-        if kind ~= Med.A_TREAT and target:Health() >= target:GetMaxHealth() and not bleeding(target) then
-            return (self and "You're" or target:Nick() .. " is") .. " at full health"
+        if target:Health() >= target:GetMaxHealth() and not hasWounds(helper, target, kind) then
+            return (self and "You're" or target:Nick() .. " is") .. " in good shape"
         end
     else
         return ""
@@ -270,7 +262,7 @@ local function refuse(helper, kind, target, opts)
         if not Med.Skill(helper, "hands_on") then return "You need the Hands-on revive skill" end
         return nil
     end
-    local kit = kind == Med.A_TREAT and opts and opts.kit or KIT[kind]
+    local kit = KIT[kind]
     if not kit then return "" end
     if kit == Med.MEDKIT then
         if Med.Cfg("medkitMedicOnly") and not medic then return "Only medics can use medkits" end
@@ -288,8 +280,7 @@ end
 
 -- Med.Start(helper, kind, target, opts): starts a timed action (A_* kind)
 -- after checking it's allowed; tells the helper why not (Med.Note).
--- opts: { kit = item id, limb = part } for A_TREAT, { dragging = true }
--- for a revive on the move. Returns true if it started. The effect
+-- opts: { dragging = true } for a revive on the move. Returns true if it started. The effect
 -- happens when the timer ends (finishAct). Server only.
 -- Example: Rhylib.Medical.Start(medic, Rhylib.Medical.A_STAB, downedPly)
 function Med.Start(helper, kind, target, opts)
@@ -310,8 +301,8 @@ function Med.Start(helper, kind, target, opts)
         return true
     end
 
-    local a = { kind = kind, target = target, kit = opts and opts.kit, limb = opts and opts.limb, started = now, dragging = dragging or nil }
-    a.endTime = now + duration(helper, kind, target == helper, a.kit)
+    local a = { kind = kind, target = target, started = now, dragging = dragging or nil }
+    a.endTime = now + duration(helper, kind, target == helper)
     -- Reviving pauses the bleed-out (unless someone already stabilises).
     if Med.REVIVES[kind] and not Med.StabilisedBy(target) then
         target:SetNW2Float(Rhylib.NW.DOWN_LEFT, Med.TimeLeft(target))
@@ -368,21 +359,18 @@ local function heal(t, amount)
     t:SetHealth(math.min(t:GetMaxHealth(), t:Health() + math.floor(amount + 0.5)))
 end
 
--- Stop bleeding: the worst part (or every part).
-local function stopBleeding(t, all)
-    local inj = Med.inj and Med.inj[t]
-    if not inj then return end
-    local worst
-    for _, l in ipairs(Med.LIMBS) do
-        local p = inj[l]
-        if all then
-            p.bleed = 0
-        elseif p.bleed > 0 and (not worst or p.bleed > inj[worst].bleed) then
-            worst = l
+-- The wounds part of a treatment (Med.TreatWounds), and the note to the
+-- helper: what was fixed, and Field surgeon's patch.
+local function treatWounds(helper, t, how)
+    local did = Med.TreatWounds and not Med.Simple() and Med.TreatWounds(t, how) or ""
+    if Med.Skill(helper, "field_surgeon") and not Med.Simple() then
+        t.rhylibPatchedUntil = CurTime() + Med.Cfg("patchedTime")
+        if t ~= helper then
+            Med.Note(t, "Patched up by " .. helper:Nick() .. ": less damage for " .. Med.Cfg("patchedTime") .. " s")
         end
     end
-    if worst then inj[worst].bleed = 0 end
-    Med.MarkInjuries(t)
+    local what = did ~= "" and ("fixed " .. did) or "healed"
+    Med.Note(helper, t == helper and (string.upper(what:sub(1, 1)) .. what:sub(2)) or (t:Nick() .. ": " .. what))
 end
 
 local function revive(helper, t, hp)
@@ -431,8 +419,8 @@ local function finishAct(helper, a)
         end
         Med.Note(helper, "Blood pack in: +" .. add .. " s")
     elseif a.kind == Med.A_FA_HEAL then
-        -- As much health as is missing (and the kit holds); stops all bleeding.
-        if t:Health() >= t:GetMaxHealth() and not bleeding(t) then return end   -- (nothing left to do)
+        -- Fixes every wound; as much health as is missing (and the kit holds).
+        if t:Health() >= t:GetMaxHealth() and not hasWounds(helper, t, a.kind) then return end   -- (nothing left to do)
         if usesCharge() then
             local hp, cost = kitHeal(helper, t:GetMaxHealth() - t:Health())
             Med.SpendCharge(helper, cost)
@@ -440,21 +428,19 @@ local function finishAct(helper, a)
         else
             heal(t, t:GetMaxHealth())   -- (simplified: to full, no charge)
         end
-        stopBleeding(t, true)
+        treatWounds(helper, t, "full")
         -- Hook Rhylib.PlayerHealed(patient, helper): a heal went in.
         hook.Run("Rhylib.PlayerHealed", t, helper)
     elseif a.kind == Med.A_MEDKIT then
-        if t:Health() >= t:GetMaxHealth() and not bleeding(t) then return end   -- (nothing left to do)
+        if t:Health() >= t:GetMaxHealth() and not hasWounds(helper, t, a.kind) then return end   -- (nothing left to do)
         if not Med.Consume(helper, kit) then return end
         if simple then
             heal(t, share(t, Med.Cfg("simpleMedkit")))   -- (simplified: a share of max health, medic or not)
         else
             heal(t, medic and Med.Cfg("medkitHealMedic") or Med.Cfg("medkitHeal"))
         end
-        stopBleeding(t, medic)
+        treatWounds(helper, t, medic and "medkit" or "worst")
         hook.Run("Rhylib.PlayerHealed", t, helper)
-    elseif a.kind == Med.A_TREAT then
-        if Med.TreatPart then Med.TreatPart(helper, t, a.limb, kit) end
     end
     if IsValid(t) and not Med.REVIVES[a.kind] then t:EmitSound("weapons/2misc_non_guns/use_bacta.ogg", 65) end
 end
@@ -493,15 +479,11 @@ end
 -- Med.UseKit(ply, class, self): a kit weapon's click (rhylib_med_base).
 -- class = kit weapon class, self = right click (treat yourself).
 -- Aimed at a downed player: revive (revive kit / first aid kit).
--- Medkits and first aid kits on someone standing open the injury menu on
--- the client instead (treatment goes through med.treat); in the
--- simplified system they heal straight away.
+-- Medkits and first aid kits on someone standing (or yourself) treat
+-- them: worst problem first, then health.
 function Med.UseKit(ply, class, self)
     if Med.acts[ply] then return end
-    -- (simplified medical system: no injury menu, kits heal straight away)
-    local menuKit = (class == Med.MEDKIT or class == Med.FIRST_AID) and not Med.Simple()
     if self then
-        if menuKit then Med.OpenMenuFor(ply, nil) return end
         if class == Med.FIRST_AID then Med.Start(ply, Med.A_FA_HEAL, ply)
         elseif class == Med.MEDKIT then Med.Start(ply, Med.A_MEDKIT, ply) end
         return
@@ -518,19 +500,6 @@ function Med.UseKit(ply, class, self)
         Med.Note(ply, "Aim at a downed player")
         return
     end
-    if menuKit then
-        -- Someone in front (standing): their injury menu, to drag the kit onto a part.
-        ply:LagCompensation(true)
-        local t = Med.FindStanding(ply)
-        ply:LagCompensation(false)
-        if t then
-            Med.OpenMenuFor(ply, t)
-        else
-            Med.Note(ply, "Aim at someone close, or right click to treat yourself")
-        end
-        return
-    end
-
     ply:LagCompensation(true)
     local t = Med.FindStanding(ply)
     ply:LagCompensation(false)
@@ -579,3 +548,13 @@ Rhylib.Hook.Add("PlayerDisconnected", "medical.acts", function(ply)
         if h == ply or a.target == ply then Med.Cancel(h) end
     end
 end)
+
+-- Field surgeon: a patient you treated takes patchedMult damage until
+-- ply.rhylibPatchedUntil. Priority 95 (with the skill resistances, before
+-- armour). Bleeding (DMG_DIRECT) and downed players are left alone.
+Rhylib.Hook.Add("EntityTakeDamage", "medical.patched", function(ent, dmg)
+    if not ent:IsPlayer() or (ent.rhylibPatchedUntil or 0) <= CurTime() or ent.rhylibDown then return end
+    if bit.band(dmg:GetDamageType(), DMG_DIRECT) ~= 0 then return end
+    dmg:ScaleDamage(Med.Cfg("patchedMult"))
+end, 95)
+Rhylib.Hook.Add("PlayerSpawn", "medical.patched", function(ply) ply.rhylibPatchedUntil = nil end)

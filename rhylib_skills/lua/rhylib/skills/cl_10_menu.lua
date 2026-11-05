@@ -199,7 +199,7 @@ local ICONS = {
     hard_landings = "down", extended_tanks = "fuel", afterburner = "flame",
     combat_drop = "landing", blast_hardened = "shield", aerial_stability = "anchor", death_from_above = "burst",
     field_drag = "drag", hands_on = "heart", recovery = "syringe", drag_revive = "run", steady_hands = "clock", quick_revive = "cross", under_fire = "shield",
-    deep_pockets = "pocket", triage = "eye", chem_bench = "flask", field_surgeon = "bone",
+    deep_pockets = "pocket", triage = "eye", chem_bench = "flask", field_surgeon = "shield",
     batch_brewing = "stack", bacta_specialist = "drop",
     riot_shield = "riot", shield_bash = "bash", escort_drills = "cuffs", breaching = "door",
     thorough_search = "search", shock_assault = "charge", hold_line = "wall", flash_charge = "burst", phalanx = "phalanx",

@@ -1,5 +1,5 @@
 -- Tough test dummy: like the test dummy, but takes no damage at all (no
--- bleeding, burns, fractures; never goes down). Hits still show their
+-- bleeding, limps; never goes down). Hits still show their
 -- damage numbers. See rhylib_test_dummy.lua.
 AddCSLuaFile()
 

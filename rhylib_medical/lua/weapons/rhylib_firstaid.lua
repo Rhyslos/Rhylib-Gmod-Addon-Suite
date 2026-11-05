@@ -1,6 +1,6 @@
 -- First aid kit (shared SWEP, base rhylib_med_base). Medics only. LMB on
--- a downed player revives, LMB someone standing / RMB yourself opens the
--- injury menu (simplified system: heals to full at once). Holds a charge.
+-- a downed player revives, LMB someone standing / RMB yourself fixes every
+-- wound and heals (simplified system: heals to full). Holds a charge.
 AddCSLuaFile()
 
 SWEP.Base = "rhylib_med_base"

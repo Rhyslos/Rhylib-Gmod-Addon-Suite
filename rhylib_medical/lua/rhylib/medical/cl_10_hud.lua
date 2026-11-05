@@ -375,7 +375,7 @@ Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.wheel", function(t, me, add)
         end
     end
     if Med.OpenInjuries and not Med.Simple() and t:GetPos():DistToSqr(me:GetPos()) < cfgRange * cfgRange * 2 then
-        add("Injuries", function(x) Med.OpenInjuries(x) end, { order = 20, sub = "Check and treat" })
+        add("Injuries", function(x) Med.OpenInjuries(x) end, { order = 20, sub = "Check their wounds" })
     end
 end)
 

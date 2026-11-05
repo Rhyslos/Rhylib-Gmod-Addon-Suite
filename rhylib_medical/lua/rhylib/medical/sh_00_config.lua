@@ -13,25 +13,27 @@
     medic = true) revive with a revive kit or first aid kit, picked by the
     medic; reviving also pauses the timer.
 
-    Kits:
-      medkit          single use, stacks 3 (troopers) / 5 (medics). Heals
-                      and stops bleeding; stronger in a medic's hands.
-      first aid kit   medics only, doesn't stack. Holds a charge
-                      (firstAidCharge, shown as %) spent on the health it
-                      heals; empty kits are used up.
+    Kits (left click someone, right click yourself; worst problem first):
+      medkit          single use, stacks 3 (troopers) / 5 (medics). A
+                      trooper's stops the worst bleed and heals medkitHeal;
+                      a medic's stops all bleeding, ends a limp, takes
+                      medkitLimbRepair off every part and heals
+                      medkitHealMedic.
+      first aid kit   medics only, doesn't stack. Fixes every wound and
+                      heals what's missing from its charge
+                      (firstAidCharge, shown as %); empty kits are used up.
       revive kit      medics only.
     Every treatment takes a moment; the patient sees "being treated" and
-    doesn't bleed while it runs.
+    doesn't bleed while it runs. Field surgeon (Chemist skill): someone
+    you treat takes patchedMult damage for patchedTime s afterwards.
     Medicines (antiviral, antidote, antibiotics) cure illnesses, dosed
     in units (sh_50_illness.lua).
-    Field items (H menu, drag onto a part; anyone): splint (a broken bone
-    holds until the med bay), burn gel, painkillers. Medics:
-    blood pack (E menu on a downed player, more bleed-out time). Medical
-    supplies are what Chemists turn into all of these at a chemistry
-    bench (sv_40_medbay.lua).
-    Med bay: near a bacta tank or a medical holotable. Only there does a
-    first aid kit fully set bones and heal burns (or anywhere with the
-    Field surgeon skill); elsewhere it splints them and halves burns.
+    Medics: blood pack (E menu on a downed player, more bleed-out time).
+    Medical supplies are what Chemists turn into medkits, blood packs and
+    the illness kit at a chemistry bench (sv_40_medbay.lua). Old splints,
+    burn gel and painkillers in saved inventories and lockers load as
+    medical supplies (Items.RENAMED).
+    Med bay: near a bacta tank or a medical holotable.
     Skills (rhylib_skills, medic jobs): Med.Skill(ply, id).
 
     State, all NW2 (changes only on events):
@@ -62,7 +64,7 @@ local Med = Rhylib.Medical
 local Config = Rhylib.Config
 
 Config.Register("medical", "enabled", true, "Players go down at 0 HP instead of dying")
-Config.Register("medical", "simplified", false, "Simplified medical system: no injuries, bleeding, illness, field items, H menu or chemistry; health is a plain 0-100% of the job's max health. Medkit +simpleMedkit, first aid kit heals to full, revive kit revives to full. Downing, stabilising, dragging and reviving stay")
+Config.Register("medical", "simplified", false, "Simplified medical system: no injuries, bleeding, limps, illness, blood packs, H menu or chemistry; health is a plain 0-100% of the job's max health. Medkit +simpleMedkit, first aid kit heals to full, revive kit revives to full. Downing, stabilising, dragging and reviving stay")
 Config.Register("medical", "simpleMedkit", 0.3, "Simplified medical system: share of max health a medkit heals (0.3 = +30%)")
 Config.Register("medical", "simpleFirstAidRevive", 0.3, "Simplified medical system: health after a first aid kit revive, as a share of max health")
 Config.Register("medical", "simpleFirstAidCharge", false, "Simplified medical system: first aid kits still spend their charge (off = never run out)")
@@ -78,10 +80,8 @@ Config.Register("medical", "firstAidReviveTime", 15, "Seconds to revive with a f
 Config.Register("medical", "firstAidReviveHealth", 30, "Health after a first aid revive (taken from the kit's charge)")
 Config.Register("medical", "firstAidCharge", 500, "Health a full first aid kit can heal before it's used up")
 Config.Register("medical", "firstAidMinCost", 10, "Charge a first aid treatment always costs, even when it heals less")
-Config.Register("medical", "firstAidHealTime", 5, "Seconds to heal someone who is up with a first aid kit (as much as the charge allows)")
-Config.Register("medical", "firstAidLimbTime", 4, "Seconds to treat one body part with a first aid kit")
+Config.Register("medical", "firstAidHealTime", 5, "Seconds to treat someone who is up with a first aid kit (fixes every wound, heals as much as the charge allows)")
 Config.Register("medical", "medkitHealTime", 3, "Seconds for a medkit on someone else")
-Config.Register("medical", "medkitLimbTime", 3, "Seconds for a medkit on one body part")
 Config.Register("medical", "medkitHeal", 25, "Health a medkit gives (trooper)")
 Config.Register("medical", "medkitHealMedic", 50, "Health a medkit gives in a medic's hands")
 Config.Register("medical", "medkitStack", 3, "Medkits per stack for troopers")
@@ -105,11 +105,8 @@ Config.Register("medical", "efficientCare", 0.67, "Efficient care: first aid kit
 Config.Register("medical", "triageFlash", 30, "Triage: markers flash under this many seconds left")
 Config.Register("medical", "medBayRange", 400, "Med bay: this close to a bacta tank or medical holotable")
 Config.Register("medical", "medBayClasses", { "rhylib_bacta_tank", "rhylib_med_holotable" }, "Entities that make a med bay around them")
-Config.Register("medical", "splintTime", 4, "Seconds to splint a fracture")
-Config.Register("medical", "burnGelTime", 3, "Seconds to apply burn gel")
-Config.Register("medical", "burnGel", 60, "Burns that burn gel removes")
-Config.Register("medical", "pillTime", 1.5, "Seconds to give painkillers")
-Config.Register("medical", "painkillerTime", 60, "Painkillers: seconds that hurt limbs and burns don't slow you")
+Config.Register("medical", "patchedTime", 20, "Field surgeon: seconds someone you treated takes less damage")
+Config.Register("medical", "patchedMult", 0.75, "Field surgeon: damage multiplier while patched up (0.75 = 25% less)")
 Config.Register("medical", "bloodPackTime", 4, "Seconds to hook up a blood pack")
 Config.Register("medical", "bactaHeal", 2, "Bacta grenade mist: health per second while standing in it")
 Config.Register("medical", "bactaBleedStep", 5, "Bacta grenade mist: seconds in it for bleeding to drop one step (heavy -> light -> none) on each bleeding part")
@@ -123,16 +120,14 @@ Config.Register("medical", "sofaDrop", 1.5, "Med sofa: gap between the body's lo
 Config.Register("medical", "sofaSettle", 1.5, "Med sofa: seconds the arms, legs and head settle before the body freezes")
 Config.Register("medical", "sofaDamping", 6, "Med sofa: how heavily the arms, legs and head are slowed while settling")
 Config.Register("medical", "tankHeal", 5, "Bacta tank: health per second")
-Config.Register("medical", "tankRepair", 8, "Bacta tank: body part damage and burns healed per second")
-Config.Register("medical", "tankSetBones", 8, "Bacta tank: seconds inside before fractures are set")
+Config.Register("medical", "tankRepair", 8, "Bacta tank: body part damage healed per second")
 Config.Register("medical", "tankSpecialist", 300, "Bacta specialist: tanks within this range of you heal twice as fast")
 Config.Register("medical", "benchModel", "models/fyu/cedi/misc/v4/misc_30.mdl", "Chemistry bench model")
 Config.Register("medical", "craftTime", 3, "Chemistry bench: seconds per batch")
 -- (each row's place in the list is its recipe number on the wire, chem.make
 -- 5 bits, so at most 31 recipes)
 Config.Register("medical", "chemRecipes", {
-    { "rhylib_burngel", 1 }, { "rhylib_painkiller", 1 },
-    { "rhylib_splint", 1 }, { "rhylib_bloodpack", 2 }, { "rhylib_medkit", 2 },
+    { "rhylib_bloodpack", 2 }, { "rhylib_medkit", 2 },
     { "rhylib_blood_kit", 1, 2 }, { "rhylib_test_strip", 1, 3 },
     { "rhylib_antiviral", 2, 10 }, { "rhylib_antibiotics", 2, 10 }, { "rhylib_antidote", 2, 10 },
 }, "Chemistry bench recipes: { item, medical supplies it takes, how many it makes (default 1) }")
@@ -170,7 +165,7 @@ Med.A_REVIVE = 2    -- reviving with a revive kit
 Med.A_FA_REVIVE = 3 -- reviving with a first aid kit
 Med.A_FA_HEAL = 4   -- heal with a first aid kit
 Med.A_MEDKIT = 5    -- one medkit
-Med.A_TREAT = 6     -- one body part, from the H menu (kit in the action)
+Med.A_TREAT = 6     -- (no longer used: was one body part from the H menu)
 Med.A_BLOOD = 7     -- blood pack on a downed player
 Med.A_HAND_REVIVE = 8 -- revive with no kit (skill Hands-on revive)
 Med.ACT_BITS = 4
@@ -197,28 +192,19 @@ Med.MEDKIT = "rhylib_medkit"
 
 -- Plain medical items.
 Med.SUPPLIES = "rhylib_med_supplies"
-Med.SPLINT = "rhylib_splint"
-Med.BURN_GEL = "rhylib_burngel"
-Med.PAINKILLER = "rhylib_painkiller"
 Med.BLOOD_PACK = "rhylib_bloodpack"
-
--- H menu treatments: kind (3 bits on the wire) <-> item.
-Med.TREAT_FIRSTAID, Med.TREAT_MEDKIT = 0, 1
-Med.TREAT_ITEMS = { [0] = Med.FIRST_AID, [1] = Med.MEDKIT, [2] = Med.SPLINT, [3] = Med.BURN_GEL, [4] = Med.PAINKILLER }
-Med.TREAT_KIND = {}
-for k, v in pairs(Med.TREAT_ITEMS) do Med.TREAT_KIND[v] = k end
 -- Anyone may use these (first aid kits and blood packs are for medics).
-Med.ANYONE = { [Med.MEDKIT] = true, [Med.SPLINT] = true, [Med.BURN_GEL] = true, [Med.PAINKILLER] = true }
+Med.ANYONE = { [Med.MEDKIT] = true }
 
 -- Plain items registered with rhylib_inventory:
 -- { id, name, description, stack size, weight, model }.
 Med.ITEMS = {
     { Med.SUPPLIES, "Medical supplies", "Chemists turn these into medicine at a chemistry bench", 10, 0.2, "models/items/healthkit.mdl" },
-    { Med.SPLINT, "Splint", "Holds a broken bone until the med bay (drag onto the part)", 3, 0.3, "models/props_debris/wood_board04a.mdl" },
-    { Med.BURN_GEL, "Burn gel", "Takes most of the burns off a part", 3, 0.2, "models/healthvial.mdl" },
-    { Med.PAINKILLER, "Painkillers", "Hurt limbs and burns don't slow you for a minute", 5, 0.1, "models/healthvial.mdl" },
     { Med.BLOOD_PACK, "Blood pack", "Medics: buys a downed player another minute (E menu)", 3, 0.4, "models/healthvial.mdl" },
 }
+-- Old field items, no longer made: saved ones load as medical supplies
+-- (rhylib_inventory Items.RENAMED).
+Med.OLD_ITEMS = { "rhylib_splint", "rhylib_burngel", "rhylib_painkiller" }
 
 -- Medicines for illnesses: { id, name, description }. Given in units with
 -- "Give medicine" on the interaction wheel (sv_50_illness.lua); the stack
@@ -235,6 +221,9 @@ Med.MEDICINES = {
 local function registerMedicines()
     local Items = Rhylib.Items
     if not Items or not Items.Register then return end
+    if Items.RENAMED then
+        for _, id in ipairs(Med.OLD_ITEMS) do Items.RENAMED[id] = Items.RENAMED[id] or Med.SUPPLIES end
+    end
     for _, m in ipairs(Med.ITEMS) do
         if not Items.Get(m[1]) then
             Items.Register(m[1], {
@@ -255,11 +244,11 @@ end
 registerMedicines()
 
 -- Items the simplified medical system takes out (armouries and crates
--- leave them out, H menu items can't be used, the bench is closed).
+-- leave them out, the bench is closed).
 -- Hook Rhylib.ItemDisabled(id) (asked by rhylib_armoury): true = leave
 -- this item out.
 Med.HARDCORE_ITEMS = {
-    [Med.SUPPLIES] = true, [Med.SPLINT] = true, [Med.BURN_GEL] = true, [Med.PAINKILLER] = true, [Med.BLOOD_PACK] = true,
+    [Med.SUPPLIES] = true, [Med.BLOOD_PACK] = true,
     rhylib_antiviral = true, rhylib_antidote = true, rhylib_antibiotics = true,
     rhylib_blood_kit = true, rhylib_test_strip = true, rhylib_blood_sample = true, rhylib_test_cassette = true,
 }
@@ -448,10 +437,10 @@ local SECTIONS = {
     { "Simplified system", { "^simpl" } },
     { "Downed & bleeding out", { "^bleedTime$", "^downHealth$", "^downGrace$", "^giveUpTime$", "^downSequences$", "^callMedic" } },
     { "Revives", { "^reviveKit", "^firstAidRevive", "^handRevive", "^bloodPack" } },
-    { "Kits & field items", { "^firstAid", "^medkit", "^bacta", "^splint", "^burnGel", "^pillTime$", "^painkiller" } },
+    { "Kits & field items", { "^firstAid", "^medkit", "^bacta" } },
     { "Dragging", { "^drag" } },
-    { "Medic skills", { "^steadyMult$", "^quickReviveMult$", "^deepPockets$", "^efficientCare$", "^triageFlash$", "^regen" } },
-    { "Injuries", { "^injuries$", "Bleed", "^fracture", "^fallFracture", "^recover$", "^burnRecover$", "^legNoSprint", "^armNoAim", "^armSpread$", "^burnSpread$", "^torso" } },
+    { "Medic skills", { "^steadyMult$", "^quickReviveMult$", "^deepPockets$", "^efficientCare$", "^triageFlash$", "^regen", "^patched" } },
+    { "Injuries", { "^injuries$", "Bleed", "^limp", "^recover$", "^armNoAim", "^armSpread$", "^torso" } },
     { "Med bay, bacta tank & sofa", { "^medBay", "^tank", "^sofa" } },
     { "Chemistry bench", { "^bench", "^craftTime$", "^chemRecipes$" } },
     { "Illness", { "^loadRate$", "^illDrain$", "^poisonAfterDown$", "^drawTime$", "^scan", "^dose", "^strip", "^sampleLife$" } },

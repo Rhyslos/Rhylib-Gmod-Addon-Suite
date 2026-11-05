@@ -325,6 +325,7 @@ local function load(ply, st)
             local oldWorn = Items.OLD_WORN[cid] == true
             if (pass == 1) == (IsWorn(cid) or oldWorn) then
                 local id, x, y, rot, count = row[1], row[2], row[3], row[4] == 1, row[5]
+                id = Items.RENAMED[id] or id   -- (an old id: its new item)
                 local def = Items.defs[id]
                 local data = istable(row[6]) and row[6] or {}
                 local wcid = oldWorn and def and def.slot and Items.WORN_BY_SLOT[def.slot]

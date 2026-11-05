@@ -443,6 +443,10 @@ Items.GEAR_SLOTS = { 8, 9, 15, 17, 13, 16, 10 }
 -- Saved items in them load with the worn items, so the helmet slot is
 -- settled (def.wornRank) before anything else.
 Items.OLD_WORN = { [11] = true, [12] = true, [14] = true }
+-- Items.RENAMED[oldId] = newId: saved items (inventories, storage) with an
+-- id that's no longer used load as newId. Other addons add their own
+-- (rhylib_medical: old field items -> medical supplies).
+Items.RENAMED = Items.RENAMED or {}
 Items.WORN_BY_SLOT = {}
 for cid, w in pairs(Items.WORN) do Items.WORN_BY_SLOT[w.slot] = cid end
 

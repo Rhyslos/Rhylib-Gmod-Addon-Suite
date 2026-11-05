@@ -120,7 +120,6 @@ Config.Register("armoury", "crateH", 4, "Supply crate height in cells", { sectio
 Config.Register("armoury", "medCrate", {
     { "rhylib_medkit", 10 }, { "rhylib_firstaid", 2 }, { "rhylib_revivekit", 3 },
     { "rhylib_antiviral", 20 }, { "rhylib_antidote", 20 }, { "rhylib_antibiotics", 20 },   -- (units)
-    { "rhylib_splint", 4 }, { "rhylib_burngel", 3 }, { "rhylib_painkiller", 4 },
     { "rhylib_bloodpack", 2 }, { "rhylib_med_supplies", 10 },
     { "rhylib_blood_kit", 3 }, { "rhylib_test_strip", 5 },
 }, "What a medical crate is filled with: { item, count }", { section = "Stock" })

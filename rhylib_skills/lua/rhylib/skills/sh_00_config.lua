@@ -295,7 +295,7 @@ K.NODES = {
       desc = "No stamina drain while sprinting, and stamina refills fast. You and everyone near you, 6 s; 6 min cooldown.",
       needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
     { id = "cmd_triage", cat = "officer", spec = "pistol", branch = "command", tier = 6, cost = 2, name = "Field triage", exclusive = "command", rankCfg = "commandRank", order = "cmd_triage",
-      desc = "Downed players nearby get up (at 25% health), everyone heals 8 health a second, and all afflictions are muted (bleeding, fractures, hurt limbs, illness). You and everyone near you, 6 s; 6 min cooldown.",
+      desc = "Downed players nearby get up (at 25% health), everyone heals 8 health a second, and all afflictions are muted (bleeding, limps, hurt limbs, illness). You and everyone near you, 6 s; 6 min cooldown.",
       needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
     { id = "cmd_hold", cat = "officer", spec = "pistol", branch = "command", tier = 6, cost = 2, name = "Hold fast", exclusive = "command", rankCfg = "commandRank", order = "cmd_hold",
       desc = "Armour refilled (it stays) and 60% less damage while it lasts, but nobody can sprint or fly: hold the position. You and everyone near you, 6 s; 6 min cooldown.",
@@ -317,7 +317,7 @@ K.NODES = {
       desc = "No stamina drain while sprinting, and stamina refills fast. You and everyone near you, 6 s; 6 min cooldown.",
       needs = { "mark_target" } },
     { id = "cmd_triage_c", cat = "officer", spec = "commander", tier = 2, cost = 2, name = "Field triage", exclusive = "command", rankCfg = "commandRank", order = "cmd_triage",
-      desc = "Downed players nearby get up (at 25% health), everyone heals 8 health a second, and all afflictions are muted (bleeding, fractures, hurt limbs, illness). You and everyone near you, 6 s; 6 min cooldown.",
+      desc = "Downed players nearby get up (at 25% health), everyone heals 8 health a second, and all afflictions are muted (bleeding, limps, hurt limbs, illness). You and everyone near you, 6 s; 6 min cooldown.",
       needs = { "mark_target" } },
     { id = "cmd_hold_c", cat = "officer", spec = "commander", tier = 2, cost = 2, name = "Hold fast", exclusive = "command", rankCfg = "commandRank", order = "cmd_hold",
       desc = "Armour refilled (it stays) and 60% less damage while it lasts, but nobody can sprint or fly: hold the position. You and everyone near you, 6 s; 6 min cooldown.",
@@ -374,7 +374,7 @@ K.NODES = {
     -- Airborne (jetpack: 15 s of flight with any Airborne skill, 10 s without).
     -- Shape 1-2-3-1-3-1: it widens, narrows to Grenadier, then widens again.
     { id = "hard_landings", cat = "airborne", spec = "airborne", tier = 1, cost = 1, name = "Hard landings",
-      desc = "Half fall damage, your legs never break, and you jump 20% higher. Jetpacks fly 15 s instead of 10." },
+      desc = "Half fall damage, falls never make you limp, and you jump 20% higher. Jetpacks fly 15 s instead of 10." },
     { id = "extended_tanks", cat = "airborne", spec = "airborne", tier = 2, cost = 2, name = "Extended tanks",
       desc = "Jetpack fuel lasts 40% longer and refills 40% faster.", needs = { "hard_landings" } },
     { id = "hover", cat = "airborne", spec = "airborne", tier = 2, cost = 2, name = "Hover",
@@ -457,7 +457,7 @@ K.NODES = {
     -- (both medic paths stay 24: Hands-on and Steady hands 1, Recovery 1,
     -- Quick revive and Chemistry 2, with the 2-point weapon choice at tier 1)
     { id = "recovery", cat = "medic", tier = 2, cost = 1, name = "Recovery",
-      desc = "You heal 4 health every 6 seconds, and your own injuries heal at the same pace: bleeding eases a step each time (heavy, then light, then stopped), damage and burns drop by 4, and a broken bone knits once its damage is gone.",
+      desc = "You heal 4 health every 6 seconds, and your own injuries heal at the same pace: bleeding eases a step each time (heavy, then light, then stopped) and damage drops by 4.",
       needs = { "field_drag" } },
 
     { id = "quick_revive", cat = "medic", spec = "combat_medic", tier = 3, cost = 2, name = "Quick revive",
@@ -478,10 +478,10 @@ K.NODES = {
       needs = { "medevac" } },
 
     { id = "chem_bench", cat = "medic", spec = "chemist", tier = 3, cost = 2, name = "Chemistry",
-      desc = "Use a chemistry bench to turn medical supplies into gels, painkillers, splints, blood packs and medkits.",
+      desc = "Use a chemistry bench to turn medical supplies into medkits, blood packs, blood sample kits, test strips and medicines.",
       needs = { "hands_on", "steady_hands" } },
     { id = "field_surgeon", cat = "medic", spec = "chemist", tier = 4, cost = 4, name = "Field surgeon",
-      desc = "Your first aid kit fully sets bones and heals burns anywhere, not just in the med bay.",
+      desc = "Patched up: someone you treat with a medkit or first aid kit takes 25% less damage for 20 seconds.",
       needs = { "chem_bench" } },
     { id = "batch_brewing", cat = "medic", spec = "chemist", tier = 4, cost = 3, name = "Batch brewing",
       desc = "The bench makes two of everything.", needs = { "chem_bench" } },

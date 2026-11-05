@@ -255,35 +255,30 @@ local function assignMedics(players)
 end
 
 -- Afflictions (rhylib_medical injuries) of a player near a medic: a step
--- a second: stop the worst bleed, else splint a break, else heal damage
--- and burns on every part.
+-- a second: stop the worst bleed, else end a limp, else heal damage on
+-- every part.
 local function treat(p, repair)
     local Med = Rhylib.Medical
     local t = Med and Med.inj and Med.inj[p]
-    if not t then return end
-    local worst, wl
-    for limb, part in pairs(t) do
-        if (part.bleed or 0) > 0 and (not worst or part.bleed > worst.bleed) then worst, wl = part, limb end
+    local worst
+    if t then
+        for _, part in pairs(t) do
+            if (part.bleed or 0) > 0 and (not worst or part.bleed > worst.bleed) then worst = part end
+        end
     end
     if worst then
         worst.bleed, worst.bleedEnd = 0, 0
-    else
-        local fixed = false
-        for _, part in pairs(t) do
-            if part.frac and not part.splint then
-                part.splint = true
-                fixed = true
-                break
-            end
+    elseif p:GetNW2Float("rhylib_limp", 0) > CurTime() then
+        p:SetNW2Float("rhylib_limp", 0)
+        if t then
+            for _, part in pairs(t) do part.limp = false end
         end
-        if not fixed then
-            for _, part in pairs(t) do
-                part.dmg = math.max(0, (part.dmg or 0) - repair)
-                part.burn = math.max(0, (part.burn or 0) - repair)
-            end
+    elseif t then
+        for _, part in pairs(t) do
+            part.dmg = math.max(0, (part.dmg or 0) - repair)
         end
     end
-    if Med.MarkInjuries then Med.MarkInjuries(p) end
+    if t and Med.MarkInjuries then Med.MarkInjuries(p) end
 end
 
 -- Medics heal (1 s steps) and squads are pulled out (when their time is

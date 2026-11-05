@@ -123,7 +123,7 @@ end
 
 -- Spread.Offsets(wep, t): how far each arc has moved outward, in degrees
 -- (three numbers). Low stamina (rhylib_stamina S.SpreadPenalty) and hurt
--- arms or burns (rhylib_medical Med.SpreadPenalty) push all three out evenly.
+-- arms (rhylib_medical Med.SpreadPenalty) push all three out evenly.
 function Spread.Offsets(wep, t)
     local bloom, k1, k2, k3 = Spread.GetState(wep, t)
     local m = (wep:GetAiming() and wep.Spread.aimOffsetMult or 1) * Spread.SkillMult(wep)
@@ -133,7 +133,7 @@ function Spread.Offsets(wep, t)
     if S and IsValid(owner) and owner:IsPlayer() then
         tired = S.SpreadPenalty(owner, Spread.BaseCone(wep))
     end
-    -- Hurt arms and burns (rhylib_medical).
+    -- Hurt arms (rhylib_medical).
     local Med = Rhylib.Medical
     if Med and Med.SpreadPenalty and IsValid(owner) and owner:IsPlayer() then
         tired = tired + Med.SpreadPenalty(owner, Spread.BaseCone(wep))
