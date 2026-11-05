@@ -1,6 +1,6 @@
 --[[
     Rhy's Logistics (shared): field building with the E-tool and the
-    repair tool (weapons/rhylib_etool.lua, weapons/rhylib_repairtool.lua),
+    field kit (weapons/rhylib_etool.lua, weapons/rhylib_repairtool.lua),
     building supplies (weapons/rhylib_build_supplies.lua, the crate
     entities/rhylib_build_crate.lua) and the structures
     (entities/rhylib_structure.lua). Server side: sv_30_build.lua,
@@ -20,15 +20,15 @@
         off). Refused past buildMaxTotal on the server or buildMaxPlayer
         of yours.
       - Only the E-tool places (the menu, the ghost, RMB, E / Q turning);
-        the repair tool helps build holograms already placed and repairs.
+        the field kit helps build holograms already placed and repairs.
       - LMB held on a hologram (within buildWorkReach, about 2 m) builds
         it (a progress bar; several builders
-        add up: two builders twice as fast). The E-tool builds at etoolSpeed, the repair tool at
+        add up: two builders twice as fast). The E-tool builds at etoolSpeed, the field kit at
         repairBuildSpeed; Field technicians with E-tool drills (rhylib_skills
         eod_etool) build skillSpeed faster and pay skillCost of the price.
         Done: it turns into a solid, frozen prop with its own health,
         unless someone stands inside it (it waits).
-      - LMB held on a damaged structure with the repair tool repairs it
+      - LMB held on a damaged structure with the field kit repairs it
         (repairRate health a second); the E-tool can't repair.
       - Z (the undo key) removes the structure you look at: only whoever
         placed it (and staff). A hologram's supplies go back into a
@@ -60,8 +60,8 @@ Config.Register("logistics", "buildSnap", 40, "Building: a snap dot of the ghost
 Config.Register("logistics", "buildReach", 300, "Building: how far away you can place (and remove) a structure (units)", S)
 Config.Register("logistics", "buildWorkReach", 110, "Building: how close you must be to a structure to build it up or repair it (units from your eyes to its edge; 110 = about 2 m)", S)
 Config.Register("logistics", "etoolSpeed", 1, "Building: E-tool build speed (1 = a structure's own build time)", S)
-Config.Register("logistics", "repairBuildSpeed", 0.6, "Building: repair tool build speed (share of the E-tool's)", S)
-Config.Register("logistics", "repairRate", 40, "Building: health a second the repair tool gives back to a damaged structure", S)
+Config.Register("logistics", "repairBuildSpeed", 0.6, "Building: field kit build speed (share of the E-tool's)", S)
+Config.Register("logistics", "repairRate", 40, "Building: health a second the field kit gives back to a damaged structure", S)
 Config.Register("logistics", "skillSpeed", 1.25, "Building: build speed multiplier with E-tool drills (Field technician)", S)
 Config.Register("logistics", "skillCost", 0.8, "Building: share of the supply cost paid with E-tool drills (Field technician)", S)
 Config.Register("logistics", "crateLightMax", 100, "Building supplies: a crate holding more than this is heavy (two to carry, or Heavy lifter)", S)
@@ -181,7 +181,7 @@ function L.HeldTool(ply)
 end
 
 -- L.HeldPlacer(ply) -> the tool in ply's hands if it can place structures
--- (the E-tool; the repair tool only helps build placed ones and repairs).
+-- (the E-tool; the field kit only helps build placed ones and repairs).
 function L.HeldPlacer(ply)
     local w = L.HeldTool(ply)
     if w and w.CanPlace then return w end

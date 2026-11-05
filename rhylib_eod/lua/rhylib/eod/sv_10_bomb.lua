@@ -177,16 +177,20 @@ function E.Changed(bomb)
     end)
 end
 
--- E.HasKit(ply) -> bool: carries an EOD kit (always true without
--- rhylib_inventory, so the addon still works without it). Server.
+-- E.HasKit(ply) -> bool: carries the kit (the field kit, or an old EOD
+-- kit: E.KitIds; always true without rhylib_inventory, so the addon still
+-- works without it). Server.
 function E.HasKit(ply)
     local Inv = Rhylib.Inventory
     if not (Inv and Inv.Has) then return true end
-    return Inv.Has(ply, E.KIT)
+    for _, id in ipairs(E.KitIds()) do
+        if Inv.Has(ply, id) then return true end
+    end
+    return false
 end
 
 -- Bomb squad (datapad "Call the bomb squad"): any Field technician skill,
--- or an EOD kit carried. nil = let the datapad decide (job eod = true).
+-- or the kit carried (E.HasKit). nil = let the datapad decide (job eod = true).
 -- E.IsBombSquad(ply) -> bool (the hook below turns false into nil).
 function E.IsBombSquad(ply)
     local K = Rhylib.Skills
@@ -196,7 +200,7 @@ function E.IsBombSquad(ply)
         end
     end
     local Inv = Rhylib.Inventory
-    return Inv and Inv.Has and Inv.Has(ply, E.KIT) or false
+    return Inv and Inv.Has and E.HasKit(ply) or false
 end
 Rhylib.Hook.Add("Rhylib.IsBombSquad", "eod.squad", function(ply)
     if E.IsBombSquad(ply) then return true end
@@ -353,7 +357,7 @@ end
 -- (the "st.safe and false" part is always false: the board stays
 -- workable after the detonator is cut)
 local function boardReady(ply, st)
-    if not E.HasKit(ply) then msg(ply, "You need an EOD kit", true) return false end
+    if not E.HasKit(ply) then msg(ply, "You need a " .. E.KitName(), true) return false end
     if not st.open or st.safe and false then return false end
     if st.fake and not st.fake.removed then msg(ply, "The board cover is still on") return false end
     return true
@@ -478,11 +482,11 @@ OPS[13] = function(ply, bomb, q)
 end
 
 -- 14: seal the gas valve (gas / virus charges, after the detonator cut).
--- Needs an EOD kit, like every other step on the board.
+-- Needs the kit (E.HasKit), like every other step on the board.
 OPS[14] = function(ply, bomb)
     local st = bomb.eod
     if not st.safe or st.f.charge == "he" or st.gasSealed then return end
-    if not E.HasKit(ply) then msg(ply, "You need an EOD kit", true) return end
+    if not E.HasKit(ply) then msg(ply, "You need a " .. E.KitName(), true) return end
     st.gasSealed = true
     st.leakEnd = nil
     msg(ply, "Valve sealed")

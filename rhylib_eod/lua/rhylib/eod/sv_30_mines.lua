@@ -237,7 +237,7 @@ local function press(mine, p)
     p:SetNW2Float("rhylib_mineAt", CurTime())
     p:SetNW2Entity("rhylib_onMine", mine)
     sound.Play("weapons/slam/mine_mode.wav", mine:GetPos(), 70, 90)
-    E.Msg(p, "Click. You're standing on a mine: don't move. Someone with an EOD kit can dig it out and pin it.", true)
+    E.Msg(p, "Click. You're standing on a mine: don't move. Someone with a " .. E.KitName() .. " can dig it out and pin it.", true)
 end
 
 -- Every 0.1 s ("Rhylib.EOD.Mines"; does nothing with no mines). For each
@@ -363,7 +363,7 @@ Net.Receive("eod.mineact", function(p)
     if op == 5 then if m.viewers then m.viewers[p] = nil end return end
     if not nearMine(p, m) then return end
     if m:GetPresser() == p then E.Msg(p, "You can't reach the fuse while you're standing on it", true) return end
-    if not E.HasKit(p) then E.Msg(p, "You need an EOD kit", true) return end
+    if not E.HasKit(p) then E.Msg(p, "You need a " .. E.KitName(), true) return end
     local now = CurTime()
     if op == 0 or op == 3 then
         p.eodMineHold = { m = m, op = op, t = now }

@@ -254,7 +254,7 @@ local HOLDS = { melee = true, melee2 = true, knife = true, slam = true, physgun 
 concommand.Add("rhylib_tool_tune", function(_, _, args)
     local me = LocalPlayer()
     local w = L.HeldTool(me)
-    if not w then return print("Hold the E-tool or the repair tool first") end
+    if not w then return print("Hold the E-tool or the field kit first") end
     local stored = weapons.GetStored(w:GetClass()) or {}
     local function set(k, v) w[k] = v stored[k] = v end
     local what = string.lower(args[1] or "")

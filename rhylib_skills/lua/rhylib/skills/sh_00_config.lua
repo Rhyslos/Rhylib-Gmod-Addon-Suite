@@ -426,7 +426,7 @@ K.NODES = {
       needsGroups = { { "eod_blast" }, { "eod_launcher" } }, needsLabel = "Needs Blast hardened or Grenade launcher" },
     -- (the effect is in rhylib_logistics: K.Has(ply, "eod_etool"))
     { id = "eod_etool", cat = "airborne", spec = "eod", tier = 4, cost = 2, name = "E-tool drills", icon = "wall",
-      desc = "With an E-tool or repair tool, you build structures faster, and placing one uses 20% fewer building supplies.",
+      desc = "With an E-tool or field kit, you build structures faster, and placing one uses 20% fewer building supplies.",
       needsGroups = { { "eod_blast" }, { "eod_launcher" } }, needsLabel = "Needs Blast hardened or Grenade launcher" },
     -- Demolitions
     { id = "eod_demo", cat = "airborne", spec = "eod", tier = 5, cost = 3, name = "Demolitions", icon = "charge",

@@ -250,7 +250,7 @@ local function build(content, k)
 
     -- 3. Tool kit ------------------------------------------------------------------
 
-    section("tools", "Tool kit", COL.tools, "Everything comes in the EOD kit. Without one you can only look and inspect.")
+    section("tools", "Tool kit", COL.tools, "Everything comes in the " .. E.KitName() .. ". Without one you can only look and inspect.")
     local tools = {
         { "PROBE", "Reads a wire: power, signal, what it does." },
         { "CUTTERS", "Cut a wire. Can't be undone." },
@@ -419,7 +419,7 @@ local function build(content, k)
     section("mines", "Mines", COL.mines, "Half buried and hard to see: only a few metres off, unless someone marked them or a scanner shows them. AP mines need one safety pin, LAP (large) mines two and blast much wider.")
     local mineSteps = {
         "It clicked? Freeze. Moving, jumping or stepping off sets it off. Call EOD.",
-        "Someone else with an EOD kit: E on the mine, hold Dig until the fuse shows.",
+        "Someone else with a " .. E.KitName() .. ": E on the mine, hold Dig until the fuse shows.",
         "Push the safety pin (Space) while the needle is inside the green zone. A wrong push sets it off.",
         "Pinned = safe: whoever stood on it can step off. Hold Lift to take it away.",
     }

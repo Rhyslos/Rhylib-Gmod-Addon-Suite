@@ -17,7 +17,9 @@
     switch 2, sealed compartment 2, signal relay 2 (remote only), logic
     chip 3, liquid charge 3, fake board 3.
 
-    Tools: the EOD kit item (probe, wirecutters, jumper wires, torch),
+    Tools: the kit (probe, wirecutters, jumper wires, torch): rhylib_logistics'
+    field kit (rhylib_repairtool) when installed, else the eod_kit item
+    (old eod_kits are still accepted; E.KitIds / E.HasKit / E.KitName),
     the interference device item (placed, cell powered, wideband or tuned
     to one frequency; it also jams your own side's radio and compass in
     wideband), droid poppers (10% to fry a bomb).
@@ -116,6 +118,20 @@ reg("repFieldRadius", 1.3, "Republic mines: blast radius multiplier with the Rep
 
 -- Item / weapon class names used across the addon.
 E.KIT = "eod_kit"                       -- item: needed to open and work on a bomb or mine
+E.FIELD_KIT = "rhylib_repairtool"       -- rhylib_logistics' field kit: the same job when installed
+
+-- E.KitIds() -> the items that count as the kit: the field kit when
+-- rhylib_logistics has it, and the old EOD kit (still accepted).
+-- E.KitName() -> what to call it in messages.
+function E.KitIds()
+    local Items = Rhylib.Items
+    if Items and Items.Get and Items.Get(E.FIELD_KIT) then return { E.FIELD_KIT, E.KIT } end
+    return { E.KIT }
+end
+function E.KitName()
+    local Items = Rhylib.Items
+    return (Items and Items.Get and Items.Get(E.FIELD_KIT)) and "field kit" or "EOD kit"
+end
 E.SCANNER = "rhylib_mine_scanner"       -- weapon
 E.DEVICE = "eod_interference"           -- item: placed as rhylib_interference_dev
 E.ARMORKIT = "rhylib_armor_kit"         -- weapon (item via its Inv fields)
@@ -218,7 +234,7 @@ E.CAUSES = {
     stab = { "Unstable charge", "The stabiliser dose didn't match the charge label.", "Inject exactly the dose printed on the charge." },
     leak = { "Gas leak", "The canister vented before the valve was sealed.", "Seal the valve straight after cutting the detonator line." },
     gm = { "Detonated", "The game master set it off.", "" },
-    mine = { "Mine", "Someone stepped off a pressed mine (or moved on it).", "Freeze the moment it clicks. Someone with an EOD kit digs it out and pins the fuse." },
+    mine = { "Mine", "Someone stepped off a pressed mine (or moved on it).", "Freeze the moment it clicks. Someone with a field kit (or EOD kit) digs it out and pins the fuse." },
     minepin = { "Mine fuse", "The safety pin went in at the wrong moment.", "Push the pin while the needle is inside the marked zone." },
 }
 
@@ -276,7 +292,10 @@ Rhylib.After("inventory", registerItems)
 Rhylib.After("armoury", function()
     local A = Rhylib.Armoury
     if A and A.AMMO_STOCK then
-        for _, id in ipairs({ E.KIT, E.DEVICE, E.SCANNER, E.ARMORKIT, E.RMINE }) do
+        -- (with rhylib_logistics the field kit, from the gear cabinet, is the kit)
+        local list = { E.DEVICE, E.SCANNER, E.ARMORKIT, E.RMINE }
+        if not Rhylib.Has("logistics") then table.insert(list, 1, E.KIT) end
+        for _, id in ipairs(list) do
             if not table.HasValue(A.AMMO_STOCK, id) then A.AMMO_STOCK[#A.AMMO_STOCK + 1] = id end
         end
     end

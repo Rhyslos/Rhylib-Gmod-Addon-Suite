@@ -1,6 +1,9 @@
 --[[
-    Repair tool (rhylib_logistics): a hydro-spanner for field structures.
-    Anyone can take one from the gear cabinet (sv_30_build.lua). It can't
+    Field kit (rhylib_logistics; class rhylib_repairtool, it used to be the
+    repair tool): a hydro-spanner and the bomb tools in one. With
+    rhylib_eod it is also the kit needed to open and work on bombs and dig
+    out mines (E.KitIds). Anyone can take one from the gear cabinet
+    (sv_30_build.lua). It can't
     place structures (no build menu, ghost or RMB): LMB held on a hologram
     someone placed helps build it (logistics repairBuildSpeed of the
     E-tool's speed), LMB held on a damaged built structure repairs it
@@ -10,7 +13,7 @@
 AddCSLuaFile()
 
 SWEP.Base = "rhylib_etool"
-SWEP.PrintName = "Repair tool"
+SWEP.PrintName = "Field kit"
 SWEP.Category = "Rhy's Logistics"
 SWEP.Spawnable = true
 SWEP.AdminOnly = true

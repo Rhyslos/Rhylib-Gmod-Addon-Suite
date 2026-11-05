@@ -1,7 +1,7 @@
 --[[
     E-tool (rhylib_logistics): the field technician's folding shovel for
     building field structures. Only field technicians get it from the gear
-    cabinet (sv_30_build.lua). Also the base of the repair tool
+    cabinet (sv_30_build.lua). Also the base of the field kit
     (weapons/rhylib_repairtool.lua).
 
     R (hold): build menu. RMB: place the picked structure as a hologram.
@@ -13,7 +13,7 @@
     The tool model is drawn in the hand on the crowbar's hands (first
     person: SWEP.VMOffset / VMAngle / VMScale from the right hand bone;
     third person: SWEP.WMOffset / WMAngle / WMScale). Third-person pose:
-    HoldType (melee2), or the datapad's with HoldLikeDatapad (repair tool).
+    HoldType (melee2), or the datapad's with HoldLikeDatapad (field kit).
 ]]
 
 AddCSLuaFile()
@@ -32,9 +32,9 @@ SWEP.ViewModel = "models/weapons/c_crowbar.mdl"
 SWEP.WorldModel = "models/niksacokica/misc/misc_tool_shovel_01.mdl"
 SWEP.ToolModel = "models/niksacokica/misc/misc_tool_shovel_01.mdl"
 SWEP.HoldType = "melee2"
-SWEP.HoldLikeDatapad = false   -- (true: Initialize takes the datapad's hold type instead; the repair tool does)
+SWEP.HoldLikeDatapad = false   -- (true: Initialize takes the datapad's hold type instead; the field kit does)
 SWEP.CanRepair = false
-SWEP.CanPlace = true   -- (the repair tool can't: it only helps build and repairs)
+SWEP.CanPlace = true   -- (the field kit can't: it only helps build and repairs)
 
 SWEP.InvGroup = "gear"
 SWEP.InvW = 1

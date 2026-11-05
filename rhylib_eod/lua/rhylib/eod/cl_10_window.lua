@@ -335,7 +335,7 @@ local function boardPanel(parent, k)
         local win = W()
         if not win or win.overlay then return end
         local v = win.v
-        if not v.kit then addLog("You need an EOD kit", true) return end
+        if not v.kit then addLog("You need a " .. E.KitName(), true) return end
         local h = self:Hover()
         if not h then return end
         if h.kind == "mount" then
@@ -670,8 +670,9 @@ local function buildLeft(win, k)
     end
 
     if not v.kit then
-        section(sp, k, "No EOD kit")
-        text(sp, k, "You can look, but opening and working on the bomb needs an EOD kit (ammo cabinet).", C.warn)
+        local kn = E.KitName()
+        section(sp, k, "No " .. kn)
+        text(sp, k, "You can look, but opening and working on the bomb needs a " .. kn .. (kn == "field kit" and " (gear cabinet)." or " (ammo cabinet)."), C.warn)
     end
 
     if not v.open then
@@ -933,7 +934,7 @@ local function openWindow(bomb)
         local cur = W()
         local v = cur and cur.v
         k.Plate(0, 0, w, h, { title = "Bomb" .. (v and (" · " .. v.kind) or ""), ticks = "all", header = s(38), bg = OPAQUE,
-            sub = v and (v.kit and "EOD kit ready" or "No EOD kit") or "" })
+            sub = v and (v.kit and (E.KitName() .. " ready") or ("No " .. E.KitName())) or "" })
     end
 
     local x = k.Button(f, "Close", function() closeWindow(true) end, { small = true })

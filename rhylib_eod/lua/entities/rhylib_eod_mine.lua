@@ -5,7 +5,7 @@
     metres (config mineVisible), or with the mine scanner.
 
     Stepping on one clicks: whoever stands on it must not move; stepping
-    off or moving sets it off. Someone with an EOD kit digs it out (hold),
+    off or moving sets it off. Someone with the kit (field kit / EOD kit) digs it out (hold),
     pushes the safety pin(s) in at the right moment (LAP: two) and lifts
     it away. Clone NPCs set mines off at once; droids know where theirs are.
     Explosions nearby, and shooting it, set it off too.

@@ -121,7 +121,7 @@ end
 function D.IsMP(ply) return Rhylib.MP and Rhylib.MP.IsMP and Rhylib.MP.IsMP(ply) or false end
 -- D.IsBombSquad(ply): who the "eod" quick response call reaches.
 -- Asks hook Rhylib.IsBombSquad(ply) first (rhylib_eod answers: Field
--- technician skill or an EOD kit; true/false wins, nil falls through),
+-- technician skill or the field kit / EOD kit; true/false wins, nil falls through),
 -- else a DarkRP job with eod = true. (rhylib_eod adds its hook server side only.)
 function D.IsBombSquad(ply)
     local r = hook.Run("Rhylib.IsBombSquad", ply)
