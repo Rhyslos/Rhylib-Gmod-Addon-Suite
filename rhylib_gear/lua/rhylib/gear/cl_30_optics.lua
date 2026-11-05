@@ -47,6 +47,9 @@
     follow your hands (G.AutoMode): a weapon out = weapon mode, gun put
     away = looking. Without it, L steps looking -> weapon mode -> visor.
     Middle mouse is freelook's alone (rhylib_thirdperson).
+    In third person worn optics (macrobinoculars, rangefinder) stay in
+    weapon mode: you stay in third person, they flip down and night vision
+    works, but there's no viewer or zoom (switch to first person for those).
 
     Sun visor (worn and the helmet on): down, red night vision is always
     on, a grid and scan line under the HUD (masked to rhylib_hud's visor
@@ -115,10 +118,18 @@ local function zoom(kind)
     return math.Clamp(z, r[1], r[2])
 end
 
+-- (third person wanted: worn optics then stay in weapon mode, so the
+-- camera stays behind you and the optics just flip down)
+local function thirdPerson()
+    local TP = Rhylib.ThirdPerson
+    return TP and TP.Wanted and TP.Wanted() or false
+end
+
 local function send(kind, fire)
     Rhylib.Net.Start("gear.optics")
     net.WriteUInt(kind, 2)
     net.WriteBool(fire == true)
+    net.WriteBool(thirdPerson())
     net.SendToServer()
 end
 
@@ -169,6 +180,7 @@ local HOLD_NV = 0.35
 local pressAt, holdUsed
 
 local modeWasDown = false
+local lastTP = false
 Rhylib.Hook.Add("Think", "gear.optics.key", function()
     local me = LocalPlayer()
     local down = keyDown(keyVar)
@@ -205,6 +217,12 @@ Rhylib.Hook.Add("Think", "gear.optics.key", function()
         surface.PlaySound("buttons/lightswitch2.wav")
     end
     modeWasDown = mdown
+    -- Switched first / third person with worn optics up: tell the server.
+    local tp = thirdPerson()
+    if kind ~= 0 and kind ~= 3 and tp ~= lastTP then
+        if tp then send(kind, true) elseif G.AutoMode() then send(kind, false) end
+    end
+    lastTP = tp
     if kind == 0 then
         smoothFov = nil
         if not visorDown() then
@@ -330,10 +348,14 @@ local function updateGain()
     gain = Lerp(0.35, gain, want)   -- (eases like a tube adjusting)
 end
 
--- GMod's colour modify: add, then greyscale (colour 0), then + luminance
+-- GMod's colour modify: add, then saturation (colour), then + luminance
 -- x mul per channel, + brightness, then x contrast (a plain multiplier:
--- below 1 darkens everything). So: greyscale, push it green, and boost it
--- (less where it's already bright, so lights don't blow out).
+-- below 1 darkens everything). Green night vision keeps part of the real
+-- colours (nvColour) with no per-channel mul (a negative mul turned
+-- orange markings blue and blue ones red) and gets its green from a
+-- multiply tint afterwards (greenTint, nvTint), which keeps every hue
+-- where it was. The visor's red one is a plain grey picture, tinted red.
+-- Both are boosted (less where it's already bright).
 local tab = {
     ["$pp_colour_addr"] = 0, ["$pp_colour_addg"] = 0, ["$pp_colour_addb"] = 0,
     ["$pp_colour_brightness"] = 0, ["$pp_colour_contrast"] = 1, ["$pp_colour_colour"] = 0,
@@ -350,9 +372,10 @@ local function filter(mode)
     tab["$pp_colour_addr"] = 0
     tab["$pp_colour_addg"] = red and 0 or lift * g
     tab["$pp_colour_addb"] = 0
-    tab["$pp_colour_mulr"] = red and 0 or -0.35
-    tab["$pp_colour_mulg"] = red and 0 or 0.3
-    tab["$pp_colour_mulb"] = red and 0 or -0.35
+    tab["$pp_colour_colour"] = red and 0 or math.Clamp(G.Cfg("nvColour"), 0, 1)
+    tab["$pp_colour_mulr"] = 0
+    tab["$pp_colour_mulg"] = 0
+    tab["$pp_colour_mulb"] = 0
     tab["$pp_colour_brightness"] = lift * 0.5 * g
     tab["$pp_colour_contrast"] = 1 + (boost - 1) * g
     return tab
@@ -436,10 +459,25 @@ local function redTint()
     cam.End2D()
 end
 
+-- The optics' green: the screen times a pale green (nvTint: how pale), so
+-- reds stay red, blues blue, only everything leans green.
+local function greenTint()
+    local t = math.Clamp(G.Cfg("nvTint"), 0, 1)
+    if t <= 0 then return end
+    cam.Start2D()
+    render.OverrideBlend(true, BLEND_DST_COLOR, BLEND_ZERO, BLENDFUNC_ADD)
+    draw.NoTexture()
+    local o = 255 * (1 - t)
+    surface.SetDrawColor(o, 255, o, 255)
+    surface.DrawRect(0, 0, ScrW(), ScrH())
+    render.OverrideBlend(false)
+    cam.End2D()
+end
+
 Rhylib.Hook.Add("RenderScreenspaceEffects", "gear.optics.nv", function()
     if nvOn() then
         DrawColorModify(filter(nvMode()))
-        if kindUp() == 0 and visorDown() then redTint() end
+        if kindUp() == 0 and visorDown() then redTint() else greenTint() end
     end
 end)
 

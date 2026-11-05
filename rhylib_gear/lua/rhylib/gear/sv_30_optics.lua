@@ -47,12 +47,16 @@ function G.SetOptics(ply, kind, fire)
     G.Apply(ply)
 end
 
--- kind 2 bits (0 = down), weapon mode bit.
+-- kind 2 bits (0 = down), weapon mode bit, third person bit (the player
+-- is in third person: worn optics stay in weapon mode, so the camera
+-- stays behind them).
 Rhylib.Net.Receive("gear.optics", function(ply)
-    local kind, fire = net.ReadUInt(2), net.ReadBool()
+    local kind, fire, tp = net.ReadUInt(2), net.ReadBool(), net.ReadBool()
+    ply.rhylibOpticsTP = tp
     if kind ~= 0 and (busy(ply) or not G.OpticsAllowed(ply, kind)) then kind = 0 end
     -- (worn optics follow the hands: a weapon out = weapon mode)
-    if (kind == 1 or kind == 2) and G.AutoMode() then fire = G.Armed(ply) end
+    if (kind == 1 or kind == 2) and G.AutoMode() then fire = G.Armed(ply) or tp end
+    if (kind == 1 or kind == 2) and tp then fire = true end
     G.SetOptics(ply, kind, fire)
 end, { rate = 8, burst = 8 })
 
@@ -66,7 +70,7 @@ end, { rate = 6, burst = 6 })
 -- (Stowed) back to looking.
 Rhylib.Hook.Add("PlayerSwitchWeapon", "gear.optics.auto", function(ply, old, new)
     local kind = ply:GetNW2Int("rhylib_optics", 0)
-    if (kind == 1 or kind == 2) and G.AutoMode() then G.SetOptics(ply, kind, G.Armed(ply, new)) end
+    if (kind == 1 or kind == 2) and G.AutoMode() then G.SetOptics(ply, kind, G.Armed(ply, new) or ply.rhylibOpticsTP == true) end
 end)
 
 -- Put down when you go down, lie down or die (the visor goes up).

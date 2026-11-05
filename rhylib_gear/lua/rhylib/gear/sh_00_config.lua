@@ -192,6 +192,8 @@ Config.Register("gear", "visorZoom", 3, "Sun visor: the zoom it gives while aimi
 Config.Register("gear", "nvMode", 1, "Night vision: 1 = amplified (a wide shadowless light from your eyes that turns itself down where it's already bright; default), 2 = the world drawn fully lit (can glare at light sources), 0 = only the green filter", { section = "Night vision" })
 Config.Register("gear", "nvGain", 2.5, "Night vision (amplified): strength of the light in the dark", { section = "Night vision" })
 Config.Register("gear", "nvLift", 0.04, "Night vision: how much the darkest parts are lifted (the green floor)", { section = "Night vision" })
+Config.Register("gear", "nvColour", 0.6, "Night vision: how much of the real colours stays (0 = plain green picture, 1 = full colour under the green tint); colours keep their own hue, so unit markings stay readable", { section = "Night vision" })
+Config.Register("gear", "nvTint", 0.3, "Night vision: how strong the green tint is (0 = none, 1 = only green)", { section = "Night vision" })
 Config.Register("gear", "nvBoost", 1.5, "Night vision: how much brighter the picture is made in the dark (1 = no boost; eased off in lit places)", { section = "Night vision" })
 Config.Register("gear", "nvRange", 0, "Night vision: fade the picture into dark green beyond this distance (units; 0 = off)", { section = "Night vision" })
 Config.Register("gear", "nvFadeFrom", 600, "Night vision: where that fade starts (units)", { section = "Night vision" })
