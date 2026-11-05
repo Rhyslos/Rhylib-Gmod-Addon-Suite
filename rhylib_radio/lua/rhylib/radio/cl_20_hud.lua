@@ -26,9 +26,13 @@
 
     Public: R.CompassChatWidth, R.VisorGeo, R.MatePos, R.RADAR_M,
     R.JamShown, R.DrawRadar, R.radarExtras (other addons add radar blips:
-    R.radarExtras[id] = fn(cx, cy, r, myPos, fx, fy, k); a point's screen
-    offset is right * k, -forward * k with forward = dx * fx + dy * fy,
-    right = dx * fy - dy * fx).
+    R.radarExtras[id] = fn(cx, cy, r, myPos, fx, fy, k); place a point
+    with R.RadarPlace(dx, dy, fx, fy, k, r, lim, keep) -> sx, sy, alpha,
+    edge, nil when it's too far).
+
+    The compass is to scale out to 60% of its rim; further out things slow
+    down and settle on the rim (config radarEdgeAt), stay there dimmed until
+    radarHoldTo times the range, then go (squad mates and pings stay).
 ]]
 
 local R = Rhylib.Radio
@@ -291,6 +295,7 @@ local function drawSquares(list, s, noNotch)
         local cy = (math.max(pts[1].y, pts[2].y) + pts[3].y) * 0.5
         local tc = bright and DARK or (a >= 150 and LIGHT or col)
         draw.SimpleText(LABELS[i], font, cx, cy, tc, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.NoTexture()   -- (the text left the font's texture set)
         -- The radio channel the radio key talks on: a notch on the right.
         if not noNotch and i > 1 and i - 1 == R.Selected() and R.SlotOn(i - 1) and not R.Mine().off then
             local nx, ny = pts[2].x + math.floor(3 * s), cy
@@ -456,6 +461,38 @@ end
 
 R.RADAR_M = 40   -- metres from the compass centre to its rim
 local UNITS_PER_M = 1 / 0.01905
+
+-- R.RadarPlace(dx, dy, fx, fy, k, r, lim, keep) -> sx, sy, alpha, edge:
+-- where something dx, dy (world units) from you shows on a compass of
+-- radius r (k = units to pixels at the rim's range, fx, fy = the view's
+-- facing). Out to 60% of the rim it is to scale; past that it slows down
+-- and reaches lim (the rim, less the icon's size) at radarEdgeAt times the
+-- range, then stays on the rim until radarHoldTo times the range, fading
+-- out over the last quarter of that, and is gone (nil) after. keep = never
+-- gone (squad mates, pings). edge = sitting on the rim.
+local INNER = 0.6
+function R.RadarPlace(dx, dy, fx, fy, k, r, lim, keep)
+    local sx, sy = (dx * fy - dy * fx) * k, -(dx * fx + dy * fy) * k
+    local len = math.sqrt(sx * sx + sy * sy)
+    local inner = INNER * r
+    if len <= inner or len < 0.001 then return sx, sy, 1, false end
+    local edgeAt = math.max(1, R.Cfg("radarEdgeAt") or 1.3)
+    local u = len / r                       -- (times the rim's range)
+    local t = (u - INNER) / math.max(edgeAt - INNER, 0.01)
+    local alpha, edge = 1, false
+    if t >= 1 then
+        t, edge = 1, true
+        if not keep then
+            local hold = math.max(edgeAt, R.Cfg("radarHoldTo") or 2.5)
+            if u > hold then return nil end
+            local fadeFrom = hold - (hold - edgeAt) * 0.25
+            if u > fadeFrom then alpha = math.Clamp((hold - u) / math.max(hold - fadeFrom, 0.01), 0, 1) end
+        end
+    end
+    local shown = inner + (math.max(lim, inner) - inner) * (1 - (1 - t) * (1 - t))
+    local f = shown / len
+    return sx * f, sy * f, alpha, edge
+end
 local discs = {}
 local function disc(r)
     local d = discs[r]
@@ -664,12 +701,12 @@ local function drawCore(cx, cy, r, names)
                 local p = Entity(idx)
                 if IsValid(p) and p ~= me and p:IsPlayer() and p:Alive() and (sq == 0 or R.SquadOf(p) ~= sq) then
                     local pos = p:IsDormant() and e.pos or p:GetPos()
-                    local dx, dy = pos.x - mp.x, pos.y - mp.y
-                    local sx, sy = (dx * fy - dy * fx) * k, -(dx * fx + dy * fy) * k
-                    if sx * sx + sy * sy < (r - 4) * (r - 4) then
+                    local m = math.max(3, math.floor(r * 0.055))
+                    local sx, sy, al, edge = R.RadarPlace(pos.x - mp.x, pos.y - mp.y, fx, fy, k, r, r - m - 2)
+                    if sx then
                         local px, py = cx + sx, cy + sy
-                        local m = math.max(3, math.floor(r * 0.055))
-                        setCol(R.COL.ch1, 220)
+                        if edge then m = math.max(3, math.floor(r * 0.045)) end
+                        setCol(R.COL.ch1, (edge and 150 or 220) * al)
                         surface.DrawPoly({ { x = px, y = py - m }, { x = px + m, y = py }, { x = px, y = py + m }, { x = px - m, y = py } })
                     end
                 end
@@ -682,13 +719,7 @@ local function drawCore(cx, cy, r, names)
         if p ~= me and p:Alive() and R.SquadOf(p) == sq then
             local pos = R.MatePos(p)
             if pos then
-                local dx, dy = pos.x - mp.x, pos.y - mp.y
-                local fwd = dx * fx + dy * fy
-                local right = dx * fy - dy * fx
-                local sx, sy = right * k, -fwd * k
-                local len = math.sqrt(sx * sx + sy * sy)
-                local edge = len > r - 4
-                if edge then sx, sy = sx / len * (r - 4), sy / len * (r - 4) end
+                local sx, sy, _, edge = R.RadarPlace(pos.x - mp.x, pos.y - mp.y, fx, fy, k, r, r - 4, true)
                 local px, py = cx + sx, cy + sy
                 local m = math.max(3, math.floor(r * (edge and 0.045 or 0.065)))
                 draw.NoTexture()

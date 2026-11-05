@@ -195,8 +195,8 @@ local function build(W, H)
     end
 
     -- Edge bleed: whatever touches a screen edge is pushed BLEED px past
-    -- it (the shapes inside the screen don't change), so a moving HUD
-    -- (rhylib_core cl_66_motion.lua) never opens a gap at the edges.
+    -- it (the shapes inside the screen don't change), so no hairline gap
+    -- shows at the screen edges.
     local bleed = math.ceil(BLEED * H / 1080)
     local function push(x, y)
         if x <= 0.5 then x = -bleed elseif x >= W - 0.5 then x = W + bleed end

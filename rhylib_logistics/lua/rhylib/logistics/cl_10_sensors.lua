@@ -135,10 +135,16 @@ local function addBeacons()
         for e in pairs(L.beaconEnts) do
             if IsValid(e) then
                 local pos = e:GetPos()
-                local dx, dy = pos.x - mp.x, pos.y - mp.y
-                local px, py = (dx * fy - dy * fx) * k, -(dx * fx + dy * fy) * k
-                if px * px + py * py < (r * 0.88) ^ 2 then
-                    radarMark(cx + px, cy + py, s, e.Powered and e:Powered() and 235 or 110)
+                local px, py, al
+                if R.RadarPlace then
+                    px, py, al = R.RadarPlace(pos.x - mp.x, pos.y - mp.y, fx, fy, k, r, r * 0.88)
+                else
+                    local dx, dy = pos.x - mp.x, pos.y - mp.y
+                    px, py, al = (dx * fy - dy * fx) * k, -(dx * fx + dy * fy) * k, 1
+                    if px * px + py * py >= (r * 0.88) ^ 2 then px = nil end
+                end
+                if px then
+                    radarMark(cx + px, cy + py, s, (e.Powered and e:Powered() and 235 or 110) * al)
                 end
             else
                 L.beaconEnts[e] = nil

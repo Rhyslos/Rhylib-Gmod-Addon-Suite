@@ -569,9 +569,10 @@ timer.Create("Rhylib.Radio.All", 1, 0, function()
         end
     end
     if #list == 0 then return end
-    -- To each player only the others within the compass (40 m, plus a
-    -- little), not their own squad (radio.pos has them); nobody jammed.
-    local reach = R.RADAR_M_UNITS + 300
+    -- To each player only the others the compass can show (out to
+    -- radarHoldTo times its 40 m rim, plus a little), not their own squad
+    -- (radio.pos has them); nobody jammed.
+    local reach = R.RADAR_M_UNITS * math.max(1, R.Cfg("radarHoldTo") or 2.5) + 300
     local reach2 = reach * reach
     for _, rec in ipairs(all) do
         if rec:Alive() and not rec.rhylibJammed then

@@ -469,14 +469,20 @@ local function radarMines(cx, cy, r, mp, fx, fy, k)
     for _, mine in ipairs(mines()) do
         if IsValid(mine) and mine:GetMarked() and not mine:GetSafe() then
             local p = mine:GetPos()
-            local dx, dy = p.x - mp.x, p.y - mp.y
-            local fwd = dx * fx + dy * fy
-            local right = dx * fy - dy * fx
-            local sx, sy = right * k, -fwd * k
-            if sx * sx + sy * sy < (r - m) * (r - m) then
+            local sx, sy, al
+            if R and R.RadarPlace then
+                sx, sy, al = R.RadarPlace(p.x - mp.x, p.y - mp.y, fx, fy, k, r, r - m - 2)
+            else
+                local dx, dy = p.x - mp.x, p.y - mp.y
+                sx, sy, al = (dx * fy - dy * fx) * k, -(dx * fx + dy * fy) * k, 1
+                if sx * sx + sy * sy >= (r - m) * (r - m) then sx = nil end
+            end
+            if sx then
                 local x, y = cx + sx, cy + sy
+                surface.SetAlphaMultiplier(al)
                 triangle(x, y, m + 1.5, TRI_OUT)
                 triangle(x, y, m, RED)
+                surface.SetAlphaMultiplier(1)
             end
         end
     end

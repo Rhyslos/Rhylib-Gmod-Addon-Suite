@@ -43,6 +43,8 @@ Config.Register("radio", "showEveryone", true, "Compass radar: show every friend
 Config.Register("radio", "earIK", { pos = { -0.5, -2.5, -6 }, ang = { -175, -150, 80 }, elbow = { 13, 18, 15 }, swivel = 155, shoulder = { -14, 81, 60 },
     viaShoulder = { -18, 125, 47 }, viaPos = { -7.2, 18, 6.7 }, viaAng = { 145, -75, -35 }, fingers = "run_all_01" },
     "Hand to the ear while typing or talking on the radio (left arm by IK): pos = where the wrist goes, ang = the hand's turn, elbow = the point the elbow bends toward, swivel = degrees the elbow is turned on round the shoulder-to-wrist line from there, shoulder (optional) = the upper arm's turn from the chest bone (then the forearm aims at pos), viaShoulder + viaPos + viaAng (optional, chest axes: upper arm, wrist point, hand turn) = the transition point the arm passes on its way up and down, only from idle (no weapon, or a normal / passive hold type), fingers = the model sequence whose finger pose the hand takes (empty = the reference pose); all in the head bone's own axes { x, y, z } / { pitch, yaw, roll }. Line it up with rhylib_ear_editor (Rhy's Dev Tools)", { signed = true })
+Config.Register("radio", "radarEdgeAt", 1.3, "Compass radar: things slow down toward the rim and reach it at this many times the rim's range (1.3 = 52 m; 1 = no slowing)")
+Config.Register("radio", "radarHoldTo", 2.5, "Compass radar: things past the rim stay on it until this many times the rim's range (2.5 = 100 m), fading out over the last stretch; squad mates and pings always stay")
 Config.Register("radio", "localRange", 800, "Local voice reaches this far (units, 800 = 15 m)")
 Config.Register("radio", "maxChannels", 200, "Most custom channels on the server at once")
 Config.Register("radio", "hailCooldown", 8, "Seconds before the same player can hail again (stops hail spam)")
@@ -311,6 +313,7 @@ local PAGE_SECTIONS = {
     { "Radio effects", { "^fx" } },
     { "Comms jammers", { "^jam" } },
     { "Squad pings", { "^ping" } },
+    { "Compass radar", { "^radar", "^showEveryone$" } },
 }
 
 Config.Describe("radio", { name = "Radio & squads", category = "Units & roles" })

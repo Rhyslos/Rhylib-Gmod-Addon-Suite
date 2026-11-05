@@ -273,14 +273,20 @@ local function radarMarks(cx, cy, r, mp, fx, fy, k)
         local e = live and Entity(idx)
         if e and IsValid(e) and not e:IsDormant() and alive(e) then
             local p = e:GetPos()
-            local dx, dy = p.x - mp.x, p.y - mp.y
-            local fwd = dx * fx + dy * fy
-            local right = dx * fy - dy * fx
-            local sx, sy = right * k, -fwd * k
-            if sx * sx + sy * sy < (r - m) * (r - m) then
+            local sx, sy, al
+            if R and R.RadarPlace then
+                sx, sy, al = R.RadarPlace(p.x - mp.x, p.y - mp.y, fx, fy, k, r, r - m - 1)
+            else
+                local dx, dy = p.x - mp.x, p.y - mp.y
+                sx, sy, al = (dx * fy - dy * fx) * k, -(dx * fx + dy * fy) * k, 1
+                if sx * sx + sy * sy >= (r - m) * (r - m) then sx = nil end
+            end
+            if sx then
                 local x, y = cx + sx, cy + sy
+                surface.SetAlphaMultiplier(al)
                 radarIcon(x, y, m, e, RADAR_OUT, 1)
                 radarIcon(x, y, m, e, RADAR_RED, 0)
+                surface.SetAlphaMultiplier(1)
             end
         end
     end

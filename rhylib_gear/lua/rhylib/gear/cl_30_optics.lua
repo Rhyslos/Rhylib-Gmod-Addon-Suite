@@ -696,7 +696,8 @@ local function drawViewer(fire)
     -- Inside: grey glass, or night vision scanlines.
     render.SetStencilCompareFunction(STENCIL_EQUAL)
     if nv then
-        nvLayer(w, h, sh.L, sh.T, sh.R, sh.B)
+        local ok, err = pcall(nvLayer, w, h, sh.L, sh.T, sh.R, sh.B)
+        if not ok then render.SetStencilEnable(false) ErrorNoHalt(tostring(err) .. "\n") return end
     else
         -- Glass with faint scanlines crawling down. Dark tint only: light
         -- grey here lifted the blacks, so you saw better in the dark with
@@ -799,8 +800,10 @@ Rhylib.Hook.Add("HUDPaint", "gear.visor.layer", function()
     render.SetStencilCompareFunction(STENCIL_NOTEQUAL)
     render.SetStencilPassOperation(STENCIL_KEEP)
     render.SetStencilZFailOperation(STENCIL_KEEP)
-    visorLayer(ScrW(), ScrH())
+    -- (an error inside must not leave the stencil on for the rest of the HUD)
+    local ok, err = pcall(visorLayer, ScrW(), ScrH())
     render.SetStencilEnable(false)
+    if not ok then ErrorNoHalt(tostring(err) .. "\n") end
 end, -30)
 
 -- Settings and the controls list (rhylib_menus).

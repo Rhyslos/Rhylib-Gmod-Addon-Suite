@@ -324,18 +324,8 @@ local function build(W, H, tall)
         tris[#tris + 1] = tri(W * 0.5, 0, p[1], p[2], q[1], q[2])
     end
     edges[#edges + 1] = arch
-    for _, side in ipairs({ -1, 1 }) do
-        local function sx(x) return side < 0 and x or W - x end
-        local e = { sx(0), g.edgeY }
-        local c = { sx(g.cornerX), g.cornerY }
-        local b = { sx(g.bottomX), H }
-        local o = { sx(0), H }
-        tris[#tris + 1] = tri(e[1], e[2], c[1], c[2], o[1], o[2])
-        tris[#tris + 1] = tri(c[1], c[2], b[1], b[2], o[1], o[2])
-        edges[#edges + 1] = { e, c, b }
-    end
-    -- Edge bleed (as cl_60_visor.lua): edges pushed past the screen so a
-    -- moving HUD (rhylib_core cl_66_motion.lua) opens no gap.
+    -- The brow's corners pushed a little past the screen (no hairline gap
+    -- at the screen edge).
     local bleed = math.ceil(16 * H / 1080)
     local function push(x, y)
         if x <= 0.5 then x = -bleed elseif x >= W - 0.5 then x = W + bleed end
@@ -344,6 +334,21 @@ local function build(W, H, tall)
     end
     for _, t in ipairs(tris) do
         for _, v in ipairs(t) do v.x, v.y = push(v.x, v.y) end
+    end
+    -- Cheek pads: their outer points carried on along their own edges past
+    -- the screen (pushing them straight out would tilt the filled edge off
+    -- the drawn edge line and leave a thin sliver of the world showing).
+    local eY = g.edgeY - (g.cornerY - g.edgeY) * bleed / g.cornerX
+    local bX = g.bottomX + (g.bottomX - g.cornerX) * bleed / math.max(H - g.cornerY, 1)
+    for _, side in ipairs({ -1, 1 }) do
+        local function sx(x) return side < 0 and x or W - x end
+        local e = { sx(0), g.edgeY }
+        local c = { sx(g.cornerX), g.cornerY }
+        local b = { sx(g.bottomX), H }
+        local e2, b2, o2 = { sx(-bleed), eY }, { sx(bX), H + bleed }, { sx(-bleed), H + bleed }
+        tris[#tris + 1] = tri(e2[1], e2[2], c[1], c[2], o2[1], o2[2])
+        tris[#tris + 1] = tri(c[1], c[2], b2[1], b2[2], o2[1], o2[2])
+        edges[#edges + 1] = { e, c, b }
     end
     g.tris, g.edges = tris, edges
 
@@ -438,6 +443,7 @@ end
 -- / bottomX (left chin edge at the corner / at the bottom). Read only.
 function HUD.RealGeo()
     local W, H = ScrW(), ScrH()
+    if (W < 16 or H < 16) and geo.W then return geo end   -- (minimised: keep the last good one)
     local tall = tallVar:GetBool()
     if geo.W ~= W or geo.H ~= H or geo.tall ~= tall then build(W, H, tall) end
     return geo
@@ -508,7 +514,13 @@ local function fit(str, px, weight, maxW)
     if surface.GetTextSize(out) > maxW then
         -- (whole characters: names can hold æøå or ·)
         local chars = {}
-        for _, c in utf8.codes(out) do chars[#chars + 1] = utf8.char(c) end
+        local ok = pcall(function()
+            for _, c in utf8.codes(out) do chars[#chars + 1] = utf8.char(c) end
+        end)
+        if not ok then   -- (not valid UTF-8: cut bytes instead)
+            chars = {}
+            for i = 1, #out do chars[i] = string.sub(out, i, i) end
+        end
         while #chars > 1 and surface.GetTextSize(table.concat(chars) .. "…") > maxW do chars[#chars] = nil end
         out = table.concat(chars) .. "…"
     end
@@ -873,6 +885,7 @@ end
 -- Drawn before the other HUD parts (priority -10, as the normal visor).
 Rhylib.Hook.Add("HUDPaint", "hud.realistic", function()
     if not HUD.RealisticActive() then return end
+    if ScrW() < 16 or ScrH() < 16 then return end
     local g = HUD.RealGeo()
     local s = g.s
     draw.NoTexture()

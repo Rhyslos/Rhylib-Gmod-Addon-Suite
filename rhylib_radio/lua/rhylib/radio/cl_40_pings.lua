@@ -235,13 +235,7 @@ function R.DrawPingsOnRadar(cx, cy, r, mp, fx, fy, k)
         local p = R.PINGS[g.kind]
         if p and now < g.untilT and not (p.self and g.from == me) then
             local pos = pingPos(g)
-            local dx, dy = pos.x - mp.x, pos.y - mp.y
-            local fwd = dx * fx + dy * fy
-            local right = dx * fy - dy * fx
-            local sx, sy = right * k, -fwd * k
-            local len = math.sqrt(sx * sx + sy * sy)
-            local lim = r - size * 0.6
-            if len > lim then sx, sy = sx / len * lim, sy / len * lim end
+            local sx, sy = R.RadarPlace(pos.x - mp.x, pos.y - mp.y, fx, fy, k, r, r - size * 0.6, true)
             local a = fadeOf(g, now)
             tmp.r, tmp.g, tmp.b, tmp.a = p.col.r, p.col.g, p.col.b, 255 * a
             RBG.a = 220 * a
