@@ -1,7 +1,9 @@
 --[[
     Battalion computer window, Personnel tab (client; sv_70_personnel):
-    member files with service record, qualifications, commendations,
-    strikes and NCO notes. The member list is shared (T.people: the order
+    the member list on the left (online / seen, commendations, strikes),
+    the open file in a card on the right: name and rank, service record
+    tiles, qualification chips, commendations, strikes and NCO notes as
+    entries with a coloured edge. The member list is shared (T.people: the order
     editor picks from it, T.WantPeople asks for it); the rest is in P.
     Registered with D.TermAddTab.
       dp.plist -> dp.pmembers   dp.pget -> dp.pfile   dp.pqual, dp.pcom,
@@ -10,6 +12,7 @@
 
 local D = Rhylib.Datapad
 local T = D.Term   -- (cl_20_terminal.lua: shared helpers, the window, the tab registry)
+local C = T.C
 
 local P = { personSel = nil, pfile = nil, pAsked = nil, notesEdit = false, pMissing = nil }   -- (pMissing: a file that didn't come: left the battalion, ...)
 
@@ -31,10 +34,12 @@ local function entry(parent, head, text, btnText, btnFn, stripe)
     e:DockPadding(s(12), s(6), s(10), s(6))
     e:SetTall(s(48))
     function e:Paint(w, h)
-        k.SetCol(k.C.row)
+        T.SetCol(C.bar)
         surface.DrawRect(0, 0, w, h)
+        T.SetCol(C.edge)
+        surface.DrawOutlinedRect(0, 0, w, h)
         if stripe then
-            k.SetCol(stripe)
+            T.SetCol(stripe)
             surface.DrawRect(0, 0, s(3), h)
         end
     end
@@ -44,12 +49,12 @@ local function entry(parent, head, text, btnText, btnFn, stripe)
         holder:SetWide(s(96))
         holder:DockMargin(s(8), 0, 0, 0)
         holder.Paint = nil
-        local b = k.Button(holder, btnText, btnFn, { small = true, danger = true })
+        local b = T.Btn(holder, btnText, btnFn, { small = true, danger = true })
         b:Dock(TOP)
     end
-    local hl = k.Label(e, head, 12, 400, k.C.textDim)
+    local hl = k.Label(e, head, 12, 400, C.caps)
     hl:Dock(TOP)
-    local tl = k.Label(e, text, 14, 400, k.C.text)
+    local tl = k.Label(e, text, 14, 400, C.body)
     tl:Dock(TOP)
     function e:PerformLayout(w, h)
         local want = s(12) + hl:GetTall() + tl:GetTall()
@@ -68,12 +73,11 @@ local function headRow(parent, text, btnText, btnFn)
     row:DockMargin(0, s(10), s(8), s(6))
     row.Paint = nil
     if btnText then
-        local b = k.Button(row, btnText, btnFn, { small = true, accent = true })
+        local b = T.Btn(row, btnText, btnFn, { small = true })
         b:Dock(RIGHT)
-        b:SetWide(s(150))
-        b:DockMargin(s(8), s(3), 0, s(3))
+        b:DockMargin(s(8), 0, 0, 0)
     end
-    local h = k.Heading(row, text)
+    local h = T.Heading(row, text)
     h:Dock(FILL)
     return row
 end
@@ -95,21 +99,22 @@ local function personFile(parent)
     local k = T.K()
     local s = k.S
     if not P.personSel then
-        T.Label(parent, "Pick a member to open their file.")
+        T.Empty(parent, "Pick a member to open their file.")
         return
     end
     local f = P.pfile and P.pfile.id == P.personSel and P.pfile
     if not f and P.pMissing == P.personSel then
-        T.Label(parent, "This file isn't available (no longer in the battalion?).")
+        T.Empty(parent, "This file isn't available (no longer in the battalion?).")
         return
     end
     if not f then
-        T.Label(parent, "Loading…")
+        T.Empty(parent, "Loading…")
         askFile(P.personSel)
         return
     end
-    local h = k.Heading(parent, f.name)
-    h:Dock(TOP)
+    T.Heading(parent, "Personnel file", f.on and C.good or nil):Dock(TOP)
+    local h = T.ReaderTitle(parent, f.name)
+    h:DockMargin(0, s(8), 0, 0)
     local sub = T.Label(parent, f.rank .. "  ·  " .. (f.on and "online now" or ("last seen " .. (f.seen > 0 and T.when(f.seen) or "never"))))
     sub:DockMargin(0, s(4), 0, s(6))
     local sp = k.Scroll(parent)
@@ -118,14 +123,30 @@ local function personFile(parent)
 
     -- Service record (all time, this battalion).
     headRow(sp, "Service record")
-    local parts = {}
     local keys = table.Copy(D.STAT_RECORD)
     keys[#keys + 1] = D.IsMPBattalion(T.term.bn) and "ar" or "jd"
-    for _, key in ipairs(keys) do
-        parts[#parts + 1] = D.STAT_NAMES[key] .. " " .. D.StatText(key, f.stats[key])
+    local vals, names = {}, {}
+    for i, key in ipairs(keys) do
+        vals[i] = D.StatText(key, f.stats[key])
+        names[i] = string.upper(D.STAT_NAMES[key] or key)
     end
-    local st = T.Label(sp, table.concat(parts, "   ·   "), k.C.text, 13)
-    st:DockMargin(0, 0, s(8), 0)
+    local tiles = vgui.Create("DPanel", sp)
+    tiles:Dock(TOP)
+    tiles:SetTall(s(58))
+    tiles:DockMargin(0, 0, s(8), 0)
+    local fV, fK = k.Font(18, 700), k.Font(10, 600)
+    function tiles:Paint(w, h)
+        local n = #vals
+        local gap = s(6)
+        local tw = (w - gap * (n - 1)) / n
+        for i = 1, n do
+            local x = math.floor((i - 1) * (tw + gap))
+            T.SetCol(C.bar)
+            surface.DrawRect(x, 0, math.floor(tw), h)
+            draw.SimpleText(vals[i], fV, x + s(10), s(8), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+            draw.SimpleText(names[i], fK, x + s(10), h - s(8), C.caps, TEXT_ALIGN_LEFT, TEXT_ALIGN_BOTTOM)
+        end
+    end
 
     -- Qualifications.
     headRow(sp, "Qualifications")
@@ -136,7 +157,7 @@ local function personFile(parent)
         grid.Paint = nil
         local btns = {}
         for _, q in ipairs(f.quals) do
-            btns[#btns + 1] = k.Button(grid, q.name, function()
+            btns[#btns + 1] = T.Btn(grid, q.name, function()
                 T.Send("dp.pqual", function()
                     net.WriteString(id)
                     net.WriteString(q.id)
@@ -146,7 +167,7 @@ local function personFile(parent)
                 tooltip = q.has and "Qualified. Click to remove." or "Not qualified. Click to qualify." })
         end
         function grid:PerformLayout(w)
-            local cols, gap, bh = 3, s(6), s(26)
+            local cols, gap, bh = 3, s(6), s(32)
             local bw = (w - gap * (cols - 1)) / cols
             for i, b in ipairs(btns) do
                 b:SetPos(((i - 1) % cols) * (bw + gap), math.floor((i - 1) / cols) * (bh + gap))
@@ -162,7 +183,7 @@ local function personFile(parent)
         for _, q in ipairs(f.quals) do
             if q.has then held[#held + 1] = q.name end
         end
-        T.Label(sp, #held > 0 and table.concat(held, ", ") or "None yet.", #held > 0 and k.C.text or nil, 13)
+        T.Label(sp, #held > 0 and table.concat(held, ", ") or "None yet.", #held > 0 and C.text or nil, 13)
     end
 
     -- Commendations.
@@ -183,7 +204,7 @@ local function personFile(parent)
                     net.WriteUInt(0, 1)
                     net.WriteUInt(x.id, 16)
                 end)
-            end, k.C.good)
+            end, C.good)
     end
 
     -- Strikes.
@@ -211,7 +232,7 @@ local function personFile(parent)
                         net.WriteUInt(1, 1)
                         net.WriteUInt(x.id, 16)
                     end)
-                end, on and k.C.bad or nil)
+                end, on and C.bad or nil)
         end
     end
 
@@ -230,24 +251,22 @@ local function personFile(parent)
             te:SetText(f.notes.txt)
             local row = vgui.Create("DPanel", sp)
             row:Dock(TOP)
-            row:SetTall(s(30))
+            row:SetTall(s(32))
             row:DockMargin(0, 0, s(8), 0)
             row.Paint = nil
-            local save = k.Button(row, "Save notes", function()
+            local save = T.Btn(row, "Save notes", function()
                 T.Send("dp.pnote", function()
                     net.WriteString(id)
                     net.WriteString(string.sub(te:GetText() or "", 1, 4000))
                 end)
                 P.notesEdit = false
-            end, { small = true, accent = true })
+            end, { small = true, primary = true })
             save:Dock(RIGHT)
-            save:SetWide(s(130))
-            local cancel = k.Button(row, "Cancel", function()
+            local cancel = T.Btn(row, "Cancel", function()
                 P.notesEdit = false
                 T.Build()
             end, { small = true })
             cancel:Dock(RIGHT)
-            cancel:SetWide(s(100))
             cancel:DockMargin(0, 0, s(6), 0)
         elseif f.notes.txt ~= "" then
             entry(sp, "Last edited by " .. f.notes.by .. "  ·  " .. T.when(f.notes.t), f.notes.txt)
@@ -261,7 +280,7 @@ local function personnelTab(body)
     local k = T.K()
     local s = k.S
     if not T.people then
-        T.Label(body, "Loading…")
+        T.Empty(body, "Loading…")
         if not T.peopleAsked then
             T.peopleAsked = true
             T.Send("dp.plist")
@@ -276,11 +295,22 @@ local function personnelTab(body)
         return
     end
     local left, right = T.Columns(body)
-    local h = k.Heading(left, "Members (" .. #T.people .. ")")
+    local bar = vgui.Create("DPanel", left)
+    bar:Dock(TOP)
+    bar:SetTall(s(40))
+    bar:DockMargin(0, 0, s(8), s(12))
+    bar.Paint = nil
+    T.Title(bar, "Personnel"):Dock(LEFT)
+    local nOn = 0
+    for _, m in ipairs(T.people) do
+        if m.on then nOn = nOn + 1 end
+    end
+    local h = T.Heading(left, "Members · " .. #T.people .. "  ·  " .. nOn .. " online")
     h:Dock(TOP)
+    h:DockMargin(0, 0, s(8), s(8))
     local sp = k.Scroll(left)
     sp:Dock(FILL)
-    if #T.people == 0 then T.Label(sp, "Nobody on the roster yet.") end
+    if #T.people == 0 then T.Empty(sp, "Nobody on the roster yet.") end
     for _, m in ipairs(T.people) do
         local bits = { m.on and "Online" or ("Seen " .. (m.seen > 0 and os.date("%d %b", m.seen) or "never")) }
         if m.coms > 0 then bits[#bits + 1] = m.coms .. " commendation" .. (m.coms == 1 and "" or "s") end
@@ -291,7 +321,7 @@ local function personnelTab(body)
             P.pMissing = nil
             P.notesEdit = false
             T.Build()
-        end, m.strikes >= 3 and "!" or nil)
+        end, m.strikes >= 3 and "!" or (m.on and "On" or nil), m.strikes >= 3 and C.bad or C.good)
     end
     personFile(right)
 end
@@ -306,7 +336,7 @@ Rhylib.Net.Receive("dp.pmembers", function()
     T.peopleAsked = nil
     if not T.term or T.term.ent ~= ent then return end
     T.people = list
-    if IsValid(T.panel) and (T.tab == "people" or T.tab == "orders") then T.Build() end
+    if IsValid(T.panel) and (T.tab == "people" or T.tab == "orders" or T.tab == "board") then T.Build() end
 end)
 
 Rhylib.Net.Receive("dp.pfile", function()

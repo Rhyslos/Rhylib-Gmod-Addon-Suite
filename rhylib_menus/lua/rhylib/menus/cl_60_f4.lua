@@ -1,12 +1,23 @@
 --[[
     F4 menu (DarkRP), as pages of the pause menu: F4 opens the pause menu
     on Jobs (a fresh F4 press closes it). Replaces DarkRP's own F4 menu.
-      Jobs       jobs by category; pick one to see its model, description
-                 and weapons, then become it (or start a vote). The
-                 preview wears your skin (picked on Trooper > Appearance).
-      Shop       entities, shipments, single weapons, ammo and vehicles you
-                 can buy as your current job (only shown when the server
-                 has anything to sell).
+      Jobs       a header ("You are <job>" in its colour, rank and basic
+                 training with rhylib_roster; a search box; "Only jobs I
+                 can take"). Left: jobs by DarkRP category, each a colour
+                 band (diamond, name, N online) over rows in two columns
+                 (icon, name, a sub line: your job / short description /
+                 why it's locked, slots). Right: the model preview (< >
+                 for several models; wears your skin, picked on Trooper >
+                 Appearance), battalion, name, description, weapons as
+                 chips, a checklist (ticks met, "!" notes, crosses block),
+                 salary (money on), slots bar and the button in the job's
+                 colour: Become / Start a vote / Update job / the reason.
+      Shop       the same look: kinds (entities, single weapons,
+                 shipments, ammo, vehicles you can buy as your job) as
+                 tabs plus a search box; items by category on the left,
+                 the picked one on the right (model, facts, price, your
+                 money while money is on, Buy). Only shown when the
+                 server has anything to sell.
       Trooper > Overview ("character")  your model, name, battalion,
                  rank, job and qualifications (rhylib_roster); tiles to
                  Skills (points left, rhylib_skills), Jobs and Battalion;
@@ -145,38 +156,634 @@ local function firstModel(job)
 end
 
 --------------------------------------------------------------------------
+-- Look shared by Jobs and Shop: colours and small drawing helpers
+--------------------------------------------------------------------------
+
+local T = {
+    inset = Color(14, 16, 15), side = Color(18, 20, 19), card = Color(22, 25, 23),
+    tile = Color(26, 30, 27), sel = Color(27, 37, 48), selEdge = Color(47, 58, 68),
+    edge = Color(42, 45, 41), faint = Color(31, 35, 32), black = Color(0, 0, 0),
+    text = Color(228, 227, 220), text2 = Color(201, 200, 192), dim = Color(169, 168, 160),
+    label = Color(138, 140, 132), off = Color(111, 116, 109),
+    blue = Color(133, 183, 235), amber = Color(239, 159, 39), red = Color(226, 75, 74), green = Color(151, 196, 89),
+    dark = Color(20, 20, 19), lockSub = Color(200, 176, 122), lockIcon = Color(58, 64, 59),
+    noteText = Color(232, 207, 154), badText = Color(240, 149, 149),
+}
+local GRAD_L, GRAD_R = Material("vgui/gradient-l"), Material("vgui/gradient-r")
+local INF = "∞"
+
+-- (one vertex table each, filled per draw: no tables made in Paint)
+local DIA = { {}, {}, {}, {} }
+local function diamond(cx, cy, r, col)
+    DIA[1].x, DIA[1].y = cx, cy - r
+    DIA[2].x, DIA[2].y = cx + r, cy
+    DIA[3].x, DIA[3].y = cx, cy + r
+    DIA[4].x, DIA[4].y = cx - r, cy
+    draw.NoTexture()
+    K.SetCol(col)
+    surface.DrawPoly(DIA)
+end
+
+local TRI = { {}, {}, {} }
+local function chevron(cx, cy, r, left, col)
+    if left then
+        TRI[1].x, TRI[1].y = cx + r * 0.6, cy - r
+        TRI[2].x, TRI[2].y = cx + r * 0.6, cy + r
+        TRI[3].x, TRI[3].y = cx - r * 0.6, cy
+    else
+        TRI[1].x, TRI[1].y = cx - r * 0.6, cy - r
+        TRI[2].x, TRI[2].y = cx + r * 0.6, cy
+        TRI[3].x, TRI[3].y = cx - r * 0.6, cy + r
+    end
+    draw.NoTexture()
+    K.SetCol(col)
+    surface.DrawPoly(TRI)
+end
+
+-- A 2 px line (two 1 px lines side by side).
+local function line2(x1, y1, x2, y2)
+    surface.DrawLine(x1, y1, x2, y2)
+    surface.DrawLine(x1 + 1, y1, x2 + 1, y2)
+end
+
+local function drawTick(x, y, sz)
+    line2(x + sz * 0.24, y + sz * 0.52, x + sz * 0.42, y + sz * 0.70)
+    line2(x + sz * 0.42, y + sz * 0.70, x + sz * 0.76, y + sz * 0.30)
+end
+
+-- A requirement mark: "good" a green tick, "note" an amber "!", "bad" a red cross.
+local MARK_BG = { good = T.green, note = T.amber, bad = T.red }
+local MARK_TEXT = { good = T.text, note = T.noteText, bad = T.badText }
+local function drawMark(kind, x, y, sz)
+    K.SetCol(MARK_BG[kind] or T.dim)
+    surface.DrawRect(x, y, sz, sz)
+    K.SetCol(T.dark)
+    if kind == "good" then
+        drawTick(x, y, sz)
+    elseif kind == "bad" then
+        line2(x + sz * 0.3, y + sz * 0.3, x + sz * 0.68, y + sz * 0.7)
+        line2(x + sz * 0.68, y + sz * 0.3, x + sz * 0.3, y + sz * 0.7)
+    else
+        draw.SimpleText("!", K.Font(12, 900), x + sz * 0.5, y + sz * 0.5, T.dark, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+end
+
+-- A dark band tinted from the left in col (category bands, previews).
+local function tintLeft(x, y, w, h, col, a)
+    K.SetCol(col, a)
+    surface.SetMaterial(GRAD_L)
+    surface.DrawTexturedRect(x, y, w, h)
+end
+
+-- A soft glow in the middle of a box (the model preview).
+local function glow(w, h, col, a)
+    K.SetCol(col, a)
+    surface.SetMaterial(GRAD_R)
+    surface.DrawTexturedRect(0, 0, math.ceil(w * 0.5), h)
+    surface.SetMaterial(GRAD_L)
+    surface.DrawTexturedRect(math.floor(w * 0.5), 0, math.ceil(w * 0.5), h)
+end
+
+-- Dark text on a light fill, light text on a dark one.
+local function textOn(col)
+    return (col.r * 0.299 + col.g * 0.587 + col.b * 0.114) > 120 and T.dark or T.text
+end
+
+-- A colour a little of col mixed into the card colour (a picked row).
+local function mix(col, f)
+    return Color(T.card.r + (col.r - T.card.r) * f, T.card.g + (col.g - T.card.g) * f, T.card.b + (col.b - T.card.b) * f)
+end
+
+-- "Only jobs I can take" style check box. get() -> bool, set(bool).
+local function checkBox(parent, text, get, set)
+    local s = K.S
+    local b = vgui.Create("DButton", parent)
+    b:SetText("")
+    surface.SetFont(K.Font(13))
+    b:SetWide(s(26) + surface.GetTextSize(text) + s(4))
+    function b:Paint(w, h)
+        local sz = s(18)
+        local y = math.floor((h - sz) * 0.5)
+        if get() then
+            K.SetCol(T.blue)
+            surface.DrawRect(0, y, sz, sz)
+            K.SetCol(T.dark)
+            drawTick(0, y, sz)
+        else
+            K.SetCol(T.inset)
+            surface.DrawRect(0, y, sz, sz)
+            K.SetCol(self:IsHovered() and T.blue or T.edge)
+            surface.DrawOutlinedRect(0, y, sz, sz)
+        end
+        draw.SimpleText(text, K.Font(13), sz + s(8), h * 0.5, self:IsHovered() and T.text or T.text2, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        return true
+    end
+    function b:DoClick()
+        surface.PlaySound("ui/buttonclick.wav")
+        set(not get())
+    end
+    return b
+end
+
+-- The big action button. state() -> label, colour (nil colour = greyed:
+-- the label is the reason). fn() on click while it has a colour.
+local function bigButton(parent, state, fn)
+    local b = vgui.Create("DButton", parent)
+    b:SetText("")
+    function b:Paint(w, h)
+        local label, col = state()
+        if col then
+            K.SetCol(T.card)
+            surface.DrawRect(0, 0, w, h)
+            K.SetCol(col, self:IsDown() and 200 or (self:IsHovered() and 255 or 235))
+            surface.DrawRect(0, 0, w, h)
+        else
+            K.SetCol(T.tile)
+            surface.DrawRect(0, 0, w, h)
+            K.SetCol(T.edge)
+            surface.DrawOutlinedRect(0, 0, w, h)
+        end
+        local f = K.Font(16, 700)
+        draw.SimpleText(K.Fit(label or "", f, w - K.S(24)), f, w * 0.5, h * 0.5, col and textOn(col) or T.off, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        return true
+    end
+    function b:DoClick()
+        local _, col = state()
+        if not col then return end
+        surface.PlaySound("ui/buttonclick.wav")
+        fn()
+    end
+    return b
+end
+
+-- A small square button with a chevron (the model < >).
+local function arrowButton(parent, left, fn)
+    local b = vgui.Create("DButton", parent)
+    b:SetText("")
+    function b:Paint(w, h)
+        K.SetCol(self:IsHovered() and T.tile or T.inset)
+        surface.DrawRect(0, 0, w, h)
+        K.SetCol(self:IsHovered() and T.blue or T.edge)
+        surface.DrawOutlinedRect(0, 0, w, h)
+        chevron(w * 0.5, h * 0.5, K.S(6), left, T.text)
+        return true
+    end
+    function b:DoClick()
+        surface.PlaySound("ui/buttonclick.wav")
+        fn()
+    end
+    return b
+end
+
+-- A category band: tint in col, a thick left edge, a diamond, the caps
+-- name and a right-hand text from getRight() (cached by the caller).
+local function band(parent, name, col, getRight)
+    local s = K.S
+    local p = vgui.Create("DPanel", parent)
+    p:SetTall(s(36))
+    local title = string.upper(name or "")
+    function p:Paint(w, h)
+        tintLeft(0, 0, w * 0.7, h, col, 50)
+        K.SetCol(col)
+        surface.DrawRect(0, 0, s(4), h)
+        diamond(s(20), h * 0.5, s(6), col)
+        local right = getRight and getRight() or ""
+        draw.SimpleText(right, K.Font(12), w - s(12), h * 0.5, T.dim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+        draw.SimpleText(K.Fit(title, K.Font(16, 700), w - s(130)), K.Font(16, 700), s(34), h * 0.5, T.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    end
+    return p
+end
+
+-- A grid of row panels: two columns when wide enough. Returns the panel;
+-- add rows with grid.rows[#grid.rows + 1] = row (parented to it).
+local function rowGrid(parent)
+    local s = K.S
+    local g = vgui.Create("DPanel", parent)
+    g.Paint = nil
+    g.rows = {}
+    function g:PerformLayout(w)
+        local cols = w >= s(560) and 2 or 1
+        local gap, rh = s(4), s(60)
+        local cw = math.floor((w - gap * (cols - 1)) / cols)
+        for i, r in ipairs(self.rows) do
+            local c, row = (i - 1) % cols, math.floor((i - 1) / cols)
+            r:SetPos(c * (cw + gap), row * (rh + gap))
+            r:SetSize(cw, rh)
+        end
+        local n = math.ceil(#self.rows / cols)
+        local want = math.max(0, n * (rh + gap) - gap)
+        if self:GetTall() ~= want then self:SetTall(want) end
+    end
+    return g
+end
+
+-- The common row look: fill, edges, the icon square. Returns the text x.
+local function paintRow(w, h, picked, mine, hovered, col, pickedBg)
+    local s = K.S
+    K.SetCol(picked and pickedBg or (mine and T.sel or (hovered and T.tile or T.card)))
+    surface.DrawRect(0, 0, w, h)
+    K.SetCol(picked and col or (mine and T.selEdge or T.faint))
+    surface.DrawOutlinedRect(0, 0, w, h)
+    if picked or mine then
+        K.SetCol(picked and col or T.blue)
+        surface.DrawRect(0, 0, s(3), h)
+    end
+    local sq = s(40)
+    local y = math.floor((h - sq) * 0.5)
+    K.SetCol(T.inset)
+    surface.DrawRect(s(10), y, sq, sq)
+    K.SetCol(T.edge)
+    surface.DrawOutlinedRect(s(10), y, sq, sq)
+    return s(10) + sq + s(12), y
+end
+
+-- The model preview box of the right column: a glow in getCol(), a
+-- DModelPanel filling it (box.mp) and a caption line (box.caption).
+local function previewBox(parent, col)
+    local s = K.S
+    local box = vgui.Create("DPanel", parent)
+    box.caption = ""
+    function box:Paint(w, h)
+        K.SetCol(T.side)
+        surface.DrawRect(0, 0, w, h)
+        glow(w, h, col, 34)
+        K.SetCol(T.black)
+        surface.DrawRect(0, h - 1, w, 1)
+    end
+    function box:PaintOver(w, h)
+        if self.caption ~= "" then
+            draw.SimpleText(self.caption, K.Font(12), w * 0.5, h - s(18), T.dim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
+    end
+    local mp = vgui.Create("DModelPanel", box)
+    mp:SetMouseInputEnabled(false)
+    mp:SetFOV(36)
+    box.mp = mp
+    function box:PerformLayout(w, h)
+        mp:SetPos(0, 0)
+        mp:SetSize(w, h)
+        local a = s(44)
+        if IsValid(self.prev) then self.prev:SetPos(s(14), math.floor((h - a) * 0.5)) self.prev:SetSize(a, a) end
+        if IsValid(self.next) then self.next:SetPos(w - s(14) - a, math.floor((h - a) * 0.5)) self.next:SetSize(a, a) end
+    end
+    return box
+end
+
+-- Height of the right column (with a guess before the page is laid out).
+local function sideTall(aside)
+    local h = aside:GetTall()
+    if h < K.S(300) then h = ScrH() - K.S(300) end
+    return h
+end
+
+-- Right column panel (the detail side).
+local function sideColumn(parent, w, emptyText)
+    local aside = vgui.Create("DPanel", parent)
+    aside:Dock(RIGHT)
+    aside:SetWide(w)
+    aside:DockMargin(K.S(18), 0, 0, 0)
+    function aside:Paint(pw, ph)
+        K.SetCol(T.side)
+        surface.DrawRect(0, 0, pw, ph)
+        K.SetCol(T.black)
+        surface.DrawRect(0, 0, 1, ph)
+        if not self.filled then
+            draw.SimpleText(emptyText, K.Font(14), pw * 0.5, ph * 0.5, T.dim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
+    end
+    return aside
+end
+
+-- The flow of loadout chips (weapons / item facts). Sizes itself.
+local function chipFlow(parent, names)
+    local s = K.S
+    local p = vgui.Create("DPanel", parent)
+    p.pos = {}
+    function p:PerformLayout(w)
+        local f = K.Font(12, 500)
+        surface.SetFont(f)
+        local x, y, ch, gap = 0, 0, s(26), s(6)
+        for i, n in ipairs(names) do
+            local cw = math.min(w, surface.GetTextSize(n) + s(20))
+            if x > 0 and x + cw > w then x, y = 0, y + ch + gap end
+            local q = self.pos[i] or {}
+            q[1], q[2], q[3] = x, y, cw
+            self.pos[i] = q
+            x = x + cw + gap
+        end
+        local want = #names > 0 and (y + ch) or 0
+        if self:GetTall() ~= want then self:SetTall(want) end
+    end
+    function p:Paint(w, h)
+        local f, ch = K.Font(12, 500), s(26)
+        for i, n in ipairs(names) do
+            local q = self.pos[i]
+            if q then
+                K.SetCol(T.tile)
+                surface.DrawRect(q[1], q[2], q[3], ch)
+                K.SetCol(T.edge)
+                surface.DrawOutlinedRect(q[1], q[2], q[3], ch)
+                draw.SimpleText(K.Fit(n, f, q[3] - s(16)), f, q[1] + s(10), q[2] + ch * 0.5, T.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            end
+        end
+    end
+    return p
+end
+
+-- The requirements checklist: list of { kind, text } (see drawMark).
+local function checklist(parent, items)
+    local s = K.S
+    local p = vgui.Create("DPanel", parent)
+    p:SetTall(#items * s(24))
+    function p:Paint(w, h)
+        local sz, f = s(18), K.Font(13)
+        for i, it in ipairs(items) do
+            local y = (i - 1) * s(24)
+            drawMark(it[1], 0, y + s(1), sz)
+            draw.SimpleText(K.Fit(it[2], f, w - s(30)), f, s(28), y + s(10), MARK_TEXT[it[1]] or T.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        end
+    end
+    return p
+end
+
+-- A one-line caps heading with a diamond, then a big name: the top of the
+-- detail column. Returns nothing; docks into info.
+local function detailTitle(info, caps, name, col)
+    local s = K.S
+    local capsText, nameText = string.upper(caps or ""), string.upper(name or "")
+    if capsText ~= "" then
+        local l = vgui.Create("DPanel", info)
+        l:Dock(TOP)
+        l:SetTall(s(18))
+        l:DockMargin(0, 0, s(8), 0)
+        function l:Paint(w, h)
+            diamond(s(4), h * 0.5, s(4), col)
+            draw.SimpleText(K.Fit(capsText, K.Font(11, 700), w - s(16)), K.Font(11, 700), s(14), h * 0.5, col, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        end
+    end
+    local n = vgui.Create("DPanel", info)
+    n:Dock(TOP)
+    n:SetTall(s(40))
+    n:DockMargin(0, 0, s(8), 0)
+    function n:Paint(w, h)
+        draw.SimpleText(K.Fit(nameText, K.Font(30, 800), w), K.Font(30, 800), 0, h * 0.5, T.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    end
+end
+
+-- Width of the right column for a page this wide.
+local function sideWidth(pageW)
+    local s = K.S
+    return math.Clamp(math.floor(pageW * 0.36), s(300), s(440))
+end
+
+-- Search typing: run fn 0.2 s after the last key (one named timer per
+-- page, so fast typing rebuilds the list once), only while panel exists.
+local function debounced(name, panel, fn)
+    timer.Create(name, 0.2, 1, function()
+        if IsValid(panel) then fn() end
+    end)
+end
+
+-- Top bar of a page: a panel the page paints its left text into.
+local function topBar(body)
+    local s = K.S
+    local bar = vgui.Create("DPanel", body)
+    bar:Dock(TOP)
+    bar:SetTall(s(38))
+    bar:DockMargin(0, 0, 0, s(14))
+    return bar
+end
+
+--------------------------------------------------------------------------
 -- Jobs tab
 --------------------------------------------------------------------------
 
+-- The search text and the "Only jobs I can take" box (kept while the game runs).
+local jobsQuery, jobsOnlyOpen = "", false
+
+-- First sentence (or line) of a job's description: the row's sub line.
+local function shortDesc(job)
+    local d = string.Trim(job.description or "")
+    d = string.Trim(string.match(d, "^[^\n]*") or "")
+    local first = string.match(d, "^(.-[%.%!%?])%s")
+    return string.Trim(first or d)
+end
+
+local function weaponNames(list)
+    local out = {}
+    for _, class in ipairs(list or {}) do
+        local stored = weapons.GetStored(class)
+        out[#out + 1] = stored and stored.PrintName or class
+    end
+    return out
+end
+
+-- What the checklist shows for a job: ticks for what you meet, a cross for
+-- what blocks, "!" notes. The fields are rhylib_roster's job rules
+-- (needsTraining, battalion, minRank, qual) and DarkRP's own.
+local function jobChecks(job, vote, mine)
+    local out, bad = {}, 0
+    local ply = LocalPlayer()
+    local function add(kind, text)
+        out[#out + 1] = { kind, text }
+        if kind == "bad" then bad = bad + 1 end
+    end
+    if mine then add("note", "This is your job now") end
+    local R = Rhylib.Roster
+    if R and R.Get then
+        local c = R.Get(ply)
+        if job.rhylibOff then add("bad", "Switched off by staff") end
+        if (job.needsTraining or job.battalion) and not c.has then add("bad", "Create your character first") end
+        if job.needsTraining then
+            if c.trained then add("good", "Basic training done") else add("bad", "Needs basic training (ask a Sergeant or higher)") end
+        end
+        if job.battalion then
+            if c.bn == job.battalion then add("good", "In the " .. job.battalion) else add("bad", "Only for members of the " .. job.battalion) end
+            local need = R.RankIndex and R.RankIndex(job.minRank)
+            if need and R.RankName then
+                local rn = R.RankName(need)
+                if c.bn == job.battalion and c.rank >= need then add("good", "Rank " .. rn .. " or higher") else add("bad", "Needs rank " .. rn .. " or higher") end
+            end
+        end
+        if job.qual and R.HasQual and R.QualName then
+            local qn = R.QualName(job.qual)
+            if R.HasQual(ply, job.qual) then add("good", qn .. " qualification") else add("bad", "Needs the " .. qn .. " qualification") end
+        end
+    end
+    if job.NeedToChangeFrom and not mine then
+        local from = istable(job.NeedToChangeFrom) and job.NeedToChangeFrom or { job.NeedToChangeFrom }
+        local names = {}
+        for _, t in ipairs(from) do
+            local j = RPExtraTeams and RPExtraTeams[t]
+            names[#names + 1] = j and j.name or team.GetName(t)
+        end
+        local list = table.concat(names, " or ")
+        add(table.HasValue(from, ply:Team()) and "good" or "bad", "Only from the job " .. list)
+    end
+    if job.admin == 1 then add(ply:IsAdmin() and "good" or "bad", "Admins only") end
+    if job.admin and job.admin > 1 then add(ply:IsSuperAdmin() and "good" or "bad", "Superadmins only") end
+    local st = jobState(job)
+    if st.full and not mine then add("bad", "No free slot") end
+    -- (any other reason the job's own check gives)
+    if st.blocked and not mine and st.blocked ~= "Full" and bad == 0 then add("bad", st.blocked) end
+    if vote then add("note", "Needs a vote from the other players") end
+    if #out == 0 then add("good", "Open to everyone") end
+    return out
+end
+
 local function buildJobs(body, frame)
     local s = K.S
-    local left = K.Scroll(body)
-    left:Dock(LEFT)
-    left:SetWide(s(420))
+    local ply = LocalPlayer()
+    local R = Rhylib.Roster
+    local selJob
+    local fillList, showJob, only
 
-    local detail = vgui.Create("DPanel", body)
-    detail:Dock(FILL)
-    detail:DockMargin(s(12), 0, 0, 0)
-    detail:DockPadding(s(16), s(16), s(16), s(16))
-    function detail:Paint(w, h)
-        K.SetCol(C.row)
-        surface.DrawRect(0, 0, w, h)
-        K.SetCol(C.edgeDark)
-        surface.DrawOutlinedRect(0, 0, w, h)
-        if not self.job then
-            draw.SimpleText("Pick a job on the left.", K.Font(14), w * 0.5, h * 0.5, C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    -- Header: who you are, the search box and the "can take" box.
+    local bar = topBar(body)
+    local hdr = { t = -1, job = "", rest = "", col = T.blue }
+    function bar:Paint(w, h)
+        if RealTime() - hdr.t > 0.5 then
+            hdr.t = RealTime()
+            hdr.job = (ply.getDarkRPVar and ply:getDarkRPVar("job")) or team.GetName(ply:Team())
+            hdr.col = team.GetColor(ply:Team()) or T.blue
+            local rest = ""
+            if R and R.Get then
+                local c = R.Get(ply)
+                if not c.has then
+                    rest = "  ·  no character yet"
+                else
+                    local rank = (c.rank > 0 and R.RankName and R.RankName(c.rank)) or (R.Prefix and R.Prefix(ply)) or ""
+                    rest = (rank ~= "" and ("  ·  " .. rank) or "") .. "  ·  " .. (c.trained and "basic training done" or "no basic training yet")
+                end
+            end
+            hdr.rest = rest
+        end
+        local f, fb = K.Font(13), K.Font(13, 700)
+        surface.SetFont(f)
+        local x = surface.GetTextSize("You are ")
+        draw.SimpleText("You are ", f, 0, h * 0.5, T.dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        draw.SimpleText(hdr.job, fb, x, h * 0.5, hdr.col, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        surface.SetFont(fb)
+        x = x + surface.GetTextSize(hdr.job)
+        draw.SimpleText(K.Fit(hdr.rest, f, math.max(0, only:GetX() - x - s(12))), f, x, h * 0.5, T.dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    end
+    local search
+    search = K.Search(bar, "Search jobs", function(t)
+        jobsQuery = string.lower(string.Trim(t or ""))
+        if fillList then debounced("rhylib.f4.jobsSearch", search, fillList) end
+    end)
+    search:Dock(RIGHT)
+    search:SetWide(math.min(s(300), math.floor(body:GetWide() * 0.28)))
+    search:SetText(jobsQuery)
+    only = checkBox(bar, "Only jobs I can take", function() return jobsOnlyOpen end, function(v)
+        jobsOnlyOpen = v
+        fillList()
+    end)
+    only:Dock(RIGHT)
+    only:DockMargin(0, 0, s(18), 0)
+
+    local main = vgui.Create("DPanel", body)
+    main:Dock(FILL)
+    main.Paint = nil
+    local aside = sideColumn(main, sideWidth(body:GetWide() - s(32)), "Pick a job on the left.")
+    local list = K.Scroll(main)
+    list:Dock(FILL)
+
+    -- The list, by category (search and the box filter it).
+    function fillList()
+        list:Clear()
+        local any = false
+        local me = LocalPlayer()
+        for _, cat in ipairs(categories("jobs")) do
+            local all, shown = {}, {}
+            for _, job in ipairs(cat.members or {}) do
+                if not job.hidden then
+                    all[#all + 1] = job
+                    local ok = jobsQuery == "" or string.find(string.lower(job.name or ""), jobsQuery, 1, true) ~= nil
+                    if ok and jobsOnlyOpen then ok = me:Team() == job.team or jobBlocked(job) == nil end
+                    if ok then shown[#shown + 1] = job end
+                end
+            end
+            if #shown > 0 and (not cat.canSee or cat.canSee(me)) then
+                local ccol = IsColor(cat.color) and cat.color or (istable(cat.color) and cat.color.r and cat.color) or (all[1].color or T.blue)
+                -- "N online" (everyone in the category's jobs, twice a second)
+                local cnt = { t = -1, text = "" }
+                local b = band(list, cat.name or "Jobs", ccol, function()
+                    if RealTime() - cnt.t > 0.5 then
+                        cnt.t = RealTime()
+                        local n = 0
+                        for _, j in ipairs(all) do n = n + jobState(j).count end
+                        cnt.text = n .. " online"
+                    end
+                    return cnt.text
+                end)
+                b:Dock(TOP)
+                b:DockMargin(0, any and s(14) or 0, s(10), s(4))
+                any = true
+                local grid = rowGrid(list)
+                grid:Dock(TOP)
+                grid:DockMargin(0, 0, s(10), 0)
+                for _, job in ipairs(shown) do
+                    local col = job.color or T.blue
+                    local pickedBg = mix(col, 0.1)
+                    local desc = shortDesc(job)
+                    local row = vgui.Create("DButton", grid)
+                    row:SetText("")
+                    grid.rows[#grid.rows + 1] = row
+                    function row:Paint(w, h)
+                        -- (texts rebuilt only when the job's state is refreshed)
+                        local st = jobState(job)
+                        if self.st ~= st then
+                            self.st = st
+                            self.mine = LocalPlayer():Team() == job.team
+                            self.slots = st.count .. " / " .. (st.limit > 0 and st.limit or INF)
+                            local why = st.blocked
+                            self.locked = why ~= nil and not self.mine and why ~= "Full"
+                            self.sub = self.mine and "Your job" or why or desc
+                        end
+                        local x, iy = paintRow(w, h, selJob == job, self.mine, self:IsHovered(), col, pickedBg)
+                        K.Icon("trooper", s(19), iy + s(9), s(22), self.locked and T.lockIcon or col)
+                        local f12 = K.Font(12, 700)
+                        surface.SetFont(f12)
+                        local sw = surface.GetTextSize(self.slots)
+                        draw.SimpleText(self.slots, f12, w - s(14), h * 0.5, st.full and T.red or T.dim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+                        local tw = w - x - sw - s(26)
+                        draw.SimpleText(K.Fit(job.name or "?", K.Font(14, 700), tw), K.Font(14, 700), x, h * 0.5 - s(9), self.locked and T.label or T.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                        if self.sub ~= "" then
+                            draw.SimpleText(K.Fit(self.sub, K.Font(11), tw), K.Font(11), x, h * 0.5 + s(10), self.locked and T.lockSub or T.dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                        end
+                        return true
+                    end
+                    function row:DoClick()
+                        surface.PlaySound("ui/buttonclick.wav")
+                        showJob(job)
+                    end
+                end
+            end
+        end
+        if not any then
+            local l = K.Label(list, jobsQuery ~= "" and "No job matches that search." or "No jobs to show.", 14, 400, T.dim)
+            l:Dock(TOP)
+            l:DockMargin(0, s(6), 0, 0)
         end
     end
 
-    local function showJob(job)
-        detail:Clear()
-        detail.job = job
+    -- The right column: model, title, description, loadout, checklist,
+    -- slots and the action button.
+    function showJob(job)
+        aside:Clear()
+        selJob = job
+        aside.filled = job ~= nil
+        if not job then return end
+        local col = job.color or T.blue
+        local me = LocalPlayer()
+        local mine = me:Team() == job.team
+        local vote = needsVote(job)
         local model, models = firstModel(job)
         local modelIndex = 1
         -- Start on the model you wear (your job) or the one you picked before.
         if models then
-            local me = LocalPlayer()
-            local want = job.team == me:Team() and me:GetModel()
+            local want = mine and me:GetModel()
                 or (DarkRP.getPreferredJobModel and DarkRP.getPreferredJobModel(job.team))
             for i, m in ipairs(models) do
                 if want and string.lower(m) == string.lower(want) then modelIndex = i end
@@ -187,71 +794,24 @@ local function buildJobs(body, frame)
             return string.lower(LocalPlayer():GetModel() or "") == string.lower(models and models[modelIndex] or model or "")
         end
 
-        local top = vgui.Create("DPanel", detail)
-        top:Dock(TOP)
-        top:SetTall(s(64))
-        function top:Paint(w, h)
-            K.SetCol(job.color or C.accent)
-            surface.DrawRect(0, 0, s(4), h - s(10))
-            draw.SimpleText(job.name, K.Font(24, 700), s(14), s(18), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-            local st = jobState(job)
-            local slots = st.count .. " / " .. (st.limit > 0 and st.limit or "∞")
-            draw.SimpleText("Salary " .. money(job.salary or 0) .. "   ·   Slots " .. slots .. (needsVote(job) and "   ·   Needs a vote" or ""),
-                K.Font(13), s(14), s(44), C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-        end
-
-        local bottom = vgui.Create("DPanel", detail)
-        bottom:Dock(BOTTOM)
-        bottom:SetTall(s(40))
-        bottom.Paint = nil
-        local become = K.Button(bottom, needsVote(job) and "Start vote" or "Become " .. job.name, function()
-            becomeJob(job)
-            frame:Remove()
-        end, { accent = true, enabled = function() return jobBlocked(job) == nil end })
-        become:Dock(RIGHT)
-        become:SetWide(s(240))
-        -- Your own job with several models: put the picked one on now
-        -- (rhylib_roster changes it in place, no respawn; DarkRP remembers it).
-        if models and #models > 1 and job.team == LocalPlayer():Team() and Rhylib.Roster then
-            become:SetVisible(false)
-            local upd = K.Button(bottom, "Update job", function()
-                if DarkRP.setPreferredJobModel then DarkRP.setPreferredJobModel(job.team, models[modelIndex]) end
-                Rhylib.Net.Start("roster.jobmodel")
-                net.WriteString(models[modelIndex])
-                net.SendToServer()
-            end, { accent = true, enabled = function() return not wearing() end, tooltip = "Wear the model shown, and keep it next time" })
-            upd:Dock(RIGHT)
-            upd:SetWide(s(240))
-        end
-        local note = vgui.Create("DPanel", bottom)
-        note:Dock(FILL)
-        function note:Paint(w, h)
-            local reason = jobBlocked(job)
-            if reason then draw.SimpleText(reason, K.Font(13), 0, h * 0.5, C.warn, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER) end
-        end
-
-        local mid = vgui.Create("DPanel", detail)
-        mid:Dock(FILL)
-        mid:DockMargin(0, s(8), 0, s(8))
-        mid.Paint = nil
-
-        local mp = vgui.Create("DModelPanel", mid)
-        mp:Dock(LEFT)
-        mp:SetWide(s(260))
-        mp:SetFOV(36)
-        -- (the preview wears your own skin when the model has it; skins
-        -- are picked on Trooper > Appearance)
+        -- Model preview (wears your own skin when the model has it; skins
+        -- are picked on Trooper > Appearance).
+        local box = previewBox(aside, col)
+        box:Dock(TOP)
+        box:SetTall(math.min(s(330), math.floor(sideTall(aside) * 0.42)))
+        local mp = box.mp
         local function mySkin() return LocalPlayer():GetNW2Int("rhylib_skin", 0) end
-
         local function setModel(m)
             if not m then return end
             mp:SetModel(m)
             local ent = mp:GetEntity()
+            local skinned = false
             if IsValid(ent) then
                 local sk = mySkin()
-                if sk < (ent:SkinCount() or 1) then ent:SetSkin(sk) end
-            end
-            if IsValid(ent) then
+                if sk < (ent:SkinCount() or 1) then
+                    ent:SetSkin(sk)
+                    skinned = sk > 0
+                end
                 local mn, mx = ent:GetRenderBounds()
                 local size = math.max(mx.z - mn.z, 1)
                 mp:SetLookAt(Vector(0, 0, size * 0.5))
@@ -259,84 +819,121 @@ local function buildJobs(body, frame)
                 local seq = ent:LookupSequence("idle_all_01")
                 if seq and seq > 0 then ent:ResetSequence(seq) end
             end
+            local cap = (models and #models > 1) and ("Model " .. modelIndex .. " of " .. #models) or ""
+            if skinned then cap = cap ~= "" and (cap .. "  ·  wears your skin") or "Wears your skin" end
+            box.caption = cap
         end
         setModel(model)
+        local ang = Angle()
         function mp:LayoutEntity(ent)
-            ent:SetAngles(Angle(0, 20 + math.sin(RealTime() * 0.6) * 18, 0))
+            ang.y = 20 + math.sin(RealTime() * 0.6) * 18
+            ent:SetAngles(ang)
             self:RunAnimation()
         end
-
         if models and #models > 1 then
-            local arrows = vgui.Create("DPanel", mp)
-            arrows:Dock(BOTTOM)
-            arrows:SetTall(s(28))
-            arrows.Paint = nil
             local function step(d)
                 modelIndex = (modelIndex - 1 + d) % #models + 1
                 setModel(models[modelIndex])
                 if DarkRP.setPreferredJobModel then DarkRP.setPreferredJobModel(job.team, models[modelIndex]) end
             end
-            local l = K.Button(arrows, "<", function() step(-1) end, { small = true })
-            l:Dock(LEFT) l:SetWide(s(40))
-            local r = K.Button(arrows, ">", function() step(1) end, { small = true })
-            r:Dock(RIGHT) r:SetWide(s(40))
+            box.prev = arrowButton(box, true, function() step(-1) end)
+            box.next = arrowButton(box, false, function() step(1) end)
         end
 
-        local info = K.Scroll(mid)
-        info:Dock(FILL)
-        info:DockMargin(s(14), 0, 0, 0)
-        local desc = K.Label(info, string.Trim(job.description or ""), 14, 400, C.text)
-        desc:Dock(TOP)
-        local wl = {}
-        for _, class in ipairs(job.weapons or {}) do
-            local stored = weapons.GetStored(class)
-            wl[#wl + 1] = stored and stored.PrintName or class
-        end
-        if #wl > 0 then
-            local h = K.Heading(info, "Weapons")
-            h:Dock(TOP)
-            h:DockMargin(0, s(12), s(8), s(4))
-            local wtxt = K.Label(info, table.concat(wl, ", "), 13, 400, C.textDim)
-            wtxt:Dock(TOP)
-        end
-    end
-
-    -- The job list, by category.
-    for _, cat in ipairs(categories("jobs")) do
-        local visible = {}
-        for _, job in ipairs(cat.members or {}) do
-            if not job.hidden then visible[#visible + 1] = job end
-        end
-        if #visible > 0 and (not cat.canSee or cat.canSee(LocalPlayer())) then
-            local h = K.Heading(left, cat.name or "Jobs")
-            h:Dock(TOP)
-            h:DockMargin(0, s(6), s(10), s(4))
-            for _, job in ipairs(visible) do
-                local b = vgui.Create("DButton", left)
-                b:SetText("")
-                b:Dock(TOP)
-                b:SetTall(s(44))
-                b:DockMargin(0, 0, s(10), s(3))
-                function b:Paint(w, hh)
-                    local sel = detail.job == job
-                    K.SetCol(sel and C.buttonDown or (self:IsHovered() and C.rowHover or C.row))
-                    surface.DrawRect(0, 0, w, hh)
-                    K.SetCol(job.color or C.accent)
-                    surface.DrawRect(0, 0, s(4), hh)
-                    local st = jobState(job)
-                    draw.SimpleText(job.name, K.Font(15, 600), s(14), hh * 0.36, st.blocked and C.textDim or C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-                    draw.SimpleText(money(job.salary or 0) .. " salary", K.Font(12), s(14), hh * 0.72, C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-                    draw.SimpleText(st.count .. " / " .. (st.limit > 0 and st.limit or "∞"), K.Font(13, 700), w - s(12), hh * 0.5,
-                        st.full and C.bad or C.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
-                    return true
+        -- Footer: salary (while money is in use), slots bar, the button.
+        local foot = vgui.Create("DPanel", aside)
+        foot:Dock(BOTTOM)
+        foot:DockMargin(s(20), s(8), s(20), s(16))
+        foot.Paint = nil
+        local salary = moneyOn() and money(job.salary or 0) or nil
+        local slots = vgui.Create("DPanel", foot)
+        slots:Dock(TOP)
+        slots:SetTall(salary and s(48) or s(28))
+        function slots:Paint(w, h)
+            local st = jobState(job)
+            if self.st ~= st then
+                self.st = st
+                if st.limit > 0 then
+                    self.text = st.count .. " / " .. st.limit .. (st.full and "  ·  full" or " taken")
+                    self.frac = math.Clamp(st.count / st.limit, 0, 1)
+                else
+                    self.text = st.count .. " taken  ·  no limit"
+                    self.frac = 0
                 end
-                function b:DoClick() showJob(job) end
+            end
+            local f, fb = K.Font(12), K.Font(12, 700)
+            local y = s(8)
+            if salary then
+                draw.SimpleText("Salary", f, 0, y, T.dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                draw.SimpleText(salary, fb, w, y, T.text, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+                y = y + s(20)
+            end
+            draw.SimpleText("Slots", f, 0, y, T.dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            draw.SimpleText(self.text, fb, w, y, st.full and T.red or T.text, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+            K.SetCol(T.inset)
+            surface.DrawRect(0, h - s(6), w, s(6))
+            if self.frac > 0 then
+                K.SetCol(st.full and T.red or col)
+                surface.DrawRect(0, h - s(6), math.floor(w * self.frac), s(6))
             end
         end
+        -- Your own job with several models: put the picked one on now
+        -- (rhylib_roster changes it in place, no respawn; DarkRP remembers it).
+        local canUpdate = models and #models > 1 and mine and Rhylib.Roster
+        local become = vote and "Start a vote" or ("Become " .. (job.name or ""))
+        local btn = bigButton(foot, function()
+            if canUpdate then
+                if not wearing() then return "Update job", col end
+                return "Your current job", nil
+            end
+            local why = jobBlocked(job)
+            if why then return why, nil end
+            return become, col
+        end, function()
+            if canUpdate then
+                if DarkRP.setPreferredJobModel then DarkRP.setPreferredJobModel(job.team, models[modelIndex]) end
+                Rhylib.Net.Start("roster.jobmodel")
+                net.WriteString(models[modelIndex])
+                net.SendToServer()
+                return
+            end
+            becomeJob(job)
+            frame:Remove()
+        end)
+        btn:Dock(TOP)
+        btn:SetTall(s(52))
+        btn:DockMargin(0, s(12), 0, 0)
+        if canUpdate then btn:SetTooltip("Wear the model shown, and keep it next time") end
+        foot:SetTall(slots:GetTall() + s(12) + s(52))
+
+        -- Middle: battalion line, name, description, loadout, checklist.
+        local info = K.Scroll(aside)
+        info:Dock(FILL)
+        info:DockMargin(s(20), s(16), s(12), 0)
+        detailTitle(info, job.battalion or job.category or "", job.name, col)
+        local d = string.Trim(job.description or "")
+        if d ~= "" then
+            local desc = K.Label(info, d, 13, 400, T.dim)
+            desc:Dock(TOP)
+            desc:DockMargin(0, s(2), s(8), 0)
+        end
+        local wl = weaponNames(job.weapons)
+        if #wl > 0 then
+            local chips = chipFlow(info, wl)
+            chips:Dock(TOP)
+            chips:DockMargin(0, s(14), s(8), 0)
+        end
+        local reqs = checklist(info, jobChecks(job, vote, mine))
+        reqs:Dock(TOP)
+        reqs:DockMargin(0, s(14), s(8), s(8))
     end
 
+    fillList()
     -- Start on your current job.
-    local cur = RPExtraTeams and RPExtraTeams[LocalPlayer():Team()]
+    local cur = RPExtraTeams and RPExtraTeams[ply:Team()]
+    -- (the column has its height once the page is laid out)
+    body:InvalidateLayout(true)
+    main:InvalidateLayout(true)
     if cur then showJob(cur) end
 end
 
@@ -370,94 +967,239 @@ local function shopItems(kind)
             if (not kind.filter or kind.filter(item)) and allowedItem(item) then items[#items + 1] = item end
         end
         if #items > 0 and (not cat.canSee or cat.canSee(LocalPlayer())) then
-            out[#out + 1] = { name = cat.name, items = items }
+            out[#out + 1] = { name = cat.name, color = cat.color, items = items }
         end
     end
     return out
 end
 
+-- The open kind and the search text (kept while the game runs).
+local shopKindId, shopQuery = nil, ""
+
+-- Short facts about an item: the row's sub line and the detail chips.
+local function itemFacts(kind, item)
+    local out = {}
+    if kind.id == "shipments" and item.amount then out[#out + 1] = "Shipment of " .. item.amount end
+    if kind.id == "ammo" and item.amountGiven then out[#out + 1] = item.amountGiven .. " rounds" end
+    if (kind.id == "weapons" or kind.id == "shipments") and item.entity then
+        local stored = weapons.GetStored(item.entity)
+        if stored and stored.PrintName and stored.PrintName ~= item.name then out[#out + 1] = stored.PrintName end
+    end
+    if kind.id == "vehicles" then out[#out + 1] = "Vehicle" end
+    return out
+end
+
 local function buildShop(body)
     local s = K.S
-    local tabs = vgui.Create("DPanel", body)
-    tabs:Dock(TOP)
-    tabs:SetTall(s(30))
-    tabs:DockMargin(0, 0, 0, s(10))
-    tabs.Paint = nil
-    local area = vgui.Create("DPanel", body)
-    area:Dock(FILL)
-    area.Paint = nil
+    local fillList, showItem
+    local selItem, current
 
-    local current
-    local function show(kind)
-        current = kind.id
-        area:Clear()
-        local sp = K.Scroll(area)
-        sp:Dock(FILL)
-        local groups = shopItems(kind)
-        if #groups == 0 then
-            local l = K.Label(sp, "Nothing to buy here as your current job.", 14, 400, C.textDim)
+    -- Header: the kinds as tabs, the search box.
+    local bar = topBar(body)
+    bar.Paint = nil
+    local search
+    search = K.Search(bar, "Search the shop", function(t)
+        shopQuery = string.lower(string.Trim(t or ""))
+        if fillList then debounced("rhylib.f4.shopSearch", search, fillList) end
+    end)
+    search:Dock(RIGHT)
+    search:SetWide(math.min(s(300), math.floor(body:GetWide() * 0.28)))
+    search:SetText(shopQuery)
+
+    local kinds = {}
+    for _, kind in ipairs(SHOP) do
+        if #shopItems(kind) > 0 then kinds[#kinds + 1] = kind end
+    end
+    for _, kind in ipairs(kinds) do
+        if kind.id == shopKindId then current = kind end
+    end
+    current = current or kinds[1]
+
+    local main = vgui.Create("DPanel", body)
+    main:Dock(FILL)
+    main.Paint = nil
+    local aside = sideColumn(main, sideWidth(body:GetWide() - s(32)), "Pick something on the left.")
+    local list = K.Scroll(main)
+    list:Dock(FILL)
+
+    for _, kind in ipairs(kinds) do
+        local b = K.Button(bar, kind.title, function()
+            if current == kind then return end
+            current = kind
+            shopKindId = kind.id
+            selItem = nil
+            fillList()
+        end, { small = true, selected = function() return current == kind end })
+        b:Dock(LEFT)
+        surface.SetFont(K.Font(12, 700))
+        b:SetWide(surface.GetTextSize(string.upper(kind.title)) + s(36))
+        b:DockMargin(0, 0, s(6), 0)
+    end
+
+    function fillList()
+        list:Clear()
+        if not current then
+            showItem(nil)
+            local l = K.Label(list, "Nothing to buy as your current job.", 14, 400, T.dim)
             l:Dock(TOP)
             return
         end
-        for _, g in ipairs(groups) do
-            local h = K.Heading(sp, g.name or kind.title)
-            h:Dock(TOP)
-            h:DockMargin(0, s(6), s(10), s(6))
-            local grid = vgui.Create("DIconLayout", sp)
-            grid:Dock(TOP)
-            grid:SetSpaceX(s(8))
-            grid:SetSpaceY(s(8))
+        local kind = current
+        local first, keep
+        local any = false
+        for _, g in ipairs(shopItems(kind)) do
+            local shown = {}
             for _, item in ipairs(g.items) do
-                local price = kind.price(item) or 0
-                local card = grid:Add("DPanel")
-                card:SetSize(s(180), s(220))
-                function card:Paint(w, hh)
-                    K.SetCol(C.row)
-                    surface.DrawRect(0, 0, w, hh)
-                    K.SetCol(C.edgeDark)
-                    surface.DrawOutlinedRect(0, 0, w, hh)
-                    K.SetCol(C.edgeLight)
-                    surface.DrawLine(1, 1, w - 1, 1)
-                    draw.SimpleText(K.Fit(item.name or "?", K.Font(14, 600), w - s(16)), K.Font(14, 600), s(8), s(140), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-                    local extra = ""
-                    if kind.id == "shipments" and item.amount then extra = " · " .. item.amount .. " pcs"
-                    elseif kind.id == "ammo" and item.amountGiven then extra = " · " .. item.amountGiven .. " rounds" end
-                    draw.SimpleText(money(price) .. extra, K.Font(13, 700), s(8), s(162), canAfford(price) and C.good or C.bad, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-                    K.Ticks(0, 0, w, hh, false)
-                end
-                if item.model and item.model ~= "" then
-                    local icon = vgui.Create("ModelImage", card)
-                    icon:SetPos(s(26), s(8))
-                    icon:SetSize(s(128), s(118))
-                    icon:SetModel(item.model)
-                    icon:SetMouseInputEnabled(false)
-                end
-                local buy = K.Button(card, "Buy", function() kind.buy(item) end,
-                    { small = true, accent = true, enabled = function() return canAfford(price) end })
-                buy:SetPos(s(8), s(184))
-                buy:SetSize(s(164), s(28))
+                if shopQuery == "" or string.find(string.lower(item.name or ""), shopQuery, 1, true) then shown[#shown + 1] = item end
             end
-            grid:InvalidateLayout(true)
-            grid:SizeToChildren(false, true)
+            if #shown > 0 then
+                local gcol = IsColor(g.color) and g.color or (istable(g.color) and g.color.r and g.color) or T.blue
+                local count = #shown == 1 and "1 item" or (#shown .. " items")
+                local b = band(list, g.name or kind.title, gcol, function() return count end)
+                b:Dock(TOP)
+                b:DockMargin(0, any and s(14) or 0, s(10), s(4))
+                any = true
+                local grid = rowGrid(list)
+                grid:Dock(TOP)
+                grid:DockMargin(0, 0, s(10), 0)
+                for _, item in ipairs(shown) do
+                    first = first or { item, gcol, g.name }
+                    if item == selItem then keep = { item, gcol, g.name } end
+                    local price = kind.price(item) or 0
+                    local priceText = money(price)
+                    local facts = itemFacts(kind, item)
+                    local sub = facts[1] or ""
+                    local pickedBg = mix(gcol, 0.1)
+                    local row = vgui.Create("DButton", grid)
+                    row:SetText("")
+                    grid.rows[#grid.rows + 1] = row
+                    function row:Paint(w, h)
+                        local x = paintRow(w, h, selItem == item, false, self:IsHovered(), gcol, pickedBg)
+                        local ok = canAfford(price)
+                        local f12 = K.Font(12, 700)
+                        surface.SetFont(f12)
+                        local pw = surface.GetTextSize(priceText)
+                        draw.SimpleText(priceText, f12, w - s(14), h * 0.5, ok and T.green or T.red, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+                        local tw = w - x - pw - s(26)
+                        draw.SimpleText(K.Fit(item.name or "?", K.Font(14, 700), tw), K.Font(14, 700), x, h * 0.5 - s(9), T.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                        local line = ok and sub or "Not enough money"
+                        if line ~= "" then
+                            draw.SimpleText(K.Fit(line, K.Font(11), tw), K.Font(11), x, h * 0.5 + s(10), ok and T.dim or T.lockSub, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                        end
+                        return true
+                    end
+                    if item.model and item.model ~= "" then
+                        local icon = vgui.Create("ModelImage", row)
+                        icon:SetMouseInputEnabled(false)
+                        icon:SetModel(item.model)
+                        function row:PerformLayout(w, h)
+                            local sq = s(40)
+                            icon:SetPos(s(10) + 1, math.floor((h - sq) * 0.5) + 1)
+                            icon:SetSize(sq - 2, sq - 2)
+                        end
+                    end
+                    function row:DoClick()
+                        surface.PlaySound("ui/buttonclick.wav")
+                        showItem(item, gcol, g.name)
+                    end
+                end
+            end
+        end
+        if not any then
+            local l = K.Label(list, shopQuery ~= "" and "Nothing matches that search." or "Nothing to buy here as your current job.", 14, 400, T.dim)
+            l:Dock(TOP)
+        end
+        local pick = keep or first
+        -- (the right column, with its model panel, is only rebuilt when
+        -- the picked item changes)
+        if pick then
+            if pick[1] ~= selItem or not aside.filled then showItem(pick[1], pick[2], pick[3]) end
+        else
+            showItem(nil)
         end
     end
 
-    local first
-    for _, kind in ipairs(SHOP) do
-        if #shopItems(kind) > 0 then
-            first = first or kind
-            local b = K.Button(tabs, kind.title, function() show(kind) end, { small = true, selected = function() return current == kind.id end })
-            b:Dock(LEFT)
-            b:SetWide(s(130))
-            b:DockMargin(0, 0, s(6), 0)
+    -- The right column: model, title, facts, price and the buy button.
+    function showItem(item, gcol, catName)
+        aside:Clear()
+        selItem = item
+        aside.filled = item ~= nil
+        if not item then return end
+        local kind = current
+        local price = kind.price(item) or 0
+        local col = gcol or T.blue
+
+        local box = previewBox(aside, col)
+        box:Dock(TOP)
+        box:SetTall(math.min(s(300), math.floor(sideTall(aside) * 0.4)))
+        local mp = box.mp
+        if item.model and item.model ~= "" then
+            mp:SetModel(item.model)
+            local ent = mp:GetEntity()
+            if IsValid(ent) then
+                local mn, mx = ent:GetRenderBounds()
+                local c = (mn + mx) * 0.5
+                local size = math.max((mx - mn):Length(), 1)
+                mp:SetLookAt(c)
+                mp:SetCamPos(c + Vector(size * 0.85, size * 0.85, size * 0.45))
+            end
+        end
+        local ang = Angle()
+        function mp:LayoutEntity(ent)
+            ang.y = (RealTime() * 30) % 360
+            ent:SetAngles(ang)
+        end
+
+        local foot = vgui.Create("DPanel", aside)
+        foot:Dock(BOTTOM)
+        foot:DockMargin(s(20), s(8), s(20), s(16))
+        foot.Paint = nil
+        local priceText = money(price)
+        local showMoney = moneyOn()
+        local lines = vgui.Create("DPanel", foot)
+        lines:Dock(TOP)
+        lines:SetTall(showMoney and s(40) or s(20))
+        function lines:Paint(w, h)
+            local f, fb = K.Font(12), K.Font(12, 700)
+            draw.SimpleText("Price", f, 0, s(8), T.dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            draw.SimpleText(priceText, fb, w, s(8), canAfford(price) and T.green or T.red, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+            if showMoney then
+                local m = myMoney()
+                if self.m ~= m then self.m, self.mt = m, money(m) end
+                draw.SimpleText("Your money", f, 0, s(28), T.dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                draw.SimpleText(self.mt, fb, w, s(28), T.text, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+            end
+        end
+        local buyText = "Buy for " .. priceText
+        local btn = bigButton(foot, function()
+            if canAfford(price) then return buyText, T.blue end
+            return "Not enough money", nil
+        end, function() kind.buy(item) end)
+        btn:Dock(TOP)
+        btn:SetTall(s(52))
+        btn:DockMargin(0, s(12), 0, 0)
+        foot:SetTall(lines:GetTall() + s(12) + s(52))
+
+        local info = K.Scroll(aside)
+        info:Dock(FILL)
+        info:DockMargin(s(20), s(16), s(12), 0)
+        detailTitle(info, (catName and catName ~= "" and (kind.title .. "  ·  " .. catName)) or kind.title, item.name, col)
+        if isstring(item.description) and item.description ~= "" then
+            local d = K.Label(info, string.Trim(item.description), 13, 400, T.dim)
+            d:Dock(TOP)
+            d:DockMargin(0, s(2), s(8), 0)
+        end
+        local facts = itemFacts(kind, item)
+        if #facts > 0 then
+            local chips = chipFlow(info, facts)
+            chips:Dock(TOP)
+            chips:DockMargin(0, s(14), s(8), s(8))
         end
     end
-    if first then
-        show(first)
-    else
-        local l = K.Label(area, "Nothing to buy as your current job.", 14, 400, C.textDim)
-        l:Dock(TOP)
-    end
+
+    body:InvalidateLayout(true)
+    main:InvalidateLayout(true)
+    fillList()
 end
 
 --------------------------------------------------------------------------
@@ -748,16 +1490,22 @@ local function shopHasItems()
     return false
 end
 
-local function page(id, def, fn)
+-- Jobs shows your job in its own header: only the money on the plate.
+local function moneySub()
+    if moneyOn() then return "Money  " .. money(myMoney()) end
+    return nil
+end
+
+local function page(id, def, fn, subFn)
     def.visible = def.visible or isDarkRP
     def.build = function(p)
-        Menus.pages[id].sub = sub()
+        Menus.pages[id].sub = (subFn or sub)()
         fn(p, frame)
     end
     Menus.AddPage(id, def)
 end
-page("jobs", { title = "Jobs", order = 30, section = "you", icon = "jobs", key = "F4" }, buildJobs)
-page("shop", { title = "Shop", order = 32, section = "you", icon = "shop",
+page("jobs", { title = "Jobs", order = 30, section = "you", icon = "jobs", key = "F4", wide = true }, buildJobs, moneySub)
+page("shop", { title = "Shop", order = 32, section = "you", icon = "shop", wide = true,
     visible = function() return isDarkRP() and shopHasItems() end }, buildShop)
 page("character", { title = "Overview", order = 10, group = "trooper" }, buildCharacter)
 

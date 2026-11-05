@@ -45,16 +45,18 @@
 local Inv = Rhylib.Inventory
 local Items = Rhylib.Items
 
--- Item body and stripe colours per category (the window uses them too).
--- An unknown category draws as misc; add your own category here (client)
+-- Item body and stripe colours per category (the window uses them too):
+-- every tile has the same dark body, the stripe tells the kind. An
+-- unknown category draws as misc; add your own category here (client)
 -- to give it colours.
+local BODY = Color(26, 30, 27)
 Inv.CATEGORY_COLORS = {
-    weapon = { body = Color(30, 37, 46), stripe = Color(96, 140, 196) },
-    ammo = { body = Color(42, 36, 25), stripe = Color(206, 152, 62) },
-    medical = { body = Color(25, 40, 31), stripe = Color(96, 186, 126) },
-    gear = { body = Color(38, 35, 30), stripe = Color(168, 146, 112) },
-    misc = { body = Color(34, 34, 33), stripe = Color(136, 136, 130) },
-    training = { body = Color(44, 40, 20), stripe = Color(236, 200, 60) },   -- (rhylib_training gear)
+    weapon = { body = BODY, stripe = Color(133, 183, 235) },
+    ammo = { body = BODY, stripe = Color(239, 159, 39) },
+    medical = { body = BODY, stripe = Color(226, 75, 74) },
+    gear = { body = BODY, stripe = Color(151, 196, 89) },
+    misc = { body = BODY, stripe = Color(138, 140, 132) },
+    training = { body = BODY, stripe = Color(236, 200, 60) },   -- (rhylib_training gear)
 }
 
 Inv.Icons = Inv.Icons or {}

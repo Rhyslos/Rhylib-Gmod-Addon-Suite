@@ -1,19 +1,36 @@
 --[[
     Datapad window (client). Left click with the datapad out opens it
     (asks dp.open; the server's dp.state opens the window).
-    Tabs: Quick response (first, for combat); Notes; Mission (officers
-    always: live editor); Board (opens on it when it has posts), Orders,
-    Logs, LOA, Stats, My file - read from the last download of your
-    battalion computer (Sync, top right), each shown only once the
-    download has something for it; EOD manual (rhylib_eod); MPs: Records,
-    Officer logs, Arrest. Needs rhylib_menus (its Kit draws everything).
 
-    Sync: Sync sends dp.dl and shows a random 3-15 s progress bar; the
+    Drawn as a tablet: a dark bezel with rounded corners round a
+    teal-on-black screen. While the window paints, the kit's colours are
+    swapped for the screen's (PAD below), so kit widgets inside (text
+    boxes, scroll bars, rows, other addons' tabs) match it.
+
+      Left strip   tabs in groups: IN THE FIELD (Quick response, Notes,
+                   Mission: officers always, live editor), FROM THE
+                   COMPUTER (Board, Orders, Logs, LOA, Stats, My file:
+                   read from the last download, each shown only once it
+                   has something), MANUALS (EOD manual, rhylib_eod: opens
+                   Learn), MORE (tabs other addons add), MILITARY POLICE
+                   (Records, Officer logs, Arrest). Badges: Quick response
+                   "N NEW" (calls for you waiting), Board "N NEW" (posts
+                   the last download brought), Orders (new orders for you).
+      Top bar      battalion (colour chip) and your name, the sync light
+                   and text, SYNC, the clock.
+      Quick resp.  the calls (config "calls") as large two-column buttons
+                   (icon in the call's colour, who it reaches, ACCEPT FIRST
+                   or SENDS POSITION), the resupply picker, the current
+                   mission card; right column YOUR CALLS (who's coming,
+                   Cancel) and CALLS FOR YOU (Accept / Respond).
+    Needs the UI kit (rhylib_core).
+
+    Sync: SYNC sends dp.dl and shows a random 3-15 s progress bar; the
     copy (D.sync) is shown once the bar is done and dp.dldata, dp.dlx and
     dp.dlm have arrived (dp.dlx/dlm: 5 s more at most). The light blinks
-    green ("New data") when dp.ver says the computer is newer than D.sync.
-    After your own change (mission, order status) a quiet download runs
-    with no bar, so your own pad doesn't flash "New data".
+    green ("New data on the computer") when dp.ver says the computer is
+    newer than D.sync. After your own change (mission, order status) a
+    quiet download runs with no bar, so your own pad doesn't flash it.
 
     Also shared helpers for the computer window (cl_20): D.BnColor,
     D.ReadMission, D.ReadOrders, D.OrderTo/OrderSub/OrderColor/
@@ -24,13 +41,63 @@ local D = Rhylib.Datapad
 
 local function K() return Rhylib.UI and Rhylib.UI.Kit end
 local function when(t) return t and t > 0 and os.date("%d %b %H:%M", t) or "" end
-local OPAQUE = Color(14, 16, 15, 255)   -- solid background: readable over anything
+
+-- Screen colours.
+local COL = {
+    bezel = Color(35, 38, 42), bezelEdge = Color(58, 63, 69), notch = Color(21, 23, 26),
+    screen = Color(7, 18, 20), screenEdge = Color(14, 42, 46), bar = Color(10, 26, 29), edge = Color(18, 53, 58),
+    card = Color(11, 29, 32), hover = Color(14, 38, 42), sel = Color(16, 51, 58),
+    accent = Color(127, 216, 230), accentHi = Color(184, 238, 246), dim = Color(159, 199, 205), label = Color(95, 154, 163),
+    btnEdge = Color(31, 90, 98), text = Color(228, 227, 220), dark = Color(7, 18, 20),
+    good = Color(151, 196, 89), amber = Color(239, 159, 39), amberHi = Color(246, 190, 100), amberEdge = Color(107, 82, 32),
+    dangerEdge = Color(90, 42, 42), dangerText = Color(240, 149, 149), dangerHover = Color(40, 18, 18),
+}
+
+-- Kit colours swapped in while the window paints (put back in PaintOver).
+local PAD = {
+    bg = COL.screen, header = COL.bar, row = COL.card, rowAlt = Color(13, 34, 37), rowHover = Color(16, 44, 49),
+    edgeDark = COL.edge, edgeLight = Color(127, 216, 230, 20), tick = Color(95, 154, 163, 150), label = COL.label,
+    button = COL.card, buttonHover = Color(16, 44, 49), buttonDown = COL.sel, textDim = COL.dim, accent = COL.accent,
+}
+local saved, swapped = {}, false
+local function swapIn()
+    local k = K()
+    if swapped or not k then return end
+    swapped = true
+    for key, v in pairs(PAD) do saved[key] = k.C[key] k.C[key] = v end
+end
+local function swapOut()
+    local k = K()
+    if not swapped or not k then return end
+    swapped = false
+    for key in pairs(PAD) do k.C[key] = saved[key] end
+end
+
+-- Line icons for the calls and the strip (K.Icon shapes, 24 x 24 grid).
+-- Added again whenever they're missing (a kit refresh replaces K.ICONS);
+-- called at load and each time the window opens.
+local function ensureIcons()
+    local k = K()
+    if k and k.ICONS and not k.ICONS["dp.plus"] then
+        k.ICONS["dp.plus"] = { { 12, 5, 12, 19 }, { 5, 12, 19, 12 } }
+        k.ICONS["dp.warn"] = { { 12, 3, 21, 19, 3, 19, closed = true }, { 12, 9, 12, 13.5 }, { 12, 16, 12, 16.8 } }
+        k.ICONS["dp.box"] = { { 3, 7, 12, 3, 21, 7, 21, 17, 12, 21, 3, 17, closed = true }, { 3, 7, 12, 11, 21, 7 }, { 12, 11, 12, 21 } }
+        k.ICONS["dp.diamond"] = { { 12, 3, 21, 12, 12, 21, 3, 12, closed = true } }
+        k.ICONS["dp.ext"] = { { 7, 17, 17, 7 }, { 9, 7, 17, 7, 17, 15 } }
+    end
+end
+ensureIcons()
+local CALL_ICON = { medic = "dp.plus", eod = "dp.warn", reinf = "players", supply = "dp.box", mp = "battalion" }
+local CALL_REACH = { mp = "MPs on duty", medic = "Medics on duty", battalion = "Your battalion", eod = "The bomb squad", all = "Everyone" }
 
 D.state = D.state or nil
-local panel, content, nav
+D.boardNew = D.boardNew or 0   -- posts the last download brought (Board badge)
+local panel, content, navList
 local tab = "board"      -- open tab id (TABS below)
 local view = {}          -- what the current tab shows (set by replies); reset on tab change
 local wantOpen = false
+local topText = ""       -- top bar: "BATTALION  ·  name"
+local buildTab, buildNav, tabOk
 
 local function send(name, fn)
     Rhylib.Net.Start(name)
@@ -144,11 +211,69 @@ function D.IsMPBattalion(bn)
 end
 
 --------------------------------------------------------------------------
--- Building blocks
+-- Building blocks (screen style)
 --------------------------------------------------------------------------
 
 local function clear()
     if IsValid(content) then content:Clear() end
+end
+
+-- A screen button. opts: kind ("ghost" outline, default; "primary" filled
+-- teal; "amber" filled amber; "danger" red outline), small, enabled (bool
+-- or fn), selected (fn: drawn picked), tooltip.
+local function pbtn(parent, text, fn, opts)
+    opts = opts or {}
+    local k = K()
+    local b = vgui.Create("DButton", parent)
+    b:SetText("")
+    b:SetTall(k.S(opts.small and 30 or 34))
+    if opts.tooltip then b:SetTooltip(opts.tooltip) end
+    local kind = opts.kind or "ghost"
+    local filled = kind == "primary" or kind == "amber"
+    function b:IsOn()
+        local en = opts.enabled
+        if en == nil then return true end
+        if isfunction(en) then return en() and true or false end
+        return en and true or false
+    end
+    function b:Paint(w, h)
+        local on = self:IsOn()
+        local a = on and 255 or 90
+        local hov = on and self:IsHovered()
+        local tc
+        if filled then
+            local fill = kind == "amber" and COL.amber or COL.accent
+            k.SetCol(hov and (kind == "amber" and COL.amberHi or COL.accentHi) or fill, a)
+            surface.DrawRect(0, 0, w, h)
+            tc = COL.dark
+        elseif kind == "danger" then
+            if hov then k.SetCol(COL.dangerHover) surface.DrawRect(0, 0, w, h) end
+            k.SetCol(COL.dangerEdge, a)
+            surface.DrawOutlinedRect(0, 0, w, h)
+            tc = on and COL.dangerText or COL.label
+        else
+            local sel = opts.selected and opts.selected()
+            if sel then k.SetCol(COL.sel) surface.DrawRect(0, 0, w, h)
+            elseif hov then k.SetCol(COL.hover) surface.DrawRect(0, 0, w, h) end
+            k.SetCol(sel and COL.accent or COL.btnEdge, a)
+            surface.DrawOutlinedRect(0, 0, w, h)
+            tc = on and (sel and COL.text or COL.accent) or COL.label
+        end
+        draw.SimpleText(text, k.Font(12, filled and 700 or 500), w * 0.5, h * 0.5, tc, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        return true
+    end
+    function b:DoClick()
+        if not self:IsOn() then return end
+        surface.PlaySound("ui/buttonclick.wav")
+        if fn then fn(self) end
+    end
+    return b
+end
+
+local function pbtnW(text)
+    local k = K()
+    surface.SetFont(k.Font(12, 700))
+    return surface.GetTextSize(text) + k.S(32)
 end
 
 -- A clickable list row: left text, dim right text. reserve: width kept
@@ -158,27 +283,29 @@ local function row(parent, left, right, onClick, tag, reserve)
     local s = k.S
     local b = vgui.Create("DButton", parent)
     b:SetText("")
-    b:SetTall(s(34))
+    b:SetTall(s(38))
     b:Dock(TOP)
-    b:DockMargin(0, 0, s(8), s(3))
+    b:DockMargin(0, 0, s(8), s(4))
+    local tagU = tag and string.upper(tag)
     function b:Paint(w, h)
-        k.SetCol(self:IsHovered() and onClick and k.C.rowHover or k.C.row)
+        local hov = self:IsHovered() and onClick
+        k.SetCol(hov and COL.hover or COL.card)
         surface.DrawRect(0, 0, w, h)
-        k.SetCol(k.C.edgeDark)
+        k.SetCol(hov and COL.btnEdge or COL.edge)
         surface.DrawOutlinedRect(0, 0, w, h)
         local x = s(12)
-        if tag then
-            k.Caps(tag, x, h * 0.5, k.C.accent)
+        if tagU then
+            draw.SimpleText(tagU, k.Font(11, 700), x, h * 0.5, COL.accent, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
             x = x + s(52)
         end
         -- Right text sits left of any reserved space (buttons docked there).
         local rw = reserve or 0
         if right and right ~= "" then
             surface.SetFont(k.Font(12))
-            draw.SimpleText(right, k.Font(12), w - rw - s(12), h * 0.5, k.C.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+            draw.SimpleText(right, k.Font(12), w - rw - s(12), h * 0.5, COL.dim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
             rw = rw + surface.GetTextSize(right) + s(24)
         end
-        draw.SimpleText(k.Fit(left, k.Font(14, 500), w - x - rw - s(12)), k.Font(14, 500), x, h * 0.5, k.C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        draw.SimpleText(k.Fit(left, k.Font(14, 500), w - x - rw - s(12)), k.Font(14, 500), x, h * 0.5, COL.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
         return true
     end
     function b:DoClick()
@@ -193,58 +320,123 @@ local function bar(parent)
     local k = K()
     local p = vgui.Create("DPanel", parent)
     p:Dock(TOP)
-    p:SetTall(k.S(30))
-    p:DockMargin(0, 0, 0, k.S(8))
+    p:SetTall(k.S(32))
+    p:DockMargin(0, 0, k.S(8), k.S(10))
     p.Paint = nil
     return p
 end
 
+-- opts as before: accent -> primary, danger -> danger, else outline.
 local function barButton(p, text, fn, opts)
     local k = K()
-    local b = k.Button(p, text, fn, opts or { small = true })
+    opts = opts or {}
+    local b = pbtn(p, text, fn, { kind = opts.accent and "primary" or (opts.danger and "danger" or "ghost"),
+        enabled = opts.enabled, small = true })
     b:Dock(LEFT)
-    surface.SetFont(k.Font(12, 700))
-    b:SetWide(surface.GetTextSize(string.upper(text)) + k.S(30))
+    b:SetWide(pbtnW(text))
     b:DockMargin(0, 0, k.S(6), 0)
     return b
 end
 
-local function heading(text)
+-- The tab's title: big bold caps.
+local function heading(text, parent)
     local k = K()
-    local h = k.Heading(content, text)
-    h:Dock(TOP)
-    h:DockMargin(0, 0, 0, k.S(6))
-    return h
+    local p = vgui.Create("DPanel", parent or content)
+    p:Dock(TOP)
+    p:SetTall(k.S(38))
+    p:DockMargin(0, 0, k.S(8), k.S(2))
+    local up = string.upper(text)
+    local font = k.Font(28, 700)
+    function p:PerformLayout(w) self.txt = k.Fit(up, font, w) end
+    function p:Paint(w, h)
+        draw.SimpleText(self.txt or up, font, 0, h * 0.5, COL.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    end
+    return p
+end
+
+-- An item's title (a log, an order, a mission): bold, wraps.
+local function title(parent, text)
+    local k = K()
+    local l = k.Label(parent, text, 20, 700, COL.text)
+    l:Dock(TOP)
+    l:DockMargin(0, 0, k.S(8), k.S(4))
+    return l
 end
 
 local function label(parent, text, col)
     local k = K()
-    local l = k.Label(parent, text, 13, 400, col or k.C.textDim)
+    local l = k.Label(parent, text, 13, 400, col or COL.dim)
     l:Dock(TOP)
     l:DockMargin(0, 0, k.S(8), k.S(6))
     return l
 end
 
+local function bodyText(parent, text)
+    local k = K()
+    local l = k.Label(parent, text, 14, 400, COL.text)
+    l:Dock(TOP)
+    l:DockMargin(0, 0, k.S(10), k.S(8))
+    return l
+end
+
+-- A section label: small caps in the label colour.
+local function sub(parent, text, top)
+    local k = K()
+    local p = vgui.Create("DPanel", parent)
+    p:Dock(TOP)
+    p:SetTall(k.S(24))
+    p:DockMargin(0, top or k.S(8), k.S(8), k.S(4))
+    local up = string.upper(text)
+    function p:Paint(w, h)
+        draw.SimpleText(up, k.Font(12, 500), 0, h * 0.5, COL.label, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    end
+    return p
+end
+
+-- A card that grows to fit what's docked in it.
+local function card(parent, border)
+    local k = K()
+    local s = k.S
+    local p = vgui.Create("DPanel", parent)
+    p:Dock(TOP)
+    p:DockMargin(0, 0, s(8), s(10))
+    p:DockPadding(s(14), s(10), s(14), s(10))
+    function p:Paint(w, h)
+        k.SetCol(self.hot and self:IsHovered() and COL.hover or COL.card)
+        surface.DrawRect(0, 0, w, h)
+        k.SetCol(border or COL.edge)
+        surface.DrawOutlinedRect(0, 0, w, h)
+    end
+    function p:PerformLayout()
+        local bottom = 0
+        for _, c in ipairs(self:GetChildren()) do
+            if c:IsVisible() then
+                local _, y = c:GetPos()
+                bottom = math.max(bottom, y + c:GetTall())
+            end
+        end
+        local want = bottom + s(10)
+        if self:GetTall() ~= want then self:SetTall(want) end
+    end
+    return p
+end
+
 -- Read-only text: title, by-line, body.
-local function reader(title, by, body, back)
+local function reader(head, by, body, back)
     clear()
     local k = K()
     local b = bar(content)
     barButton(b, "Back", back)
-    heading(title)
+    title(content, head)
     label(content, by)
     local sp = k.Scroll(content)
     sp:Dock(FILL)
-    local l = k.Label(sp, body ~= "" and body or "(empty)", 14, 400, k.C.text)
-    l:Dock(TOP)
-    l:DockMargin(0, 0, k.S(10), 0)
+    bodyText(sp, body ~= "" and body or "(empty)")
 end
 
 --------------------------------------------------------------------------
 -- Notes
 --------------------------------------------------------------------------
-
-local buildTab
 
 -- i = note id (0 = new).
 local function editor(i, kind, patient)
@@ -264,37 +456,38 @@ local function editor(i, kind, patient)
     local pn = note and note.pn or (IsValid(patient) and patient:Nick() or "")
     if isMed then label(content, "Patient: " .. pn .. " · upload at the medical holotable") end
 
-    local title = k.TextEntry(content, "Title")
-    title:Dock(TOP)
-    title:DockMargin(0, 0, k.S(8), k.S(6))
-    title:SetText(note and note.title or "")
+    local ti = k.TextEntry(content, "Title")
+    ti:Dock(TOP)
+    ti:DockMargin(0, 0, k.S(8), k.S(8))
+    ti:SetText(note and note.title or "")
     local foot = vgui.Create("DPanel", content)
     foot:Dock(BOTTOM)
-    foot:SetTall(k.S(32))
+    foot:SetTall(k.S(34))
     foot.Paint = nil
     local body = k.TextEntry(content, "Write here…")
     body:SetMultiline(true)
     body:Dock(FILL)
-    body:DockMargin(0, 0, k.S(8), k.S(8))
+    body:DockMargin(0, 0, k.S(8), k.S(10))
     view.body = body
     if i > 0 then send("dp.get", function() net.WriteUInt(i, 16) end) end
-    local save = k.Button(foot, "Save", function()
+    local save = pbtn(foot, "Save", function()
         send("dp.save", function()
             net.WriteUInt(i, 16)
             net.WriteUInt(isMed and D.KIND_MED or D.KIND_LOG, 1)
-            net.WriteString(string.sub(title:GetText() or "", 1, 400))
+            net.WriteString(string.sub(ti:GetText() or "", 1, 400))
             net.WriteString(string.sub(body:GetText() or "", 1, 8000))
             net.WriteEntity(IsValid(patient) and patient or NULL)
         end)
         view.edit = nil
-    end, { accent = true })
+    end, { kind = "primary" })
     save:Dock(RIGHT)
     save:SetWide(k.S(120))
+    save:DockMargin(0, 0, k.S(8), 0)
     if i > 0 then
-        local del = k.Button(foot, "Delete", function()
+        local del = pbtn(foot, "Delete", function()
             send("dp.del", function() net.WriteUInt(i, 16) end)
             view.edit = nil
-        end, { danger = true })
+        end, { kind = "danger" })
         del:Dock(LEFT)
         del:SetWide(k.S(120))
     end
@@ -303,10 +496,19 @@ end
 local function notesTab()
     local k = K()
     local st = D.state
-    local b = bar(content)
+    heading("Notes")
+    local where = st.bn ~= "" and ("the " .. st.bn .. " computer") or "your battalion computer"
     local full = st.limit > 0 and #st.notes >= st.limit
+    if st.limit > 0 then
+        label(content, string.format("%d / %d notes on this datapad. When it's full, upload at %s.", #st.notes, st.limit, where),
+            full and k.C.warn or nil)
+    else
+        label(content, "No note limit. Upload logs at " .. where .. (st.medic and ", medical records at the medical holotable." or "."))
+    end
+    if st.banned then label(content, "You're banned from your battalion's logs.", k.C.bad) end
+    local b = bar(content)
     barButton(b, "New log", function() editor(0, D.KIND_LOG) end,
-        { small = true, accent = true, enabled = not full and not st.banned })
+        { accent = true, enabled = not full and not st.banned })
     if st.medic then
         barButton(b, "New medical record", function()
             local m = k.Menu()
@@ -314,17 +516,8 @@ local function notesTab()
                 m:AddOption(p:Nick(), function() editor(0, D.KIND_MED, p) end)
             end
             m:Open()
-        end, { small = true, enabled = not full })
+        end, { enabled = not full })
     end
-    heading("Notes on this datapad")
-    local where = st.bn ~= "" and ("the " .. st.bn .. " computer") or "your battalion computer"
-    if st.limit > 0 then
-        label(content, string.format("%d / %d notes. When it's full, upload at %s.", #st.notes, st.limit, where),
-            full and k.C.warn or nil)
-    else
-        label(content, "No note limit. Upload logs at " .. where .. (st.medic and ", medical records at the medical holotable." or "."))
-    end
-    if st.banned then label(content, "You're banned from your battalion's logs.", k.C.bad) end
     local sp = k.Scroll(content)
     sp:Dock(FILL)
     if #st.notes == 0 then label(sp, "Nothing written yet.") end
@@ -359,15 +552,12 @@ local function recordView()
     heading(rec.name)
     local sp = k.Scroll(content)
     sp:Dock(FILL)
-    local h1 = k.Heading(sp, "Arrests (" .. #rec.jails .. ")")
-    h1:Dock(TOP)
+    sub(sp, "Arrests (" .. #rec.jails .. ")", 0)
     if #rec.jails == 0 then label(sp, "No arrests on file.") end
     for _, j in ipairs(rec.jails) do
         row(sp, j.why ~= "" and j.why or "No reason given", j.min .. " min · by " .. j.by .. "  " .. when(j.t))
     end
-    local h2 = k.Heading(sp, "Logs they wrote (" .. #rec.logs .. ")")
-    h2:Dock(TOP)
-    h2:DockMargin(0, k.S(10), 0, 0)
+    sub(sp, "Logs they wrote (" .. #rec.logs .. ")", k.S(12))
     if #rec.logs == 0 then label(sp, "No uploaded logs.") end
     logList(sp, rec.logs, recordView)
 end
@@ -375,6 +565,7 @@ end
 local function recordsTab()
     local k = K()
     if view.record then recordView() return end
+    heading("Records")
     local b = bar(content)
     local q = k.TextEntry(b, "Search by name")
     q:Dock(LEFT)
@@ -386,8 +577,7 @@ local function recordsTab()
         send("dp.find", function() net.WriteString(string.sub(view.query, 1, 64)) end)
     end
     q.OnEnter = go
-    barButton(b, "Search", go, { small = true, accent = true })
-    heading("Records")
+    barButton(b, "Search", go, { accent = true })
     local sp = k.Scroll(content)
     sp:Dock(FILL)
     if not view.found then
@@ -404,7 +594,8 @@ end
 
 local function ologsTab()
     local k = K()
-    heading("Logs written by MPs")
+    heading("Officer logs")
+    label(content, "Logs written by MPs.")
     local sp = k.Scroll(content)
     sp:Dock(FILL)
     if not view.ologs then
@@ -422,8 +613,8 @@ local function arrestTab()
     local k = K()
     local st = D.state
     local MP = Rhylib.MP
-    heading("Cuffed prisoners near you")
-    label(content, "Search them, or jail them straight from the datapad.")
+    heading("Arrest")
+    label(content, "Cuffed prisoners near you. Search them, or jail them straight from the datapad.")
     local sp = k.Scroll(content)
     sp:Dock(FILL)
     local any = false
@@ -431,7 +622,7 @@ local function arrestTab()
         if IsValid(p) then
             any = true
             local r = row(sp, p:Nick(), "", nil, nil, k.S(200))
-            local jail = k.Button(r, "Jail", function()
+            local jail = pbtn(r, "Jail", function()
                 local minutes = 5
                 local f = k.Prompt("Jail " .. p:Nick(), "Reason (sentence is set next)", "", function(why)
                     k.Prompt("Sentence", "Minutes (1-" .. (MP and MP.Cfg("maxSentence") or 60) .. ")", "5", function(m)
@@ -444,11 +635,11 @@ local function arrestTab()
                     end)
                 end)
                 return f
-            end, { small = true, accent = true })
+            end, { kind = "primary", small = true })
             jail:Dock(RIGHT)
             jail:SetWide(k.S(90))
             jail:DockMargin(0, k.S(4), k.S(4), k.S(4))
-            local search = k.Button(r, "Search", function()
+            local search = pbtn(r, "Search", function()
                 if MP and MP.OpenSearch then MP.OpenSearch(p) end  -- opens on top of the datapad
             end, { small = true })
             search:Dock(RIGHT)
@@ -480,10 +671,27 @@ local function hasNew()
     return latestVer() > mine
 end
 
+-- Keep a finished download; count posts the last one didn't have (Board badge).
+local function takeSync(d)
+    local old = D.sync
+    if old and old.bn == d.bn then
+        local seen = {}
+        for _, p in ipairs(old.posts or {}) do seen[p.id] = true end
+        local n = 0
+        for _, p in ipairs(d.posts) do
+            if not seen[p.id] then n = n + 1 end
+        end
+        D.boardNew = (D.boardNew or 0) + n
+    else
+        D.boardNew = 0
+    end
+    if IsValid(panel) and tab == "board" then D.boardNew = 0 end
+    D.sync = d
+end
+
 -- A quiet download right after your own change (posting a mission,
 -- setting an order's status), so your own pad doesn't flash "new data".
 local qdl   -- { data, extra, more }
-local buildNav
 
 local function quietSync()
     if dl or qdl or not D.state or D.state.bn == "" then return end
@@ -494,11 +702,12 @@ end
 
 local function tryQuiet()
     if not (qdl and qdl.data and qdl.extra and qdl.more) then return end
-    D.sync = qdl.data
-    D.sync.x = qdl.extra
-    D.sync.x.info = qdl.more.info
-    D.sync.x.mission = qdl.more.mission
-    D.sync.at = os.time()
+    local d = qdl.data
+    d.x = qdl.extra
+    d.x.info = qdl.more.info
+    d.x.mission = qdl.more.mission
+    d.at = os.time()
+    takeSync(d)
     qdl = nil
     if IsValid(panel) and buildNav then buildNav() end
 end
@@ -524,7 +733,7 @@ local function synced()
     local st = D.state
     local sy = D.sync
     if not sy or sy.bn ~= st.bn then
-        label(content, "Nothing downloaded yet. Press Sync at the top right to download the " .. st.bn ..
+        label(content, "Nothing downloaded yet. Press SYNC at the top right to download the " .. st.bn ..
             " computer: board, orders, logs, LOA, stats and your file. Uploading still happens at the computer.")
         return nil
     end
@@ -533,16 +742,9 @@ local function synced()
     return sy
 end
 
-local function sub(sp, text)
-    local k = K()
-    local h = k.Heading(sp, text)
-    h:Dock(TOP)
-    h:DockMargin(0, k.S(6), k.S(8), k.S(4))
-end
-
 -- Read a post (kind 1) or log (kind 0) from the computer.
-local function openRead(kind, id, title, by)
-    view.read = { kind = kind, id = id, title = title, by = by }
+local function openRead(kind, id, head, by)
+    view.read = { kind = kind, id = id, title = head, by = by }
     send("dp.dread", function()
         net.WriteUInt(kind, 1)
         net.WriteUInt(id, 20)
@@ -601,8 +803,6 @@ end
 
 local function ordersTab()
     local k = K()
-    local s = k.S
-    local st = D.state
     heading("Orders")
     local sy = synced()
     if not sy then return end
@@ -628,26 +828,24 @@ local function ordersTab()
                     timer.Simple(0.6, quietSync)
                     buildTab()
                 end)
-            end, { small = true, accent = true })
+            end, { accent = true })
         end
-        heading(o.title)
+        title(content, o.title)
         label(content, "From " .. o.by .. " · " .. when(o.t) .. "   ·   To: " .. D.OrderTo(o))
         label(content, "Status: " .. D.ORDER_STATUS[o.st] .. (o.sb ~= "" and ("  (" .. o.sb .. ", " .. when(o.stt) .. ")") or ""), D.OrderColor(o.st))
         local sp = k.Scroll(content)
         sp:Dock(FILL)
-        local l = k.Label(sp, o.text ~= "" and o.text or "(no details)", 14, 400, k.C.text)
-        l:Dock(TOP)
-        l:DockMargin(0, 0, s(10), 0)
+        bodyText(sp, o.text ~= "" and o.text or "(no details)")
         return
     end
     local sp = k.Scroll(content)
     sp:Dock(FILL)
     if #x.orders == 0 then label(sp, "No orders.") end
-    local function list(title, test)
+    local function list(head, test)
         local first = true
         for _, it in ipairs(x.orders) do
             if test(it) then
-                if first then sub(sp, title) first = false end
+                if first then sub(sp, head) first = false end
                 row(sp, it.title, D.ORDER_STATUS[it.st] .. "  ·  " .. (it.all and "battalion" or (it.mine and "you" or it.nto .. " named")),
                     function() view.order = it.id buildTab() end, it.mine and "YOU" or nil)
             end
@@ -702,30 +900,32 @@ local function statsTab()
     local keys = D.StatKeysShown(mp)
     local sp = k.Scroll(content)
     sp:Dock(FILL)
-    local function table3(title, cols)
-        sub(sp, title)
-        local head = vgui.Create("DPanel", sp)
-        head:Dock(TOP)
-        head:SetTall(s(22))
-        head:DockMargin(0, 0, s(8), 0)
-        function head:Paint(w, h)
-            local cw = (w - s(160)) / #cols
-            for i, c in ipairs(cols) do
-                k.Caps(c[1], s(160) + cw * i - s(8), h * 0.5, k.C.label, TEXT_ALIGN_RIGHT)
+    local function table3(head, cols)
+        sub(sp, head)
+        local hp = vgui.Create("DPanel", sp)
+        hp:Dock(TOP)
+        hp:SetTall(s(24))
+        hp:DockMargin(0, 0, s(8), 0)
+        local names = {}
+        for i, c in ipairs(cols) do names[i] = string.upper(c[1]) end
+        function hp:Paint(w, h)
+            local cw = (w - s(180)) / #cols
+            for i = 1, #names do
+                draw.SimpleText(names[i], k.Font(11, 700), s(180) + cw * i - s(10), h * 0.5, COL.label, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
             end
         end
         for i, key in ipairs(keys) do
             local r = vgui.Create("DPanel", sp)
             r:Dock(TOP)
-            r:SetTall(s(24))
+            r:SetTall(s(28))
             r:DockMargin(0, 0, s(8), s(1))
             function r:Paint(w, h)
-                k.SetCol(i % 2 == 0 and k.C.rowAlt or k.C.row)
+                k.SetCol(i % 2 == 0 and PAD.rowAlt or COL.card)
                 surface.DrawRect(0, 0, w, h)
-                draw.SimpleText(STAT_NAMES[key], k.Font(13, 600), s(10), h * 0.5, k.C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-                local cw = (w - s(160)) / #cols
+                draw.SimpleText(STAT_NAMES[key], k.Font(13, 600), s(12), h * 0.5, COL.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                local cw = (w - s(180)) / #cols
                 for c, col in ipairs(cols) do
-                    draw.SimpleText(statText(key, col[2][key]), k.Font(13), s(160) + cw * c - s(8), h * 0.5, k.C.text, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+                    draw.SimpleText(statText(key, col[2][key]), k.Font(13), s(180) + cw * c - s(10), h * 0.5, c == 1 and COL.dim or COL.text, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
                 end
             end
         end
@@ -735,30 +935,27 @@ end
 
 local function fileTab()
     local k = K()
-    local s = k.S
     heading("My file")
     local sy = synced()
     if not sy or not sy.x then return end
     local f = sy.x.file
     local sp = k.Scroll(content)
     sp:Dock(FILL)
-    sub(sp, "Qualifications")
-    label(sp, #f.quals > 0 and table.concat(f.quals, ", ") or "None yet.", #f.quals > 0 and k.C.text or nil)
+    sub(sp, "Qualifications", 0)
+    label(sp, #f.quals > 0 and table.concat(f.quals, ", ") or "None yet.", #f.quals > 0 and COL.text or nil)
     sub(sp, "Commendations (" .. f.ncom .. ")")
     if #f.coms == 0 then label(sp, "None yet.") end
     for _, c in ipairs(f.coms) do
-        label(sp, os.date("%d %b %Y", c.t) .. " · " .. c.by)
-        local l = k.Label(sp, c.txt, 14, 400, k.C.text)
-        l:Dock(TOP)
-        l:DockMargin(0, 0, s(8), s(8))
+        local cd = card(sp)
+        label(cd, os.date("%d %b %Y", c.t) .. " · " .. c.by)
+        bodyText(cd, c.txt)
     end
     sub(sp, "Active strikes (" .. #f.strikes .. ")")
     if #f.strikes == 0 then label(sp, "None.") end
     for _, x in ipairs(f.strikes) do
-        label(sp, os.date("%d %b %Y", x.t) .. " · " .. x.by .. " · until " .. os.date("%d %b", x.exp), k.C.bad)
-        local l = k.Label(sp, x.txt, 14, 400, k.C.text)
-        l:Dock(TOP)
-        l:DockMargin(0, 0, s(8), s(8))
+        local cd = card(sp, COL.dangerEdge)
+        label(cd, os.date("%d %b %Y", x.t) .. " · " .. x.by .. " · until " .. os.date("%d %b", x.exp), k.C.bad)
+        bodyText(cd, x.txt)
     end
 end
 
@@ -780,20 +977,15 @@ end
 -- Read-only view of a mission.
 local function missionView(m, parent)
     local k = K()
-    local s = k.S
     local sp = k.Scroll(parent)
     sp:Dock(FILL)
-    local h = k.Heading(sp, m.title)
-    h:Dock(TOP)
-    h:DockMargin(0, 0, s(8), s(4))
+    title(sp, m.title)
     label(sp, (m.date ~= "" and (m.date .. "  ·  ") or "") .. "by " .. m.by)
     label(sp, missionStatus(m), m.active and k.C.good or k.C.warn)
-    local function part(title, txt)
+    local function part(head, txt)
         if txt == "" then return end
-        sub(sp, title)
-        local l = k.Label(sp, txt, 14, 400, k.C.text)
-        l:Dock(TOP)
-        l:DockMargin(0, 0, s(8), s(6))
+        sub(sp, head)
+        bodyText(sp, txt)
     end
     part("Objectives", m.obj)
     part("Sub objectives", m.sub)
@@ -827,6 +1019,12 @@ local function missionEditor()
             or { title = "", date = os.date("%d %b %Y"), obj = "", sub = "", info = "" }
         view.misDraft = d
     end
+    heading("Mission")
+    if m then
+        label(content, missionStatus(m), m.active and k.C.good or k.C.warn)
+    else
+        label(content, "No mission yet. Fill it in and post it; troopers get it when they sync.")
+    end
     -- Buttons.
     local b = bar(content)
     barButton(b, m and "Save changes" or "Post mission", function()
@@ -839,12 +1037,12 @@ local function missionEditor()
             net.WriteString(string.sub(d.sub, 1, 8000))
             net.WriteString(string.sub(d.info, 1, 16000))
         end)
-    end, { small = true, accent = true })
+    end, { accent = true })
     if m and not m.active then
         barButton(b, "Start", function()
             view.misAction = true
             send("dp.mstart")
-        end, { small = true, accent = true })
+        end, { accent = true })
     end
     if m then
         barButton(b, "End mission", function()
@@ -855,12 +1053,7 @@ local function missionEditor()
                 view.misDraft = nil
             end)
             menu:Open()
-        end, { small = true, danger = true })
-    end
-    if m then
-        label(content, missionStatus(m), m.active and k.C.good or k.C.warn)
-    else
-        label(content, "No mission yet. Fill it in and post it; troopers get it when they sync.")
+        end, { danger = true })
     end
     -- Fields.
     local top = bar(content)
@@ -871,14 +1064,14 @@ local function missionEditor()
     local date = k.TextEntry(top, "Date")
     date:Dock(RIGHT)
     date:SetWide(s(160))
-    date:DockMargin(s(6), 0, s(8), 0)
+    date:DockMargin(s(6), 0, 0, 0)
     date:SetText(d.date)
     function date:OnChange() d.date = self:GetText() or "" end
     local function box(key, hint, tall)
         local e = k.TextEntry(content, hint)
         e:SetMultiline(true)
         if tall then e:Dock(FILL) else e:Dock(TOP) e:SetTall(s(80)) end
-        e:DockMargin(0, 0, s(8), s(6))
+        e:DockMargin(0, 0, s(8), s(8))
         e:SetText(d[key])
         function e:OnChange() d[key] = self:GetText() or "" end
     end
@@ -909,68 +1102,78 @@ local function missionTab()
     missionView(m, content)
 end
 
--- Quick response: ask for help, see who's coming, answer others' calls.
-local function commsTab()
+-- The downloaded copy for your battalion, if any.
+local function cur()
+    local sy = D.sync
+    return (sy and D.state and sy.bn == D.state.bn) and sy or nil
+end
+local function curX() local sy = cur() return sy and sy.x end
+
+--------------------------------------------------------------------------
+-- Quick response: ask for help, see who's coming, answer others' calls
+--------------------------------------------------------------------------
+
+local function callDef(kind) return (D.Cfg("calls") or {})[kind] or {} end
+local function callCol(kind) return D.CallColor and D.CallColor(kind) or COL.accent end
+
+-- A large call button: icon square, name, who it reaches, tag.
+local function callButton(parent, i, def)
     local k = K()
     local s = k.S
-    local defs = D.Cfg("calls") or {}
-    local items = D.Cfg("supplyItems") or {}
-    heading("Quick response")
-    -- Resupply picker.
-    if view.supply then
-        local pick = view.supply
-        label(content, "What do you need? Pick one or more, then send.")
-        local grid = vgui.Create("DPanel", content)
-        grid:Dock(TOP)
-        grid:DockMargin(0, 0, s(8), s(8))
-        grid.Paint = nil
-        local btns = {}
-        for i, name in ipairs(items) do
-            btns[#btns + 1] = k.Button(grid, name, function() pick.sel[i] = not pick.sel[i] or nil end,
-                { small = true, selected = function() return pick.sel[i] ~= nil end })
-        end
-        function grid:PerformLayout(w)
-            local cols, gap, bh = 3, s(6), s(30)
-            local bw = (w - gap * (cols - 1)) / cols
-            for i, b in ipairs(btns) do
-                b:SetPos(((i - 1) % cols) * (bw + gap), math.floor((i - 1) / cols) * (bh + gap))
-                b:SetSize(bw, bh)
-            end
-            local want = math.ceil(#btns / cols) * (bh + gap)
-            if self:GetTall() ~= want then self:SetTall(want) end
-        end
-        local b = bar(content)
-        barButton(b, "Back", function() view.supply = nil buildTab() end)
-        barButton(b, "Send request", function()
-            local mask = 0
-            for i in pairs(pick.sel) do mask = mask + 2 ^ (i - 1) end
-            if mask == 0 then return end
-            D.SendCall(pick.kind, mask)
-            view.supply = nil
+    local col = callCol(i)
+    local tint = Color(math.floor(col.r * 0.17 + 4), math.floor(col.g * 0.17 + 8), math.floor(col.b * 0.17 + 9))
+    local name = def.name or "Call"
+    local reach = def.items and "Pick what you need, then send" or (CALL_REACH[def.to] or "Everyone")
+    local tag = def.accept and "ACCEPT FIRST" or "SENDS POSITION"
+    local tagCol = def.accept and COL.amber or COL.label
+    local icon = CALL_ICON[def.id] or "radio"
+    local b = vgui.Create("DButton", parent)
+    b:SetText("")
+    b:SetTooltip(def.accept and "Others accept it before they see where you are" or "Sends your location straight away")
+    function b:IsOn() return D.CanCall and D.CanCall(i) and true or false end
+    function b:PerformLayout(w)
+        local tw = w - s(94) - s(12)
+        self.nameFit = k.Fit(name, k.Font(16, 700), tw)
+        self.reachFit = k.Fit(reach, k.Font(12), tw)
+    end
+    function b:Paint(w, h)
+        local on = self:IsOn()
+        local a = on and 255 or 110
+        local hov = on and self:IsHovered()
+        k.SetCol(hov and COL.hover or COL.card)
+        surface.DrawRect(0, 0, w, h)
+        k.SetCol(hov and COL.btnEdge or COL.edge)
+        surface.DrawOutlinedRect(0, 0, w, h)
+        local sz = s(48)
+        local ix, iy = s(16), math.floor((h - sz) * 0.5)
+        k.SetCol(tint, a)
+        surface.DrawRect(ix, iy, sz, sz)
+        k.SetCol(col, a)
+        surface.DrawOutlinedRect(ix, iy, sz, sz)
+        k.Icon(icon, ix + s(12), iy + s(12), s(24), col, a)
+        local tx, cy = ix + sz + s(14), h * 0.5
+        draw.SimpleText(self.nameFit or name, k.Font(16, 700), tx, cy - s(16), on and COL.text or COL.label, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        draw.SimpleText(self.reachFit or reach, k.Font(12), tx, cy + s(3), COL.dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        draw.SimpleText(on and tag or "SENT · WAIT A MOMENT", k.Font(10, 700), tx, cy + s(20), on and tagCol or COL.label, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        return true
+    end
+    function b:DoClick()
+        if not self:IsOn() then return end
+        surface.PlaySound("ui/buttonclick.wav")
+        if def.items then
+            view.supply = { kind = i, sel = {} }
             buildTab()
-        end, { small = true, accent = true })
-        return
+        else
+            D.SendCall(i, 0)
+        end
     end
-    -- Request buttons.
-    local grid = vgui.Create("DPanel", content)
-    grid:Dock(TOP)
-    grid:DockMargin(0, 0, s(8), s(10))
-    grid.Paint = nil
-    local btns = {}
-    for i, def in ipairs(defs) do
-        btns[#btns + 1] = k.Button(grid, def.name, function()
-            if def.items then
-                view.supply = { kind = i, sel = {} }
-                buildTab()
-            else
-                D.SendCall(i, 0)
-            end
-        end, { accent = true, enabled = function() return D.CanCall and D.CanCall(i) end,
-            tooltip = def.accept and "Others accept it before they see where you are" or "Sends your location straight away" })
-    end
-    function grid:PerformLayout(w)
-        local cols, gap, bh = 2, s(8), s(40)
-        local bw = (w - gap * (cols - 1)) / cols
+    return b
+end
+
+-- Lay out children in cols columns of height bh; the panel takes their height.
+local function gridLayout(p, btns, cols, bh, gap)
+    function p:PerformLayout(w)
+        local bw = math.floor((w - gap * (cols - 1)) / cols)
         for i, b in ipairs(btns) do
             b:SetPos(((i - 1) % cols) * (bw + gap), math.floor((i - 1) / cols) * (bh + gap))
             b:SetSize(bw, bh)
@@ -978,53 +1181,199 @@ local function commsTab()
         local want = math.ceil(#btns / cols) * (bh + gap)
         if self:GetTall() ~= want then self:SetTall(want) end
     end
+end
 
-    if D.state.bn ~= "" and not (D.sync and D.sync.bn == D.state.bn) then
-        label(content, "Press Sync (top right) to download the " .. D.state.bn .. " computer: its board, orders, logs and more show up as tabs.")
+-- One of your own open calls: colour dot, who's coming, Cancel.
+local function myCallCard(parent, c)
+    local k = K()
+    local s = k.S
+    local p = vgui.Create("DPanel", parent)
+    p:Dock(TOP)
+    p:SetTall(s(60))
+    p:DockMargin(0, 0, s(8), s(8))
+    local col = callCol(c.kind)
+    local head = D.CallTitle(c)
+    local items = D.CallItems and D.CallItems(c)
+    if items then head = head .. " · " .. items end
+    local line = #c.resp > 0 and D.CallInbound(c) or "Waiting for a response…"
+    local lineCol = #c.resp > 0 and COL.good or COL.dim
+    local x = pbtn(p, "Cancel", function() D.CancelCall(c.id) end, { kind = "danger", small = true })
+    x:Dock(RIGHT)
+    x:SetWide(s(76))
+    x:DockMargin(0, s(15), s(12), s(15))
+    function p:PerformLayout(w)
+        local tw = w - s(30) - s(100)
+        self.headFit = k.Fit(head, k.Font(14, 700), tw)
+        self.lineFit = k.Fit(line, k.Font(12), tw)
     end
-    local sp = k.Scroll(content)
-    sp:Dock(FILL)
+    function p:Paint(w, h)
+        k.SetCol(COL.card)
+        surface.DrawRect(0, 0, w, h)
+        k.SetCol(COL.edge)
+        surface.DrawOutlinedRect(0, 0, w, h)
+        local r = s(4)
+        draw.RoundedBox(r, s(12), h * 0.5 - r, r * 2, r * 2, col)
+        draw.SimpleText(self.headFit or head, k.Font(14, 700), s(30), h * 0.5 - s(9), COL.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        draw.SimpleText(self.lineFit or line, k.Font(12), s(30), h * 0.5 + s(10), lineCol, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    end
+end
+
+-- Someone's call for you: what, how long ago, who and where; Accept /
+-- Respond (both answer it; Accept for calls that hide the caller until then).
+local function incomingCard(parent, c)
+    local k = K()
+    local s = k.S
+    local d = callDef(c.kind)
+    local waiting = c.role == 0
+    local p = vgui.Create("DPanel", parent)
+    p:Dock(TOP)
+    p:SetTall(waiting and s(100) or s(64))
+    p:DockMargin(0, 0, s(8), s(8))
+    local head = D.CallTitle(c)
+    local items = D.CallItems and D.CallItems(c)
+    if items then head = head .. " · " .. items end
+    local col = callCol(c.kind)
+    local border = (waiting and d.accept) and COL.amberEdge or COL.edge
+    if waiting then
+        local bt = d.accept and "Accept" or "Respond"
+        local b = pbtn(p, bt, function() D.RespondCall(c.id) end, { kind = d.accept and "amber" or "primary", small = true })
+        b:SetSize(pbtnW(bt) + s(8), s(32))
+        function p:PerformLayout(w, h) b:SetPos(s(12), h - s(12) - b:GetTall()) end
+    end
+    function p:Think()
+        local now = RealTime()
+        if now < (self.next or 0) then return end
+        self.next = now + 0.5
+        local a = math.max(0, math.floor(now - c.born))
+        self.age = string.format("%d:%02d", math.floor(a / 60), a % 60)
+        local where = c.showPos and D.CallDistance(c) or "accept to see where"
+        local who = c.name .. (where ~= "" and ("  ·  " .. where) or "")
+        if c.role == 1 then who = who .. "  ·  you're responding" end
+        if who ~= self.who then self.who, self.whoFit = who, nil end
+    end
+    function p:Paint(w, h)
+        k.SetCol(COL.card)
+        surface.DrawRect(0, 0, w, h)
+        k.SetCol(border)
+        surface.DrawOutlinedRect(0, 0, w, h)
+        k.SetCol(col)
+        surface.DrawRect(0, 0, s(3), h)
+        if self.fitW ~= w then self.fitW, self.headFit, self.whoFit = w, k.Fit(head, k.Font(14, 700), w - s(70)), nil end
+        if self.who and not self.whoFit then self.whoFit = k.Fit(self.who, k.Font(12), w - s(24)) end
+        draw.SimpleText(self.headFit, k.Font(14, 700), s(12), s(18), COL.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        if self.age then draw.SimpleText(self.age, k.Font(11), w - s(12), s(18), COL.dim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER) end
+        if self.whoFit then draw.SimpleText(self.whoFit, k.Font(12), s(12), s(40), c.role == 1 and COL.good or COL.dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER) end
+    end
+end
+
+-- The right column: your calls, then calls for you.
+local function fillCalls(col)
+    if not IsValid(col) then return end
+    col:Clear()
     local mine, incoming = {}, {}
     for _, c in pairs(D.calls or {}) do
         if c.role == 2 then mine[#mine + 1] = c else incoming[#incoming + 1] = c end
     end
     table.sort(mine, function(a, b) return a.id > b.id end)
     table.sort(incoming, function(a, b) return a.id > b.id end)
-    sub(sp, "Your calls")
-    if #mine == 0 then label(sp, "None open.") end
-    for _, c in ipairs(mine) do
-        local r = row(sp, D.CallTitle(c), #c.resp > 0 and D.CallInbound(c) or "waiting for a response", nil, nil, s(110))
-        local x = k.Button(r, "Cancel", function() D.CancelCall(c.id) end, { small = true, danger = true })
-        x:Dock(RIGHT)
-        x:SetWide(s(100))
-        x:DockMargin(0, s(4), s(4), s(4))
-    end
-    sub(sp, "Calls for you")
-    if #incoming == 0 then label(sp, "Nobody needs you right now.") end
-    for _, c in ipairs(incoming) do
-        local right = c.role == 1 and "you're responding" or (c.showPos and D.CallDistance(c) or "")
-        local r = row(sp, D.CallTitle(c) .. "  ·  " .. c.name, right, nil, nil, s(110))
-        if c.role == 0 then
-            local x = k.Button(r, "Respond", function() D.RespondCall(c.id) end, { small = true, accent = true })
-            x:Dock(RIGHT)
-            x:SetWide(s(100))
-            x:DockMargin(0, s(4), s(4), s(4))
+    sub(col, "Your calls", 0)
+    if #mine == 0 then label(col, "None open.") end
+    for _, c in ipairs(mine) do myCallCard(col, c) end
+    sub(col, "Calls for you", K().S(14))
+    if #incoming == 0 then label(col, "Nobody needs you right now.") end
+    for _, c in ipairs(incoming) do incomingCard(col, c) end
+end
+
+-- The mission card under the calls (from the last download).
+local function missionCard(parent, m)
+    local k = K()
+    local cd = card(parent)
+    sub(cd, "Current mission", 0)
+    local t = k.Label(cd, m.title ~= "" and m.title or "Mission", 16, 700, COL.text)
+    t:Dock(TOP)
+    t:DockMargin(0, 0, 0, k.S(4))
+    local l = k.Label(cd, m.obj ~= "" and m.obj or missionStatus(m), 13, 400, COL.dim)
+    l:Dock(TOP)
+    if tabOk("mission") then
+        cd.hot = true
+        cd:SetCursor("hand")
+        function cd:OnMousePressed(code)
+            if code ~= MOUSE_LEFT then return end
+            surface.PlaySound("ui/buttonclick.wav")
+            tab = "mission"
+            view = {}
+            buildTab()
         end
     end
 end
 
--- D.PadRebuild(id): rebuild the window if tab id is open (and nothing is
--- being typed). cl_30_calls calls it when a call changes.
-function D.PadRebuild(id)
-    if IsValid(panel) and tab == id and not view.edit and not view.supply then buildTab() end
+local function supplyPicker(left)
+    local k = K()
+    local s = k.S
+    local pick = view.supply
+    local items = D.Cfg("supplyItems") or {}
+    heading(callDef(pick.kind).name or "Request resupply", left)
+    label(left, "What do you need? Pick one or more, then send.")
+    local grid = vgui.Create("DPanel", left)
+    grid:Dock(TOP)
+    grid:DockMargin(0, s(4), s(8), s(12))
+    grid.Paint = nil
+    local btns = {}
+    for i, name in ipairs(items) do
+        btns[#btns + 1] = pbtn(grid, name, function() pick.sel[i] = not pick.sel[i] or nil end,
+            { selected = function() return pick.sel[i] ~= nil end })
+    end
+    gridLayout(grid, btns, 3, s(36), s(8))
+    local b = bar(left)
+    barButton(b, "Back", function() view.supply = nil buildTab() end)
+    barButton(b, "Send request", function()
+        local mask = 0
+        for i in pairs(pick.sel) do mask = mask + 2 ^ (i - 1) end
+        if mask == 0 then return end
+        D.SendCall(pick.kind, mask)
+        view.supply = nil
+        buildTab()
+    end, { accent = true, enabled = function() return next(pick.sel) ~= nil end })
 end
 
--- The downloaded copy for your battalion, if any.
-local function cur()
-    local sy = D.sync
-    return (sy and D.state and sy.bn == D.state.bn) and sy or nil
+local function commsTab()
+    local k = K()
+    local s = k.S
+    local right = k.Scroll(content)
+    right:Dock(RIGHT)
+    right:SetWide(s(330))
+    right:DockMargin(s(18), 0, 0, 0)
+    view.callsCol = right
+    local left = k.Scroll(content)
+    left:Dock(FILL)
+    fillCalls(right)
+    -- Resupply picker.
+    if view.supply then supplyPicker(left) return end
+    heading("Quick response", left)
+    label(left, "One tap sends it. Calls marked \"Accept first\" only show your position to whoever takes them.")
+    -- Call buttons.
+    local grid = vgui.Create("DPanel", left)
+    grid:Dock(TOP)
+    grid:DockMargin(0, s(6), s(8), s(14))
+    grid.Paint = nil
+    local btns = {}
+    for i, def in ipairs(D.Cfg("calls") or {}) do btns[#btns + 1] = callButton(grid, i, def) end
+    gridLayout(grid, btns, 2, s(84), s(10))
+    if D.state.bn ~= "" and not cur() then
+        label(left, "Press SYNC (top right) to download the " .. D.state.bn .. " computer: its board, orders, logs and more show up as tabs.")
+    end
+    local x = curX()
+    if x and x.mission then missionCard(left, x.mission) end
 end
-local function curX() local sy = cur() return sy and sy.x end
+
+-- D.PadRebuild(id): rebuild the window if tab id is open (and nothing is
+-- being typed). cl_30_calls calls it when a call changes: on Quick response
+-- only the calls column is rebuilt (the resupply picker stays as it is).
+function D.PadRebuild(id)
+    if not IsValid(panel) or tab ~= id or view.edit then return end
+    if id == "comms" and IsValid(view.callsCol) then fillCalls(view.callsCol) return end
+    if not view.supply then buildTab() end
+end
 
 local function anyStat(t)
     for _, v in pairs(t or {}) do
@@ -1033,39 +1382,42 @@ local function anyStat(t)
     return false
 end
 
--- The datapad's tabs, in order. bn: needs a battalion; mp: MPs only;
--- has: shown only once the download holds something for it.
+-- The datapad's tabs, in order. grp: the strip's group; bn: needs a
+-- battalion; mp: MPs only; has: shown only once the download holds
+-- something for it.
+local G_FIELD, G_PC, G_MAN, G_MORE, G_MP = "In the field", "From the computer", "Manuals", "More", "Military police"
 local TABS = {
-    { id = "comms", name = "Quick response", build = commsTab },
-    { id = "notes", name = "Notes", build = notesTab },
-    { id = "mission", name = "Mission", build = missionTab, bn = true, has = function()
+    { id = "comms", name = "Quick response", build = commsTab, grp = G_FIELD },
+    { id = "notes", name = "Notes", build = notesTab, grp = G_FIELD },
+    { id = "mission", name = "Mission", build = missionTab, grp = G_FIELD, bn = true, has = function()
         if isOfficer() then return true end
         local x = curX()
         return x and x.mission ~= nil end },
-    { id = "board", name = "Board", build = boardTab, bn = true, has = function()
+    { id = "board", name = "Board", build = boardTab, grp = G_PC, bn = true, has = function()
         local sy = cur()
         return sy and (#sy.posts > 0 or (sy.x and sy.x.info and sy.x.info.txt ~= "")) end },
-    { id = "orders", name = "Orders", build = ordersTab, bn = true, has = function() local x = curX() return x and #x.orders > 0 end },
-    { id = "logs", name = "Logs", build = logsTab, bn = true, has = function() local sy = cur() return sy and #sy.logs > 0 end },
-    { id = "loa", name = "LOA", build = loaTab, bn = true, has = function() local x = curX() return x and #x.leave > 0 end },
-    { id = "stats", name = "Stats", build = statsTab, bn = true, has = function() local x = curX() return x and (anyStat(x.weekAll) or anyStat(x.allMe)) end },
-    { id = "file", name = "My file", build = fileTab, bn = true, has = function()
+    { id = "orders", name = "Orders", build = ordersTab, grp = G_PC, bn = true, has = function() local x = curX() return x and #x.orders > 0 end },
+    { id = "logs", name = "Logs", build = logsTab, grp = G_PC, bn = true, has = function() local sy = cur() return sy and #sy.logs > 0 end },
+    { id = "loa", name = "LOA", build = loaTab, grp = G_PC, bn = true, has = function() local x = curX() return x and #x.leave > 0 end },
+    { id = "stats", name = "Stats", build = statsTab, grp = G_PC, bn = true, has = function() local x = curX() return x and (anyStat(x.weekAll) or anyStat(x.allMe)) end },
+    { id = "file", name = "My file", build = fileTab, grp = G_PC, bn = true, has = function()
         local x = curX()
         return x and (#x.file.quals > 0 or x.file.ncom > 0 or #x.file.strikes > 0)
     end },
     -- EOD bomb manual (rhylib_eod, Field technician skill "Bomb manual"):
     -- rhylib_eod sets D.EodManualBuild(content, kit) and D.HasEodManual().
-    { id = "eod", name = "EOD manual", build = function()
+    { id = "eod", name = "EOD manual", grp = G_MAN, build = function()
         if D.EodManualBuild then D.EodManualBuild(content, K()) end
     end, has = function() return D.EodManualBuild ~= nil and D.HasEodManual ~= nil and D.HasEodManual() end },
-    { id = "records", name = "Records", build = recordsTab, mp = true },
-    { id = "ologs", name = "Officer logs", build = ologsTab, mp = true },
-    { id = "arrest", name = "Arrest", build = arrestTab, mp = true },
+    { id = "records", name = "Records", build = recordsTab, grp = G_MP, mp = true },
+    { id = "ologs", name = "Officer logs", build = ologsTab, grp = G_MP, mp = true },
+    { id = "arrest", name = "Arrest", build = arrestTab, grp = G_MP, mp = true },
 }
 
 -- Tabs other addons add: D.AddTab({ id, name, build = fn(content, kit),
 -- has = fn() -> bool, order }) (client). They come after the built-in ones
--- (by order, default 50), before the MP tabs. Same id = replaced.
+-- (by order, default 50), before the MP tabs, in the strip's MORE group.
+-- Same id = replaced.
 -- Example (rhylib_bounty): Rhylib.Datapad.AddTab({ id = "bounty", name = "Bounties",
 --     build = function(content, k) ... end, has = function() return true end })
 D.extraTabs = D.extraTabs or {}
@@ -1084,7 +1436,7 @@ local function allTabs()
     for _, t in ipairs(TABS) do
         if t.id == "records" then
             for _, e in ipairs(D.extraTabs) do
-                out[#out + 1] = { id = e.id, name = e.name, has = e.has, build = function() e.build(content, K()) end }
+                out[#out + 1] = { id = e.id, name = e.name, has = e.has, grp = G_MORE, build = function() e.build(content, K()) end }
             end
         end
         out[#out + 1] = t
@@ -1096,36 +1448,123 @@ local function allowed(t)
     return (not t.mp or D.state.mp) and (not t.bn or D.state.bn ~= "") and (not t.has or t.has() and true or false)
 end
 
-local function tabOk(id)
+function tabOk(id)
     for _, t in ipairs(allTabs()) do
         if t.id == id then return allowed(t) end
     end
     return false
 end
 
--- The tab list (rebuilt after a download: new data shows new tabs).
-function buildNav()
-    if not IsValid(nav) then return end
+-- Badges on the strip: text and colour, or nil.
+local BADGES = {
+    comms = function()
+        local n = 0
+        for _, c in pairs(D.calls or {}) do
+            if c.role == 0 then n = n + 1 end
+        end
+        if n > 0 then return n .. " NEW", COL.amber end
+    end,
+    board = function()
+        if (D.boardNew or 0) > 0 then return D.boardNew .. " NEW", COL.good end
+    end,
+    orders = function()
+        local x = curX()
+        if not x then return end
+        local n = 0
+        for _, o in ipairs(x.orders) do
+            if o.mine and o.st == 1 then n = n + 1 end
+        end
+        if n > 0 then return tostring(n), COL.accent end
+    end,
+}
+
+local function openTab(id)
+    tab = id
+    view = {}
+    if id == "board" then D.boardNew = 0 end
+    buildTab()
+end
+
+local function navHead(parent, text)
+    local k = K()
+    local p = vgui.Create("DPanel", parent)
+    p:Dock(TOP)
+    p:SetTall(k.S(30))
+    local up = string.upper(text)
+    function p:Paint(w, h)
+        draw.SimpleText(up, k.Font(11, 500), k.S(10), h - k.S(9), COL.label, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    end
+end
+
+local function navTab(parent, t)
     local k = K()
     local s = k.S
-    nav:Clear()
+    local b = vgui.Create("DButton", parent)
+    b:SetText("")
+    b:Dock(TOP)
+    b:SetTall(s(36))
+    b:DockMargin(0, 0, 0, s(2))
+    local ext = t.id == "eod" and Rhylib.Menus and Rhylib.Menus.OpenLearn
+    local badgeFn = BADGES[t.id]
+    if ext then b:SetTooltip("Opens the bomb manual on the Learn page") end
+    function b:Think()
+        if not badgeFn then return end
+        local now = RealTime()
+        if now < (self.next or 0) then return end
+        self.next = now + 0.5
+        self.badge, self.badgeCol = badgeFn()
+    end
+    function b:Paint(w, h)
+        local on = tab == t.id
+        if on then
+            k.SetCol(COL.sel)
+            surface.DrawRect(0, 0, w, h)
+            k.SetCol(COL.accent)
+            surface.DrawRect(0, 0, s(3), h)
+        elseif self:IsHovered() then
+            k.SetCol(COL.hover)
+            surface.DrawRect(0, 0, w, h)
+        end
+        local font = k.Font(13, on and 700 or 500)
+        draw.SimpleText(t.name, font, s(12), h * 0.5, on and COL.text or COL.dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        if ext then
+            if not self.tw then surface.SetFont(k.Font(13, 700)) self.tw = surface.GetTextSize(t.name) end
+            k.Icon("dp.ext", s(12) + self.tw + s(6), h * 0.5 - s(6), s(12), COL.label)
+        end
+        if self.badge then
+            draw.SimpleText(self.badge, k.Font(10, 700), w - s(10), h * 0.5, self.badgeCol or COL.accent, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+        end
+        return true
+    end
+    function b:DoClick()
+        surface.PlaySound("ui/buttonclick.wav")
+        openTab(t.id)
+    end
+    b:Think()
+end
+
+-- The tab strip (rebuilt after a download: new data shows new tabs).
+function buildNav()
+    if not IsValid(navList) or not D.state then return end
+    navList:Clear()
+    local lastGrp
     for _, t in ipairs(allTabs()) do
         if allowed(t) then
-            local b = k.Button(nav, t.name, function()
-                tab = t.id
-                view = {}
-                buildTab()
-            end, { align = "left", accent = t.id == "comms", selected = function() return tab == t.id end })
-            b:Dock(TOP)
-            b:DockMargin(0, 0, 0, s(4))
+            local g = t.grp or G_MORE
+            if g ~= lastGrp then
+                navHead(navList, g)
+                lastGrp = g
+            end
+            navTab(navList, t)
         end
     end
-    local close = k.Button(nav, "Close", function() panel:Remove() end, { small = true })
-    close:Dock(BOTTOM)
+    local st = D.state
+    topText = (st.bn ~= "" and (string.upper(st.bn) .. "  ·  ") or "") .. LocalPlayer():Nick()
     if not tabOk(tab) then
         tab = tabOk("board") and "board" or "comms"
         view = {}
     end
+    if tab == "board" then D.boardNew = 0 end
 end
 
 function buildTab()
@@ -1140,48 +1579,132 @@ end
 -- Window
 --------------------------------------------------------------------------
 
+-- A round status light. lit 0-1 (0 = dark).
+local lampCol, glowCol = Color(0, 0, 0), Color(0, 0, 0)
+local function lamp(cx, cy, r, col, lit)
+    if lit > 0.3 then
+        glowCol.r, glowCol.g, glowCol.b, glowCol.a = col.r, col.g, col.b, 45 * lit
+        draw.RoundedBox(r * 2, cx - r * 2, cy - r * 2, r * 4, r * 4, glowCol)
+    end
+    lampCol.r = Lerp(lit, col.r * 0.22, col.r)
+    lampCol.g = Lerp(lit, col.g * 0.22, col.g)
+    lampCol.b = Lerp(lit, col.b * 0.22, col.b)
+    draw.RoundedBox(r, cx - r, cy - r, r * 2, r * 2, lampCol)
+end
+
+-- Top bar: battalion and name, the sync light and text, SYNC, clock.
+local function topBar(parent, k)
+    local s = k.S
+    local top = vgui.Create("DPanel", parent)
+    top:Dock(TOP)
+    top:SetTall(s(56))
+    local clock = vgui.Create("DPanel", top)
+    clock:Dock(RIGHT)
+    clock:SetWide(s(56))
+    clock:DockMargin(s(12), 0, s(20), 0)
+    function clock:Think()
+        local now = os.time()
+        if now ~= self.t then self.t, self.text = now, os.date("%H:%M", now) end
+    end
+    function clock:Paint(w, h)
+        draw.SimpleText(self.text or "", k.Font(15, 500), w, h * 0.5, COL.accent, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+    end
+    local sync = pbtn(top, "SYNC", function() startDownload() end, { enabled = function() return not dl end,
+        tooltip = "Download the board, orders, logs and more from the battalion computer" })
+    sync:Dock(RIGHT)
+    sync:SetWide(s(76))
+    sync:DockMargin(0, s(10), 0, s(10))
+    function top:Think()
+        local want = D.state and D.state.bn ~= "" or false
+        if sync:IsVisible() ~= want then sync:SetVisible(want) end
+    end
+    function top:Paint(w, h)
+        draw.RoundedBoxEx(s(8), 0, 0, w, h, COL.bar, false, true, false, false)
+        k.SetCol(COL.edge)
+        surface.DrawRect(0, h - 1, w, 1)
+        local st = D.state
+        local x = s(20)
+        local bc = st and D.BnColor(st.bn)
+        if bc then
+            k.SetCol(bc)
+            surface.DrawRect(x, h * 0.5 - s(5), s(10), s(10))
+            x = x + s(18)
+        end
+        draw.SimpleText(topText, k.Font(13, 500), x, h * 0.5, COL.dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        if not st or st.bn == "" then return end
+        -- Sync state, right-aligned left of SYNC.
+        local rx = sync:GetPos() - s(14)
+        local cy = math.floor(h * 0.5)
+        local r = s(4)
+        if dl then
+            local f = math.Clamp((RealTime() - dl.start) / dl.dur, 0, dl.data and 1 or 0.97)
+            local bw = s(140)
+            local bx = rx - bw
+            k.SetCol(COL.card)
+            surface.DrawRect(bx, cy - s(3), bw, s(6))
+            k.SetCol(COL.amber)
+            surface.DrawRect(bx, cy - s(3), bw * f, s(6))
+            local txt = "Downloading " .. math.floor(f * 100) .. "%"
+            surface.SetFont(k.Font(12))
+            local tw = surface.GetTextSize(txt)
+            draw.SimpleText(txt, k.Font(12), bx - s(10), cy, COL.amber, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+            lamp(bx - s(10) - tw - s(12), cy, r, COL.amber, 0.55 + 0.45 * math.sin(RealTime() * 9))
+            return
+        end
+        local txt, col, lit
+        if hasNew() then
+            txt, col = "New data on the computer", COL.good
+            lit = (math.floor(RealTime() * 2.2) % 2 == 0) and 1 or 0.08
+        elseif cur() then
+            txt, col, lit = "Synced", COL.dim, 1
+        else
+            txt, col, lit = "Not synced", COL.label, 0
+        end
+        surface.SetFont(k.Font(12))
+        local tw = surface.GetTextSize(txt)
+        draw.SimpleText(txt, k.Font(12), rx, cy, col, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+        lamp(rx - tw - s(12), cy, r, col == COL.dim and COL.accent or col, lit)
+    end
+    return top
+end
+
 local function openWindow()
     local k = K()
     if not k then return end
     if IsValid(panel) then panel:Remove() end
+    ensureIcons()
     local s = k.S
+    local bz = s(22)
     panel = vgui.Create("EditablePanel")
-    panel:SetSize(s(960), s(620))
+    panel:SetSize(math.min(ScrW() - s(40), s(1240)), math.min(ScrH() - s(40), s(780)))
     panel:Center()
     panel:MakePopup()
-    panel:DockPadding(s(14), s(52), s(14), s(14))
+    panel:DockPadding(bz, bz, bz, bz)
+    -- The tablet: bezel, notch, screen; then the screen colours for the children.
     function panel:Paint(w, h)
-        local st = D.state
-        k.Plate(0, 0, w, h, { title = "Datapad", ticks = "all", header = s(38), bg = OPAQUE })
-        local right = w - s(14) - s(132) - s(12)
-        if dl then
-            -- Download progress, left of the refresh light.
-            local f = math.Clamp((RealTime() - dl.start) / dl.dur, 0, dl.data and 1 or 0.97)
-            local bw = s(200)
-            local bx, by = right - bw, s(15)
-            k.SetCol(k.C.row)
-            surface.DrawRect(bx, by, bw, s(8))
-            k.SetCol(k.C.good)
-            surface.DrawRect(bx, by, bw * f, s(8))
-            draw.SimpleText("Downloading " .. math.floor(f * 100) .. "%", k.Font(11), bx - s(8), by + s(4), k.C.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
-        elseif st and st.bn ~= "" then
-            draw.SimpleText(st.bn, k.Font(13), right, s(19), k.C.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
-        end
+        draw.RoundedBox(s(18), 0, 0, w, h, COL.bezelEdge)
+        draw.RoundedBox(s(16), 2, 2, w - 4, h - 4, COL.bezel)
+        draw.RoundedBox(2, math.floor(w * 0.5) - s(30), s(8), s(60), s(5), COL.notch)
+        draw.RoundedBox(s(8), bz - 1, bz - 1, w - bz * 2 + 2, h - bz * 2 + 2, COL.screenEdge)
+        draw.RoundedBox(s(8), bz, bz, w - bz * 2, h - bz * 2, COL.screen)
+        swapIn()
     end
+    function panel:PaintOver() swapOut() end
     function panel:Think()
         local ply = LocalPlayer()
         if not ply:Alive() or not D.Holding(ply) then self:Remove() return end
         -- Download finished: show it.
         -- (waits for both parts; gives up on the second after 5 s more)
         if dl and dl.data and RealTime() - dl.start >= dl.dur and ((dl.extra and dl.more) or RealTime() - dl.start >= dl.dur + 5) then
-            D.sync = dl.data
-            D.sync.x = dl.extra
-            if D.sync.x then
+            local d = dl.data
+            d.x = dl.extra
+            if d.x then
                 local more = dl.more or {}
-                D.sync.x.info = more.info or { txt = "", by = "", t = 0 }
-                D.sync.x.mission = more.mission
+                d.x.info = more.info or { txt = "", by = "", t = 0 }
+                d.x.mission = more.mission
             end
-            D.sync.at = os.time()
+            d.at = os.time()
+            takeSync(d)
             dl = nil
             surface.PlaySound("buttons/button14.wav")
             local was = tab
@@ -1189,72 +1712,48 @@ local function openWindow()
             if was ~= tab or (not view.read and not view.order) then buildTab() end
         end
     end
-    function panel:OnRemove() dl = nil end   -- closing the pad cancels a download
-
-    -- The sync button: a panel button with a round status light.
-    -- Light: off when up to date, blinking green when the computer has
-    -- something new, amber pulsing while downloading.
-    local refresh = vgui.Create("DButton", panel)
-    refresh:SetText("")
-    refresh:SetSize(s(132), s(28))
-    refresh:SetPos(s(960) - s(14) - s(132), s(5))
-    refresh:SetTooltip("Download the board and logs from the battalion computer")
-    function refresh:Paint(w, h)
-        local st = D.state
-        if not st or st.bn == "" then return true end
-        local C = k.C
-        local new = hasNew()
-        -- Body, like a kit button.
-        local body = C.button
-        if not dl and self:IsDown() then body = C.buttonDown elseif not dl and self:IsHovered() then body = C.buttonHover end
-        k.SetCol(body)
-        surface.DrawRect(0, 0, w, h)
-        k.SetCol(C.edgeDark)
-        surface.DrawOutlinedRect(0, 0, w, h)
-        k.SetCol(C.edgeLight)
-        surface.DrawLine(1, 1, w - 1, 1)
-        -- The light.
-        local r = math.floor(h * 0.24)
-        local cx, cy = s(8) + r + s(2), math.floor(h * 0.5)
-        local lit, col = 0, C.good
-        if dl then
-            col = Color(235, 170, 60)
-            lit = 0.55 + 0.45 * math.sin(RealTime() * 9)
-        elseif new then
-            lit = (math.floor(RealTime() * 2.2) % 2 == 0) and 1 or 0.08
-        end
-        -- Bezel, then the lamp (dark when off), then a glow and a highlight.
-        draw.RoundedBox(r + 2, cx - r - 2, cy - r - 2, (r + 2) * 2, (r + 2) * 2, C.edgeDark)
-        local off = Color(col.r * 0.18, col.g * 0.18, col.b * 0.18, 255)
-        local on = Color(Lerp(lit, off.r, col.r), Lerp(lit, off.g, col.g), Lerp(lit, off.b, col.b), 255)
-        draw.RoundedBox(r, cx - r, cy - r, r * 2, r * 2, on)
-        if lit > 0.3 then
-            local g = r * 2
-            draw.RoundedBox(g, cx - g, cy - g, g * 2, g * 2, Color(col.r, col.g, col.b, 40 * lit))
-        end
-        local hr = math.max(1, math.floor(r * 0.35))
-        draw.RoundedBox(hr, cx - r * 0.45 - hr, cy - r * 0.45 - hr, hr * 2, hr * 2, Color(255, 255, 255, 40 + 60 * lit))
-        -- Label.
-        local text = dl and "Syncing" or (new and "New data" or "Sync")
-        draw.SimpleText(string.upper(text), k.Font(12, 700), cx + r + s(10), h * 0.5, dl and C.textDim or C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-        return true
+    function panel:OnRemove()
+        dl = nil   -- closing the pad cancels a download
+        swapOut()
     end
-    function refresh:DoClick() startDownload() end
-    -- Your battalion's colour as the accent.
-    k.Tint(panel, function() return D.state and D.BnColor(D.state.bn) or nil end)
-    if Rhylib.Menus.RegisterCloser then
-        Rhylib.Menus.RegisterCloser("datapad", function()
+    if Rhylib.UI and Rhylib.UI.RegisterCloser then
+        Rhylib.UI.RegisterCloser("datapad", function()
             if IsValid(panel) then panel:Remove() return true end
             return false
         end)
     end
-    nav = vgui.Create("DPanel", panel)
+
+    -- Left strip.
+    local nav = vgui.Create("DPanel", panel)
     nav:Dock(LEFT)
-    nav:SetWide(s(170))
-    nav:DockMargin(0, 0, s(14), 0)
-    nav.Paint = nil
-    content = vgui.Create("DPanel", panel)
+    nav:SetWide(s(210))
+    nav:DockPadding(s(10), s(14), s(10), s(12))
+    function nav:Paint(w, h)
+        draw.RoundedBoxEx(s(8), 0, 0, w, h, COL.bar, true, false, true, false)
+        k.SetCol(COL.edge)
+        surface.DrawRect(w - 1, 0, 1, h)
+    end
+    local brand = vgui.Create("DPanel", nav)
+    brand:Dock(TOP)
+    brand:SetTall(s(30))
+    function brand:Paint(w, h)
+        k.Icon("dp.diamond", s(6), h * 0.5 - s(9), s(18), COL.accent)
+        draw.SimpleText("DATAPAD", k.Font(16, 500), s(32), h * 0.5, COL.accent, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    end
+    local close = pbtn(nav, "Close", function() panel:Remove() end, { small = true })
+    close:Dock(BOTTOM)
+    close:DockMargin(0, s(8), 0, 0)
+    navList = k.Scroll(nav)
+    navList:Dock(FILL)
+
+    -- Right: top bar, then the tab.
+    local main = vgui.Create("DPanel", panel)
+    main:Dock(FILL)
+    main.Paint = nil
+    topBar(main, k)
+    content = vgui.Create("DPanel", main)
     content:Dock(FILL)
+    content:DockPadding(s(22), s(18), s(22), s(16))
     content.Paint = nil
     tab = tabOk("board") and "board" or (tabOk(tab) and tab or "comms")
     buildNav()

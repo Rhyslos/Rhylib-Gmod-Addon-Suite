@@ -8,8 +8,9 @@
       Markers    where the caller is, for calls you can see (MP and medic
                  calls at once; reinforcements and resupply after you answer)
       Your call  a card while it's open: who is on the way
-    At most 4 cards. Card colour per call id (KIND_COL: mp, medic, reinf,
-    supply, eod), the menu accent for other ids. Client convar
+    At most 4 cards. Card colour per call id (KIND_COL: mp purple, medic
+    red, reinf blue, supply green, eod amber; the same on the datapad's
+    buttons, D.CallColor), the menu accent for other ids. Client convar
     rhylib_call_key (Settings > Datapad).
 ]]
 
@@ -23,13 +24,19 @@ D.calls = D.calls or {}   -- [id] = { id, kind, caller, name, born, items, role,
 local sent = {}           -- [kind] = RealTime of our last call
 
 local KIND_COL = {
-    mp = Color(90, 150, 235), medic = Color(230, 75, 65), reinf = Color(235, 170, 60), supply = Color(120, 205, 120),
-    eod = Color(240, 140, 50),
+    mp = Color(164, 110, 224), medic = Color(226, 75, 74), reinf = Color(133, 183, 235), supply = Color(151, 196, 89),
+    eod = Color(239, 159, 39),
 }
 
 local function S(n) return math.floor(n * ScrH() / 1080 + 0.5) end
 local function def(c) return (D.Cfg("calls") or {})[c.kind] or {} end
 local function colOf(c) return KIND_COL[def(c).id] or C.accent end
+
+-- D.CallColor(kind): the colour of a call kind (index in config "calls"),
+-- or nil for ids without one. The datapad's call buttons use it.
+function D.CallColor(kind)
+    return KIND_COL[((D.Cfg("calls") or {})[kind] or {}).id]
+end
 
 --------------------------------------------------------------------------
 -- Helpers (also used by the datapad tab)

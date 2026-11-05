@@ -1,10 +1,13 @@
 --[[
-    Battalion computer window, unit tabs (client; sv_60_unit): Orders
-    (to the battalion or named members, with a status; managers issue
-    them), LOA (who is away; members file their own), Applications
-    (managers accept or decline) and Apply (troopers outside the
-    battalion). Also the "you got accepted" popup and dp.uprompt, which
-    work anywhere. The unit data is shared (T.unit: the board's sign-ups
+    Battalion computer window, unit tabs (client; sv_60_unit), each a list
+    on the left and a reader card on the right: Orders (to the battalion
+    or named members, with a status chip; managers issue them; badge =
+    open orders for you), LOA (who is away as cards; members file their
+    own on the right; badge = away now), Applications (managers accept or
+    decline; badge = pending) and Apply (troopers outside the battalion).
+    Also the "you got accepted" popup (teal terminal card) and dp.uprompt,
+    which work anywhere. T.OpenOrder(id) shows an order (the board's open
+    orders use it). The unit data is shared (T.unit: the board's sign-ups
     read it too); the rest is in U. Registered with D.TermAddTab.
       dp.uopen -> dp.unit   dp.uorder, dp.ustatus, dp.uodel, dp.uloa,
       dp.uloadel, dp.udecide, dp.uappget -> dp.uappinfo, dp.uapply,
@@ -13,6 +16,7 @@
 
 local D = Rhylib.Datapad
 local T = D.Term   -- (cl_20_terminal.lua: shared helpers, the window, the tab registry)
+local C = T.C
 
 local U = { appSel = nil, orderDraft = nil, orderSel = nil, appInfo = {}, appAsked = nil }   -- (appInfo[application id] = the applicant's record)
 local APP_STATUS = { [0] = "Pending", [1] = "Accepted", [2] = "Declined", [3] = "Withdrawn" }
@@ -36,24 +40,24 @@ local function orderEditor(body)
     local k = T.K()
     local s = k.S
     local d = U.orderDraft
-    local h = k.Heading(body, "New order")
+    local h = T.Heading(body, "New order")
     h:Dock(TOP)
     local title = k.TextEntry(body, "What (short)")
     title:Dock(TOP)
-    title:DockMargin(0, s(8), 0, s(6))
+    title:SetTall(s(34))
+    title:DockMargin(0, s(10), 0, s(8))
     title:SetText(d.ti)
     function title:OnChange() d.ti = self:GetText() or "" end
     local who = vgui.Create("DPanel", body)
     who:Dock(TOP)
-    who:SetTall(s(30))
-    who:DockMargin(0, 0, 0, s(6))
+    who:SetTall(s(32))
+    who:DockMargin(0, 0, 0, s(8))
     who.Paint = nil
-    local ch = k.Choices(who, { { true, "Whole battalion" }, { false, "Specific members" } }, function() return d.all end, function(v)
+    local ch = T.Chips(who, { { true, "Whole battalion" }, { false, "Specific members" } }, function() return d.all end, function(v)
         d.all = v
         T.Build()
     end)
     ch:Dock(LEFT)
-    ch:SetWide(s(330))
     local foot = T.FootRow(body)
     T.FootButton(foot, "Issue order", function()
         local ids = {}
@@ -84,22 +88,23 @@ local function orderEditor(body)
         local pick = vgui.Create("DPanel", body)
         pick:Dock(RIGHT)
         pick:SetWide(s(320))
-        pick:DockMargin(s(10), 0, 0, 0)
+        pick:DockMargin(s(14), 0, 0, 0)
         pick.Paint = nil
         local n = 0
         for _ in pairs(d.sel) do n = n + 1 end
-        local ph = k.Heading(pick, "Ordered (" .. n .. ")")
+        local ph = T.Heading(pick, "Ordered · " .. n)
         ph:Dock(TOP)
+        ph:DockMargin(0, 0, 0, s(6))
         local sp = k.Scroll(pick)
         sp:Dock(FILL)
-        if not T.people then T.Label(sp, "Loading members…") end
+        if not T.people then T.Empty(sp, "Loading members…") end
         for _, m in ipairs(T.people or {}) do
-            local b = k.Button(sp, m.name, function()
+            local b = T.Btn(sp, m.name, function()
                 d.sel[m.id] = not d.sel[m.id] or nil
                 T.Build()
-            end, { small = true, align = "left", selected = function() return d.sel[m.id] ~= nil end })
+            end, { small = true, align = "left", quiet = true, selected = function() return d.sel[m.id] ~= nil end })
             b:Dock(TOP)
-            b:DockMargin(0, 0, s(8), s(3))
+            b:DockMargin(0, 0, s(8), s(4))
         end
     end
     local txt = k.TextEntry(body, "Details: where, when, how…")
@@ -113,44 +118,55 @@ local function ordersTab(body)
     local k = T.K()
     local s = k.S
     if not T.unit then T.Label(body, "Loading…") return end
-    if U.orderDraft and T.unit.manager then orderEditor(body) return end
+    if U.orderDraft and T.unit.manager then
+        local ed = T.Card(body, { padX = s(20), padY = s(16) })
+        ed:Dock(FILL)
+        orderEditor(ed)
+        return
+    end
     local left, right = T.Columns(body)
+    local bar = vgui.Create("DPanel", left)
+    bar:Dock(TOP)
+    bar:SetTall(s(40))
+    bar:DockMargin(0, 0, s(8), s(12))
+    bar.Paint = nil
+    T.Title(bar, "Orders"):Dock(LEFT)
     if T.unit.manager then
-        local new = k.Button(left, "New order", function()
+        local new = T.Btn(bar, "New order", function()
             U.orderDraft = { ti = "", b = "", all = true, sel = {} }
             T.Build()
-        end, { small = true, accent = true })
-        new:Dock(TOP)
-        new:DockMargin(0, 0, s(8), s(8))
+        end)
+        new:Dock(RIGHT)
     end
     local sp = k.Scroll(left)
     sp:Dock(FILL)
-    if #T.unit.orders == 0 then T.Label(sp, "No orders yet.") end
+    if #T.unit.orders == 0 then T.Empty(sp, "No orders yet.") end
     local lastOpen
     for _, o in ipairs(T.unit.orders) do
         local open = o.st <= 2
         if lastOpen ~= open then
-            local hd = k.Heading(sp, open and "Open orders" or "Closed")
+            local hd = T.Heading(sp, open and "Open orders" or "Closed")
             hd:Dock(TOP)
-            hd:DockMargin(0, s(4), s(8), s(4))
+            hd:DockMargin(0, s(2), s(8), s(8))
             lastOpen = open
         end
         T.ListRow(sp, o.title, D.OrderSub(o), function() return U.orderSel == o.id end, function()
             U.orderSel = o.id
             T.Build()
-        end, D.ORDER_TAG[o.st])
+        end, D.ORDER_TAG[o.st], D.OrderColor(o.st))
     end
 
     local o = U.orderSel and orderById(U.orderSel)
     if not o then
-        T.Label(right, T.unit.manager and "Pick an order, or issue a new one." or "Pick an order to read it.")
+        T.Empty(right, T.unit.manager and "Pick an order, or issue a new one." or "Pick an order to read it.")
         return
     end
-    local h = k.Heading(right, o.title)
-    h:Dock(TOP)
+    T.Heading(right, "Order", D.OrderColor(o.st)):Dock(TOP)
+    local h = T.ReaderTitle(right, o.title)
+    h:DockMargin(0, s(8), 0, 0)
     local by = T.Label(right, "From " .. o.by .. "  ·  " .. T.when(o.t))
     by:DockMargin(0, s(4), 0, s(2))
-    T.Label(right, "To: " .. D.OrderTo(o), k.C.text)
+    T.Label(right, "To: " .. D.OrderTo(o), C.text)
     local stl = T.Label(right, "Status: " .. D.ORDER_STATUS[o.st] .. (o.sb ~= "" and ("  (" .. o.sb .. ", " .. T.when(o.stt) .. ")") or ""),
         D.OrderColor(o.st))
     stl:DockMargin(0, s(2), 0, s(8))
@@ -173,7 +189,7 @@ local function ordersTab(body)
     end
     local tsp = k.Scroll(right)
     tsp:Dock(FILL)
-    local t = k.Label(tsp, o.text ~= "" and o.text or "(no details)", 15, 400, k.C.text)
+    local t = k.Label(tsp, o.text ~= "" and o.text or "(no details)", 15, 400, C.body)
     t:Dock(TOP)
     t:DockMargin(0, 0, s(10), 0)
 end
@@ -183,41 +199,62 @@ local function leaveTab(body)
     local s = k.S
     if not T.unit then T.Label(body, "Loading…") return end
     local left, right = T.Columns(body)
-    local h = k.Heading(left, "On LOA (" .. #T.unit.leave .. ")")
+    local bar = vgui.Create("DPanel", left)
+    bar:Dock(TOP)
+    bar:SetTall(s(40))
+    bar:DockMargin(0, 0, s(8), s(12))
+    bar.Paint = nil
+    T.Title(bar, "Leave of absence"):Dock(LEFT)
+    local h = T.Heading(left, "On LOA · " .. #T.unit.leave)
     h:Dock(TOP)
+    h:DockMargin(0, 0, s(8), s(8))
     local sp = k.Scroll(left)
     sp:Dock(FILL)
-    if #T.unit.leave == 0 then T.Label(sp, "Nobody is on LOA.") end
+    if #T.unit.leave == 0 then T.Empty(sp, "Nobody is on LOA.") end
     local now = os.time()
     for _, e in ipairs(T.unit.leave) do
-        local range = os.date("%d %b", e.from) .. " – " .. os.date("%d %b %Y", e.to) .. (e.from <= now and "  (now)" or "")
-        local r = k.Row(sp, e.name, range .. (e.why ~= "" and ("  ·  " .. e.why) or ""))
+        local away = e.from <= now
+        local range = os.date("%d %b", e.from) .. " – " .. os.date("%d %b %Y", e.to) .. (away and "  ·  away now" or "")
+        local r = T.Card(sp, { fit = true, padY = s(10), bar = away and C.warn or nil })
         r:Dock(TOP)
-        r:DockMargin(0, 0, s(8), s(3))
+        r:DockMargin(0, 0, s(8), s(6))
         if e.mine or T.unit.manager then
-            r.right:SetWide(s(100))
-            local b = k.Button(r.right, e.mine and "Cancel" or "Remove", function()
+            local holder = vgui.Create("DPanel", r)
+            holder:Dock(RIGHT)
+            holder:SetWide(s(100))
+            holder:DockMargin(s(10), 0, 0, 0)
+            holder.Paint = nil
+            local btn = T.Btn(holder, e.mine and "Cancel" or "Remove", function()
                 T.Send("dp.uloadel", function() net.WriteUInt(e.id, 16) end)
             end, { small = true, danger = true })
-            b:Dock(FILL)
+            btn:Dock(TOP)
         end
+        local n = k.Label(r, e.name, 15, 700, C.text)
+        n:Dock(TOP)
+        T.Label(r, range, C.dim, 12):DockMargin(0, s(2), 0, 0)
+        if e.why ~= "" then T.Label(r, e.why, C.body, 13):DockMargin(0, s(4), 0, 0) end
     end
 
-    local rh = k.Heading(right, "File a leave of absence")
-    rh:Dock(TOP)
+    T.Heading(right, "File a leave of absence"):Dock(TOP)
     if not T.unit.member then
-        T.Label(right, "Only members of the battalion can file leave.")
+        T.Empty(right, "Only members of the battalion can file leave.")
         return
     end
     local hint = T.Label(right, "Going away for a while? Your battalion sees it here and on the roster. A new one replaces your old one (at most 120 days).")
-    hint:DockMargin(0, s(4), 0, s(10))
+    hint:DockMargin(0, s(8), 0, s(12))
     local function dateRow(title, t)
-        local r = k.Row(right, title, "YYYY-MM-DD")
+        local r = vgui.Create("DPanel", right)
         r:Dock(TOP)
-        r:DockMargin(0, 0, 0, s(6))
-        r.right:SetWide(s(160))
-        local e = k.TextEntry(r.right, "YYYY-MM-DD")
-        e:Dock(FILL)
+        r:SetTall(s(34))
+        r:DockMargin(0, 0, 0, s(8))
+        r.Paint = nil
+        local l = k.Label(r, title, 13, 700, C.dim)
+        l:Dock(LEFT)
+        l:SetWide(s(80))
+        l:DockMargin(0, s(9), 0, 0)
+        local e = k.TextEntry(r, "YYYY-MM-DD")
+        e:Dock(LEFT)
+        e:SetWide(s(160))
         e:SetText(os.date("%Y-%m-%d", t))
         return e
     end
@@ -225,8 +262,13 @@ local function leaveTab(body)
     local to = dateRow("Until", now + 7 * 86400)
     local why = k.TextEntry(right, "Reason (optional)")
     why:Dock(TOP)
-    why:DockMargin(0, 0, 0, s(10))
-    local go = k.Button(right, "File LOA", function()
+    why:SetTall(s(34))
+    why:DockMargin(0, 0, 0, s(12))
+    local goRow = vgui.Create("DPanel", right)
+    goRow:Dock(TOP)
+    goRow:SetTall(s(40))
+    goRow.Paint = nil
+    local go = T.Btn(goRow, "File LOA", function()
         local a, b = T.ParseDate(from:GetText(), false), T.ParseDate(to:GetText(), true)
         if not (a and b) or b < a then
             Derma_Message("Write the dates as YYYY-MM-DD, with the end after the start.", "LOA", "OK")
@@ -237,8 +279,8 @@ local function leaveTab(body)
             net.WriteUInt(math.max(0, b), 32)
             net.WriteString(string.sub(why:GetText() or "", 1, 200))
         end)
-    end, { accent = true })
-    go:Dock(TOP)
+    end, { primary = true })
+    go:Dock(LEFT)
 end
 
 local function appById(id)
@@ -252,26 +294,31 @@ local function appsTab(body)
     local s = k.S
     if not T.unit then T.Label(body, "Loading…") return end
     local left, right = T.Columns(body)
-    local h = k.Heading(left, "Applications")
-    h:Dock(TOP)
+    local bar = vgui.Create("DPanel", left)
+    bar:Dock(TOP)
+    bar:SetTall(s(40))
+    bar:DockMargin(0, 0, s(8), s(12))
+    bar.Paint = nil
+    T.Title(bar, "Applications"):Dock(LEFT)
     local sp = k.Scroll(left)
     sp:Dock(FILL)
-    if #T.unit.apps == 0 then T.Label(sp, "No applications yet.") end
+    if #T.unit.apps == 0 then T.Empty(sp, "No applications yet.") end
     for _, a in ipairs(T.unit.apps) do
         local sub = APP_STATUS[a.st] .. (a.by ~= "" and (" by " .. a.by) or "") .. "  ·  " .. T.when(a.t)
         T.ListRow(sp, a.name, sub, function() return U.appSel == a.id end, function()
             U.appSel = a.id
             T.Build()
-        end, a.st == 0 and "New" or nil)
+        end, a.st == 0 and "New" or nil, C.good)
     end
 
     local a = U.appSel and appById(U.appSel)
     if not a then
-        T.Label(right, "Pick an application to read it. Applying is optional: you can still add a trooper straight from the Battalion page.")
+        T.Empty(right, "Pick an application to read it. Applying is optional: you can still add a trooper straight from the Battalion page.")
         return
     end
-    local rh = k.Heading(right, a.name)
-    rh:Dock(TOP)
+    T.Heading(right, "Application · " .. APP_STATUS[a.st], a.st == 0 and C.good or nil):Dock(TOP)
+    local rh = T.ReaderTitle(right, a.name)
+    rh:DockMargin(0, s(8), 0, 0)
     local by = T.Label(right, APP_STATUS[a.st] .. (a.by ~= "" and (" by " .. a.by) or "") .. "  ·  applied " .. T.when(a.t))
     by:DockMargin(0, s(4), 0, s(8))
     if a.st == 0 then
@@ -284,15 +331,16 @@ local function appsTab(body)
         end
         T.FootButton(foot, "Accept", function() decide(true) end, { accent = true })
         T.FootButton(foot, "Decline", function() decide(false) end, { danger = true })
-        local note = k.Label(foot, "Accepted troopers get a prompt to join (or turn it down).", 12, 400, k.C.textDim)
+        local note = k.Label(foot, "Accepted troopers get a prompt to join (or turn it down).", 12, 400, C.caps)
         note:Dock(FILL)
+        note:DockMargin(0, s(12), 0, 0)
     end
     local tsp = k.Scroll(right)
     tsp:Dock(FILL)
     local function sub(text)
-        local hd = k.Heading(tsp, text)
+        local hd = T.Heading(tsp, text)
         hd:Dock(TOP)
-        hd:DockMargin(0, s(8), s(10), s(4))
+        hd:DockMargin(0, s(10), s(10), s(6))
     end
     -- The application itself, in a box so it stands out.
     sub("Application")
@@ -301,12 +349,12 @@ local function appsTab(body)
     box:DockMargin(0, 0, s(10), 0)
     box:DockPadding(s(12), s(10), s(12), s(10))
     function box:Paint(w, h)
-        k.SetCol(k.C.row)
+        T.SetCol(C.bar)
         surface.DrawRect(0, 0, w, h)
-        k.SetCol(k.C.accent)
+        T.SetCol(C.accent)
         surface.DrawRect(0, 0, s(3), h)
     end
-    local t = k.Label(box, a.txt, 15, 400, k.C.text)
+    local t = k.Label(box, a.txt, 15, 400, C.body)
     t:Dock(TOP)
     function box:PerformLayout(w, h)
         local want = t:GetTall() + s(20)
@@ -320,7 +368,7 @@ local function appsTab(body)
             U.appAsked = a.id
             T.Send("dp.uappget", function() net.WriteUInt(a.id, 16) end)
         end
-        T.Label(tsp, "Loading their record…")
+        T.Empty(tsp, "Loading their record…")
         return
     end
     sub("Service record (all time)")
@@ -330,17 +378,17 @@ local function appsTab(body)
     for _, key in ipairs(keys) do
         parts[#parts + 1] = (key == "ar" and "Arrests made" or D.STAT_NAMES[key]) .. " " .. D.StatText(key, info.stats[key])
     end
-    local st = T.Label(tsp, table.concat(parts, "   ·   "), k.C.text, 13)
+    local st = T.Label(tsp, table.concat(parts, "   ·   "), C.text, 13)
     st:DockMargin(0, 0, s(10), s(4))
-    T.Label(tsp, "Qualifications: " .. (#info.quals > 0 and table.concat(info.quals, ", ") or "none"), k.C.text, 13)
+    T.Label(tsp, "Qualifications: " .. (#info.quals > 0 and table.concat(info.quals, ", ") or "none"), C.text, 13)
     T.Label(tsp, info.coms .. " commendation" .. (info.coms == 1 and "" or "s") .. "  ·  " .. info.strikes .. " active strike" .. (info.strikes == 1 and "" or "s"),
-        info.strikes > 0 and k.C.bad or k.C.text, 13)
+        info.strikes > 0 and C.bad or C.text, 13)
     sub("Arrest record (" .. #info.arrests .. ")")
-    if #info.arrests == 0 then T.Label(tsp, "Never arrested.", k.C.good, 13) end
+    if #info.arrests == 0 then T.Label(tsp, "Never arrested.", C.good, 13) end
     for _, j in ipairs(info.arrests) do
         local l = T.Label(tsp, os.date("%d %b %Y", j.t) .. "  ·  " .. j.min .. " min  ·  by " .. j.by, nil, 12)
         l:DockMargin(0, s(4), s(10), 0)
-        local w = k.Label(tsp, j.why ~= "" and j.why or "No reason given", 14, 500, k.C.bad)
+        local w = k.Label(tsp, j.why ~= "" and j.why or "No reason given", 14, 500, C.bad)
         w:Dock(TOP)
         w:DockMargin(0, 0, s(10), s(2))
     end
@@ -352,18 +400,18 @@ function T.ApplyPanel(body)
     local s = k.S
     if not T.unit then
         T.AskUnit()
-        T.Label(body, "Loading…")
+        T.Empty(body, "Loading…")
         return
     end
-    local h = k.Heading(body, "Join the " .. T.term.bn)
-    h:Dock(TOP)
-    h:DockMargin(0, s(16), 0, s(6))
+    local jh = T.Heading(body, "Join the " .. T.term.bn)
+    jh:Dock(TOP)
+    jh:DockMargin(0, 0, 0, s(10))
     if T.unit.myBn == T.term.bn and T.unit.mySt == 1 then
-        T.Label(body, "Your application was accepted.", k.C.good, 14)
+        T.Label(body, "Your application was accepted.", C.good, 14)
         local row = vgui.Create("DPanel", body)
         row:Dock(TOP)
-        row:SetTall(s(34))
-        row:DockMargin(0, s(8), 0, 0)
+        row:SetTall(s(40))
+        row:DockMargin(0, s(10), 0, 0)
         row.Paint = nil
         local function answer(join)
             Rhylib.Net.Start("dp.uanswer")
@@ -373,13 +421,11 @@ function T.ApplyPanel(body)
             T.unitAsked = nil
             timer.Simple(0.5, function() if IsValid(T.panel) then T.Build() end end)
         end
-        local j = k.Button(row, "Join battalion", function() answer(true) end, { accent = true })
+        local j = T.Btn(row, "Join battalion", function() answer(true) end, { primary = true })
         j:Dock(LEFT)
-        j:SetWide(s(180))
-        local r = k.Button(row, "Reject", function() answer(false) end, { danger = true })
+        local r = T.Btn(row, "Reject", function() answer(false) end, { danger = true })
         r:Dock(LEFT)
-        r:SetWide(s(140))
-        r:DockMargin(s(6), 0, 0, 0)
+        r:DockMargin(s(8), 0, 0, 0)
         return
     end
     if T.unit.myBn ~= "" and T.unit.myBn ~= T.term.bn and T.unit.mySt == 1 then
@@ -390,13 +436,16 @@ function T.ApplyPanel(body)
         T.Label(body, T.unit.myBn == T.term.bn and "Your application is pending. Check back here for its status."
             or ("You already have a pending application with the " .. T.unit.myBn .. "."), nil, 14)
         if T.unit.myBn == T.term.bn then
-            local w = k.Button(body, "Withdraw application", function()
+            local wr = vgui.Create("DPanel", body)
+            wr:Dock(TOP)
+            wr:SetTall(s(40))
+            wr:DockMargin(0, s(10), 0, 0)
+            wr.Paint = nil
+            local w = T.Btn(wr, "Withdraw application", function()
                 T.Send("dp.uwithdraw")
                 T.unit, T.unitAsked = nil, nil
-            end, { small = true, danger = true })
-            w:Dock(TOP)
-            w:SetWide(s(220))
-            w:DockMargin(0, s(8), 0, 0)
+            end, { danger = true })
+            w:Dock(LEFT)
         end
         return
     end
@@ -405,7 +454,7 @@ function T.ApplyPanel(body)
         return
     end
     local hint = T.Label(body, "Tell the battalion about yourself. Their sergeants and up will see it here. Applying is optional: an NCO can also add you straight away.")
-    hint:DockMargin(0, 0, 0, s(8))
+    hint:DockMargin(0, 0, 0, s(10))
     local foot = T.FootRow(body)
     local txt = k.TextEntry(body, "Why do you want to join?")
     txt:SetMultiline(true)
@@ -449,20 +498,34 @@ local function acceptedPopup(bn, by)
     if not k then return end
     if IsValid(popup) then popup:Remove() end
     local s = k.S
+    if not IsValid(T.panel) then T.SetMedical(false) end
     popup = vgui.Create("EditablePanel")
-    popup:SetSize(s(460), s(220))
+    popup:SetSize(s(500), s(240))
     popup:Center()
     popup:MakePopup()
-    popup:DockPadding(s(18), s(52), s(18), s(18))
+    popup:DockPadding(s(20), s(74), s(20), s(18))
+    local bnCol = D.BnColor(bn) or C.accent
+    local title, sub = "YOU GOT ACCEPTED", string.upper(bn)
+    local fT, fS = k.Font(22, 800), k.Font(12, 500)
     function popup:Paint(w, h)
-        k.Plate(0, 0, w, h, { title = "You got accepted", sub = bn, ticks = "all", header = s(38), bg = T.OPAQUE })
+        T.SetCol(C.ground)
+        surface.DrawRect(0, 0, w, h)
+        T.SetCol(C.header)
+        surface.DrawRect(0, 0, w, s(60))
+        T.SetCol(bnCol)
+        surface.DrawRect(0, 0, w, s(3))
+        T.SetCol(C.edge)
+        surface.DrawRect(0, s(60), w, 1)
+        surface.DrawOutlinedRect(0, 0, w, h)
+        draw.SimpleText(title, fT, s(20), s(31), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_BOTTOM)
+        draw.SimpleText(sub, fS, s(20), s(34), C.caps, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
     end
     local l = k.Label(popup, (by ~= "" and by or "An officer") .. " accepted your application to the " .. bn ..
-        ". Join now, or turn it down if you've changed your mind.", 14, 400, k.C.text)
+        ". Join now, or turn it down if you've changed your mind.", 14, 400, C.body)
     l:Dock(TOP)
     local row = vgui.Create("DPanel", popup)
     row:Dock(BOTTOM)
-    row:SetTall(s(34))
+    row:SetTall(s(40))
     row.Paint = nil
     local function answer(join)
         Rhylib.Net.Start("dp.uanswer")
@@ -470,19 +533,17 @@ local function acceptedPopup(bn, by)
         net.SendToServer()
         popup:Remove()
     end
-    local later = k.Button(row, "Later", function() popup:Remove() end, { tooltip = "Decide at the battalion computer, or when you next join" })
+    local later = T.Btn(row, "Later", function() popup:Remove() end, { quiet = true, tooltip = "Decide at the battalion computer, or when you next join" })
     later:Dock(RIGHT)
-    later:SetWide(s(90))
-    later:DockMargin(s(6), 0, 0, 0)
-    local rej = k.Button(row, "Reject", function()
+    later:DockMargin(s(8), 0, 0, 0)
+    local rej = T.Btn(row, "Reject", function()
         local m = k.Menu()
         m:AddOption("Turn down the " .. bn, function() answer(false) end)
         m:Open()
     end, { danger = true })
     rej:Dock(RIGHT)
-    rej:SetWide(s(110))
-    rej:DockMargin(s(6), 0, 0, 0)
-    local join = k.Button(row, "Join battalion", function() answer(true) end, { accent = true })
+    rej:DockMargin(s(8), 0, 0, 0)
+    local join = T.Btn(row, "Join battalion", function() answer(true) end, { primary = true })
     join:Dock(FILL)
 end
 
@@ -535,13 +596,37 @@ local function pendingApps()
     return n
 end
 
-D.TermAddTab("orders", { order = 30, name = "Orders", has = function(tm) return not tm.med end, build = ordersTab })
-D.TermAddTab("leave", { order = 50, name = "LOA", has = function(tm) return not tm.med end, build = leaveTab })
+-- T.OpenOrder(id): show that order on the Orders tab.
+function T.OpenOrder(id)
+    U.orderSel, U.orderDraft = id, nil
+    T.tab = "orders"
+    T.Build()
+end
+
+local function countOf(list, fn)
+    local n = 0
+    for _, x in ipairs(list or {}) do
+        if fn(x) then n = n + 1 end
+    end
+    return n > 0 and n or nil
+end
+
+D.TermAddTab("orders", {
+    order = 30, name = "Orders", has = function(tm) return not tm.med end, build = ordersTab,
+    badge = function() return countOf(T.unit and T.unit.orders, function(o) return o.mine and o.st <= 2 end) end,
+})
+D.TermAddTab("leave", {
+    order = 50, name = "LOA", has = function(tm) return not tm.med end, build = leaveTab,
+    badge = function()
+        local now = os.time()
+        return countOf(T.unit and T.unit.leave, function(e) return e.from <= now and e.to >= now end)
+    end,
+})
 D.TermAddTab("apps", {
     order = 80,
-    name = function() local n = pendingApps() return n > 0 and ("Applications (" .. n .. ")") or "Applications" end,
+    name = "Applications",
+    badge = function() local n = pendingApps() return n > 0 and n or nil end,
     has = function(tm) return not tm.med and T.unit ~= nil and T.unit.manager end,
-    accent = function() return pendingApps() > 0 end,
     build = appsTab,
 })
 -- MPs/admins outside the battalion can see it, and can still apply.

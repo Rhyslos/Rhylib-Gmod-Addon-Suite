@@ -1,12 +1,14 @@
 --[[
     Battalion computer window, Missions tab (client; sv_90_missions): the
-    current mission (run from officers' datapads) and the archive of ended
-    ones (officers delete). State in MS; registered with D.TermAddTab.
+    list on the left (the current mission with a LIVE / POSTED chip, then
+    the archive of ended ones), the reader card on the right (officers
+    delete archived ones). State in MS; registered with D.TermAddTab.
       dp.mlist -> dp.mlistr   dp.mread -> dp.mfull   dp.mdel
 ]]
 
 local D = Rhylib.Datapad
 local T = D.Term   -- (cl_20_terminal.lua: shared helpers, the window, the tab registry)
+local C = T.C
 
 local MS = { missions = nil, missionsAsked = nil, missionSel = nil, missionFull = {} }
 
@@ -14,7 +16,7 @@ local function missionsTab(body)
     local k = T.K()
     local s = k.S
     if not MS.missions then
-        T.Label(body, "Loading…")
+        T.Empty(body, "Loading…")
         if not MS.missionsAsked then
             MS.missionsAsked = true
             T.Send("dp.mlist")
@@ -23,22 +25,28 @@ local function missionsTab(body)
         return
     end
     local left, right = T.Columns(body)
+    local bar = vgui.Create("DPanel", left)
+    bar:Dock(TOP)
+    bar:SetTall(s(40))
+    bar:DockMargin(0, 0, s(8), s(12))
+    bar.Paint = nil
+    T.Title(bar, "Missions"):Dock(LEFT)
     local sp = k.Scroll(left)
     sp:Dock(FILL)
     local cur = MS.missions.current
     if cur then
-        local hd = k.Heading(sp, "Current")
+        local hd = T.Heading(sp, "Current")
         hd:Dock(TOP)
-        hd:DockMargin(0, 0, s(8), s(4))
+        hd:DockMargin(0, 0, s(8), s(8))
         T.ListRow(sp, cur.title, (cur.active and "Active" or "Posted") .. "  ·  " .. cur.by, function() return MS.missionSel == "cur" end, function()
             MS.missionSel = "cur"
             T.Build()
-        end, cur.active and "Live" or "Posted")
+        end, cur.active and "Live" or "Posted", cur.active and C.good or C.warn)
     end
-    local hd = k.Heading(sp, "Archive (" .. #MS.missions.list .. ")")
+    local hd = T.Heading(sp, "Archive · " .. #MS.missions.list)
     hd:Dock(TOP)
-    hd:DockMargin(0, s(4), s(8), s(4))
-    if #MS.missions.list == 0 then T.Label(sp, "No finished missions yet.") end
+    hd:DockMargin(0, s(2), s(8), s(8))
+    if #MS.missions.list == 0 then T.Empty(sp, "No finished missions yet.") end
     for _, x in ipairs(MS.missions.list) do
         T.ListRow(sp, x.title, (x.date ~= "" and (x.date .. "  ·  ") or "") .. x.n .. " took part  ·  " .. x.by,
             function() return MS.missionSel == x.id end, function()
@@ -49,18 +57,19 @@ local function missionsTab(body)
 
     -- Reader.
     if MS.missionSel == "cur" and cur then
-        local h = k.Heading(right, cur.title)
-        h:Dock(TOP)
+        T.Heading(right, cur.active and "Current mission · live" or "Current mission · posted", cur.active and C.good or C.warn):Dock(TOP)
+        local h = T.ReaderTitle(right, cur.title)
+        h:DockMargin(0, s(8), 0, s(4))
         T.Label(right, (cur.date ~= "" and (cur.date .. "  ·  ") or "") .. "by " .. cur.by .. "  ·  " ..
-            (cur.active and ("active since " .. T.when(cur.started)) or "not started"), cur.active and k.C.good or k.C.warn)
+            (cur.active and ("active since " .. T.when(cur.started)) or "not started"), cur.active and C.good or C.warn)
         local r = k.Scroll(right)
         r:Dock(FILL)
         local function part(title, txt)
             if txt == "" then return end
-            local ph = k.Heading(r, title)
+            local ph = T.Heading(r, title)
             ph:Dock(TOP)
-            ph:DockMargin(0, s(6), s(10), s(4))
-            local l = k.Label(r, txt, 14, 400, k.C.text)
+            ph:DockMargin(0, s(10), s(10), s(6))
+            local l = k.Label(r, txt, 14, 400, C.body)
             l:Dock(TOP)
             l:DockMargin(0, 0, s(10), 0)
         end
@@ -76,11 +85,12 @@ local function missionsTab(body)
         if it.id == MS.missionSel then x = it end
     end
     if not x then
-        T.Label(right, "Pick a mission to read it. Officers post, start and end missions from their datapad; ended ones land here.")
+        T.Empty(right, "Pick a mission to read it. Officers post, start and end missions from their datapad; ended ones land here.")
         return
     end
-    local h = k.Heading(right, x.title)
-    h:Dock(TOP)
+    T.Heading(right, "Archived mission"):Dock(TOP)
+    local h = T.ReaderTitle(right, x.title)
+    h:DockMargin(0, s(8), 0, 0)
     local by = T.Label(right, (x.date ~= "" and (x.date .. "  ·  ") or "") .. "by " .. x.by .. "  ·  " ..
         (x.started > 0 and (T.when(x.started) .. " – ") or "not started – ") .. T.when(x.ended))
     by:DockMargin(0, s(4), 0, s(6))
@@ -95,7 +105,7 @@ local function missionsTab(body)
     local r = k.Scroll(right)
     r:Dock(FILL)
     if not full then
-        T.Label(r, "Loading…")
+        T.Empty(r, "Loading…")
         if not MS.missionFull["asked" .. x.id] then
             MS.missionFull["asked" .. x.id] = true
             T.Send("dp.mread", function() net.WriteUInt(x.id, 16) end)
@@ -104,10 +114,10 @@ local function missionsTab(body)
     end
     local function part(title, txt)
         if txt == "" then return end
-        local ph = k.Heading(r, title)
+        local ph = T.Heading(r, title)
         ph:Dock(TOP)
-        ph:DockMargin(0, s(6), s(10), s(4))
-        local l = k.Label(r, txt, 14, 400, k.C.text)
+        ph:DockMargin(0, s(10), s(10), s(6))
+        local l = k.Label(r, txt, 14, 400, C.body)
         l:Dock(TOP)
         l:DockMargin(0, 0, s(10), 0)
     end
