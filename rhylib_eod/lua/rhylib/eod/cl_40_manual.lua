@@ -1,6 +1,9 @@
 --[[
-    The bomb manual: a datapad tab (rhylib_datapad) for players with the
-    Field technician skill "Bomb manual". A jump bar, then: the approach
+    The bomb manual for players with the Field technician skill "Bomb
+    manual": a topic on the pause menu's Learn page (rhylib_menus,
+    Menus.AddLearn "bomb"; also "mines" and "training" for everyone), and
+    the datapad's EOD manual tab (rhylib_datapad) opens it there (built in
+    the datapad only without Rhy's Menus). A jump bar, then: the approach
     and safe order as numbered steps, the tool kit, probe readings as
     coloured chips, safeguards (what fires it / how to beat it), module
     cards, the logic chip table drawn as blinks and switches, the
@@ -434,7 +437,7 @@ local function build(content, k)
     -- 10. Training ---------------------------------------------------------------------
 
     section("train", "Training", COL.train)
-    note("Training bombs and mines (yellow) never hurt anyone. A training bomb beeps twice each time it arms: a mistake shows what went wrong and it re-arms with the same setup. Anyone near one can set it up: the defusal window's Training setup builds any bomb (or rolls a random one); a training mine's window picks AP or LAP, difficulty, pins and whether it hides.", C.text)
+    note("Training bombs and mines (yellow) never hurt anyone. A training bomb beeps twice each time it arms: a mistake shows what went wrong and it re-arms with the same setup. A hint at the top of its window names the next step and outlines the wire it's about (Hide hints, or Settings > Interface). Anyone near one can set it up: the defusal window's Training setup builds any bomb, rolls a random one, or makes the tutorial bomb (a checklist walks you through it); a training mine's window picks AP or LAP, difficulty, pins and whether it hides.", C.text)
 
     -- 11. Last resort + causes -------------------------------------------------------------
 
@@ -465,11 +468,61 @@ local function build(content, k)
     top:InvalidateLayout()
 end
 
--- Datapad hooks (rhylib_datapad's TABS entry "eod" calls these).
+-- Datapad hooks (rhylib_datapad's TABS entry "eod" calls these). With
+-- Rhy's Menus the tab opens the bomb manual on the Learn page instead
+-- (easier to read); without it the manual is built in the datapad.
 local function register()
     local D = Rhylib.Datapad
     if not D then return end
-    D.EodManualBuild = build
+    D.EodManualBuild = function(content, k)
+        local M = Rhylib.Menus
+        if M and M.OpenLearn then
+            local l = k and IsValid(content) and k.Label(content, "Opening the bomb manual in Learn (Esc menu)…", 14, 400, k.C.textDim)
+            if l then l:Dock(TOP) end
+            timer.Simple(0, function() M.OpenLearn("bomb") end)
+            return
+        end
+        build(content, k)
+    end
     D.HasEodManual = hasManual
 end
 Rhylib.After("datapad", register)
+
+-- Learn page topics (rhylib_menus): the bomb manual (Bomb manual skill),
+-- mines and training bombs (everyone).
+local LEARN_RED, LEARN_ORANGE, LEARN_YELLOW = Color(226, 75, 74), Color(247, 107, 21), Color(245, 217, 10)
+Rhylib.After("menus", function()
+    local M = Rhylib.Menus
+    if not (M and M.AddLearn) then return end
+    M.AddLearn("bomb", { title = "Bomb manual", group = "explosives", order = 10, col = LEARN_RED,
+        sub = "Every bomb is a small circuit: the colours change, the rules don't.",
+        words = "eod defuse wire probe cut jumper capacitor timer remote anti-jam motion lid collapse module chip liquid sealed relay fake stabiliser gas virus interference",
+        lock = function()
+            if not hasManual() then return "Field technicians with the Bomb manual skill can read this. Practise on a training bomb meanwhile." end
+        end,
+        build = function(panel, k) build(panel, k) end })
+    M.AddLearn("mines", { title = "Mines & the scanner", group = "explosives", order = 20, col = LEARN_ORANGE,
+        sub = "Stepping on one, digging it out, finding them", words = "mine ap lap pin dig lift scanner flag republic",
+        blocks = {
+            { "p", "Mines are half buried and hard to see until you are a few metres away, unless someone marked them or a scanner shows them." },
+            { "h", "It clicked" },
+            { "steps", {
+                "Freeze. Moving, jumping or stepping off sets it off. Call the bomb squad (datapad).",
+                function() return "Someone else with a " .. E.KitName() .. " presses E on the mine and holds Dig until the fuse shows." end,
+                "They push the safety pin (Space) while the needle is in the green zone. LAP (large) mines need two pins.",
+                "Pinned: you may step off. Hold Lift to take it away.",
+            } },
+            { "h", "Mine scanner" },
+            { "p", "LMB switches the beam on: mines in it are outlined and it beeps faster as you close in. RMB marks the mine nearest your crosshair with a red flag everyone sees." },
+            { "note", "Blue outline: one of ours (Republic mines). Only droids set those off: walk over them." },
+        } })
+    M.AddLearn("training", { title = "Training bombs", group = "explosives", order = 30, col = LEARN_YELLOW,
+        sub = "Practise defusing without hurting anyone", words = "training tutorial hint practice",
+        blocks = {
+            { "p", "Training bombs and mines are yellow and never hurt anyone. A mistake shows what went wrong and the bomb re-arms with the same setup." },
+            { "p", "A training bomb shows a hint for the next step at the top of its window (Hide hints switches them off; Settings has it too)." },
+            { "h", "Your first bomb" },
+            { "p", "Open a training bomb, press Training setup and pick Tutorial: a bomb with a battery, a timer that never runs out and one decoy, and a checklist that walks you through every step." },
+            { "p", "Training setup also builds any bomb you want, or rolls a random simplified, small or large one." },
+        } })
+end)

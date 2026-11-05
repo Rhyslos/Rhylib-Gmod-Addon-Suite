@@ -22,6 +22,10 @@
                    prisoners nearby (no terminal needed).
       Calls        Quick response tab: call MPs, a medic, the bomb squad,
                    reinforcements or resupply (config "calls").
+      Intel        intel datapads a game master places and writes; field
+      datapads     technicians crack them (three signal locks, easy,
+                   moderate, hard) to read the intel (sh_95 / sv_95 /
+                   cl_95_intel.lua, entities/rhylib_intel_pad.lua).
 
     This file: config keys, models, shared helpers (D.Battalion, D.IsMP,
     D.Limit, D.Clip...), the datapad's inventory size and the computers'
@@ -47,6 +51,7 @@ if Config.Describe then   -- (Server settings page)
         { "Notes & logs", { "^noteLimit$", "^titleMax$", "^bodyMax$", "^logCap$", "^medCap$" } },
         { "Quick response calls", { "^calls$", "^supplyItems$", "^call" } },
         { "Unit & personnel", { "^strike", "^arrestRange$", "^useRange$", "^class$", "^giveOnSpawn$" } },
+        { "Intel datapads", { "^intel" } },
     })
 end
 
@@ -91,11 +96,13 @@ Config.Register("datapad", "strikeWarn", 3, "Active strikes at which the battali
 D.MODELS = {
     battalion = "models/ace/sw/rh/cgi_holotable_bottom.mdl",
     medical = "models/reizer_props/srsp/sci_fi/command_table_02/command_table_02.mdl",
+    intel = "models/props_lab/reciever01b.mdl",   -- intel datapad (a placeholder)
 }
 -- Server settings > Models.
 Rhylib.Hook.Add("Rhylib.ModelCatalogue", "datapad.models", function(add)
     add("datapad.battalion", "Battalion computer", "Terminals", function() return D.MODELS end, "battalion")
     add("datapad.medical", "Medical holotable", "Terminals", function() return D.MODELS end, "medical")
+    add("datapad.intel", "Intel datapad", "Terminals", function() return D.MODELS end, "intel")
 end)
 D.MED_KEY = "__medical"   -- the medical holotable's key in Data
 D.KIND_LOG, D.KIND_MED = 0, 1   -- note kinds (1 bit on the wire): log -> battalion computer, medical record -> holotable

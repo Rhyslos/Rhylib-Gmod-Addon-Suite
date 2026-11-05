@@ -382,7 +382,9 @@ function Items.SameIssued(a, b)
     local ib = b.data and b.data.issued and true or false
     local la = a.data and a.data.loadout and true or false
     local lb = b.data and b.data.loadout and true or false
-    return ia == ib and la == lb   -- (job loadout gear keeps to itself too)
+    local sa = a.data and a.data.stock and true or false
+    local sb = b.data and b.data.stock and true or false
+    return ia == ib and la == lb and sa == sb   -- (job loadout gear and armoury stock keep to themselves too)
 end
 
 --------------------------------------------------------------------------

@@ -114,6 +114,8 @@ local function facts(st, ply)
 end
 
 -- E.View(bomb, ply) -> table: what this player's defusal window may know.
+-- Training bombs also get v.steps (C.Steps: hints, which name wire jobs)
+-- and v.tutorial.
 -- Wires carry only ends, colour and flags (cut, sealed, arm = armoured),
 -- never the kind. Parts and modules are empty until the lid is off; the
 -- chip code and stabiliser dose only show once open. Live values (heat,
@@ -145,6 +147,12 @@ function E.View(bomb, ply)
     if st.liquid then v.liquid = { band = st.liquid.band, period = st.liquid.period, ph = st.liquid.ph, drained = st.liquid.drained } end
     if st.fake then v.fake = { removed = st.fake.removed, xrays = st.fake.xrays, n = st.fake.n, cut = st.fake.cut, cols = st.fake.cols } end
     if st.stab then v.stab = { dose = st.open and st.stab.dose or nil, done = st.stab.done } end
+    -- (training bombs: the safe order, for hints and the tutorial checklist)
+    if bomb.IsTrainingBomb then
+        st.covered = E.Covered(bomb)
+        v.steps = C.Steps(st, now)
+        v.tutorial = st.f.tutorial and true or nil
+    end
     return v
 end
 
@@ -373,6 +381,13 @@ OPS[4] = function(ply, bomb, i)
     net.WriteUInt(i, 5)
     net.WriteString(E.Reading(st, i))
     net.Send(ply)
+    st.probed = st.probed or {}
+    -- (training bombs: the hint moves on, so the view goes out again)
+    if bomb.IsTrainingBomb and not st.probed[i] then
+        st.probed[i] = true
+        return
+    end
+    st.probed[i] = true
     return "noSend"
 end
 

@@ -11,7 +11,9 @@
     Shared. Server: Initialize rolls features for its BombType (custom
     starts as a large roll, training as a small one) and calls
     E.SetupBomb. Client: the timer readout on top (NW2 vars rhylib_eodEnd,
-    rhylib_eodLeft, rhylib_eodStop, rhylib_eodTimer, rhylib_eodSafe).
+    rhylib_eodLeft, rhylib_eodStop, rhylib_eodTimer, rhylib_eodSafe) and a
+    red light blinking on bombs with a motion sensor (rhylib_eodMotion: 1
+    normal, 2 sensitive = faster), seen from up to 3000 units.
     Your own variant: ENT.Base = "rhylib_eod_bomb" and set ENT.BombType
     to "simple", "small", "large", "custom" or "training".
 ]]
@@ -95,9 +97,27 @@ if CLIENT then
         self:DrawModel()
     end
 
+    -- Motion sensor light: a red blink on top, seen from up to 3000 units
+    -- (only where the bomb itself can be seen); faster when sensitive.
+    local GLOW = Material("sprites/light_glow02_add")
+    local MOTION_RED = Color(255, 40, 30)
+    local function motionLight(self, pos)
+        local m = self:GetNW2Int("rhylib_eodMotion", 0)
+        if m == 0 or self:GetNW2Bool("rhylib_eodSafe", false) then return end
+        local d2 = EyePos():DistToSqr(pos)
+        if d2 > 3000 * 3000 then return end
+        local period = m == 2 and 0.6 or 1.2
+        if (CurTime() + self:EntIndex() * 0.37) % period > period * 0.3 then return end
+        local top = self:LocalToWorld(Vector(0, 0, self:OBBMaxs().z + 3))
+        local size = 10 + math.sqrt(d2) * 0.012
+        render.SetMaterial(GLOW)
+        render.DrawSprite(top, size, size, MOTION_RED)
+    end
+
     -- Timer readout and status light on top, within 700 units.
     function ENT:DrawTranslucent()
         local pos = self:GetPos()
+        motionLight(self, pos)
         if EyePos():DistToSqr(pos) > 700 * 700 then return end
         local top = self:LocalToWorld(Vector((self:OBBMins().x + self:OBBMaxs().x) / 2, (self:OBBMins().y + self:OBBMaxs().y) / 2, self:OBBMaxs().z + 0.3))
         local ang = self:GetAngles()

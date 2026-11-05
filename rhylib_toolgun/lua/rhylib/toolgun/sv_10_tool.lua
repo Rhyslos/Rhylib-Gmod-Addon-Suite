@@ -478,7 +478,9 @@ Rhylib.Net.Receive("tool.follow", function(ply)
         local tr = aim(ply)
         local target = IsValid(tr.Entity) and tr.Entity:IsPlayer() and tr.Entity or ply
         local L = Rhylib.Lying
-        if IsValid(tr.Entity) and L and L.Owner and IsValid(L.Owner(tr.Entity)) then target = L.Owner(tr.Entity) end
+        -- (a downed player's body; not a test dummy's)
+        local owner = IsValid(tr.Entity) and L and L.Owner and L.Owner(tr.Entity)
+        if IsValid(owner) and owner:IsPlayer() then target = owner end
         local n = D.AssignFollow(ply, target)
         note(ply, n > 0 and string.format("%d now follow %s.", n, target == ply and "you" or target:Nick())
             or "Pick clones first (LMB).", n > 0 and "good" or "bad", "Clones")

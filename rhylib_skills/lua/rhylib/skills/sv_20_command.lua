@@ -4,7 +4,8 @@
     forward against knockdowns. Shared state and numbers: sh_20_command.lua.
     Net skills.order (order index 3 bits, issuer entity) to everyone it reached.
     Also: Reinforcements (K.CallReinforcements -> rhylib_droids
-    D.CallSquad) and the squad wheel (net skills.squad: option index 3
+    D.CallSquad; with rhylib_logistics garrison tickets on, one ticket per
+    clone, L.GarrisonAllows / L.SpendGarrison) and the squad wheel (net skills.squad: option index 3
     bits into K.SQUAD_OPS -> rhylib_droids D.SquadOrder).
     Cooldowns are kept by SteamID64 in memory (K.orderCd, K.reinfCd), not
     saved: a map change resets them.
@@ -128,8 +129,16 @@ function K.CallReinforcements(ply)
     if not (D and D.CallSquad) then return false, "Reinforcements aren't available on this server" end
     local squad = cfg("reinfSquad")
     if not istable(squad) or #squad == 0 then return false, "No reinforcements are set up (skills reinfSquad)" end
+    -- (garrison tickets, rhylib_logistics: one per clone while they're on)
+    local L = Rhylib.Logistics
+    if L and L.GarrisonAllows then
+        local n = L.GarrisonAllows(#squad)
+        if n <= 0 then return false, "No garrison tickets left: reinforcements can't be called" end
+        if n < #squad then squad = { unpack(squad, 1, n) } end
+    end
     local made = D.CallSquad(ply, squad, cfg("reinfLife"))
     if made == 0 then return false, "No room for reinforcements here, or the clone limit is reached" end
+    if L and L.SpendGarrison then L.SpendGarrison(made) end
     local untilT = CurTime() + cfg("reinfCooldown")
     ply:SetNW2Float("rhylib_reinfCd", untilT)
     K.reinfCd[ply:SteamID64() or ""] = untilT

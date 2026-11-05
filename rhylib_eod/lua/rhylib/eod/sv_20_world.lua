@@ -27,7 +27,9 @@
                    (7 bits), hops (bool)
       eod.place    client -> server: item uid (Items.UID_BITS); rate 3/s
       eod.devset   client -> server: device, op (3 bits), argument; rate 12/s
-      eod.train    client -> server: training bomb, op (3 bits), op 0 JSON
+      eod.train    client -> server: training bomb, op (3 bits: 0 custom JSON,
+                   1 same again, 2-4 random simple / small / large, 5 send
+                   the setup, 6 the tutorial bomb), op 0 JSON
       eod.trainopen server -> player: training bomb, len (16 bits),
                    compressed JSON of its feature table f
 ]]
@@ -73,7 +75,7 @@ E.SyncDisplay = syncDisplay
 
 -- E.SetupBomb(bomb, f): give an entity a bomb state built from features f
 -- (E.Build), register it in E.bombs, set its NW2 vars (rhylib_eodKind,
--- rhylib_eodTimer, rhylib_eodSafe) and the model for its size. Server.
+-- rhylib_eodTimer, rhylib_eodSafe, rhylib_eodMotion) and the model for its size. Server.
 -- Doesn't close open windows: use E.Rebuild on a bomb already in play.
 -- Example: local f = Rhylib.EOD.Roll("small") f.mods.chip = true
 --          Rhylib.EOD.SetupBomb(ent, f)
@@ -86,6 +88,8 @@ function E.SetupBomb(bomb, f)
     bomb:SetNW2String("rhylib_eodKind", st.kindName)
     bomb:SetNW2Bool("rhylib_eodTimer", st.timerSecs ~= nil)
     bomb:SetNW2Bool("rhylib_eodSafe", false)
+    -- (a motion sensor blinks a red light you can see from a distance: 1 normal, 2 sensitive)
+    bomb:SetNW2Int("rhylib_eodMotion", f.motion == "sensitive" and 2 or (f.motion and 1 or 0))
     local mdl = E.Cfg(st.big and "modelLarge" or "modelSmall")
     if not (isstring(mdl) and util.IsValidModel(mdl)) then mdl = st.big and "models/props_lab/powerbox01a.mdl" or "models/props_c17/consolebox01a.mdl" end
     if bomb:GetModel() ~= mdl then
@@ -798,8 +802,17 @@ local function tick()
         end
 
         if IsValid(bomb) and st and not st.over then
+            -- training bombs with someone looking: the hints follow the
+            -- capacitor draining and an interference device covering it
+            if bomb.IsTrainingBomb and next(st.viewers) then
+                local sig = (E.CapNow(st) < 5 and 1 or 0) + (E.Covered(bomb) and 2 or 0)
+                if sig ~= st.hintSig then
+                    st.hintSig = sig
+                    E.Changed(bomb)
+                end
+            end
             -- timers wake up when someone comes close
-            if st.timerWaiting and not st.gmHeld and now >= (st.armAt or 0) and E.AnySupply(st) and not st.safe and anyoneNear(bomb:GetPos(), E.Cfg("timerWake")) then
+            if st.timerWaiting and not st.gmHeld and not st.f.tutorial and now >= (st.armAt or 0) and E.AnySupply(st) and not st.safe and anyoneNear(bomb:GetPos(), E.Cfg("timerWake")) then
                 E.StartTimer(bomb)
             end
             -- frequency hopping
@@ -1069,7 +1082,12 @@ Net.Receive("eod.train", function(ply)
     elseif op == 1 then
         f = table.Copy(bomb.eod.f)
         f.mods = table.Copy(bomb.eod.f.mods or {})
-    elseif op >= 2 and op <= 4 then f = trainingFrom(({ "simple", "small", "large" })[op - 1]) end
+    elseif op >= 2 and op <= 4 then f = trainingFrom(({ "simple", "small", "large" })[op - 1])
+    elseif op == 6 then
+        -- (the tutorial bomb: battery, timer that never starts, one decoy, a checklist)
+        f = { type = "training", tutorial = true, det = "timer", antiJam = false, motion = nil, lid = false, battery = "single",
+            sensor = false, charge = "he", hop = false, mods = {} }
+    end
     if not f then return end
     E.Rebuild(bomb, f)
     E.Msg(ply, "Training bomb set up: " .. (op == 1 and "the same again" or "ready"))

@@ -26,6 +26,13 @@
     the hidden player blocked).
     Player fields: rhylibFwd (damage being forwarded), rhylibHitGroup,
     rhylibLieHidden, rhylibLieCG; ragdoll: rhylibOwner, rhylibLyingRag.
+
+    Non-player entities can lie too (rhylib_medical's test dummies, which
+    have Alive()): Begin / End / Pull / Unstick work on them; they aren't
+    hidden here (a NoDraw entity isn't sent to clients, so the entity hides
+    itself while it has a ragdoll), and as no spawn / leave hooks fire for
+    them they call L.ClearCorpse and L.End themselves.
+    Server also: L.ClearCorpse(ent).
 ]]
 
 Rhylib.Lying = Rhylib.Lying or {}
@@ -112,6 +119,10 @@ end
 local function showPlayer(ply, show)
     if show and not ply.rhylibLieHidden then return end
     ply.rhylibLieHidden = not show or nil
+    if not ply:IsPlayer() then
+        ply:DrawShadow(show)   -- (a test dummy draws itself; see the top)
+        return
+    end
     if show and ply.rhylibCloak then return end   -- (rhylib_admin invisible: stay hidden)
     ply:SetNoDraw(not show)
     ply:DrawShadow(show)
@@ -132,7 +143,8 @@ local NUDGES = { Vector(0, 0, 0), Vector(0, 0, 12), Vector(24, 0, 4), Vector(-24
     Vector(40, 0, 8), Vector(-40, 0, 8), Vector(0, 40, 8), Vector(0, -40, 8), Vector(0, 0, 36) }
 function L.Unstick(ply)
     local pos = ply:GetPos()
-    local mins, maxs = ply:GetHull()
+    local mins, maxs
+    if ply:IsPlayer() then mins, maxs = ply:GetHull() else mins, maxs = ply:OBBMins(), ply:OBBMaxs() end
     for _, off in ipairs(NUDGES) do
         local p = pos + off
         local tr = util.TraceHull({ start = p, endpos = p, mins = mins, maxs = maxs, filter = ply, mask = MASK_PLAYERSOLID })
@@ -281,13 +293,19 @@ timer.Create("Rhylib.Lying", 0.1, 0, function()
     end
 end)
 
--- Before medical / MP clean up (-100): a respawn isn't put on the old body.
-Rhylib.Hook.Add("PlayerSpawn", "core.lying", function(ply)
-    if L.active[ply] then L.End(ply, true) end
+-- L.ClearCorpse(ply) (server): the corpse ragdoll left by dying while
+-- lying goes (respawn).
+function L.ClearCorpse(ply)
     if IsValid(L.corpse[ply]) then L.corpse[ply]:Remove() end
     L.corpse[ply] = nil
     ply:SetNW2Bool("rhylib_ragCorpse", false)
     ply:SetNW2Entity("rhylib_corpse", NULL)
+end
+
+-- Before medical / MP clean up (-100): a respawn isn't put on the old body.
+Rhylib.Hook.Add("PlayerSpawn", "core.lying", function(ply)
+    if L.active[ply] then L.End(ply, true) end
+    L.ClearCorpse(ply)
     showPlayer(ply, true)
 end, -100)
 
@@ -351,7 +369,7 @@ end, -300)
 -- half of a blast are dropped; bleeding out (DMG_DIRECT) and the world
 -- (falls) still count.
 Rhylib.Hook.Add("EntityTakeDamage", "core.lying.direct", function(ent, dmg)
-    if not ent:IsPlayer() or not L.active[ent] or ent.rhylibFwd then return end
+    if not L.active[ent] or ent.rhylibFwd then return end   -- (players and test dummies)
     if dmg:IsDamageType(DMG_DIRECT) then return end
     local att = dmg:GetAttacker()
     if IsValid(att) and (att:IsPlayer() or att:IsNPC() or att:IsNextBot()) then return true end

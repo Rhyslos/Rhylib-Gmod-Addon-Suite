@@ -95,6 +95,8 @@ local ALL = {
     { id = "cmdpostfield", name = "Command post, field (big, for outdoors)", cat = "Base", class = "rhylib_command_post_field", save = "rhylib_logistics_save" },
     { id = "buildcrate", name = "Building supplies crate (logistics, full)", cat = "Base", class = "rhylib_build_crate" },
     { id = "sensor", name = "Sensor array beacon (logistics, full power)", cat = "Base", class = "rhylib_sensor_beacon" },
+    { id = "resupply", name = "Armoury resupply crate (logistics: set down by an armoury)", cat = "Base", class = "rhylib_resupply_crate" },
+    { id = "intelpad", name = "Intel datapad (E with the toolgun: write its intel)", cat = "Base", class = "rhylib_intel_pad" },
     { id = "trainer", name = "Training instructor (basic training quiz)", cat = "Training", class = "rhylib_trainer", save = "rhylib_trainer_save" },
     { id = "armoury", name = "Weapons armoury", cat = "Armoury", class = "rhylib_armoury", save = ARMOURY },
     { id = "ammo", name = "Ammo cabinet", cat = "Armoury", class = "rhylib_ammo_cabinet", save = ARMOURY },
@@ -174,6 +176,7 @@ local CONFIG_MODEL = {
     rhylib_command_post = { "logistics", "postModel" },
     rhylib_command_post_field = { "logistics", "postFieldModel" },
     rhylib_build_crate = { "logistics", "crateModel" },
+    rhylib_resupply_crate = { "logistics", "resupplyModel" },
 }
 
 -- Tool.ClassModel(class): the model placing that class gives, or nil.

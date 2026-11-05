@@ -3,12 +3,15 @@
     Treating kits (medkit, first aid kit; OpensMenu, kept as the name):
     left click treats the player you aim at, worst problem first; on a
     downed player a first aid kit revives. Right click treats yourself.
+    Hardcore medical system: those clicks open the injury menu of the
+    player you aim at (right click: your own) to drag the kit onto a part.
     Others (revive kit): left click uses it on the player you aim at.
     The server does the work (rhylib_medical sv_20_actions.lua); a timer
     plays until it's done. Kits are inventory items (InvW / InvStack).
 
     Shared. Fields a kit sets: PrintName, Spawnable, Category, Hint (HUD
-    line), SimpleHint (HUD line in the simplified system), CanSelf (RMB
+    line), SimpleHint (HUD line in the simplified system), HardHint (HUD
+    line in the hardcore system), CanSelf (RMB
     treats yourself), OpensMenu (a treating kit: RMB treats yourself), ChargeText
     (client function: extra HUD text), Inv* (inventory size/stack/weight).
     To make a new kit, set SWEP.Base = "rhylib_med_base" and teach
@@ -70,7 +73,8 @@ if CLIENT then
         local s = ScrH() / 1080
         local Med = Rhylib.Medical
         local simple = Med and Med.Simple and Med.Simple()
-        local text = simple and self.SimpleHint or self.Hint
+        local hard = Med and Med.Hardcore and Med.Hardcore()
+        local text = simple and self.SimpleHint or (hard and self.HardHint) or self.Hint
         -- (simplified medical system: no charge shown when kits never run out)
         local charge = self.ChargeText and not (simple and Med.Cfg("simpleFirstAidCharge") ~= true)
         if charge then text = text .. "   ·   " .. self:ChargeText() end

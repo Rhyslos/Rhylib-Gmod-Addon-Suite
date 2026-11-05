@@ -8,13 +8,19 @@
     - E on a downed player opens a small menu: Stabilise, and for medics
       Revive with a revive kit or a first aid kit (the medic picks).
 
-    The downed list is rebuilt four times a second, not every frame.
+    The downed list is rebuilt four times a second, not every frame. It
+    holds downed test dummies too (Med.dummies), so markers, the prompt,
+    the E menu and the wheel work on them; the same pass sets a dummy's
+    RhylibWheelHold (standing: the wheel opens after a hold, down: at once).
 
-    With rhylib_menus the interaction wheel (hook Rhylib.WheelOptions)
-    offers the same actions plus "Injuries"; the wheel takes E on downed
-    players, so the small E menu here is the fallback without it.
-    Public: Med.ShowNote(text), Med.clientDown (list of downed players).
-    Nets: med.act (out: kind 4 bits, target index 8 bits). Notices:
+    With rhylib_menus the interaction wheel (hook Rhylib.WheelOptions; for
+    test dummies Rhylib.WheelEntityOptions) offers the same actions plus
+    "Injuries" ("Check and treat" in hardcore, where the H menu treats);
+    the wheel takes E on downed players, so the small E menu here is the
+    fallback without it.
+    Public: Med.ShowNote(text), Med.clientDown (list of downed players and
+    test dummies).
+    Nets: med.act (out: kind 4 bits, target index 13 bits). Notices:
     Rhylib.Notify (Med.ShowNote).
 ]]
 
@@ -35,6 +41,15 @@ timer.Create("Rhylib.Medical.List", 0.25, 0, function()
     local list = {}
     for _, p in ipairs(player.GetAll()) do
         if p:Alive() and Med.IsDown(p) then list[#list + 1] = p end
+    end
+    for d in pairs(Med.dummies) do
+        if not IsValid(d) then
+            Med.dummies[d] = nil
+        else
+            local down = Med.IsDown(d)
+            if down and d:Alive() then list[#list + 1] = d end
+            d.RhylibWheelHold = not down
+        end
     end
     Med.clientDown = list
 end)
@@ -276,7 +291,7 @@ end)
 local function send(kind, target)
     Rhylib.Net.Start("med.act")
     net.WriteUInt(kind, Med.ACT_BITS)
-    net.WriteUInt(target:EntIndex(), 8)
+    net.WriteUInt(target:EntIndex(), 13)
     net.SendToServer()
 end
 
@@ -343,8 +358,9 @@ end
 
 -- Interaction wheel (rhylib_menus): the same actions, plus the injury menu.
 -- Hook Rhylib.WheelOptions(target, me, add): add(label, run(target),
--- { order, sub, disabled }) puts an option on the wheel.
-Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.wheel", function(t, me, add)
+-- { order, sub, disabled }) puts an option on the wheel. Test dummies
+-- aren't players: the wheel asks Rhylib.WheelEntityOptions for them.
+local function wheelOptions(t, me, add)
     if Med.IsDown(me) then return end
     local cfgRange = Med.Cfg("viewRange")
     if Med.IsDown(t) then
@@ -375,8 +391,12 @@ Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.wheel", function(t, me, add)
         end
     end
     if Med.OpenInjuries and not Med.Simple() and t:GetPos():DistToSqr(me:GetPos()) < cfgRange * cfgRange * 2 then
-        add("Injuries", function(x) Med.OpenInjuries(x) end, { order = 20, sub = "Check their wounds" })
+        add("Injuries", function(x) Med.OpenInjuries(x) end, { order = 20, sub = Med.Hardcore() and "Check and treat" or "Check their wounds" })
     end
+end
+Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.wheel", wheelOptions)
+Rhylib.Hook.Add("Rhylib.WheelEntityOptions", "medical.wheel", function(ent, me, add)
+    if Med.IsDummy(ent) and ent:Alive() then wheelOptions(ent, me, add) end
 end)
 
 -- Downed: the reload key calls a medic (server checks and cools it down).

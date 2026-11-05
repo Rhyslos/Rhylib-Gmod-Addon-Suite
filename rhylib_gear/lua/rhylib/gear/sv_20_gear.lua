@@ -9,7 +9,8 @@
     Saved data: Data "gear" / "kitoff_<SteamID64>" = { [item id] = true }:
     kit parts the player dropped, not given again at spawn.
     Hooks answered: Rhylib.LoadoutDropped, Rhylib.InventoryChanged,
-    Rhylib.BlastPartMult and Rhylib.LimpChance (rhylib_medical, kama),
+    Rhylib.BlastPartMult, Rhylib.LimpChance and Rhylib.FractureChance
+    (rhylib_medical, kama; fractures only in its hardcore system),
     Rhylib.ArmorDrainMult (rhylib_weapons armour, pauldron),
     Rhylib.GearStockFor / Rhylib.GearReturnable (rhylib_armoury gear
     cabinet), Rhylib.CanTakeStock (rhylib_inventory, unlocks),
@@ -275,6 +276,10 @@ end)
 
 Rhylib.Hook.Add("Rhylib.LimpChance", "gear.kama", function(ply, limb)
     if LEGS[limb] and G.Active(ply, "kama") then return G.Cfg("kamaLimpChance") end
+end)
+
+Rhylib.Hook.Add("Rhylib.FractureChance", "gear.kama", function(ply, limb)
+    if LEGS[limb] and G.Active(ply, "kama") then return G.Cfg("kamaFractureChance") end
 end)
 
 Rhylib.Hook.Add("Rhylib.ArmorDrainMult", "gear.pauldron", function(ply)

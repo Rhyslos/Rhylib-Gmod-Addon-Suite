@@ -144,7 +144,7 @@ end
 -- left at x, y, size pixels square. Names: trooper, skills, jobs, shop,
 -- battalion, radio, class, settings, staffhome, players, maps, server,
 -- editor, quiz, profiler, commands, inventory, resume, power, menu,
--- search. Unknown names draw nothing. K.ICONS holds the shapes (lists of
+-- search, learn, lock. Unknown names draw nothing. K.ICONS holds the shapes (lists of
 -- strokes on a 24 x 24 grid: { x1, y1, x2, y2, ... }, or { arc = { cx, cy,
 -- r, from, to } } in degrees, 0 = right, 90 = down; closed = true joins
 -- the ends). Example: K.Icon("skills", 8, 8, K.S(18), K.C.accent)
@@ -180,6 +180,8 @@ K.ICONS = {
     power = { { arc = { 12, 13, 7, 300, 600 } }, { 12, 3, 12, 11 } },
     menu = { { 4, 6, 20, 6 }, { 4, 12, 20, 12 }, { 4, 18, 20, 18 } },
     search = { { arc = { 10, 10, 6, 0, 360 } }, { 14.5, 14.5, 20, 20 } },
+    lock = { { 5, 11, 19, 11, 19, 21, 5, 21, closed = true }, { arc = { 12, 11, 4.5, 180, 360 } } },
+    learn = { { 12, 6, 12, 20 }, { 12, 6, 8, 4.5, 3, 4.5, 3, 18.5, 8, 18.5, 12, 20 }, { 12, 6, 16, 4.5, 21, 4.5, 21, 18.5, 16, 18.5, 12, 20 } },
 }
 local iconCache, iconCount = {}, 0
 local function thickSeg(out, x1, y1, x2, y2, t)

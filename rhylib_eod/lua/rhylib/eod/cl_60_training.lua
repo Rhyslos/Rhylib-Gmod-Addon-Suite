@@ -1,7 +1,8 @@
 --[[
     Training bomb setup (client): opened from the defusal window's
     "Training setup" button. Like the GM's custom bomb: pick every part
-    and module, or roll a random simplified / small / large one.
+    and module, roll a random simplified / small / large one, or the
+    tutorial bomb (op 6: a checklist walks you through it).
     Net eod.train (bomb, op 3 bits, JSON for op 0); eod.trainopen returns
     the bomb's current setup.
 ]]
@@ -16,7 +17,8 @@ local tr = { frame = nil, bomb = nil, c = nil }
 
 -- E.TrainAct(bomb, op, json): send net eod.train. Ops: 0 build (json =
 -- builder fields, same as the GM custom builder), 1 same again,
--- 2 / 3 / 4 random simplified / small / large, 5 open the setup window.
+-- 2 / 3 / 4 random simplified / small / large, 5 open the setup window,
+-- 6 the tutorial bomb.
 function E.TrainAct(bomb, op, js)
     if not IsValid(bomb) then return end
     Net.Start("eod.train")
@@ -114,6 +116,14 @@ local function open(bomb, f)
     local l = k.Label(sp, "Nobody gets hurt: a wrong move only fails, shows why, and the bomb re-arms with the same setup.", 13, 400, k.C.textDim)
     l:Dock(TOP)
     l:DockMargin(0, 0, s(8), s(6))
+
+    heading("First time?")
+    buttons({
+        { "Tutorial bomb", function() E.TrainAct(bomb, 6) close() end },
+    })
+    local tl = k.Label(sp, "A battery, a timer that never runs out and one decoy, with a checklist that walks you through every step.", 13, 400, k.C.textDim)
+    tl:Dock(TOP)
+    tl:DockMargin(0, 0, s(8), s(6))
 
     heading("Random")
     buttons({

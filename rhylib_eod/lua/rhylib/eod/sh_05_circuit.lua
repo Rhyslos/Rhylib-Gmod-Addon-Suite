@@ -36,6 +36,8 @@
     drain (capDrain seconds) only once every supply is gone.
 
     Roll odds live in E.ROLL (below), next to E.TIERS (sh_00_config).
+    C.Steps(st, now) lists the safe order for this bomb (training hints,
+    the tutorial bomb's checklist: f.tutorial = no tamper loop, one decoy).
 ]]
 
 local E = Rhylib.EOD
@@ -47,9 +49,9 @@ local C = E.Circuit
 -- is taken with modChance.
 E.ROLL = {
     small = {
-        remote = 0.5, antiJam = 0.2, motion = 0.5, sensitive = 0, lid = 0.4, sensor = 0.2, hop = 0,
-        battery = { single = 40, capacitor = 30, collapse = 30 },
-        charge = { he = 70, gas = 20, virus = 10 },
+        remote = 0.35, antiJam = 0.1, motion = 0.35, sensitive = 0, lid = 0.35, sensor = 0.1, hop = 0,
+        battery = { single = 55, capacitor = 30, collapse = 15 },
+        charge = { he = 80, gas = 15, virus = 5 },
     },
     large = {
         remote = 0.6, antiJam = 0.4, motion = 0.7, sensitive = 0.5, lid = 0.5, sensor = 0.3, hop = 0.3,
@@ -57,7 +59,7 @@ E.ROLL = {
         charge = { he = 80, gas = 10, virus = 10 },
     },
     modChance = 0.75,
-    tamperSmall = 0.5,   -- small bombs with a timer get a tamper loop this often (others always, simplified never)
+    tamperSmall = 0.25,  -- small bombs with a timer get a tamper loop this often (others always, simplified and the tutorial never)
 }
 
 local function R(rnd) return rnd or math.random end
@@ -228,12 +230,14 @@ function C.BuildBoard(f, rnd)
     W("det", "det", "chg", f.mods.sealed and { sealed = true } or nil)
     if P.chip then W("logic", "chip", "det") end
     -- (tamper loop: never on simplified, tamperSmall of the small bombs, always otherwise)
-    if P.tmr and f.type ~= "simple" and (f.type ~= "small" or chance(rnd, E.ROLL.tamperSmall)) then W("tamper", "tmr", "chg") end
+    if P.tmr and f.type ~= "simple" and not f.tutorial and (f.type ~= "small" or chance(rnd, E.ROLL.tamperSmall)) then W("tamper", "tmr", "chg") end
     -- decoys: pairs of parts that exist and aren't wired yet
     local cand = {}
     for _, c in ipairs({ { "bat", "chg" }, { "rx", "chg" }, { "tmr", "chg" }, { "col", "chg" }, { "aj", "chg" }, { "chip", "chg" }, { "cap", "chg" }, { "batB", "det" } }) do
         local dup = false
         for _, w in ipairs(wires) do if w.a == c[1] and w.b == c[2] then dup = true end end
+        -- (the dummy load sits between the receiver and the charge: no room for a wire there)
+        if c[1] == "rx" and c[2] == "chg" and P.load then dup = true end
         if P[c[1]] and P[c[2]] and not dup then cand[#cand + 1] = c end
     end
     local nd = (f.type == "large" or f.type == "custom") and 2 or 1
@@ -658,4 +662,69 @@ function C.Stab(st, q)
     st.stab.done = true
     say(o, "Charge stabilised")
     return o
+end
+
+--------------------------------------------------------------------------
+-- Steps (training hints and the tutorial checklist)
+--------------------------------------------------------------------------
+
+-- C.Steps(st, now) -> list of { t = title, why = text, done = bool,
+-- wire = wire index to point at (optional), part = part id (optional) }
+-- in the safe order the manual teaches, only the steps this bomb needs.
+-- The first step not done is the hint. Uses st.probed[i] (set when a
+-- wire is probed). Only training bombs send this (it names wire jobs).
+function C.Steps(st, now)
+    local f = st.f
+    local list = {}
+    local function add(t, why, done, wire, part)
+        list[#list + 1] = { t = t, why = why, done = done and true or false, wire = wire, part = part }
+    end
+    local function wireOf(kind, ok)
+        for i, w in ipairs(st.wires) do
+            if w.k == kind and not st.cut[i] and (not ok or ok(i, w)) then return i end
+        end
+    end
+    local probed = st.probed or {}
+    add("Hold Inspect", "It tells you what the bomb has: detonator, anti-jam, motion sensor, lid switch, charge and modules.", st.inspected)
+    if f.lid then add("Release the lid-switch tab", "This bomb has a lid switch: lifting the lid with the tab in fires it.", st.lidReleased or st.open) end
+    add("Lift the lid", "The board is under it.", st.open)
+    if st.fake then add("Take the board cover off", "X-ray it to see the mount order, then cut the three mount wires in that order.", st.fake.removed) end
+    local unprobed
+    for i, w in ipairs(st.wires) do
+        -- (the wire under a sealed plate is probed with the detonator step)
+        if not st.cut[i] and not probed[i] and not w.sealed then unprobed = unprobed or i end
+    end
+    local tamper = wireOf("tamper") and " LOOP 5V is a tamper loop: leave it alone." or ""
+    add("Probe every wire", "The probe says what each wire does. DEAD wires that lead nowhere are decoys." .. tamper, st.open and not unprobed, unprobed)
+    if f.antiJam then add("Cut MON (the anti-jam monitor)", "With anti-jam, jamming the bomb or cutting its antenna fires it until MON is cut.", not st.antiJam, wireOf("ajmon")) end
+    if f.battery == "collapse" then add("Cut LOOP 3V (the collapse circuit)", "It fires the bomb if a battery supply is cut first.", not st.collapse, wireOf("collapse")) end
+    if f.sensor then add("Short the charge cell", "A self-powered charge fires when the power goes. Put a jumper from its + to its − first.", not st.sensor, nil, "cell") end
+    if f.det == "remote" then
+        if st.mods.relay then
+            add("Jumper the relay to the dummy load", "The relay wires are armoured. Redirect it: a jumper from the relay to the dummy load.", st.relayed, nil, "relay")
+        else
+            add("Stop the remote signal", "Place an interference device (wideband or tuned to its frequency) so it covers the bomb, or cut the antenna.", st.remoteDead or st.relayed or (st.covered and not st.antiJam), wireOf("antenna"))
+        end
+    end
+    local sup = wireOf("supply", function(i, w) return not st.drained[w.a] end)
+    add("Cut the battery supplies", "The battery wires read LIVE 9V. Cut each one (or short the battery: + to −). A running timer stops.", not C.AnySupply(st), sup)
+    if f.battery == "capacitor" then
+        local cap = C.CapNow(st, now or 0)
+        add("Let the capacitor drain", "It still holds charge after the batteries are gone. Wait until it reads under 5%, or short it.", st.capZero or (not C.AnySupply(st) and cap < 5), nil, "cap")
+    end
+    if st.chip then add("Set the logic chip", "Read its blink code (dots short, bars long), find it in the manual's chip table, set the switches, press Enter.", st.chip.ok, nil, "chip") end
+    if st.liquid then add("Drain the liquid charge", "Open the drain valve while the needle is in the green band (power off first).", st.liquid.drained) end
+    if st.mods.sealed then add("Torch the sealed plate open", "The detonator line runs under it. Short bursts: the torch heats the board.", st.sealedOpen) end
+    local det = wireOf("det")
+    add("Cut the detonator line", "Probe it first: it must read DEAD (with a capacitor: DEAD · CAP under 5%). Then cut it.", st.safe, det)
+    if f.charge ~= "he" then add("Seal the gas valve", "Cutting the detonator line opens a leak: seal it in time.", st.gasSealed) end
+    if st.stab then add("Inject the stabiliser", "Set the dose printed on the charge exactly, then Inject.", st.stab.done) end
+    -- (modules that act all the time: a reminder on every step)
+    local extra = ""
+    if st.tilt then extra = extra .. " Tilt switch: re-centre the bubble after every cut or jumper." end
+    if st.mods.fuse then extra = extra .. " Thermal fuse: watch the heat bar, wait for it to cool." end
+    if extra ~= "" then
+        for _, s2 in ipairs(list) do s2.why = s2.why .. extra end
+    end
+    return list
 end

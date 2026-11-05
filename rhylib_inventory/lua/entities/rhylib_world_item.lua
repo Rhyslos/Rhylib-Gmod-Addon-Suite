@@ -5,7 +5,10 @@
     Made by Inv.SpawnWorldItem (sv_10_inventory): ents.Create, then
     ENT:SetItem(id, count, data) before Spawn. Removes itself after config
     inventory worldItemLife (600 s), or issuedDropLife (300 s) for issued
-    gear, whichever is shorter. Network vars: ItemName, ItemCount (for the
+    gear, whichever is shorter. Whenever it goes without being picked up
+    (ran out of time, made room for newer drops, a cleanup) it fires hook
+    Rhylib.WorldItemExpired(id, count, data) (rhylib_logistics puts
+    armoury stock gear back in the stock). Network vars: ItemName, ItemCount (for the
     name shown up close). Model: the item's def.model, else a cardboard box.
 ]]
 
@@ -54,7 +57,19 @@ if SERVER then
             local il = Rhylib.Config.Get("inventory", "issuedDropLife")
             if il > 0 then life = life > 0 and math.min(life, il) or il end
         end
-        if life > 0 then SafeRemoveEntityDelayed(self, life) end
+        if life > 0 then
+            timer.Simple(life, function()
+                if IsValid(self) and not self.taken then self:Remove() end
+            end)
+        end
+    end
+
+    -- (gone without being picked up: hook Rhylib.WorldItemExpired(id,
+    -- count, data), e.g. armoury stock gear going back to the stock)
+    function ENT:OnRemove()
+        if self.taken or not self.itemId then return end
+        self.taken = true
+        hook.Run("Rhylib.WorldItemExpired", self.itemId, self.itemCount or 1, self.itemData)
     end
 
     function ENT:Use(ply)

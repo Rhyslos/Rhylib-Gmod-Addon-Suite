@@ -20,8 +20,11 @@
     Mitigation runs late (priority 100) so other Rhylib damage changes
     come first; the restore runs first (priority -1000).
 
+    Players and rhylib_medical's test dummies (ENT.IsRhylibDummy, which
+    keep their own Armor / SetArmor / GetMaxArmor) get it.
+
     Realm: server. Fires hook Rhylib.ArmorDrainMult(ply): return a number
-    to scale how much armour a hit costs (rhylib_gear's pauldron).
+    to scale how much armour a hit costs (rhylib_gear's pauldron; players only).
 ]]
 
 local A = Rhylib.Armor
@@ -63,8 +66,17 @@ local function cfgNum(key, fallback)
 end
 
 Rhylib.Hook.Add("EntityTakeDamage", "armor.mitigate", function(ent, dmg)
-    if not ent:IsPlayer() then return end
+    local person = ent:IsPlayer()
+    if not (person or ent.IsRhylibDummy == true) then return end
     if ent:GetNW2Bool(Rhylib.NW.DOWN, false) and not pending[ent] then return end  -- downed (rhylib_medical): no armour
+
+    -- (a tough test dummy takes nothing: only the number after armour is
+    -- shown, so its armour is left as it is)
+    if ent.IsRhylibDummy and ent.Tough then
+        local a = ent:Armor()
+        if a > 0 and bit.band(dmg:GetDamageType(), cfgNum("bypass", 0)) == 0 then dmg:ScaleDamage(1 - A.Mitigation(a, ent:GetMaxArmor())) end
+        return
+    end
 
     local p = pending[ent]
     local armor = p and p.after or ent:Armor()
@@ -73,7 +85,7 @@ Rhylib.Hook.Add("EntityTakeDamage", "armor.mitigate", function(ent, dmg)
     local amount = dmg:GetDamage()
     if armor > 0 and amount > 0 and bit.band(dmg:GetDamageType(), cfgNum("bypass", 0)) == 0 then
         -- (hook Rhylib.ArmorDrainMult(ply): rhylib_gear's pauldron)
-        local dm = hook.Run("Rhylib.ArmorDrainMult", ent)   -- (a local: tonumber() of no value errors)
+        local dm = person and hook.Run("Rhylib.ArmorDrainMult", ent) or nil   -- (a local: tonumber() of no value errors)
         dm = tonumber(dm) or 1
         cost = math.min(armor, math.ceil(amount * math.max(0, cfgNum("drain", 1)) * dm))
         dmg:ScaleDamage(1 - A.Mitigation(armor, ent:GetMaxArmor()))

@@ -24,6 +24,13 @@
     onChanged, controls, variant, returnable (kept on the storage; nothing
     here reads it now that depots take anything back), and:
     noDeposit = true: items can only be taken out (property lockers).
+    counted = true (depots): items may have a limited stock, asked from
+        hook Rhylib.DepotStock(id) -> number (nil = endless). The shelf
+        shows it as the count ("x12", 0 = out); a take is cut to what's
+        left ("Out of stock" at 0); hook Rhylib.DepotTook(ply, id, n)
+        after a take; hook Rhylib.DepotReturned(ply, id, n, data) when an
+        item is handed in. Inv.RefreshDepotStock() sends new counts to
+        everyone looking (rhylib_logistics' armoury stock).
     bulk = true: "Store all" / "Take all" / "Empty" buttons (training deposit).
     bulkOnly = true: only those buttons, no dragging in, out or around and
         no quick take; Store all only while it's empty (one trip at a time).
@@ -41,7 +48,7 @@
       inv.ext     (to one player) open with the full contents, or closed:
                   open bool; then title string, depot bool, w 5, h 5,
                   canLock bool, locked bool, bulk mode 2 (0 none, 1 bulk,
-                  2 bulkOnly), item count 8, items (WriteInstance)
+                  2 bulkOnly), counted bool, item count 8, items (WriteInstance)
       inv.extupd  (batched, to viewers) op 1 bit: 1 = item (WriteInstance),
                   0 = removed uid 16
       inv.take    (request) storage uid 16, your container 5, x 5, y 5, rot 1, single 1
@@ -164,15 +171,61 @@ function Inv.NewStorage(ent, opts)
         controls = opts.controls,
         variant = opts.variant,
         noDeposit = opts.noDeposit,
+        counted = opts.counted,
         bulk = opts.bulk or opts.bulkOnly,
         bulkOnly = opts.bulkOnly,
         grow = opts.grow,
         subs = {},
     }
     if storage.grow then storage.h = math.max(storage.h, GROW_MIN) end
-    if storage.kind == "depot" then layoutDepot(storage) end
+    if storage.kind == "depot" then
+        layoutDepot(storage)
+        if storage.counted then Inv.ApplyDepotStock(storage) end
+    end
     return storage
 end
+
+-- What's left of an item in a counted depot (nil = endless).
+local function stockOf(storage, id)
+    if not storage.counted then return nil end
+    local n = hook.Run("Rhylib.DepotStock", id)
+    return isnumber(n) and math.max(0, math.floor(n)) or nil
+end
+
+-- Inv.ApplyDepotStock(storage): puts each item's stock into its shelf
+-- count (counted depots); items without a stock (endless) go in
+-- storage.endless[uid]. Returns the list of shelf items whose count
+-- changed (nil when none) and whether the endless set changed.
+function Inv.ApplyDepotStock(storage)
+    if storage.kind ~= "depot" or not storage.counted then return nil, false end
+    local changed
+    local endless, was = {}, storage.endless or {}
+    local setChanged = storage.endless == nil
+    for uid, so in pairs(storage.items) do
+        local left = stockOf(storage, so.id)
+        local def = Items.defs[so.id]
+        local want
+        if left then want = math.min(left, 255) else
+            want = (def and Items.Unique(def)) and 1 or (def and def.stack or 1)
+            endless[uid] = true
+        end
+        if (endless[uid] or false) ~= (was[uid] or false) then setChanged = true end
+        if so.count ~= want then
+            so.count = want
+            changed = changed or {}
+            changed[#changed + 1] = so
+        end
+    end
+    storage.endless = endless
+    return changed, setChanged
+end
+
+-- Stock mark: what a counted depot hands out carries data.stock, so only
+-- that comes back into the stock (not training or crate copies).
+local function stockMarked(data)
+    return istable(data) and data.stock and not data.loadout and (data.fill == nil or data.fill >= 0.95)
+end
+Inv.StockMarked = stockMarked
 
 -- Inv.CreateStorage(ent, opts): makes ent a storage (see the header for
 -- opts). Returns the storage table. Removed with Inv.RemoveStorage, or
@@ -307,6 +360,22 @@ function sendOpen(ply, storage)
     net.WriteBool(ctl.canLock or false)
     net.WriteBool(ctl.locked or false)
     net.WriteUInt(storage.bulkOnly and 2 or (storage.bulk and 1 or 0), 2)
+    -- (counted: what's left per item; the endless ones listed by uid)
+    local counted = storage.counted and storage.kind == "depot"
+    local endless = counted and storage.endless or {}
+    local nEndless = 0
+    for _ in pairs(endless) do nEndless = nEndless + 1 end
+    if counted and nEndless >= table.Count(storage.items) then counted = false end
+    net.WriteBool(counted and true or false)
+    if counted then
+        net.WriteUInt(math.min(nEndless, 255), 8)
+        local i = 0
+        for uid in pairs(endless) do
+            i = i + 1
+            if i > 255 then break end
+            net.WriteUInt(uid, Items.UID_BITS)
+        end
+    end
     net.WriteUInt(#list, 8)
     for _, o in ipairs(list) do Items.WriteInstance(o) end
     Rhylib.Profiler.AddNet("inv.ext", net.BytesWritten() or 0)
@@ -339,6 +408,28 @@ function Inv.RefreshStorage(ent)
             if IsValid(ply) then sendOpen(ply, s) end
         end
     end)
+end
+
+-- Inv.RefreshDepotStock(): every counted depot shows the stock now
+-- (call after the stock changed). Only storages with someone looking
+-- send anything.
+function Inv.RefreshDepotStock()
+    for _, storage in pairs(Inv.storages) do
+        eachStorage(storage, function(s)
+            if s.counted and s.kind == "depot" then
+                -- (only the counts that changed; the whole storage only when
+                -- items switched between counted and endless)
+                local changed, setChanged = Inv.ApplyDepotStock(s)
+                if setChanged then
+                    for ply in pairs(s.viewers) do
+                        if IsValid(ply) then sendOpen(ply, s) end
+                    end
+                elseif changed then
+                    for _, so in ipairs(changed) do sendChange(s, OP_SET, so) end
+                end
+            end
+        end)
+    end
 end
 
 -- Inv.CloseStorage(ply, quiet): closes the player's open storage.
@@ -446,6 +537,8 @@ function Inv.Deposit(ply, uid, x, y, rot, single)
             I.update(ply, st, inst)
         end
         if inst.data and inst.data.loadout then hook.Run("Rhylib.LoadoutDropped", ply, inst.id) end   -- (rhylib_gear)
+        -- (counted depots: issued gear handed in goes back on the shelf)
+        if storage.counted and stockMarked(inst.data) then hook.Run("Rhylib.DepotReturned", ply, inst.id, n, inst.data) end
         return
     end
 
@@ -518,8 +611,15 @@ function Inv.Take(ply, suid, cid, x, y, rot, single)
     end
 
     local depot = storage.kind == "depot"
-    local n = single and 1 or so.count
-    local data = depot and { fill = def.fill and 1 or nil, issued = true } or table.Copy(so.data or {})
+    -- (a depot: a stack; a counted one's shelf count is what's left, so not that)
+    local n = single and 1 or (depot and ((Items.Unique(def) and 1) or def.stack or 1) or so.count)
+    -- (a counted depot: no more than is left)
+    local left = depot and stockOf(storage, so.id)
+    if left then
+        if left < 1 then return Inv.Note(ply, "Out of stock: it comes back with a resupply") end
+        n = math.min(n, left)
+    end
+    local data = depot and { fill = def.fill and 1 or nil, issued = true, stock = left and true or nil } or table.Copy(so.data or {})
     -- (the weight ceiling: inventory weightCeiling)
     local roomW = Inv.WeightRoom(ply, so.id, n)
     if roomW < 1 then return Inv.Note(ply, Inv.TOO_HEAVY) end
@@ -534,6 +634,7 @@ function Inv.Take(ply, suid, cid, x, y, rot, single)
         if n <= 0 then return end
         target.count = target.count + n
         if data.issued then target.data.issued = true end
+        if data.stock then target.data.stock = true end
         I.update(ply, st, target)
     elseif Items.CanPlace(st, so.id, cid, x, y, rot) then
         n = math.min(n, Items.StackFor(def, ply))   -- (your stack size; the rest stays)
@@ -547,11 +648,14 @@ function Inv.Take(ply, suid, cid, x, y, rot, single)
 
     if depot then
         -- (a gun you may carry two of, e.g. an officer's DC-17s: both at once)
+        local extra = 0
         if Items.Unique(def) then
             local more = Inv.WeightRoom(ply, so.id, Inv.Limit(ply, so.id) - Inv.Count(ply, so.id))
-            if more > 0 then Inv.AddItem(ply, so.id, more, table.Copy(data)) end
+            if left then more = math.min(more, left - n) end
+            if more > 0 then extra = more - Inv.AddItem(ply, so.id, more, table.Copy(data)) end
         end
-        return   -- endless: nothing leaves the depot
+        if left then hook.Run("Rhylib.DepotTook", ply, so.id, n + extra) end
+        return   -- (the shelf itself never empties: counts come from the stock)
     end
     if n >= so.count then
         storage.items[suid] = nil
@@ -594,10 +698,14 @@ function Inv.QuickTake(ply, suid, single)
         return
     end
     local depot = storage.kind == "depot"
-    local n = single and 1 or so.count
-    if depot then n = math.min(n, Items.StackFor(def, ply)) end
+    local n = single and 1 or (depot and Items.StackFor(def, ply) or so.count)
     if depot and Items.Unique(def) then n = math.max(1, Inv.Limit(ply, so.id) - Inv.Count(ply, so.id)) end
-    local data = depot and { fill = def.fill and 1 or nil, issued = true } or table.Copy(so.data or {})
+    local left = depot and stockOf(storage, so.id)
+    if left then
+        if left < 1 then return Inv.Note(ply, "Out of stock: it comes back with a resupply") end
+        n = math.min(n, left)
+    end
+    local data = depot and { fill = def.fill and 1 or nil, issued = true, stock = left and true or nil } or table.Copy(so.data or {})
     local roomW = Inv.WeightRoom(ply, so.id, n)
     if roomW < 1 then return Inv.Note(ply, Inv.TOO_HEAVY) end
     n = roomW
@@ -607,7 +715,10 @@ function Inv.QuickTake(ply, suid, single)
         return
     end
     tookSound(ply)
-    if depot then return end   -- endless
+    if depot then
+        if left then hook.Run("Rhylib.DepotTook", ply, so.id, taken) end
+        return
+    end
     if taken >= so.count then
         storage.items[suid] = nil
         sendChange(storage, OP_REMOVE, nil, suid)

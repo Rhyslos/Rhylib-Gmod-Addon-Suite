@@ -4,7 +4,10 @@
 
     Med.ill[ply] = { kind, load, told } (saved as Data "med_ill"/SteamID64
     = { k = kind, l = load }, so leaving doesn't cure it; never saved for
-    bots). A 30 s timer grows the load and plays the symptoms.
+    bots or test dummies). A 30 s timer grows the load and plays the
+    symptoms. Test dummies (Med.IsDummy) can be infected
+    (rhylib_dummy_infect, sv_60_dummy.lua), give blood and take doses
+    standing up.
 
     Network (client asks, server checks; uid = item uid, Items.UID_BITS):
       ill.draw    (target)            start drawing blood (timed)
@@ -38,7 +41,10 @@ Rhylib.Net.Register("ill.stop")
 
 Med.ill = Med.ill or {}   -- [ply] = { kind, load }
 
-local function sid(ply) return ply:SteamID64() or ply:SteamID() end
+local function sid(ply)
+    if not ply:IsPlayer() then return "dummy" .. ply:EntIndex() end   -- (test dummies)
+    return ply:SteamID64() or ply:SteamID()
+end
 
 local function stageOf(load)
     if load <= 0 then return 0 end
@@ -66,7 +72,7 @@ local function publish(ply)
 end
 
 local function save(ply)
-    if ply:IsBot() then return end   -- (bots share ids; a test dummy's illness must not come back on the next one)
+    if not ply:IsPlayer() or ply:IsBot() then return end   -- (bots share ids; test dummies have none)
     local s = Med.ill[ply]
     if s then
         Data.Set("med_ill", sid(ply), { k = s.kind, l = math.Round(s.load, 1) })
@@ -174,7 +180,7 @@ end)
 
 local function near(a, b, r)
     if not (IsValid(a) and IsValid(b)) then return false end
-    local pos = b:IsPlayer() and (Rhylib.Lying and Rhylib.Lying.BodyPos and Rhylib.Lying.BodyPos(b) or b:GetPos()) or b:GetPos()
+    local pos = Med.IsPatient(b) and (Rhylib.Lying and Rhylib.Lying.BodyPos and Rhylib.Lying.BodyPos(b) or b:GetPos()) or b:GetPos()
     return a:GetPos():DistToSqr(pos) < r * r
 end
 
@@ -280,13 +286,13 @@ end
 Rhylib.Net.Receive("ill.draw", function(ply)
     if not (Inv() and Inv().Get) then return end   -- (needs rhylib_inventory)
     local t = net.ReadEntity()
-    if not (able(ply) and Med.IsMedic(ply) and IsValid(t) and t:IsPlayer() and t ~= ply) then return end
-    if not (Med.OnSofa(t) or t.rhylibDummy) then return stop(ply, "They need to lie on a med sofa") end   -- (test dummies: standing is fine)
+    if not (able(ply) and Med.IsMedic(ply) and Med.IsPatient(t) and t ~= ply) then return end
+    if not (Med.OnSofa(t) or Med.IsDummy(t)) then return stop(ply, "They need to lie on a med sofa") end   -- (test dummies: standing is fine)
     if not near(ply, t, 150) then return stop(ply) end
     if (Inv() and Inv().Count(ply, Med.BLOOD_KIT) or 0) < 1 then return stop(ply, "You need a blood sample kit") end
     local secs = cfg("drawTime") * (chemist(ply) and 0.67 or 1)
     timed(ply, "draw", secs, function()
-        if not (able(ply) and IsValid(t) and (Med.OnSofa(t) or t.rhylibDummy) and near(ply, t, 170)) then return false, "Cancelled" end
+        if not (able(ply) and IsValid(t) and (Med.OnSofa(t) or Med.IsDummy(t)) and near(ply, t, 170)) then return false, "Cancelled" end
         return true
     end, function()
         if not takeOne(ply, Med.BLOOD_KIT) then return stop(ply, "You need a blood sample kit") end
@@ -509,7 +515,7 @@ end
 Rhylib.Net.Receive("ill.dose", function(ply)
     if not (Inv() and Inv().Get) then return end   -- (needs rhylib_inventory)
     local t, which, units = net.ReadEntity(), net.ReadUInt(2), net.ReadUInt(6)
-    if not (able(ply) and Med.IsMedic(ply) and IsValid(t) and t:IsPlayer() and t:Alive()) then return end
+    if not (able(ply) and Med.IsMedic(ply) and Med.IsPatient(t) and t:Alive()) then return end
     local m = Med.MEDICINES[which + 1]
     if not m or units < 1 then return end
     local medId = m[1]
@@ -518,7 +524,7 @@ Rhylib.Net.Receive("ill.dose", function(ply)
     -- test dummy; checked through the whole dose)
     local MP = Rhylib.MP
     local function still()
-        return Med.OnSofa(t) or Med.IsDown(t) or t.rhylibDummy or (MP and MP.IsCuffed and MP.IsCuffed(t))
+        return Med.OnSofa(t) or Med.IsDown(t) or Med.IsDummy(t) or (t:IsPlayer() and MP and MP.IsCuffed and MP.IsCuffed(t))
     end
     if not still() then return stop(ply, "They need to lie on a med sofa") end
     if (Inv().Count(ply, medId) or 0) < units then return stop(ply, "You don't carry that much") end

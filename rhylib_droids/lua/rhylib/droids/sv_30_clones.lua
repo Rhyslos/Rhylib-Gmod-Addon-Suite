@@ -12,7 +12,8 @@
 
     Also in this file:
       - clone medics: a 1 s timer heals players/clones in ctMedicRadius,
-        treats their injuries (rhylib_medical), and sends free medics to
+        treats their injuries (rhylib_medical; in its hardcore system
+        it also sets broken bones and heals burns), and sends free medics to
         downed players (ENT:DoRevive does the walk and the crouch)
       - downed guards: up to ctDownGuards clones stand over each downed player
       - revive shield (less damage just after a medic NPC revive) and the
@@ -255,19 +256,22 @@ local function assignMedics(players)
 end
 
 -- Afflictions (rhylib_medical injuries) of a player near a medic: a step
--- a second: stop the worst bleed, else end a limp, else heal damage on
--- every part.
+-- a second: stop the worst bleed, else (hardcore) set a broken bone, else
+-- end a limp, else heal damage (and burns) on every part.
 local function treat(p, repair)
     local Med = Rhylib.Medical
     local t = Med and Med.inj and Med.inj[p]
-    local worst
+    local worst, broken
     if t then
         for _, part in pairs(t) do
             if (part.bleed or 0) > 0 and (not worst or part.bleed > worst.bleed) then worst = part end
+            if part.frac then broken = part end
         end
     end
     if worst then
         worst.bleed, worst.bleedEnd = 0, 0
+    elseif broken then
+        broken.frac = false
     elseif p:GetNW2Float("rhylib_limp", 0) > CurTime() then
         p:SetNW2Float("rhylib_limp", 0)
         if t then
@@ -276,6 +280,7 @@ local function treat(p, repair)
     elseif t then
         for _, part in pairs(t) do
             part.dmg = math.max(0, (part.dmg or 0) - repair)
+            part.burn = math.max(0, (part.burn or 0) - repair)
         end
     end
     if t and Med.MarkInjuries then Med.MarkInjuries(p) end
@@ -586,7 +591,7 @@ end
 -- target (a player), beside them, until killed or re-ordered.
 function D.AssignFollow(ply, target)
     local picks = ply.rhylibPicks
-    if not picks or not IsValid(target) then return 0 end
+    if not picks or not IsValid(target) or not target:IsPlayer() then return 0 end
     local i = 0
     for c in pairs(picks) do
         if IsValid(c) and c:Health() > 0 then

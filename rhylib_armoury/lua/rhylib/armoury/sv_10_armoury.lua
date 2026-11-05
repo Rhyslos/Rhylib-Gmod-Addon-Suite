@@ -113,7 +113,7 @@ local function gearVariant(storage, ply)
         local back = {}
         for _, id in ipairs(gearStock()) do back[id] = true end
         hook.Run("Rhylib.GearReturnable", back)
-        sub = Inv().NewStorage(storage.ent, { kind = "depot", w = 6, title = "Gear cabinet", stock = stock, returnable = back })
+        sub = Inv().NewStorage(storage.ent, { kind = "depot", w = 6, title = "Gear cabinet", stock = stock, returnable = back, counted = true })
         storage.subs[key] = sub
     end
     return sub
@@ -174,7 +174,7 @@ local function specVariant(storage, ply)
             Rhylib.Notify(ply, "Nothing here for your role", "bad", "Armoury")
             return nil
         end
-        sub = Inv().NewStorage(storage.ent, { kind = "depot", w = 6, title = storage.title, stock = stock })
+        sub = Inv().NewStorage(storage.ent, { kind = "depot", w = 6, title = storage.title, stock = stock, counted = true })
         storage.subs[key] = sub
     end
     return sub
@@ -339,9 +339,10 @@ function A.Setup(ent)
 
     local kind = ent.ArmouryKind
     if kind == "armoury" then
-        return I.CreateStorage(ent, { kind = "depot", w = 6, title = "Weapons armoury", stock = weaponStock() })
+        -- (counted: a limited stock when rhylib_logistics keeps one; training ones never)
+        return I.CreateStorage(ent, { kind = "depot", w = 6, title = "Weapons armoury", stock = weaponStock(), counted = true })
     elseif kind == "ammo" then
-        return I.CreateStorage(ent, { kind = "depot", w = 6, title = "Ammo cabinet", stock = ammoStock() })
+        return I.CreateStorage(ent, { kind = "depot", w = 6, title = "Ammo cabinet", stock = ammoStock(), counted = true })
     elseif kind == "trainingArmoury" then
         return I.CreateStorage(ent, { kind = "depot", w = 6, title = "Training armoury", stock = weaponStock(true) })
     elseif kind == "trainingAmmo" then

@@ -1,56 +1,107 @@
 --[[
-    Test dummy (admins, spawn menu: Rhylib Medical). A bot player that
-    stands where you placed it and never moves or shoots, so everything
-    that works on players works on it: damage, armour, going down,
-    stabilising, dragging, revives, healing, the scoreboard.
+    Test dummy (admins: spawn menu Rhy's Medical, or the toolgun's Testing
+    entries). A NextBot in a trooper model, not a player: it takes no
+    player slot and works in single player. It stands where you placed it
+    (facing you) and never shoots; droids and clone NPCs leave it alone.
 
-    The entity itself is an invisible marker; the bot stands on it and
-    comes back there 3 seconds after dying. Removing the marker (undo,
-    remover tool, cleanup) kicks the bot. Each dummy takes a player slot.
+    It is hurt like a player (rhylib_medical sv_60_dummy.lua): armour
+    first, then health (100 / 100); body part injuries, bleeding, limps
+    and recovery as players get them; at 0 HP it goes down (a ragdoll,
+    the bleed-out timer, stabilise / drag / revive / blood pack); dying
+    (bled out, or finished off) leaves the ragdoll for 3 s, then it stands
+    back up on its spot with full health and armour. Medics treat it with
+    the normal kits and the E menu / wheel, and look at its body with H.
+    Hits show as damage numbers over it (net dummy.dmg, drawn here).
+    The tough dummy (rhylib_test_dummy_tough) takes no damage at all: no
+    injuries, never goes down; it only shows what a hit would have done
+    (after armour).
 
     rhylib_dummy_move still|walk|run (admins): every dummy stands still,
-    or walks / runs back and forth (turning every 2.5 s), for testing
-    falls and moving targets.
+    or walks / runs back and forth along the way it faced when placed
+    (turning every 2.5 s; NextBot locomotion, no navmesh needed). Running
+    while limping is a walk. Falls hurt it like a player (mp_falldamage).
 
-    Hits show as damage numbers over the dummy (net dummy.dmg to players
-    within 1500 units). The tough dummy (rhylib_test_dummy_tough) takes
-    no damage at all: no injuries, never goes down; it only shows what a
-    hit would have done (after armour).
+    Player-like methods (both realms): Alive, Nick / Name, Armor,
+    SetArmor (server), GetMaxArmor, GetPlayerColor. Fields:
+    ENT.IsRhylibDummy (Rhylib.Medical.IsPatient), RhylibWheel /
+    RhylibWheelHold (rhylib_menus wheel; a downed one opens at once).
+    NW2 on the dummy: rhylib_dummyName (String), rhylib_dummyDead (Bool),
+    rhylib_dummyHp / rhylib_dummyMax / rhylib_dummyArmor (Int: clients
+    don't get a NextBot's health), plus the medical and lying ones.
+    Server: ENT:DummyDie(), ENT:DummyRespawn(). Hit groups: rhylib bolts
+    set rhylibHitGroup; engine bullets are noted in OnTraceAttack.
 
-    Shared file: the client part (damage numbers) returns early; the rest
-    is server only. Net dummy.dmg (server -> players within 1500): bot
-    entity, damage 12 bits, head bool. The bot has ply.rhylibDummy = its
-    marker (illness code lets it give blood standing). Global DUMMY_MOVE.
-    A variant only needs ENT.Base = "rhylib_test_dummy" plus BotName and
-    Tough (see rhylib_test_dummy_tough.lua).
+    A variant only needs ENT.Base = "rhylib_test_dummy", ENT.Type =
+    "nextbot" plus DummyName and Tough (see rhylib_test_dummy_tough.lua).
+    The model is ENT.Model (Server settings > Models can swap it), with a
+    fallback; ENT.PreviewModel gives it to the toolgun's tile picture.
+    Not saved across map changes.
 ]]
 
 AddCSLuaFile()
 
-ENT.Type = "anim"
-ENT.Base = "base_anim"
+ENT.Type = "nextbot"
+ENT.Base = "base_nextbot"
 ENT.PrintName = "Test dummy"
 ENT.Category = "Rhy's Medical"
 ENT.Spawnable = true
 ENT.AdminOnly = true
+ENT.IsRhylibDummy = true
+ENT.RhylibWheel = true        -- (rhylib_menus: E opens the interaction wheel on it)
+ENT.RhylibWheelHold = true    -- (after a hold while standing; cl_10_hud.lua clears it while down)
 
 local MODEL = "models/ct_trp/pm_ct_trp.mdl"
 local MODEL_FALLBACK = "models/aussiwozzi/cgi/base/unassigned_cpt.mdl"
 ENT.Model = MODEL   -- (Server settings > Models can swap it)
+
+local function okModel(m)
+    if not isstring(m) or m == "" then return false end
+    return util.IsValidModel(m) or (CLIENT and file.Exists(m, "GAME"))
+end
 local function dummyModel()
     local st = scripted_ents.GetStored("rhylib_test_dummy")
     local m = st and st.t and st.t.Model or MODEL
-    if util.IsValidModel(m) then return m end
-    return util.IsValidModel(MODEL) and MODEL or MODEL_FALLBACK
+    if okModel(m) then return m end
+    return okModel(MODEL) and MODEL or MODEL_FALLBACK
 end
--- (toolgun tile picture: the model the dummy's bot will wear)
+-- (toolgun tile picture: the model the dummy wears)
 ENT.PreviewModel = function() return dummyModel() end
-local MARKER = "models/hunter/blocks/cube025x025x025.mdl"
-ENT.BotName = "Test dummy"   -- bot name, a number is added
-ENT.Tough = false            -- true: blocks all damage, only shows it
+ENT.DummyName = "Test dummy"   -- a number is added
+ENT.Tough = false              -- true: blocks all damage, only shows it
+ENT.MaxHp = 100
+local WALK, RUN = 160, 240     -- (DarkRP's player walk / run speeds)
+local SAFE_FALL, FATAL_FALL = 526.5, 922.5   -- (the engine's player fall speeds)
+
+--------------------------------------------------------------------------
+-- Player-like methods (both realms)
+--------------------------------------------------------------------------
+
+function ENT:Alive() return not self:GetNW2Bool("rhylib_dummyDead", false) end
+function ENT:Nick() return self:GetNW2String("rhylib_dummyName", self.DummyName or "Test dummy") end
+function ENT:Name() return self:Nick() end
+function ENT:Armor() return self:GetNW2Int("rhylib_dummyArmor", 0) end
+function ENT:GetMaxArmor() return 100 end
+local WHITE = Vector(1, 1, 1)
+function ENT:GetPlayerColor() return WHITE end
+
+local function medical() return Rhylib.Medical end
 
 if CLIENT then
-    function ENT:Draw() end  -- the marker is invisible; the bot is what you see
+    function ENT:Initialize()
+        local Med = medical()
+        if Med and Med.dummies then Med.dummies[self] = true end
+    end
+
+    function ENT:OnRemove()
+        local Med = medical()
+        if Med and Med.dummies then Med.dummies[self] = nil end
+    end
+
+    -- Hidden while its ragdoll lies there (down, or dead for 3 s).
+    function ENT:Draw()
+        if not self:Alive() or IsValid(self:GetNW2Entity(Rhylib.NW.RAG)) then return end
+        self:DrawModel()
+    end
 
     -- Damage numbers: rise and fade over the dummy's head.
     local pops = {}
@@ -89,9 +140,19 @@ if CLIENT then
     return
 end
 
-Rhylib.Net.Register("dummy.dmg")
+--------------------------------------------------------------------------
+-- Server
+--------------------------------------------------------------------------
 
-local count = 0
+function ENT:SetArmor(n)
+    n = math.max(0, math.floor((tonumber(n) or 0) + 0.5))
+    if self:Armor() ~= n then self:SetNW2Int("rhylib_dummyArmor", n) end
+end
+
+local function spawnArmor()
+    local Med = medical()
+    return Med and Med.DummyArmor and Med.DummyArmor() or 0
+end
 
 function ENT:SpawnFunction(ply, tr, class)
     if not tr.Hit then return end
@@ -99,161 +160,188 @@ function ENT:SpawnFunction(ply, tr, class)
     ent:SetPos(tr.HitPos)
     ent:SetAngles(Angle(0, ply:EyeAngles().y + 180, 0))  -- facing you
     ent:Spawn()
+    ent:Activate()
     return ent
 end
 
 function ENT:Initialize()
-    self:SetModel(MARKER)
-    self:SetNoDraw(true)
-    self:SetSolid(SOLID_NONE)
-    self:SetMoveType(MOVETYPE_NONE)
-    self:DrawShadow(false)
+    self:SetModel(dummyModel())
+    self:SetCollisionBounds(Vector(-16, -16, 0), Vector(16, 16, 72))   -- (a player's hull)
+    self:SetBloodColor(BLOOD_COLOR_RED)
+    self:SetMaxHealth(self.MaxHp)
+    self:SetHealth(self.MaxHp)
+    self:SetArmor(spawnArmor())
+    local Med = medical()
+    local n = 1
+    if Med then
+        Med.dummyCount = (Med.dummyCount or 0) + 1
+        n = Med.dummyCount
+        if Med.dummies then Med.dummies[self] = true end
+    end
+    self:SetNW2String("rhylib_dummyName", (self.DummyName or self.BotName or "Test dummy") .. " " .. n)
+    self.home = self:GetPos()
+    self.homeYaw = self:GetAngles().y
+    local loco = self.loco
+    loco:SetStepHeight(18)
+    loco:SetJumpHeight(56)
+    loco:SetAcceleration(1000)
+    loco:SetDeceleration(1000)
+    loco:SetMaxYawRate(360)
+    self:CopyHealth()
+end
 
-    -- Bots need a multiplayer game (a local game with 2+ player slots).
-    if game.SinglePlayer() or not player.CreateNextBot then
-        for _, p in ipairs(player.GetHumans()) do
-            if p:IsAdmin() then p:ChatPrint("Test dummy: needs a multiplayer game. Start your local game with 2 or more player slots.") end
-        end
-        self:Remove()
+-- Clients don't get a NextBot's health: copy it when it changes.
+function ENT:CopyHealth()
+    local hp, max = math.max(0, self:Health()), self:GetMaxHealth()
+    if hp ~= self.sentHp then
+        self.sentHp = hp
+        self:SetNW2Int("rhylib_dummyHp", hp)
+    end
+    if max ~= self.sentMax then
+        self.sentMax = max
+        self:SetNW2Int("rhylib_dummyMax", max)
+    end
+end
+
+function ENT:Act(act)
+    if self:GetActivity() ~= act then self:StartActivity(act) end
+end
+
+-- One tick of the behaviour: health copy, fall tracking, and standing /
+-- walking / running back and forth (Med.dummyMove, sv_60_dummy.lua).
+function ENT:DummyTick()
+    self:CopyHealth()
+    local loco = self.loco
+    local Med = medical()
+    local down = self.rhylibDown
+    if down or loco:IsOnGround() then
+        if down then self.fallV = 0 end
+    else
+        self.fallV = math.min(self.fallV or 0, loco:GetVelocity().z)
+    end
+    local mode = Med and Med.dummyMove or "still"
+    if not self:Alive() or down or mode == "still" then
+        self:Act(ACT_HL2MP_IDLE)
         return
     end
-    count = count + 1
-    -- (pcall: the engine errors instead of returning nil in some setups)
-    local ok, bot = pcall(player.CreateNextBot, self.BotName .. " " .. count)
-    if not ok or not IsValid(bot) then
-        local why = (not ok and string.find(tostring(bot), "singleplayer", 1, true))
-            and "needs a multiplayer game. Start your local game with 2 or more player slots."
-            or "no free player slot"
-        for _, p in ipairs(player.GetHumans()) do
-            if p:IsAdmin() then p:ChatPrint("Test dummy: " .. why) end
-        end
-        self:Remove()
-        return
-    end
-    bot.rhylibDummy = self
-    self.bot = bot
-    -- The bot spawns on its own next tick; put it here once it has.
-    timer.Simple(0.1, function()
-        if IsValid(self) and IsValid(bot) then self:PlaceBot() end
-    end)
-end
-
-function ENT:PlaceBot()
-    local bot = self.bot
-    if not IsValid(bot) then return end
-    if not bot:Alive() then bot:Spawn() end
-    bot:StripWeapons()
-    bot:SetModel(dummyModel())
-    bot:SetPos(self:GetPos())
-    bot:SetEyeAngles(self:GetAngles())
-    bot:SetVelocity(-bot:GetVelocity())
-end
-
-function ENT:OnRemove()
-    local bot = self.bot
-    if IsValid(bot) then bot:Kick("Test dummy removed") end
-end
-
-local function dummyOf(ply)
-    local ent = ply.rhylibDummy
-    return IsValid(ent) and ent or nil
-end
-
-DUMMY_MOVE = DUMMY_MOVE or "still"   -- still, walk, run (all dummies)
-
--- Stand still, or walk/run back and forth from the marker's facing.
-Rhylib.Hook.Add("StartCommand", "dummy.still", function(ply, cmd)
-    if not ply:IsBot() then return end
-    local ent = dummyOf(ply)
-    if not ent then return end
-    cmd:ClearMovement()
-    cmd:ClearButtons()
-    if DUMMY_MOVE == "still" then return end
     local back = math.floor(CurTime() / 2.5) % 2 == 1
-    cmd:SetViewAngles(Angle(0, ent:GetAngles().y + (back and 180 or 0), 0))
-    cmd:SetForwardMove(10000)
-    if DUMMY_MOVE == "run" then cmd:SetButtons(IN_SPEED) end
-end, -200)
-
-Rhylib.Command.Add({
-    name = "rhylib_dummy_move", perm = "rhylib.medical.dummies", minAccess = "admin", tag = "Medical",
-    args = "still|walk|run", help = "Make every test dummy stand still, walk or run back and forth",
-    fn = function(ply, args)
-        local m = string.lower(args[1] or "")
-        if m ~= "still" and m ~= "walk" and m ~= "run" then
-            return "rhylib_dummy_move still|walk|run (now: " .. DUMMY_MOVE .. ")", "bad"
-        end
-        DUMMY_MOVE = m
-        return "Test dummies: " .. m, "good"
-    end,
-})
-
--- Every spawn: back on the marker, with the dummy model and no weapons.
-Rhylib.Hook.Add("PlayerSpawn", "dummy.place", function(ply)
-    local ent = ply:IsBot() and dummyOf(ply)
-    if not ent then return end
-    timer.Simple(0, function()
-        if IsValid(ent) and IsValid(ply) then ent:PlaceBot() end
-    end)
-end, 100)
-
-Rhylib.Hook.Add("PlayerSetModel", "dummy.model", function(ply)
-    if ply:IsBot() and dummyOf(ply) then
-        ply:SetModel(dummyModel())
-        return true
-    end
-end)
-
--- Back up 3 seconds after dying.
-Rhylib.Hook.Add("PlayerDeath", "dummy.respawn", function(ply)
-    local ent = ply:IsBot() and dummyOf(ply)
-    if not ent then return end
-    timer.Simple(3, function()
-        if IsValid(ent) and IsValid(ply) and not ply:Alive() then ent:PlaceBot() end
-    end)
-end)
-
--- The bot left (kicked, map change): remove its marker too.
-Rhylib.Hook.Add("PlayerDisconnected", "dummy.cleanup", function(ply)
-    local ent = ply.rhylibDummy
-    if IsValid(ent) then
-        ent.bot = nil
-        ent:Remove()
-    end
-end)
-
--- Damage numbers to players nearby.
-local function showDamage(bot, amount, head)
-    local n = math.floor(amount + 0.5)
-    if n <= 0 then return end
-    local near = {}
-    for _, p in ipairs(player.GetHumans()) do
-        if p:GetPos():DistToSqr(bot:GetPos()) < 1500 * 1500 then near[#near + 1] = p end
-    end
-    if #near == 0 then return end
-    Rhylib.Net.Start("dummy.dmg")
-    net.WriteEntity(bot)
-    net.WriteUInt(math.min(n, 4095), 12)
-    net.WriteBool(head)
-    net.Send(near)
+    local dir = Angle(0, self.homeYaw + (back and 180 or 0), 0):Forward()
+    local run = mode == "run" and not (Med and Med.NoSprint and Med.NoSprint(self))   -- (limping: no running)
+    loco:SetDesiredSpeed(run and RUN or WALK)
+    local goal = self:GetPos() + dir * 100
+    loco:FaceTowards(goal)
+    loco:Approach(goal, 1)
+    self:Act(run and ACT_HL2MP_RUN or ACT_HL2MP_WALK)
+    if loco:IsStuck() then loco:ClearStuck() end
 end
 
-local function isHead(ply)
-    return (ply.rhylibHitGroup or ply:LastHitGroup()) == HITGROUP_HEAD
+function ENT:RunBehaviour()
+    while true do
+        self:DummyTick()
+        coroutine.yield()
+    end
 end
 
--- Tough dummy: shows the hit (after armour at 100) and takes none of it.
-Rhylib.Hook.Add("EntityTakeDamage", "dummy.tough", function(ent, dmg)
-    if not (ent:IsPlayer() and ent:IsBot()) then return end
-    local d = dummyOf(ent)
-    if not (d and d.Tough) then return end
-    showDamage(ent, dmg:GetDamage(), isHead(ent))
-    return true
-end, 140)
+-- Player models walk with the 9-way blend (move_x / move_y).
+function ENT:BodyUpdate()
+    local act = self:GetActivity()
+    if act == ACT_HL2MP_WALK or act == ACT_HL2MP_RUN then
+        self:BodyMoveXY()   -- (advances the frame itself)
+        return
+    end
+    self:FrameAdvance()
+end
 
-Rhylib.Hook.Add("PostEntityTakeDamage", "dummy.numbers", function(ent, dmg, took)
-    if not took or not (ent:IsPlayer() and ent:IsBot()) or ent.rhylibBleedTick then return end
-    local d = dummyOf(ent)
-    if not d or d.Tough then return end
-    showDamage(ent, dmg:GetDamage(), isHead(ent))
-end)
+-- Landing: fall damage as a player takes it (mp_falldamage 1: by speed,
+-- else 10), from the world.
+function ENT:OnLandOnGround()
+    local speed = -(self.fallV or 0)
+    self.fallV = 0
+    if speed <= SAFE_FALL or not self:Alive() or self.rhylibDown then return end
+    local cv = GetConVar("mp_falldamage")
+    local amount = (cv and cv:GetBool()) and (speed - SAFE_FALL) * (100 / (FATAL_FALL - SAFE_FALL)) or 10
+    local world = game.GetWorld()
+    local d = DamageInfo()
+    d:SetDamage(amount)
+    d:SetDamageType(DMG_FALL)
+    d:SetAttacker(world)
+    d:SetInflictor(world)
+    d:SetDamagePosition(self:GetPos())
+    self:TakeDamageInfo(d)
+end
+
+-- Engine bullets: which hitbox they hit (rhylib_medical Med.HitGroupOf).
+function ENT:OnTraceAttack(dmginfo, dir, trace)
+    self.rhylibTraceGroup = trace.HitGroup
+    self.rhylibTraceAt = CurTime()
+end
+
+function ENT:OnInjured() end
+
+-- (sv_60_dummy.lua never lets the engine kill it; this is a backstop:
+-- no engine ragdoll, no NPC kill hook.)
+function ENT:OnKilled()
+    self:DummyDie()
+end
+
+local function timerId(self) return "Rhylib.Medical.Dummy." .. self:EntIndex() end
+
+-- Dies: the body falls (or stays, if it was down) as a ragdoll for 3 s,
+-- then ENT:DummyRespawn.
+function ENT:DummyDie()
+    if not self:Alive() then return end
+    local L = Rhylib.Lying
+    -- (standing: a ragdoll from the current pose; Begin needs it alive)
+    if L and L.Begin and not L.Ragdoll(self) then L.Begin(self) end
+    self:SetNW2Bool("rhylib_dummyDead", true)
+    local Med = medical()
+    -- Not down any more; dead, so rhylib_core keeps the ragdoll as the corpse.
+    if Med and Med.DummyReset then Med.DummyReset(self) end
+    if L and L.active and L.active[self] then L.End(self) end   -- (one that wasn't down)
+    self:SetNotSolid(true)
+    self:DrawShadow(false)
+    self.loco:SetVelocity(vector_origin)
+    timer.Create(timerId(self), 3, 1, function()
+        if IsValid(self) then self:DummyRespawn() end
+    end)
+end
+
+-- Back on its spot, facing the way it was placed, full health and armour.
+function ENT:DummyRespawn()
+    timer.Remove(timerId(self))
+    local L = Rhylib.Lying
+    if L and L.ClearCorpse then L.ClearCorpse(self) end
+    self:SetPos(self.home or self:GetPos())
+    self:SetAngles(Angle(0, self.homeYaw or 0, 0))
+    self.loco:SetVelocity(vector_origin)
+    self.fallV = 0
+    self:SetNW2Bool("rhylib_dummyDead", false)
+    self:SetMaxHealth(self.MaxHp)
+    self:SetHealth(self.MaxHp)
+    self:SetArmor(spawnArmor())
+    self:SetNotSolid(false)
+    if L and L.ShowPlayer then L.ShowPlayer(self, true) end
+    self:DrawShadow(true)
+    local Med = medical()
+    if Med and Med.DummyReset then Med.DummyReset(self) end
+    if L and L.Unstick then L.Unstick(self) end
+    self:CopyHealth()
+end
+
+-- Removed (undo, remover, cleanup): nothing is left pointing at it.
+function ENT:OnRemove()
+    timer.Remove(timerId(self))
+    local Med = medical()
+    if Med then
+        if Med.DummyReset then Med.DummyReset(self) end
+        if Med.ForgetPatient then Med.ForgetPatient(self) end
+        if Med.ill then Med.ill[self] = nil end
+        if Med.dummies then Med.dummies[self] = nil end
+    end
+    local L = Rhylib.Lying
+    if L then
+        if L.active and IsValid(L.active[self]) then L.active[self]:Remove() end
+        if L.active then L.active[self] = nil end
+        if L.ClearCorpse then L.ClearCorpse(self) end
+    end
+end

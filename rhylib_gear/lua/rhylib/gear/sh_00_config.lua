@@ -21,7 +21,7 @@
       (config gear unlocks). Helmet variants stay with the job model.
 
       Effects: kama = less blast damage to the legs and a lower chance of
-      breaking a leg; pauldron = armour lasts longer; binoculars and
+      a limp (hardcore medical: of breaking a leg); pauldron = armour lasts longer; binoculars and
       rangefinder = optics (zoom, range, night vision, flip down while
       used; sh_30_optics.lua); helmet lights = two forward beams on the
       flashlight key (cl_40_lights.lua); holster = a pistol slot
@@ -73,10 +73,10 @@ Rhylib.Perms.Register("rhylib.gear.admin", "admin", "Run the bodygroup scan")
 -- gridCid / extraGrids (containers it adds), carry, weightMults
 -- ({ item id = weight multiplier } while worn).
 G.ITEMS = {
-    rhylib_kama = { slot = "kama", name = "Kama", desc = "Worn: less blast damage to your legs, and you limp less often",
+    rhylib_kama = { slot = "kama", name = "Kama", desc = "Worn: less blast damage to your legs, and you limp (or break a leg) less often",
         groups = { "kama" }, on = { "co_kama" },
         w = 2, h = 1, weight = 1.2, model = "models/props_c17/briefcase001a.mdl" },
-    rhylib_kama_arc = { slot = "kama", name = "ARC kama", desc = "Worn: less blast damage to your legs, and you limp less often",
+    rhylib_kama_arc = { slot = "kama", name = "ARC kama", desc = "Worn: less blast damage to your legs, and you limp (or break a leg) less often",
         groups = { "kama" }, on = { "arc2_arc_kama_strap_reference" },
         w = 2, h = 1, weight = 1.2, model = "models/props_c17/briefcase001a.mdl" },
     rhylib_pauldron = { slot = "pauldron", name = "Pauldron", desc = "Worn: your armour lasts longer",
@@ -179,6 +179,7 @@ Config.Register("gear", "unlocks", {
 }, "Gear cabinet parts that need a rank (rank prefix, rhylib_roster) or a qualification (qual id); your battalion kit is always allowed", { section = "Kit & unlocks" })
 Config.Register("gear", "kamaBlastMult", 0.5, "Kama: blast damage to the legs (body part damage) is multiplied by this", { section = "Armour parts" })
 Config.Register("gear", "kamaLimpChance", 0.5, "Kama: chance a leg actually limps when it would", { section = "Armour parts" })
+Config.Register("gear", "kamaFractureChance", 0.5, "Kama: chance a leg actually breaks when it would (hardcore medical system)", { section = "Armour parts" })
 Config.Register("gear", "pauldronDrainMult", 0.8, "Pauldron: armour lost per hit is multiplied by this", { section = "Armour parts" })
 Config.Register("gear", "lightNeeded", true, "The flashlight key only works with helmet lights worn", { section = "Helmet lights" })
 Config.Register("gear", "lightFov", 26, "Helmet lights: width of each beam (degrees); the two point apart with a small gap between", { section = "Helmet lights" })

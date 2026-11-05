@@ -31,8 +31,10 @@
     multiplier and crits), Rhylib.Weapons.ShieldBlocks (riot shields),
     Rhylib.Lying (hits on a lying player's ragdoll count for the player).
     Fields set on the target during TakeDamageInfo: ply.rhylibHitGroup
-    (the body part, read by rhylib_medical), ply.rhylibFwd (hit came in
-    through the ragdoll).
+    (the body part, read by rhylib_medical; players and its test dummies,
+    ENT.IsRhylibDummy), ply.rhylibFwd (hit came in through the ragdoll).
+    Test dummies count as players for clone bolts too: clones' bolts pass
+    through them and never hurt them.
 ]]
 
 local W = Rhylib.Weapons
@@ -102,6 +104,7 @@ local function passes(e, owner, cloneShot)
         if e:GetNW2Bool(Rhylib.NW.KNOCK_SOFT, false) then return true end
         return fromClone
     end
+    if e.IsRhylibDummy == true then return fromClone end   -- (rhylib_medical test dummy: a stand-in player)
     if e.IsRhylibClone == true then return fromClone or (owner ~= nil and owner:IsPlayer()) end
     -- (a lying player's ragdoll counts as the player)
     local L = Rhylib.Lying
@@ -258,7 +261,7 @@ local function applyHit(bolt, tr, group)
     local ent, rag = hitTarget(tr)
     if not IsValid(ent) then return end
     -- Clone NPC bolts never hurt players or clones (rhylib_droids).
-    if bolt.clone and (ent:IsPlayer() or ent.IsRhylibClone) then return end
+    if bolt.clone and (ent:IsPlayer() or ent.IsRhylibClone or ent.IsRhylibDummy) then return end
     -- Riot shields (sh_60_shield.lua): a bolt from the front stops on the shield.
     if ent:IsPlayer() and Rhylib.Weapons.ShieldBlocks and Rhylib.Weapons.ShieldBlocks(ent, bolt.dir) then
         local fx = EffectData()
@@ -300,11 +303,13 @@ local function applyHit(bolt, tr, group)
     -- Which body part was hit (rhylib_medical reads it during the hit).
     local living = ent:IsPlayer() or ent:IsNPC() or ent:IsNextBot()
     local wasDown = ent:GetNW2Bool(Rhylib.NW.DOWN, false)   -- (rhylib_medical; read uncached: it changes inside this hit)
-    if ent:IsPlayer() then ent.rhylibHitGroup = group end
+    -- (players and rhylib_medical's test dummies)
+    local tagged = ent:IsPlayer() or ent.IsRhylibDummy == true
+    if tagged then ent.rhylibHitGroup = group end
     if rag then ent.rhylibFwd = true end   -- (a hit on the ragdoll counts for its lying player)
     ent:TakeDamageInfo(dmg)
     ent.rhylibFwd = nil
-    if ent:IsPlayer() then ent.rhylibHitGroup = nil end
+    if tagged then ent.rhylibHitGroup = nil end
 
     if IsValid(owner) and owner:IsPlayer() and living then
         local kind = (group == HITGROUP_HEAD or crit) and Bolts.HIT_HEAD or Bolts.HIT_BODY

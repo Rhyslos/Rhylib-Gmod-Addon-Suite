@@ -6,7 +6,9 @@
 
     Public: Med.LooksIll, Med.IllSigns, Med.OpenAnalyser.
     Hooks used: Rhylib.WheelOptions / Rhylib.WheelEntityOptions
-    (rhylib_menus), Rhylib.ItemMenu (rhylib_inventory right-click).
+    (rhylib_menus; test dummies get draw blood and give medicine standing
+    up, through WheelEntityOptions), Rhylib.ItemMenu (rhylib_inventory
+    right-click).
     The windows need rhylib_menus' Kit; without it they don't open.
 ]]
 
@@ -461,11 +463,12 @@ end
 -- Interaction wheel
 --------------------------------------------------------------------------
 
-Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.illness", function(t, me, add)
+local function wheelOptions(t, me, add)
     if Med.Simple() then return end   -- (simplified medical system: no illness)
+    local dummy = Med.IsDummy(t)
     if Med.IsMedic(me) and not Med.IsDown(me) then
-        -- (test dummies are bots that can't lie down: standing is fine for them)
-        if not (Med.OnSofa(t) or t:IsBot()) then
+        -- (test dummies can't lie down: standing is fine for them)
+        if not (Med.OnSofa(t) or dummy) then
             add("Draw blood", nil, { order = 16, disabled = "Lay them on a med sofa" })
         elseif carried(Med.BLOOD_KIT) < 1 then
             add("Draw blood", nil, { order = 16, disabled = "No blood sample kit" })
@@ -482,17 +485,18 @@ Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.illness", function(t, me, add)
             if carried(m[1]) > 0 then any = true break end
         end
         local MP = Rhylib.MP
-        local still = Med.OnSofa(t) or Med.IsDown(t) or t:IsBot() or (MP and MP.IsCuffed and MP.IsCuffed(t))
+        local still = Med.OnSofa(t) or Med.IsDown(t) or dummy or (MP and MP.IsCuffed and MP.IsCuffed(t))
         if any and not still then
             add("Give medicine", nil, { order = 17, disabled = "Lay them on a med sofa" })
         elseif any then
             add("Give medicine", function(x) openDose(x) end, { order = 17, sub = "Pick the medicine and dose" })
         end
     end
-    -- Staff: start or end an illness (rhylib_admin).
+    -- Staff: start or end an illness (rhylib_admin; players only, test
+    -- dummies have rhylib_dummy_infect).
     local A = Rhylib.Admin
     local M = Rhylib.Menus
-    if A and A.Run and A.TargetWord and M and M.IsStaff and M.IsStaff() then
+    if not dummy and A and A.Run and A.TargetWord and M and M.IsStaff and M.IsStaff() then
         add("Illness", function(x)
             local Kit = K()
             local m = Kit and Kit.Menu() or DermaMenu()
@@ -506,6 +510,10 @@ Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.illness", function(t, me, add)
             m:Open()
         end, { order = 91, sub = "Staff: infect or cure" })
     end
+end
+Rhylib.Hook.Add("Rhylib.WheelOptions", "medical.illness", wheelOptions)
+Rhylib.Hook.Add("Rhylib.WheelEntityOptions", "medical.illness", function(ent, me, add)
+    if Med.IsDummy(ent) and ent:Alive() then wheelOptions(ent, me, add) end
 end)
 
 --------------------------------------------------------------------------

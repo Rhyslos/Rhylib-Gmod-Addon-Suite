@@ -1,17 +1,19 @@
 --[[
     Command post (server): what its window shows (cl_20_post.lua), per
     viewer (L.Access):
-      everyone      Logistics: supply crates, medical crates, ammo cabinets
-                    and armouries (rhylib_armoury) within postRadius, with
-                    the items left in each crate; Respawn tickets and
-                    Garrison (stage 2: shown as not set up yet).
+      everyone      Logistics: supply crates, medical crates, ammo, gear
+                    cabinets and armouries (rhylib_armoury) within
+                    postRadius, with the items left in each crate, and the
+                    armoury stock running lowest (sv_50_stock.lua);
+                    Respawn tickets and Garrison tickets.
       technicians   + Sensor arrays: every beacon on the map: label, who
                     set it, power left, Jammed / Running / No power,
                     droids inside now, seconds since its last alert.
-      officers      + Orders (stage 2: shown as not set up yet).
+      officers      + Orders: the call-ins (sv_60_calls.lua, net logi.call).
 
     Net logi.post (server -> that player): Entity post, UInt 2 access,
-    UInt 32 length, compressed JSON { supplies = { {name, kind, left, dist} },
+    UInt 32 length, compressed JSON { supplies = { {name, kind, left, dist} }
+    (left -1 endless, -2 shared stock), stock = { {id, name, left, max} },
     beacons = { {label, owner, power, state, count, ago} } }. Sent on E
     (once a second at most) and on Refresh: net logi.postreq (client ->
     server): Entity post, within 300 units, rate 1/s.
@@ -36,15 +38,15 @@ local function supplyOf(e)
         local n = 0
         for _, inst in pairs(st and st.items or {}) do n = n + (tonumber(inst.count) or 1) end
         return e.CrateStock == "medCrate" and "Medical" or "Ammo", n
-    elseif kind == "ammo" then
-        return "Ammo", nil
-    elseif kind == "armoury" then
-        return "Weapons", nil
+    elseif kind == "ammo" or kind == "armoury" or kind == "gear" or kind == "spec" then
+        -- (-2: draws from the shared armoury stock, sv_50_stock.lua)
+        local name = kind == "ammo" and "Ammo" or (kind == "armoury" and "Weapons" or "Gear")
+        return name, L.Cfg("stockOn") and -2 or nil
     end
 end
 
 local function build(ply, post, access)
-    local data = { supplies = {}, beacons = {} }
+    local data = { supplies = {}, beacons = {}, stock = L.LowStock and L.Cfg("stockOn") and L.LowStock(8) or nil }
     local r = math.max(100, L.Cfg("postRadius"))
     local pos = post:GetPos()
     for _, e in ipairs(ents.FindInSphere(pos, r)) do

@@ -98,6 +98,11 @@ Rhylib.Net.Receive("inv.ext", function()
     local bulk = net.ReadUInt(2)
     ext.bulk = bulk > 0
     ext.bulkOnly = bulk == 2
+    ext.counted = net.ReadBool()   -- (a depot with a limited stock: the counts are what's left)
+    ext.endless = {}               -- (on a counted depot: shelf items that never run out, by uid)
+    if ext.counted then
+        for _ = 1, net.ReadUInt(8) do ext.endless[net.ReadUInt(Items.UID_BITS)] = true end
+    end
     local c = { w = w, h = h, items = {} }
     for _ = 1, net.ReadUInt(8) do
         local inst = Items.ReadInstance()

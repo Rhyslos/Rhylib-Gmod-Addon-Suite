@@ -901,7 +901,7 @@ local function partials(st)
                 local fill = o.data and o.data.fill or 1
                 if def and def.fill and fill < 0.999 and fill > 0 then
                     -- Issued and normal ones are combined separately.
-                    local key = o.data.issued and (o.id .. "#issued") or o.id
+                    local key = o.id .. (o.data.issued and "#issued" or "") .. (o.data.stock and "#stock" or "")
                     groups[key] = groups[key] or {}
                     table.insert(groups[key], o)
                     n = n + 1
@@ -961,16 +961,17 @@ function Inv.FinishCombine(ply)
     for _, list in pairs(groups) do
         if #list >= 2 then
             local id = list[1].id
-            local sum, issued = 0, false
+            local sum, issued, stock = 0, false, true
             for _, o in ipairs(list) do
                 sum = sum + (o.data.fill or 1) * o.count
                 issued = issued or o.data.issued or false
+                stock = stock and o.data.stock and true or false   -- (armoury stock only if all of it was)
                 removeInst(ply, st, o.uid)
             end
             local full = math.floor(sum + 0.0001)
             local rest = sum - full
-            addInto(ply, st, id, full, { fill = 1, issued = issued or nil }, into)
-            if rest > 0.005 then addInto(ply, st, id, 1, { fill = rest, issued = issued or nil }, into) end
+            addInto(ply, st, id, full, { fill = 1, issued = issued or nil, stock = stock or nil }, into)
+            if rest > 0.005 then addInto(ply, st, id, 1, { fill = rest, issued = issued or nil, stock = stock or nil }, into) end
             merged = merged + #list
         end
     end

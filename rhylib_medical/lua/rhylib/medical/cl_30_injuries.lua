@@ -6,6 +6,11 @@
     effects. Right: how to treat it with the kits you carry (treating is
     the kit's click, worst problem first: this window only shows).
 
+    Hardcore (Med.Hardcore()): parts also show FRACTURE and BURNS (orange
+    shade), and the right column lists your kits: drag one onto a body
+    part to treat that part (med.treat: patient, part 3 bits, kit
+    Med.TREAT_BITS). A kit's click opens this window (med.open).
+
     Medics see exact damage, health and effects. Troopers see roughly how
     hurt each part is and whether it bleeds (and their own effects).
 
@@ -13,7 +18,10 @@
 
     Client only. The window is the vgui panel "RhylibInjuries". Opening
     someone else's sends med.view (patient) so the server streams their
-    injuries (med.inj); closing sends med.view(NULL).
+    injuries (med.inj); closing sends med.view(NULL). Patients are players
+    or test dummies (Med.IsPatient; a dummy's health is read with
+    Med.HealthOf). Without rhylib_inventory the kits counted are the kit
+    weapons you hold.
     Public: Med.OpenInjuries(target), Med.ToggleInjuries().
     Console: rhylib_injuries (toggle). Client convar rhylib_medical_key
     (default "h"; Settings > Controls). Hidden in the simplified system.
@@ -33,11 +41,17 @@ local COL_LABEL = Color(140, 142, 136)
 local COL_FINE = Color(226, 228, 222)
 local COL_HURT = Color(214, 48, 40)
 local COL_OUTLINE = Color(0, 0, 0, 200)
+local COL_BURN = Color(232, 132, 48)
+local COL_DROP = Color(133, 183, 235)
+local COL_ROW = Color(20, 23, 21)
+local COL_ROW_HOVER = Color(32, 40, 48)
 
 local TAGS = {
     { key = "bleed2", text = "HEAVY BLEEDING", col = Color(226, 60, 50) },
     { key = "bleed1", text = "BLEEDING", col = Color(226, 110, 90) },
     { key = "limp", text = "LIMPING", col = Color(239, 199, 89) },
+    { key = "frac", text = "FRACTURE", col = Color(239, 199, 89) },
+    { key = "burn", text = "BURNS", col = COL_BURN },
 }
 
 local function S(n) return math.floor(n * ScrH() / 1080 + 0.5) end
@@ -78,10 +92,12 @@ local function pointIn(poly, x, y)
 end
 
 local function partColour(p, rough)
-    local f = math.Clamp(p.dmg / 100, 0, 1)
+    local burn = p.burn or 0
+    local f = math.Clamp(math.max(p.dmg, burn * 0.8) / 100, 0, 1)
     -- Troopers only see three shades: fine, hurt, badly hurt.
     if rough then f = f <= 0 and 0 or (f < 0.5 and 0.45 or 1) end
-    return Color(Lerp(f, COL_FINE.r, COL_HURT.r), Lerp(f, COL_FINE.g, COL_HURT.g), Lerp(f, COL_FINE.b, COL_HURT.b))
+    local base = burn > p.dmg and COL_BURN or COL_HURT   -- (hardcore burns: orange)
+    return Color(Lerp(f, COL_FINE.r, base.r), Lerp(f, COL_FINE.g, base.g), Lerp(f, COL_FINE.b, base.b))
 end
 
 -- Illness by stage (cl_50_illness.lua Med.IllSigns), drawn on the head.
@@ -91,12 +107,17 @@ local ILL_TAGS = {
     { key = "ill3", text = "SEVERELY ILL", col = Color(214, 225, 60) },
 }
 
-local function tagsFor(p, rough, limping)
+-- (detail: fractures and burns shown, for medics and your own body)
+local function tagsFor(p, rough, limping, detail)
     local out = {}
     if rough then
         if p.bleed > 0 then out[#out + 1] = TAGS[2] end
     elseif p.bleed == 2 then out[#out + 1] = TAGS[1] elseif p.bleed == 1 then out[#out + 1] = TAGS[2] end
     if p.limp and limping then out[#out + 1] = TAGS[3] end
+    if detail then
+        if p.frac then out[#out + 1] = TAGS[4] end
+        if (p.burn or 0) > 0 then out[#out + 1] = TAGS[5] end
+    end
     return out
 end
 
@@ -112,6 +133,22 @@ local function carried(id)
         n = 1
     end
     return n
+end
+
+-- Hardcore: the kits you can drag onto a part: { id, name, count, usable,
+-- sub }. Medics: first aid kit and medkit; troopers: medkit.
+local function kitRows(medic)
+    local rows = {}
+    local function row(id, name)
+        local n = carried(id)
+        local allowed = medic or Med.ANYONE[id]
+        if id == Med.MEDKIT and Med.Cfg("medkitMedicOnly") and not medic then allowed = false end
+        local sub = not allowed and "medics only" or (n > 0 and ("x" .. n) or "none carried")
+        rows[#rows + 1] = { id = id, name = name, count = n, usable = allowed and n > 0, sub = sub }
+    end
+    if medic then row(Med.FIRST_AID, "First aid kit") end
+    row(Med.MEDKIT, "Medkit")
+    return rows
 end
 
 --------------------------------------------------------------------------
@@ -134,6 +171,7 @@ function PANEL:Init()
     self:MakePopup()
     self:SetKeyboardInputEnabled(false)  -- keys keep working; the mouse is free
     self.opened = RealTime()
+    self.kitRects = {}
     self.keyReleased = false
 end
 
@@ -176,10 +214,13 @@ function PANEL:Paint(w, h)
     local me = ply == LocalPlayer()
     local medic = Med.IsMedic(LocalPlayer())
     local rough = not medic
+    local hard = Med.Hardcore()
     self.rough = rough
+    self.hard = hard
     draw.SimpleText(me and "INJURIES" or ("INJURIES  ·  " .. ply:Nick()), font(17, 700), s(14), s(20), UI.Colors.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
     if medic or me then
-        draw.SimpleText("Health " .. math.max(0, ply:Health()) .. " / " .. ply:GetMaxHealth(), font(14, 600), w - s(14), s(20), UI.Colors.text, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+        local hp, max = Med.HealthOf(ply)
+        draw.SimpleText("Health " .. math.max(0, hp) .. " / " .. max, font(14, 600), w - s(14), s(20), UI.Colors.text, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
     end
 
     local mx, my = self:CursorPos()
@@ -192,6 +233,7 @@ function PANEL:Paint(w, h)
     for limb, pieces in pairs(SHAPES) do
         local p = t and t[limb] or Med.EMPTY_LIMB
         local col = partColour(p, rough)
+        if self.drag and hover == limb then col = COL_DROP end
         for _, poly in ipairs(pieces) do
             local verts = {}
             for i, pt in ipairs(poly) do
@@ -208,7 +250,7 @@ function PANEL:Paint(w, h)
         end
         -- Tags (an illness shows on the head as an affliction; what it is
         -- takes a blood test)
-        local tags = tagsFor(p, rough, Med.Limping(ply))
+        local tags = tagsFor(p, rough, Med.Limping(ply), hard and (medic or me))
         if limb == "head" and (medic or me) and Med.IllSigns then
             local _, stage = Med.IllSigns(ply)
             if stage then tags[#tags + 1] = ILL_TAGS[stage] end
@@ -232,7 +274,10 @@ function PANEL:Paint(w, h)
         lines[#lines + 1] = { string.format("Limping: can't sprint (%d s)", math.ceil(Med.LimpLeft(ply))), TAGS[3].col }
     end
     if t and (medic or me) then
-        if not Med.CanAim(ply) then lines[#lines + 1] = { "Badly hurt arm: can't aim, shaky", COL_HURT }
+        -- (hardcore legs)
+        if Med.BrokenLeg(ply) then lines[#lines + 1] = { "Broken leg: slow, can't sprint", TAGS[4].col }
+        elseif hard and Med.NoSprint(ply) then lines[#lines + 1] = { "Hurt leg: can't sprint", COL_HURT } end
+        if not Med.CanAim(ply) then lines[#lines + 1] = { hard and "Broken or hurt arm: can't aim, shaky" or "Badly hurt arm: can't aim, shaky", COL_HURT }
         elseif Med.SpreadPenalty(ply, 1) > 0.05 then lines[#lines + 1] = { "Aim a little shaky", COL_LABEL } end
         -- (torso only: an illness lowers the cap too, and medics find that with a blood test)
         local cap = Med.StaminaCap(ply) / math.max(Med.IllStaminaMult and Med.IllStaminaMult(ply) or 1, 0.01)
@@ -257,27 +302,34 @@ function PANEL:Paint(w, h)
 
     -- How to treat it, with what you carry (right column)
     local lx, ly = w - s(310), s(70)
-    draw.SimpleText("TREATMENT", font(12, 700), lx, ly + s(8), COL_LABEL, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-    local help = {}
-    local function kit(name, n, text)
-        help[#help + 1] = { name .. (n > 0 and ("  ·  " .. n) or "  ·  none carried"), n > 0 and UI.Colors.text or UI.Colors.textDim, true }
-        help[#help + 1] = { text, UI.Colors.textDim }
-    end
-    local who = me and "Hold the kit, right click: yourself." or "Hold the kit, left click on them."
-    if medic then
-        kit("First aid kit", carried(Med.FIRST_AID), "Fixes every wound, heals what's missing.")
-        kit("Medkit", carried(Med.MEDKIT), "All bleeding, a limp, repairs parts, +" .. Med.Cfg("medkitHealMedic") .. ".")
+    if hard then
+        self:PaintKits(lx, ly, mx, my, medic)
     else
-        kit("Medkit", carried(Med.MEDKIT), "Stops the worst bleeding, +" .. Med.Cfg("medkitHeal") .. " health.")
-        help[#help + 1] = { "A medic can fix limps and hurt limbs.", UI.Colors.textDim }
-    end
-    help[#help + 1] = { who, UI.Colors.textDim }
-    help[#help + 1] = { "Hurt parts heal by themselves once", UI.Colors.textDim }
-    help[#help + 1] = { "they stop bleeding; a limp wears off.", UI.Colors.textDim }
-    local yy = ly + s(24)
-    for _, l in ipairs(help) do
-        yy = yy + s(l[3] and 26 or 20)
-        draw.SimpleText(l[1], font(l[3] and 14 or 13, l[3] and 600 or 400), lx, yy, l[2], TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        if self.kitAt ~= nil or (self.kitRects and next(self.kitRects)) then
+            self.kitRects, self.kitAt = {}, nil
+        end
+        draw.SimpleText("TREATMENT", font(12, 700), lx, ly + s(8), COL_LABEL, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        local help = {}
+        local function kit(name, n, text)
+            help[#help + 1] = { name .. (n > 0 and ("  ·  " .. n) or "  ·  none carried"), n > 0 and UI.Colors.text or UI.Colors.textDim, true }
+            help[#help + 1] = { text, UI.Colors.textDim }
+        end
+        local who = me and "Hold the kit, right click: yourself." or "Hold the kit, left click on them."
+        if medic then
+            kit("First aid kit", carried(Med.FIRST_AID), "Fixes every wound, heals what's missing.")
+            kit("Medkit", carried(Med.MEDKIT), "All bleeding, a limp, repairs parts, +" .. Med.Cfg("medkitHealMedic") .. ".")
+        else
+            kit("Medkit", carried(Med.MEDKIT), "Stops the worst bleeding, +" .. Med.Cfg("medkitHeal") .. " health.")
+            help[#help + 1] = { "A medic can fix limps and hurt limbs.", UI.Colors.textDim }
+        end
+        help[#help + 1] = { who, UI.Colors.textDim }
+        help[#help + 1] = { "Hurt parts heal by themselves once", UI.Colors.textDim }
+        help[#help + 1] = { "they stop bleeding; a limp wears off.", UI.Colors.textDim }
+        local yy = ly + s(24)
+        for _, l in ipairs(help) do
+            yy = yy + s(l[3] and 26 or 20)
+            draw.SimpleText(l[1], font(l[3] and 14 or 13, l[3] and 600 or 400), lx, yy, l[2], TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        end
     end
     surface.SetDrawColor(COL_EDGE)
     surface.DrawLine(lx - s(16), s(60), lx - s(16), h - s(20))
@@ -289,20 +341,101 @@ function PANEL:Paint(w, h)
     surface.DrawRect(w - tk, h - 2, tk, 2) surface.DrawRect(w - 2, h - tk, 2, tk)
 end
 
+-- Hardcore: the kit rows to drag from (self.kitRects for the mouse), then
+-- what each kit does.
+function PANEL:PaintKits(lx, ly, mx, my, medic)
+    local s = S
+    local lw, rh = s(290), s(40)
+    draw.SimpleText("KITS  ·  DRAG ONTO A BODY PART", font(12, 700), lx, ly + s(8), COL_LABEL, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    -- (the rows and their boxes are worked out a few times a second, not
+    -- every frame)
+    if not self.kitAt or RealTime() >= self.kitAt then
+        self.kitAt = RealTime() + 0.25
+        self.kitRects = {}
+        local y0 = ly + s(24)
+        for _, r in ipairs(kitRows(medic)) do
+            self.kitRects[#self.kitRects + 1] = { x = lx, y = y0, w = lw, h = rh, row = r }
+            y0 = y0 + rh + s(4)
+        end
+    end
+    local ry = ly + s(24)
+    for _, k in ipairs(self.kitRects) do
+        local r = k.row
+        ry = k.y
+        local over = not self.drag and mx >= lx and mx <= lx + lw and my >= ry and my <= ry + rh
+        surface.SetDrawColor(over and r.usable and COL_ROW_HOVER or COL_ROW)
+        surface.DrawRect(lx, ry, lw, rh)
+        surface.SetDrawColor(COL_EDGE)
+        surface.DrawOutlinedRect(lx, ry, lw, rh)
+        if r.usable then
+            surface.SetDrawColor(96, 186, 126)
+            surface.DrawRect(lx + 1, ry + 1, s(3), rh - 2)
+        end
+        draw.SimpleText(r.name, font(14, r.usable and 600 or 400), lx + s(12), ry + rh * 0.5, r.usable and UI.Colors.text or UI.Colors.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        draw.SimpleText(r.sub, font(12), lx + lw - s(10), ry + rh * 0.5, UI.Colors.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+        ry = ry + rh + s(4)
+    end
+    local help
+    if medic then
+        help = {
+            "First aid kit: fixes that part, sets",
+            "the bone, treats burns, +" .. Med.Cfg("hcFirstAidLimbHealth") .. " health.",
+            "Medkit: stops its bleeding, sets the",
+            "bone, eases damage and burns, +" .. Med.Cfg("medkitHealMedic") .. ".",
+        }
+    else
+        help = {
+            "Medkit: stops that part's bleeding,",
+            "+" .. Med.Cfg("medkitHeal") .. " health.",
+            "Broken bones and burns need a medic.",
+        }
+    end
+    help[#help + 1] = "Parts heal by themselves only with no"
+    help[#help + 1] = "bleeding, fracture or burns."
+    local yy = ry + s(8)
+    draw.SimpleText("TREATMENT", font(12, 700), lx, yy, COL_LABEL, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    for _, l in ipairs(help) do
+        yy = yy + s(20)
+        draw.SimpleText(l, font(13), lx, yy, UI.Colors.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    end
+end
+
+function PANEL:KitAt(mx, my)
+    for _, k in ipairs(self.kitRects or {}) do
+        if mx >= k.x and mx <= k.x + k.w and my >= k.y and my <= k.y + k.h then return k.row end
+    end
+end
+
 function PANEL:PaintOver(w, h)
     local mx, my = self:CursorPos()
+    if self.drag then
+        local text = self.drag.name
+        surface.SetFont(font(13, 600))
+        local tw = surface.GetTextSize(text)
+        surface.SetDrawColor(COL_HEADER)
+        surface.DrawRect(mx + 10, my + 6, tw + S(16), S(26))
+        surface.SetDrawColor(COL_DROP)
+        surface.DrawOutlinedRect(mx + 10, my + 6, tw + S(16), S(26))
+        draw.SimpleText(text, font(13, 600), mx + 10 + S(8), my + 6 + S(13), UI.Colors.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        return
+    end
     -- Tooltip for the part under the mouse.
     local limb = self.hover
     if not limb then return end
     local t = Med.injOf and Med.injOf[self:Patient()]
     local p = t and t[limb] or Med.EMPTY_LIMB
     local lines = { Med.LIMB_NAMES[limb] }
+    local burn = p.burn or 0
     if self.rough then
-        lines[#lines + 1] = p.dmg <= 0 and "Looks fine" or (p.dmg < 50 and "Hurt" or "Badly hurt")
+        local f = math.max(p.dmg, burn * 0.8)
+        lines[#lines + 1] = f <= 0 and "Looks fine" or (f < 50 and "Hurt" or "Badly hurt")
         if p.bleed > 0 then lines[#lines + 1] = "Bleeding" end
+        if self:Patient() == LocalPlayer() and p.frac then lines[#lines + 1] = "Fractured" end
     else
         lines[#lines + 1] = "Damage " .. math.ceil(p.dmg) .. "%"
         if p.bleed == 2 then lines[#lines + 1] = "Heavy bleeding" elseif p.bleed == 1 then lines[#lines + 1] = "Light bleeding" end
+        if p.frac then lines[#lines + 1] = "Fractured" end
+        if burn > 0 then lines[#lines + 1] = "Burns " .. math.ceil(burn) .. "%" end
     end
     if p.limp and Med.Limping(self:Patient()) then lines[#lines + 1] = "Limping" end
     local bw, lh = S(170), S(18)
@@ -316,6 +449,31 @@ function PANEL:PaintOver(w, h)
         draw.SimpleText(l, font(i == 1 and 14 or 12, i == 1 and 700 or 400), x + S(8), y + S(6) + (i - 0.5) * lh,
             i == 1 and UI.Colors.text or UI.Colors.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
     end
+end
+
+-- Hardcore: drag a kit row onto a body part.
+function PANEL:OnMousePressed(code)
+    if code ~= MOUSE_LEFT or not Med.Hardcore() then return end
+    local row = self:KitAt(self:CursorPos())
+    if row and row.usable then
+        self.drag = row
+        self:MouseCapture(true)
+    end
+end
+
+function PANEL:OnMouseReleased(code)
+    if code ~= MOUSE_LEFT or not self.drag then return end
+    self:MouseCapture(false)
+    local row = self.drag
+    self.drag = nil
+    local limb = self:PartAt(self:CursorPos())
+    local kind = Med.TREAT_KIND[row.id]
+    if not limb or not kind or not Med.Hardcore() then return end
+    Rhylib.Net.Start("med.treat")
+    net.WriteEntity(self:Patient())
+    net.WriteUInt(Med.LIMB_INDEX[limb], 3)
+    net.WriteUInt(kind, Med.TREAT_BITS)
+    net.SendToServer()
 end
 
 function PANEL:Think()
@@ -356,11 +514,12 @@ local function lookTarget()
     local e = tr.Entity
     local L = Rhylib.Lying
     if L and L.Owner and L.Owner(e) then e = L.Owner(e) end   -- a lying player's ragdoll
-    if IsValid(e) and e:IsPlayer() and e:Alive() and me:GetPos():DistToSqr(e:GetPos()) <= r * r then return e end
-    return Med.FindDowned and Med.FindDowned(me) or nil
+    if Med.IsPatient(e) and e:Alive() and me:GetPos():DistToSqr(e:GetPos()) <= r * r then return e end
+    return Med.FindDowned and Med.FindDowned(me, Med.clientDown) or nil
 end
 
--- Med.OpenInjuries(target): opens the injury menu for target (a player),
+-- Med.OpenInjuries(target): opens the injury menu for target (a player or
+-- a test dummy),
 -- or your own with nil / yourself. Does nothing while dead, downed or in
 -- the simplified system. Client only.
 -- Example: Rhylib.Medical.OpenInjuries(LocalPlayer():GetEyeTrace().Entity)

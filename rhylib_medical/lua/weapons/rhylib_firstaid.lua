@@ -1,6 +1,7 @@
 -- First aid kit (shared SWEP, base rhylib_med_base). Medics only. LMB on
 -- a downed player revives, LMB someone standing / RMB yourself fixes every
--- wound and heals (simplified system: heals to full). Holds a charge.
+-- wound and heals (simplified system: heals to full; hardcore: opens the
+-- injury menu, drag it onto a part). Holds a charge.
 AddCSLuaFile()
 
 SWEP.Base = "rhylib_med_base"
@@ -11,6 +12,7 @@ SWEP.CanSelf = true
 SWEP.OpensMenu = true
 SWEP.Hint = "LMB  treat someone / revive the downed   ·   RMB  treat yourself"
 SWEP.SimpleHint = "LMB  heal someone to full / revive the downed   ·   RMB  heal yourself"   -- (simplified medical system)
+SWEP.HardHint = "LMB  someone's injuries / revive the downed   ·   RMB  your own   (drag onto a part)"   -- (hardcore)
 
 -- Doesn't stack. Holds a charge (config firstAidCharge health), kept by the
 -- inventory item as fill and shown as %.

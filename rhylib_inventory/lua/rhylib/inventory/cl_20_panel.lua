@@ -42,6 +42,14 @@ local Items = Rhylib.Items
 local UI = Rhylib.UI
 
 local MAIN, BACK, SLOT_BACK, EXT, RACK, BELT, HOLSTER = Items.MAIN, Items.BACK, Items.SLOT_BACK, Items.EXT, Items.RACK, Items.BELT, Items.HOLSTER
+
+-- One take from a depot shelf: a stack (one of a gun you may only carry one of).
+local function takeAmount(inst)
+    local def = Items.Get(inst.id)
+    if not def then return 1 end
+    if Items.Unique and Items.Unique(def) then return 1 end
+    return def.stack or 1
+end
 -- Short names inside the gear slots.
 local GEAR_SHORT = { kama = "Kama", pauldron = "Pauldron", helmet = "Helmet", holster = "Holster",
     forearm = "Forearm", comms = "Antenna", belt = "Belt" }
@@ -586,7 +594,9 @@ function PANEL:DrawItemBox(inst, x, y, pw, ph, alpha, endless)
     end
 
     local corner
-    if endless then
+    if endless == "stock" then
+        corner = inst.count <= 0 and "OUT" or (inst.count >= 255 and "255+" or (inst.count .. " left"))
+    elseif endless then
         corner = "∞"
     elseif inst.count > 1 then
         corner = "x" .. inst.count
@@ -698,12 +708,16 @@ function PANEL:PaintRegion(r, dragUid)
     end
 
     local endless = r.cid == EXT and Inv.ext and Inv.ext.depot
+    -- (a counted depot: the corner shows what's left; out of stock is greyed)
+    local counted = endless and Inv.ext.counted
     for uid, inst in pairs(c.items) do
         local x, y, pw, ph = self:ItemRect(r, inst)
         local dragged = dragUid == uid and self.drag and (self.drag.fromExt == (r.cid == EXT))
         -- (a gear part the model can't show: worn, but greyed and doing nothing)
         local unseen = r.gear and not Items.CanWear(LocalPlayer(), Items.defs[inst.id])
-        self:DrawItemBox(inst, x, y, pw, ph, (dragged or unseen) and 70 or 255, endless)
+        local cnt = counted and not (Inv.ext.endless and Inv.ext.endless[uid])
+        local out = cnt and inst.count <= 0
+        self:DrawItemBox(inst, x, y, pw, ph, (dragged or unseen or out) and 70 or 255, cnt and "stock" or endless)
     end
     if r.cid == EXT then self:PaintQuick(r, c) end
 end
@@ -1053,7 +1067,10 @@ function PANEL:PaintDrag()
     -- The item follows the cursor.
     local mx, my = self:CursorPos()
     local w, h = Items.Size(d.inst.id, d.rot)
-    local ghost = { id = d.inst.id, rot = d.rot, count = d.single and 1 or d.inst.count, data = d.inst.data }
+    local gc = d.single and 1 or d.inst.count
+    -- (from a depot you take one stack, not the shelf's count)
+    if d.fromExt and Inv.ext and Inv.ext.depot then gc = math.min(gc, takeAmount(d.inst)) end
+    local ghost = { id = d.inst.id, rot = d.rot, count = gc, data = d.inst.data }
     self:DrawItemBox(ghost, mx - d.offX * self.step - self.cell * 0.5, my - d.offY * self.step - self.cell * 0.5,
         self:SpanPx(w), self:SpanPx(h), 200)
 end
@@ -1067,6 +1084,10 @@ function PANEL:PaintTooltip()
     local s = self.s
 
     local lines = { def.name }
+    local depot = inst.c == EXT and Inv.ext and Inv.ext.depot
+    local stockCounted = depot and Inv.ext.counted and not (Inv.ext.endless and Inv.ext.endless[inst.uid])
+    -- (a depot shelf: what one take gives, not the shelf's count)
+    local count = depot and math.max(1, math.min(takeAmount(inst), stockCounted and math.max(1, inst.count) or 255)) or inst.count
     if def.rounds then
         if def.rounds > 1 then
             lines[#lines + 1] = math.floor((inst.data.fill or 1) * def.rounds + 0.5) .. " / " .. def.rounds .. " " .. (def.unit or "rounds")
@@ -1074,10 +1095,10 @@ function PANEL:PaintTooltip()
     elseif def.fill then
         lines[#lines + 1] = "Charge " .. math.ceil((inst.data.fill or 1) * 100) .. "%"
     end
-    if def.stack > 1 then lines[#lines + 1] = inst.count .. " / " .. (inst.c == EXT and def.stack or Items.StackFor(def, LocalPlayer())) end
+    if def.stack > 1 and not depot then lines[#lines + 1] = inst.count .. " / " .. (inst.c == EXT and def.stack or Items.StackFor(def, LocalPlayer())) end
     if def.desc then lines[#lines + 1] = def.desc end
     if def.weight then
-        local w = def.weight * inst.count
+        local w = def.weight * count
         local pm = Rhylib.Config.Get("inventory", "backpackWeightMult")
         local note = (inst.c == BACK and pm ~= 1) and string.format(" (counts as %.2f in the backpack)", w * pm) or ""
         lines[#lines + 1] = string.format("%.2f kg", w) .. note
@@ -1097,7 +1118,14 @@ function PANEL:PaintTooltip()
     if def.large then lines[#lines + 1] = "Too large for a backpack" end
     if inst.data and inst.data.issued then lines[#lines + 1] = "Issued: if dropped, disappears after 5 minutes" end
     if inst.data and inst.data.hidden and inst.c ~= EXT then lines[#lines + 1] = "Hidden: a search may miss it" end
-    if inst.c == EXT and Inv.ext and Inv.ext.depot then lines[#lines + 1] = "Endless supply, drag to take (Ctrl: just one)" end
+    if inst.c == EXT and Inv.ext and Inv.ext.depot then
+        if stockCounted then
+            lines[#lines + 1] = inst.count <= 0 and "Out of stock: it comes back with a resupply"
+                or ("Stock: " .. (inst.count >= 255 and "255+" or inst.count) .. " left, shared by every armoury of this kind; drag to take (Ctrl: just one)")
+        else
+            lines[#lines + 1] = "Endless supply, drag to take (Ctrl: just one)"
+        end
+    end
     if inst.data and inst.data.note and inst.data.note ~= "" then lines[#lines + 1] = inst.data.note end
     hook.Run("Rhylib.ItemTooltip", inst, lines)   -- (other addons add lines; return nothing)
     if inst.c == EXT and Inv.ext and Inv.ext.bulkOnly then

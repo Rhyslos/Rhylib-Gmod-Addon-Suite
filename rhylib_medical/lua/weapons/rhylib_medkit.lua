@@ -1,6 +1,7 @@
 -- Medkit (shared SWEP, base rhylib_med_base). Anyone can use one (unless
 -- config medkitMedicOnly). LMB someone / RMB yourself treats them, worst
--- problem first (sv_20_actions.lua); in the simplified system it heals.
+-- problem first (sv_20_actions.lua); in the simplified system it heals;
+-- in the hardcore system it opens the injury menu (drag it onto a part).
 -- Single use; the stack size comes from config (hook Rhylib.ItemStack).
 AddCSLuaFile()
 
@@ -12,6 +13,7 @@ SWEP.CanSelf = true
 SWEP.OpensMenu = true
 SWEP.Hint = "LMB  treat someone   ·   RMB  treat yourself   (worst wound first)"
 SWEP.SimpleHint = "LMB  heal someone   ·   RMB  heal yourself"   -- (simplified medical system)
+SWEP.HardHint = "LMB  someone's injuries   ·   RMB  your own   (drag the kit onto a part)"   -- (hardcore)
 
 -- One use each. Stacks 3 for troopers, 5 for medics (config medkitStack /
 -- medkitStackMedic, at most InvStack).

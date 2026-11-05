@@ -36,6 +36,14 @@
     Med bay: near a bacta tank or a medical holotable.
     Skills (rhylib_skills, medic jobs): Med.Skill(ply, id).
 
+    Hardcore (config hardcore, live; the simplified system wins over it):
+    the fuller injury model in sh/sv/cl_30 with its own hc* keys:
+    bleeding from smaller hits, fractures and burns instead of limps, and
+    treatment one body part at a time by dragging a kit onto the part in
+    the H menu (a kit's click opens that menu). Only medics set bones and
+    treat burns (medkit or first aid kit); the bacta tank does too.
+    Med.Hardcore() says whether it is on.
+
     State, all NW2 (changes only on events):
       downed player:  rhylib_down (bool), rhylib_downEnd (CurTime when the
                       timer runs out), rhylib_downLeft (seconds left while
@@ -52,11 +60,19 @@
     The rest of the addon:
       sh_10_move      downed / dragging / helper movement and the lying pose
       sv_10_downed    going down, bleeding out, reviving, dragging
-      sv_20_actions   timed actions (stabilise, revive, heal, treat a part)
+      sv_20_actions   timed actions (stabilise, revive, heal, one part in hardcore)
       sh/sv/cl_30     body part injuries and the H menu
       sh/sv/cl_40     med bay: bacta tank, chemistry bench, med sofa
       sh/sv/cl_50     illness, blood tests and medicine
       cl_10_hud       downed / helper HUD, markers, E menu, wheel options
+      sv_60_dummy     test dummies' damage, numbers, rhylib_dummy_* commands
+
+    Patients are players and test dummies (lua/entities/rhylib_test_dummy.lua,
+    NextBots with ENT.IsRhylibDummy: no player slot). Med.IsPatient(ent)
+    says which; code that treats a patient never calls player-only API
+    on a dummy, and the Rhylib.PlayerDowned / PlayerRevived / PlayerHealed /
+    DelayDown hooks only fire for players. Med.dummies = the set of dummies
+    (both realms; on a client only the ones it knows).
 ]]
 
 Rhylib.Medical = Rhylib.Medical or {}
@@ -65,6 +81,7 @@ local Config = Rhylib.Config
 
 Config.Register("medical", "enabled", true, "Players go down at 0 HP instead of dying")
 Config.Register("medical", "simplified", false, "Simplified medical system: no injuries, bleeding, limps, illness, blood packs, H menu or chemistry; health is a plain 0-100% of the job's max health. Medkit +simpleMedkit, first aid kit heals to full, revive kit revives to full. Downing, stabilising, dragging and reviving stay")
+Config.Register("medical", "hardcore", false, "Hardcore medical system: bleeding from smaller hits, fractures and burns instead of limps, slow recovery, and treatment one body part at a time in the H menu (drag a kit onto the part). Only medics set bones and treat burns. The numbers are in the Hardcore section. Live: switching it on ends limps, switching it off clears fractures and burns. The simplified system wins over it")
 Config.Register("medical", "simpleMedkit", 0.3, "Simplified medical system: share of max health a medkit heals (0.3 = +30%)")
 Config.Register("medical", "simpleFirstAidRevive", 0.3, "Simplified medical system: health after a first aid kit revive, as a share of max health")
 Config.Register("medical", "simpleFirstAidCharge", false, "Simplified medical system: first aid kits still spend their charge (off = never run out)")
@@ -148,6 +165,13 @@ function Med.Simple()
     return Config.Get("medical", "simplified") == true
 end
 
+-- Med.Hardcore(): true when the hardcore medical system is on (Server
+-- settings, live) and the simplified one is off. Shared.
+-- Example: if Rhylib.Medical.Hardcore() then ... fractures ... end
+function Med.Hardcore()
+    return Config.Get("medical", "hardcore") == true and not Med.Simple()
+end
+
 -- Med.HealthPct(ply): health as a whole percent of max health, 0-100
 -- (HUDs in the simplified system).
 function Med.HealthPct(ply)
@@ -165,7 +189,7 @@ Med.A_REVIVE = 2    -- reviving with a revive kit
 Med.A_FA_REVIVE = 3 -- reviving with a first aid kit
 Med.A_FA_HEAL = 4   -- heal with a first aid kit
 Med.A_MEDKIT = 5    -- one medkit
-Med.A_TREAT = 6     -- (no longer used: was one body part from the H menu)
+Med.A_TREAT = 6     -- one body part from the H menu (hardcore; kit in the action)
 Med.A_BLOOD = 7     -- blood pack on a downed player
 Med.A_HAND_REVIVE = 8 -- revive with no kit (skill Hands-on revive)
 Med.ACT_BITS = 4
@@ -193,6 +217,10 @@ Med.MEDKIT = "rhylib_medkit"
 -- Plain medical items.
 Med.SUPPLIES = "rhylib_med_supplies"
 Med.BLOOD_PACK = "rhylib_bloodpack"
+-- Hardcore H menu treatments: kind (Med.TREAT_BITS on the wire) <-> kit.
+Med.TREAT_ITEMS = { [0] = Med.FIRST_AID, [1] = Med.MEDKIT }
+Med.TREAT_KIND = { [Med.FIRST_AID] = 0, [Med.MEDKIT] = 1 }
+Med.TREAT_BITS = 2
 -- Anyone may use these (first aid kits and blood packs are for medics).
 Med.ANYONE = { [Med.MEDKIT] = true }
 
@@ -359,6 +387,7 @@ end
 -- Example (your addon): hook.Add("Rhylib.IsMedic", "myaddon", function(ply)
 --     if ply:GetNWBool("isDoctor") then return true end end)
 function Med.IsMedic(ply)
+    if not ply:IsPlayer() then return false end   -- (test dummies)
     local r = hook.Run("Rhylib.IsMedic", ply)
     if r ~= nil then return r end
     local job = RPExtraTeams and RPExtraTeams[ply:Team()]
@@ -382,13 +411,38 @@ function Med.BodyPos(ply)
     return ply:GetPos() + Vector(0, 0, 10)
 end
 
+-- Test dummies (NextBots, lua/entities/rhylib_test_dummy.lua): the set of
+-- them, filled by the entity itself.
+Med.dummies = Med.dummies or {}
+
+-- Med.IsDummy(ent): true for a test dummy. Shared.
+function Med.IsDummy(ent)
+    return IsValid(ent) and ent.IsRhylibDummy == true
+end
+
+-- Med.IsPatient(ent): true for anyone the medical system treats: a player
+-- or a test dummy. Shared.
+-- Example: if not Rhylib.Medical.IsPatient(tr.Entity) then return end
+function Med.IsPatient(ent)
+    return IsValid(ent) and (ent:IsPlayer() or ent.IsRhylibDummy == true)
+end
+
+-- Med.HealthOf(ent): health, max health of a patient. On clients a test
+-- dummy's come from its NW2 copy (rhylib_dummyHp / rhylib_dummyMax).
+function Med.HealthOf(ent)
+    if CLIENT and ent.IsRhylibDummy then
+        return ent:GetNW2Int("rhylib_dummyHp", 0), ent:GetNW2Int("rhylib_dummyMax", 100)
+    end
+    return ent:Health(), ent:GetMaxHealth()
+end
+
 --[[
     The downed player `ply` is aiming at, within range. Lying bodies are
     small, so this checks aim direction against every downed player
     instead of tracing for hitboxes. The list is short.
     Med.FindDowned(ply, list): list = players to check (server:
-    Med.downList, client: Med.clientDown; nil = everyone). Returns the
-    downed player most in line with the aim, with no wall between, or nil.
+    Med.downList, client: Med.clientDown; both hold test dummies too; nil =
+    every player). Returns the downed patient most in line with the aim, with no wall between, or nil.
 ]]
 function Med.FindDowned(ply, list)
     local eye = ply:EyePos()
@@ -415,8 +469,8 @@ function Med.FindDowned(ply, list)
     return best
 end
 
--- Med.FindStanding(ply): the living, not downed player ply aims at within
--- range + 20 (a small hull trace), or nil.
+-- Med.FindStanding(ply): the living, not downed patient (player or test
+-- dummy) ply aims at within range + 20 (a small hull trace), or nil.
 function Med.FindStanding(ply)
     local tr = util.TraceHull({
         start = ply:EyePos(),
@@ -426,7 +480,7 @@ function Med.FindStanding(ply)
         mask = MASK_SHOT_HULL,
     })
     local e = tr.Entity
-    if IsValid(e) and e:IsPlayer() and e:Alive() and not Med.IsDown(e) then return e end
+    if Med.IsPatient(e) and e:Alive() and not Med.IsDown(e) then return e end
 end
 
 -- Server settings page: this module's name, sidebar category and sections
@@ -435,6 +489,7 @@ end
 local SECTIONS = {
     { "General", { "^enabled$", "^range$", "^selfMult$", "^noTarget$", "^markerRange$", "^viewRange$" } },
     { "Simplified system", { "^simpl" } },
+    { "Hardcore", { "^hardcore$", "^hc" } },
     { "Downed & bleeding out", { "^bleedTime$", "^downHealth$", "^downGrace$", "^giveUpTime$", "^downSequences$", "^callMedic" } },
     { "Revives", { "^reviveKit", "^firstAidRevive", "^handRevive", "^bloodPack" } },
     { "Kits & field items", { "^firstAid", "^medkit", "^bacta" } },

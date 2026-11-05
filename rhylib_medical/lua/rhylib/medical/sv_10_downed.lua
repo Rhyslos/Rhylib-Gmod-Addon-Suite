@@ -11,9 +11,17 @@
     out, checks stabilisers, drags and actions (sv_20_actions.lua). With
     nobody down it returns at once.
 
+    Test dummies (Med.IsPatient, sh_00_config.lua) go down, bleed out,
+    get dragged and revived the same way; the player-only parts (view,
+    hull, vehicles, the hooks below) are skipped for them, and while down
+    the dummy itself is not solid (only its ragdoll takes hits).
+    Med.DummyReset does for a dummy what death / spawn / leaving does for a
+    player (sv_60_dummy.lua and the entity call it).
+
     Public: Med.Down, Med.Revive, Med.GiveUp, Med.StartDrag, Med.StopDrag,
-    Med.Note, Med.CanSee, Med.InRange.
-    Hooks fired: Rhylib.PlayerDowned(ply, attacker), Rhylib.PlayerRevived(ply, by).
+    Med.Note, Med.CanSee, Med.InRange, Med.DummyReset.
+    Hooks fired (players only): Rhylib.PlayerDowned(ply, attacker),
+    Rhylib.PlayerRevived(ply, by), Rhylib.DelayDown.
     Notices go through Rhylib.Notify (Med.Note). Net: med.callmedic (downed player's "call a
     medic" key, R) -> med.called (when they may call again).
 ]]
@@ -66,9 +74,11 @@ Rhylib.Net.Receive("med.callmedic", function(ply)
 end, { rate = 1, burst = 2 })
 
 -- Med.Note(ply, text, kind): a short notice to ply (Rhylib.Notify, tag
--- "Medical"; kind "info" / "good" / "bad"). Server only.
+-- "Medical"; kind "info" / "good" / "bad"). Nothing for a test dummy.
+-- Server only.
 -- Example: Rhylib.Medical.Note(ply, "Too far away")
 function Med.Note(ply, text, kind)
+    if IsValid(ply) and not ply:IsPlayer() then return end   -- (test dummies)
     Rhylib.Notify(ply, text, kind or "info", "Medical")
 end
 
@@ -114,27 +124,32 @@ end
 -- Going down and getting up
 --------------------------------------------------------------------------
 
--- Med.Down(ply, attacker, inflictor): puts a living player in the downed
--- state (health = the downed pool, bleed-out timer, lying body). Does
--- nothing if they're already down or dead. attacker/inflictor are who
--- gets the kill if they die while down. Fires Rhylib.PlayerDowned(ply,
--- attacker). Returns nothing. Server only.
+-- Med.Down(ply, attacker, inflictor): puts a living player (or test dummy)
+-- in the downed state (health = the downed pool, bleed-out timer, lying
+-- body). Does nothing if they're already down or dead. attacker/inflictor
+-- are who gets the kill if they die while down. Fires
+-- Rhylib.PlayerDowned(ply, attacker) for players. Returns nothing. Server only.
 -- Example: Rhylib.Medical.Down(ply, ply, ply)   -- down them "by themselves" (no frag)
 function Med.Down(ply, attacker, inflictor)
     if Med.down[ply] or not ply:Alive() then return end
+    local person = ply:IsPlayer()   -- (false: a test dummy)
     Med.down[ply] = { attacker = attacker, inflictor = inflictor }
     rebuildList()
     ply.rhylibDown = true
     ply:SetNW2Bool(Rhylib.NW.DOWN, true)   -- (at once, so Med.IsDown agrees with rhylibDown for anything this runs)
 
-    if ply:InVehicle() then ply:ExitVehicle() end
-    -- Off a grapple rope, jetpack flames off: anything holding the player
-    -- up lets go (rhylib_weapons' grapple, rhylib_jetpack listen).
-    hook.Run("Rhylib.ForceRelease", ply, "down")
+    if person then
+        if ply:InVehicle() then ply:ExitVehicle() end
+        -- Off a grapple rope, jetpack flames off: anything holding the player
+        -- up lets go (rhylib_weapons' grapple, rhylib_jetpack listen).
+        hook.Run("Rhylib.ForceRelease", ply, "down")
+    end
     Med.Cancel(ply)
     Med.StopDrag(ply)
-    if Med.TankExit and ply.rhylibTank then Med.TankExit(ply) end   -- (out of the bacta tank first)
-    if Rhylib.Inventory and Rhylib.Inventory.Stow then Rhylib.Inventory.Stow(ply) end
+    if person then
+        if Med.TankExit and ply.rhylibTank then Med.TankExit(ply) end   -- (out of the bacta tank first)
+        if Rhylib.Inventory and Rhylib.Inventory.Stow then Rhylib.Inventory.Stow(ply) end
+    end
 
     -- (simplified medical system: downHealth is a percent of max health)
     local pool = Med.Cfg("downHealth")
@@ -148,10 +163,16 @@ function Med.Down(ply, attacker, inflictor)
 
     -- Lying body: low camera, small hull, hit bounds wide enough for the
     -- whole body (it reaches past the hull).
-    ply.rhylibViewOff = ply.rhylibViewOff or { ply:GetViewOffset(), ply:GetViewOffsetDucked() }
-    ply:SetViewOffset(Med.VIEW_DOWN)
-    ply:SetViewOffsetDucked(Med.VIEW_DOWN)
-    Med.ApplyHull(ply, true)
+    if person then
+        ply.rhylibViewOff = ply.rhylibViewOff or { ply:GetViewOffset(), ply:GetViewOffsetDucked() }
+        ply:SetViewOffset(Med.VIEW_DOWN)
+        ply:SetViewOffsetDucked(Med.VIEW_DOWN)
+        Med.ApplyHull(ply, true)
+    else
+        -- A dummy has no lying pose: it is not solid while down, so shots
+        -- hit the ragdoll (rhylib_core forwards them to it).
+        ply:SetNotSolid(true)
+    end
     ply:SetSurroundingBounds(Vector(-48, -48, 0), Vector(48, 48, 32))
     -- Players walk over the body instead of bumping into it; shots still hit.
     ply.rhylibCollision = ply.rhylibCollision or ply:GetCollisionGroup()
@@ -165,7 +186,8 @@ function Med.Down(ply, attacker, inflictor)
     -- Hook Rhylib.PlayerDowned(ply, attacker): ply just went down. Return
     -- value ignored. (Used by rhylib_skills, rhylib_mp, rhylib_training,
     -- rhylib_core's knockdown, and the tank/sofa code in sv_40_medbay.lua.)
-    hook.Run("Rhylib.PlayerDowned", ply, attacker)
+    -- Not for test dummies.
+    if person then hook.Run("Rhylib.PlayerDowned", ply, attacker) end
 end
 
 -- Clears the downed state. Used by revive, death, spawn and disconnect.
@@ -190,15 +212,20 @@ local function clear(ply)
     ply:SetNW2Entity(Rhylib.NW.STAB_BY, NULL)
     ply:SetNW2Entity(Rhylib.NW.DRAG_BY, NULL)
 
-    local vo = ply.rhylibViewOff
-    if vo then
-        ply:SetViewOffset(vo[1])
-        ply:SetViewOffsetDucked(vo[2])
-        ply.rhylibViewOff = nil
+    local person = ply:IsPlayer()
+    if person then
+        local vo = ply.rhylibViewOff
+        if vo then
+            ply:SetViewOffset(vo[1])
+            ply:SetViewOffsetDucked(vo[2])
+            ply.rhylibViewOff = nil
+        end
+        Med.ApplyHull(ply, false)
+    elseif ply:Alive() then
+        ply:SetNotSolid(false)   -- (test dummy up again; a dead one stays not solid)
     end
-    Med.ApplyHull(ply, false)
     ply:SetSurroundingBoundsType(BOUNDS_HITBOXES)
-    ply:SetCollisionGroup(ply.rhylibCollision or COLLISION_GROUP_PLAYER)
+    ply:SetCollisionGroup(ply.rhylibCollision or (person and COLLISION_GROUP_PLAYER or COLLISION_GROUP_NPC))
     ply.rhylibCollision = nil
     if not ply.rhylibAdminNoTarget then ply:RemoveFlags(FL_NOTARGET) end   -- (rhylib_admin's no target stays)
     if Rhylib.Lying then Rhylib.Lying.End(ply) end
@@ -210,7 +237,8 @@ local NUDGES = { Vector(0, 0, 0), Vector(0, 0, 12), Vector(24, 0, 4), Vector(-24
     Vector(40, 0, 8), Vector(-40, 0, 8), Vector(0, 40, 8), Vector(0, -40, 8) }
 local function unstick(ply)
     local pos = ply:GetPos()
-    local mins, maxs = ply:GetHull()
+    local mins, maxs
+    if ply:IsPlayer() then mins, maxs = ply:GetHull() else mins, maxs = ply:OBBMins(), ply:OBBMaxs() end
     for _, off in ipairs(NUDGES) do
         local p = pos + off
         local tr = util.TraceHull({ start = p, endpos = p, mins = mins, maxs = maxs, filter = ply, mask = MASK_PLAYERSOLID })
@@ -224,14 +252,14 @@ end
 -- Med.Revive(ply, health, by): gets a downed player up with `health`
 -- (clamped 1 .. max health), moved to a clear spot if stuck. by = the
 -- reviver (may be nil, e.g. NPC medics). Does nothing if ply isn't down.
--- Fires Rhylib.PlayerRevived(ply, by). Server only.
+-- Fires Rhylib.PlayerRevived(ply, by) (players only). Server only.
 -- Example: Rhylib.Medical.Revive(ply, ply:GetMaxHealth() * 0.3, nil)
 function Med.Revive(ply, health, by)
     if not clear(ply) then return end
     unstick(ply)
     ply:SetHealth(math.Clamp(math.floor(health), 1, ply:GetMaxHealth()))
     -- Hook Rhylib.PlayerRevived(ply, by): ply got up. Return value ignored.
-    hook.Run("Rhylib.PlayerRevived", ply, by)
+    if ply:IsPlayer() then hook.Run("Rhylib.PlayerRevived", ply, by) end
 end
 
 -- Dies now, credited to whoever downed them. DMG_DIRECT passes the grace
@@ -248,8 +276,26 @@ local function finish(ply)
     dmg:SetAttacker(attacker)
     dmg:SetInflictor(IsValid(d.inflictor) and d.inflictor or attacker)
     ply:TakeDamageInfo(dmg)
-    if ply:Alive() then ply:Kill() end  -- blocked (friendly fire off, god mode)
+    -- blocked (friendly fire off, god mode)
+    if ply:Alive() then
+        if ply:IsPlayer() then ply:Kill() elseif ply.DummyDie then ply:DummyDie() end
+    end
     ply.rhylibDying = nil
+end
+
+-- Med.DummyReset(ent): the clean-up a player gets on death, spawn and
+-- leaving, for a test dummy (it fires none of those hooks): not down any
+-- more (a dead one's ragdoll stays as its corpse), nobody's action or drag
+-- on it, every part healed, no Field surgeon patch. Server only.
+function Med.DummyReset(ent)
+    clear(ent)
+    Med.StopDrag(ent)
+    for h, a in pairs(Med.acts) do
+        if a.target == ent then Med.Cancel(h) end
+    end
+    if Med.ClearInjuries then Med.ClearInjuries(ent) end
+    ent.rhylibPatchedUntil = nil
+    ent.rhylibBleedAcc = nil
 end
 
 -- Med.GiveUp(ply): a downed player dies next tick, credited to whoever
@@ -267,7 +313,7 @@ end
 -- (took = false) never downs anyone. Priority 150: after armour (100) has
 -- scaled the damage.
 Rhylib.Hook.Add("EntityTakeDamage", "medical.down", function(ent, dmg)
-    if not ent:IsPlayer() or ent.rhylibDown or not ent:Alive() then return end
+    if not Med.IsPatient(ent) or ent.rhylibDown or not ent:Alive() then return end
     if not Med.Cfg("enabled") then return end
     if ent.rhylibBuddha then ent.rhylibGoingDown = nil return end   -- (rhylib_admin buddha keeps 1 HP)
     local hp = ent:Health()
@@ -287,7 +333,7 @@ end, 150)  -- after armour (100)
 -- Just went down: no damage while the fall plays (bleeding out and
 -- giving up use DMG_DIRECT from finish(), which isn't blocked).
 Rhylib.Hook.Add("EntityTakeDamage", "medical.grace", function(ent, dmg)
-    if ent.rhylibDown and ent:IsPlayer() and CurTime() < (ent.rhylibDownGrace or 0) and not ent.rhylibDying then
+    if ent.rhylibDown and Med.IsPatient(ent) and CurTime() < (ent.rhylibDownGrace or 0) and not ent.rhylibDying then
         return true
     end
 end, 50)
@@ -298,7 +344,8 @@ Rhylib.Hook.Add("PostEntityTakeDamage", "medical.down", function(ent, dmg, took)
     if not (took and ent:Alive()) then return end
     -- Hook Rhylib.DelayDown(ply, attacker, inflictor): true = not now (the
     -- caller downs them later itself; rhylib_skills' For The Republic).
-    if hook.Run("Rhylib.DelayDown", ent, dmg:GetAttacker(), dmg:GetInflictor()) == true then return end
+    -- Players only.
+    if ent:IsPlayer() and hook.Run("Rhylib.DelayDown", ent, dmg:GetAttacker(), dmg:GetInflictor()) == true then return end
     Med.Down(ent, dmg:GetAttacker(), dmg:GetInflictor())
 end)
 

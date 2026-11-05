@@ -6,8 +6,9 @@
         cl_20_post.lua): a computer game masters place (and make
         permanent). E opens its window: Logistics (supply crates, medical
         crates and armoury cabinets within postRadius, how much is left),
-        Respawn tickets and Garrison (not set up yet: stage 2), Sensor
-        arrays (field technicians and officers), Orders (officers; stage 2).
+        Respawn tickets and Garrison tickets, the armoury stock running
+        low, Sensor arrays (field technicians and officers), Orders
+        (officers: call-ins).
       Sensor array beacons (entities/rhylib_sensor_beacon.lua,
         weapons/rhylib_sensor_kit.lua; sv_10_sensors.lua, cl_10_sensors.lua):
         anyone carrying a sensor kit (4x1, stacks to 2) sets one down
@@ -19,6 +20,10 @@
         "no wallhacks"), and tells every field technician and officer on the
         map: a SENSOR alert on screen and an arrow on the compass (rhylib_radio)
         toward it, with how many. Sent only when the count changes.
+
+    Stage 2 (sh_40_stock.lua, sv_50_stock.lua, sv_60_calls.lua,
+    entities/rhylib_resupply_crate.lua): one shared armoury stock per
+    item, resupply crates, garrison tickets and officer call-ins.
 
     Who (L.Access(ply) -> 1 everyone, 2 field technician, 3 officer):
       field technician = any Field technician skill (rhylib_skills, spec
@@ -38,6 +43,8 @@ Config.Describe("logistics", { name = "Logistics", category = "Soldiers", sectio
     { "Sensor arrays", { "^sensor" } },
     { "Who sees what", { "^officerRank$" } },
     { "Building", { "^build", "^etool", "^repair", "^skill", "^crate", "^carry", "^staffCrate" } },
+    { "Armoury stock", { "^stock", "^resupply" } },
+    { "Garrison & call-ins", { "^garrison", "^call" } },
 } })
 Config.Register("logistics", "postRadius", 3000, "Command post: supplies within this range are listed (units)")
 Config.Register("logistics", "postModel", "models/ace/sw/rh/cgi_holotable_bottom.mdl", "Command post: model (the battalion computer's for now)")

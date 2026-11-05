@@ -226,7 +226,7 @@ Config.Register("droids", "ctPopperChance", 0.15, "Clone trooper: chance after e
 Config.Register("droids", "ctPopperLobChance", 0.4, "Clone trooper: chance to throw a droid popper where a droid just went out of sight")
 Config.Register("droids", "ctPopperCooldown", 30, "Clone trooper: seconds between one clone's droid poppers")
 Config.Register("droids", "ctDownGuards", 2, "Clones that go and stand guard over a downed player (0 = off)")
-Config.Register("droids", "ctMedicRepair", 4, "Clone medic: injury damage healed a second on each body part of players near it (bleeding stops first, then a limp ends)")
+Config.Register("droids", "ctMedicRepair", 4, "Clone medic: injury damage healed a second on each body part of players near it (bleeding stops first, then a broken bone is set (hardcore medical) or a limp ends; burns heal too)")
 Config.Register("droids", "ctMedicReviveRadius", 1500, "Clone medic: goes to downed or just-dead players this close")
 Config.Register("droids", "ctMedicReviveTime", 5, "Clone medic: seconds crouched on the body to get someone up")
 Config.Register("droids", "ctMedicReviveHealth", 0.3, "Clone medic: share of max health a revived player gets up with")

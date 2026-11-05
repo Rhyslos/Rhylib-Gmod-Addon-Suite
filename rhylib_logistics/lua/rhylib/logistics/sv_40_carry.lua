@@ -27,6 +27,14 @@
 local L = Rhylib.Logistics
 
 L.carry = L.carry or {}
+-- Other crates carried the same way (armoury resupply crates,
+-- sv_50_stock.lua): [crate] = true. They need IsHeavy, GetCarried,
+-- SetCarried and SetHolders like the building crate.
+L.carriables = L.carriables or {}
+local function eachCrate(fn)
+    for c in pairs(L.crates) do fn(c) end
+    for c in pairs(L.carriables) do fn(c) end
+end
 
 local function mayAct(ply)
     if not (IsValid(ply) and ply:Alive()) then return false end
@@ -67,6 +75,7 @@ function L.DropCrate(c)
     c:SetCarried(false)
     c:SetHolders(0)
     L.Unstick(c)
+    if st and c.OnSetDown then c:OnSetDown(st.a, st.b) end
 end
 
 -- A crate overlapping a player: passable (debris) until nobody stands in it.
@@ -92,12 +101,12 @@ end
 
 local function pickUp(c, a, b)
     -- (whoever picks something up stops waiting at any other heavy crate)
-    for o in pairs(L.crates) do
+    eachCrate(function(o)
         if IsValid(o) and o ~= c and (o.rhylibWaiting == a or o.rhylibWaiting == b) then
             o.rhylibWaiting, o.rhylibWaitUntil = nil, nil
             if not L.carry[o] then o:SetHolders(0) end
         end
-    end
+    end)
     L.carry[c] = { a = a, b = b }
     c.rhylibWaiting, c.rhylibWaitUntil = nil, nil
     c:SetSolid(SOLID_NONE)
@@ -195,7 +204,7 @@ end)
 timer.Create("Rhylib.Logistics.Carry", 0.5, 0, function()
     local S = Rhylib.Stamina
     local now = CurTime()
-    for c in pairs(L.crates) do
+    eachCrate(function(c)
         if IsValid(c) and c.rhylibWaiting then
             local w = c.rhylibWaiting
             if not IsValid(w) or now > (c.rhylibWaitUntil or 0) or w:GetPos():DistToSqr(c:GetPos()) > 160 * 160 or not mayAct(w) then
@@ -203,7 +212,7 @@ timer.Create("Rhylib.Logistics.Carry", 0.5, 0, function()
                 if not L.carry[c] then c:SetHolders(0) end
             end
         end
-    end
+    end)
     for c, st in pairs(L.carry) do
         if not IsValid(c) then
             L.carry[c] = nil
@@ -241,7 +250,7 @@ end)
 
 -- (no physgunning crates or built structures past the carrying rules; staff may)
 Rhylib.Hook.Add("PhysgunPickup", "logistics.carry", function(ply, e)
-    if IsValid(e) and (e:GetClass() == "rhylib_build_crate" or e:GetClass() == "rhylib_structure") and not ply:IsAdmin() then return false end
+    if IsValid(e) and (e:GetClass() == "rhylib_build_crate" or e:GetClass() == "rhylib_structure" or e:GetClass() == "rhylib_resupply_crate") and not ply:IsAdmin() then return false end
 end)
 
 Rhylib.Hook.Add("PlayerDeath", "logistics.carry", function(ply)

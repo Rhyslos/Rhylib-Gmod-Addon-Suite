@@ -1,8 +1,8 @@
 --[[
     Bacta tank (med bay). Press E to climb in: you're held inside and
-    healed over time (health, bleeding, a limp, part damage). Jump or E
-    climbs out; fully healed lets you out by
-    itself. A Chemist with Bacta specialist nearby doubles the rate.
+    healed over time (health, bleeding, a limp, part damage; in the
+    hardcore system burns too, and bones after a few seconds). Jump or E
+    climbs out; fully healed lets you out by itself. A Chemist with Bacta specialist nearby doubles the rate.
     The tank also makes a med bay around it (Med.InMedBay).
     Logic: rhylib_medical sv_40_medbay.lua. Saved per map with
     rhylib_medical_save.

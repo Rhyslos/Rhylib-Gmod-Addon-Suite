@@ -171,7 +171,7 @@ for i, m in ipairs(E.MODS) do m.index = i E.MOD_BY[m.id] = m end
 -- read: a builder may pick every module.
 E.TIERS = {
     simple = { budget = 0, max = 0, name = "Simplified bomb", big = false },
-    small = { budget = 3, max = 2, name = "Small bomb", big = false },
+    small = { budget = 2, max = 1, name = "Small bomb", big = false },
     large = { budget = 6, max = 3, name = "Large bomb", big = true },
     custom = { budget = 99, max = 99, name = "Custom bomb", big = true },
     training = { budget = 99, max = 99, name = "Training bomb", big = false },
