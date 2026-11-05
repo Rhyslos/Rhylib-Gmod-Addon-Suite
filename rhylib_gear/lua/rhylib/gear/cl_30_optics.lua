@@ -403,8 +403,13 @@ Rhylib.Hook.Add("PreRender", "gear.optics.nvamp", function()
         amp:SetColor(Color(235, 255, 235))
     end
     local me = LocalPlayer()
-    amp:SetPos(me:EyePos())
-    amp:SetAngles(me:EyeAngles())
+    local ang = me:EyeAngles()
+    local pos = me:EyePos()
+    -- (third person: the light starts a little ahead of you, so it doesn't
+    -- light your own helmet and back)
+    if me:ShouldDrawLocalPlayer() then pos = pos + ang:Forward() * 40 end
+    amp:SetPos(pos)
+    amp:SetAngles(ang)
     amp:SetFarZ(math.max(200, G.Cfg("nvLightRange")))
     amp:SetBrightness(G.Cfg("nvGain") * gain)
     amp:Update()
