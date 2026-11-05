@@ -224,6 +224,16 @@ local function inLevel()
     return lvlR, col or R.COL.local_, "level"
 end
 
+-- R.VoiceLevels() -> own level, own colour, incoming level, incoming
+-- colour, incoming mode ("level", "track" = radio off / deaf, "jam"):
+-- the voice meters' numbers (rhylib_hud's Realistic chin pillars draw
+-- them). Smoothed per call: ask once a frame.
+function R.VoiceLevels()
+    local l, lc = ownLevel()
+    local r, rc, mode = inLevel()
+    return l, lc, r, rc, mode
+end
+
 --------------------------------------------------------------------------
 -- Drawing
 --------------------------------------------------------------------------

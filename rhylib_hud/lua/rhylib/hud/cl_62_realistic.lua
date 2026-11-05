@@ -18,8 +18,11 @@
                  rhylib_hud_real_tall 1 stretches them over the whole side
                  of the visor (more bars), 0 keeps them compact
       cheek edges  stamina, from the chin outward, on both cheeks
-      chin       two pillars: the left stack counts spare magazines, the
-                 right stack the rounds left in the magazine (red when low)
+      chin       two pillars: the voice meters (rhylib_radio R.VoiceLevels):
+                 your own radio voice on the left, the loudest radio voice
+                 you hear on the right, in the channel's colour (flicker
+                 when jammed); without rhylib_radio spare magazines left
+                 and rounds in the magazine right (red when low)
       right cheek  mirrors the left: four fire-mode squares by the chin
                  edge (the mode in use amber, a charged shot / flare
                  toggle that's on blue, SAFE), an ammo dial where the
@@ -857,29 +860,47 @@ local function drawRight(g, ai)
     if stripVar:GetBool() then drawStrip(g, ai) else drawMirror(g, ai) end
 end
 
+-- One stack of six bars, lit from the bottom.
+local function drawStack(list, lit, col)
+    for i, q in ipairs(list) do
+        if 7 - i <= lit then setCol(col, 235) else setCol(COL_EMPTY) end
+        surface.DrawPoly(q)
+    end
+end
+
+-- A voice level (0-1) as lit bars, or the jammed meter's flicker.
+local function voiceBars(level, mode)
+    if mode == "jam" then return math.random(0, 6) end
+    if mode == "track" then return 0 end
+    return math.Clamp(math.ceil(level * 6 - 0.15), 0, 6)
+end
+
 local function drawPillars(g, ai)
     local C = HUD.Colors
     setCol(INK, 215)
     for _, q in ipairs(g.pillar) do surface.DrawPoly(q) end
-    -- Left: spare magazines (one bar each, up to six; only for guns
-    -- that count magazines, else spare rounds as whole magazines).
+    -- With rhylib_radio: the voice meters, your own (outgoing) on the left
+    -- and the loudest radio voice you hear (incoming) on the right, in the
+    -- channel's colour.
+    local R = Rhylib.Radio
+    if R and R.VoiceLevels then
+        local l, lc, r, rc, mode = R.VoiceLevels()
+        drawStack(g.stack[-1], voiceBars(l, "level"), lc or INK)
+        drawStack(g.stack[1], voiceBars(r, mode), rc or INK)
+        return
+    end
+    -- Without it: spare magazines left (one bar each, up to six; spare
+    -- rounds as whole magazines for guns that don't count magazines) and
+    -- what's left in the magazine on the right, in sixths.
     local spare = ai.spare or 0
     if not ai.magShort and ai.maxClip and ai.maxClip > 0 then spare = spare / ai.maxClip end
-    local mags = math.Clamp(math.floor(spare), 0, 6)
-    for i, q in ipairs(g.stack[-1]) do
-        if 7 - i <= mags then setCol(INK, 235) else setCol(COL_EMPTY) end
-        surface.DrawPoly(q)
-    end
-    -- Right: what's left in the magazine, in sixths.
+    drawStack(g.stack[-1], math.Clamp(math.floor(spare), 0, 6), INK)
     local lit, col = 0, INK
     if ai.clip and ai.maxClip and ai.maxClip > 0 then
         lit = math.ceil(ai.clip / ai.maxClip * 6)
         if ai.clip / ai.maxClip <= 0.25 then col = ai.clip == 0 and C.bad or C.fuel end
     end
-    for i, q in ipairs(g.stack[1]) do
-        if 7 - i <= lit then setCol(col, 235) else setCol(COL_EMPTY) end
-        surface.DrawPoly(q)
-    end
+    drawStack(g.stack[1], lit, col)
 end
 
 -- Drawn before the other HUD parts (priority -10, as the normal visor).

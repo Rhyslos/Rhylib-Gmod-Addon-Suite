@@ -2,7 +2,17 @@
     Optics (client): the optics key (rhylib_optics_key) raises your
     macrobinoculars (or, without them, the rangefinder) and lowers them
     again. While up the gun is put away and the view goes through the
-    viewer (styled on the macrobinocular view from The Clone Wars):
+    viewer. The rangefinder has its own (from the show's rangefinder
+    view, drawRangefinder): an elongated hexagon of pale glass with a slit
+    in each side, the window's corners cut along the frame's slants and a
+    V notch on its right; left: elevation and zoom, your grid position
+    (metres), the target range with three zoom dots; right: a 0-200 m
+    range scale with a marker and a N / E / S / W compass with the
+    bearing; chevrons above and below and a pitch ladder that follows the
+    spotting ring (rhylib_skills K.visorTarget; looking only, not in
+    weapon mode). The macrobinoculars and
+    handheld binoculars use this one (styled on the macrobinocular view
+    from The Clone Wars):
 
       a wide window with cut corners, a notch in each side, the compass
       bar above it (heading ticks, red marker), the zoom scale on the left
@@ -663,9 +673,379 @@ local function visorLayer(w, h)
     end
 end
 
+--------------------------------------------------------------------------
+-- The rangefinder's own viewer (kind 2), from the show's rangefinder view:
+-- an elongated hexagon of pale glass with a slit in each side, a window
+-- onto the world (its corners cut along the frame's slanted edges, a V
+-- notch in its right side), readouts on the left, a range scale and a
+-- compass on the right, chevrons above and below and a pitch ladder that
+-- follows the spotting ring (rhylib_skills K.visorTarget).
+-- Laid out on a 1600 x 900 design, scaled to fit and centred.
+--------------------------------------------------------------------------
+
+local RF_GLASS = Color(214, 242, 230, 209)
+local RF_BOX = Color(196, 230, 216, 235)
+local RF_INK = Color(244, 255, 250, 255)
+local RF_DIM = Color(93, 122, 112, 255)
+local RF_EDGE = Color(125, 154, 143, 255)
+local RF_OUTER = { { 40, 340 }, { 690, 118 }, { 910, 118 }, { 1560, 340 }, { 1560, 560 }, { 910, 785 }, { 690, 785 }, { 40, 560 } }
+local RF_BOXRECT = { { 320, 222 }, { 1280, 222 }, { 1280, 380 }, { 1160, 432 }, { 1280, 486 }, { 1280, 688 }, { 320, 688 } }
+
+-- A convex polygon as DrawPoly vertices, wound clockwise on screen.
+local function cwPoly(list)
+    local area = 0
+    for i = 1, #list do
+        local a, b = list[i], list[i % #list + 1]
+        area = area + (a.x * b.y - b.x * a.y)
+    end
+    if area >= 0 then return list end
+    local out = {}
+    for i = #list, 1, -1 do out[#out + 1] = list[i] end
+    return out
+end
+
+-- The polygon (clockwise on screen) moved in by m.
+local function insetPoly(poly, m)
+    local n, lines, out = #poly, {}, {}
+    for i = 1, n do
+        local a, b = poly[i], poly[i % n + 1]
+        local dx, dy = b[1] - a[1], b[2] - a[2]
+        local l = math.sqrt(dx * dx + dy * dy)
+        lines[i] = { a[1] - dy / l * m, a[2] + dx / l * m, dx, dy }
+    end
+    for i = 1, n do
+        local p, q = lines[(i + n - 2) % n + 1], lines[i]
+        local den = p[3] * q[4] - p[4] * q[3]
+        local t = ((q[1] - p[1]) * q[4] - (q[2] - p[2]) * q[3]) / den
+        out[i] = { p[1] + p[3] * t, p[2] + p[4] * t }
+    end
+    return out
+end
+
+-- subj clipped to the convex polygon cl (both clockwise on screen).
+local function clipPoly(subj, cl)
+    local out = subj
+    for i = 1, #cl do
+        local a, b = cl[i], cl[i % #cl + 1]
+        local function inside(p) return (b[1] - a[1]) * (p[2] - a[2]) - (b[2] - a[2]) * (p[1] - a[1]) >= 0 end
+        local function cut(p, q)
+            local den = (p[1] - q[1]) * (a[2] - b[2]) - (p[2] - q[2]) * (a[1] - b[1])
+            local t = ((p[1] - a[1]) * (a[2] - b[2]) - (p[2] - a[2]) * (a[1] - b[1])) / den
+            return { p[1] + t * (q[1] - p[1]), p[2] + t * (q[2] - p[2]) }
+        end
+        local inp = out
+        out = {}
+        for j = 1, #inp do
+            local p, q = inp[j], inp[j % #inp + 1]
+            if inside(q) then
+                if not inside(p) then out[#out + 1] = cut(p, q) end
+                out[#out + 1] = q
+            elseif inside(p) then
+                out[#out + 1] = cut(p, q)
+            end
+        end
+    end
+    return out
+end
+
+-- A straight band from (x1, y1) to (x2, y2), w thick.
+local function bandPoly(x1, y1, x2, y2, w)
+    w = math.max(1, w)
+    local dx, dy = x2 - x1, y2 - y1
+    local len = math.sqrt(dx * dx + dy * dy)
+    if len < 0.001 then return nil end
+    -- (square ends, so corners meet without a notch)
+    local ex, ey = dx / len * w * 0.5, dy / len * w * 0.5
+    x1, y1, x2, y2 = x1 - ex, y1 - ey, x2 + ex, y2 + ey
+    local nx, ny = -dy / len * w * 0.5, dx / len * w * 0.5
+    return cwPoly({ { x = x1 + nx, y = y1 + ny }, { x = x2 + nx, y = y2 + ny }, { x = x2 - nx, y = y2 - ny }, { x = x1 - nx, y = y1 - ny } })
+end
+
+-- Fan triangles from the first point (stencil INVERT fills a concave outline).
+local function fanTris(pts)
+    local tris = {}
+    for i = 2, #pts - 1 do
+        local a, b, c = pts[1], pts[i], pts[i + 1]
+        local cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+        if math.abs(cross) > 0.01 then tris[#tris + 1] = cross > 0 and { a, b, c } or { a, c, b } end
+    end
+    return tris
+end
+
+local rf
+local function buildRF(w, h)
+    local k = math.min(h / 900, w / 1600)
+    local ox, oy = w * 0.5 - 800 * k, h * 0.5 - 450 * k
+    local function P(x, y) return { x = ox + x * k, y = oy + y * k } end
+    local g = { w = w, h = h, k = k, ox = ox, oy = oy, P = P }
+    local function list(t)
+        local out = {}
+        for i, q in ipairs(t) do out[i] = P(q[1], q[2]) end
+        return out
+    end
+    g.outer = cwPoly(list(RF_OUTER))
+    local win = clipPoly(RF_BOXRECT, insetPoly(RF_OUTER, 22))
+    g.win = list(win)
+    g.winTris = fanTris(g.win)
+    -- Outlines: the frame (thin), the window (thick white, thin dark inside).
+    g.lines = {}
+    local function outline(pts, wd, col)
+        for i = 1, #pts do
+            local a, b = pts[i], pts[i % #pts + 1]
+            local q = bandPoly(a.x, a.y, b.x, b.y, wd * k)
+            if q then g.lines[#g.lines + 1] = { q = q, col = col } end
+        end
+    end
+    outline(g.outer, 2, RF_INK)
+    outline(g.win, 5, RF_INK)
+    outline(list(insetPoly(win, 3)), 1.5, RF_EDGE)
+    -- Left boxes (mirror images about the slit).
+    g.boxes = {
+        cwPoly(list({ { 53, 358 }, { 296, 272 }, { 296, 433 }, { 53, 433 } })),
+        cwPoly(list({ { 53, 469 }, { 296, 469 }, { 296, 630 }, { 53, 544 } })),
+    }
+    for _, b in ipairs(g.boxes) do outline(b, 3, RF_INK) end
+    -- Slits: a tapering cut with a round end, both sides.
+    g.slits = {}
+    for _, side in ipairs({ -1, 1 }) do
+        local function X(x) return side < 0 and x or 1600 - x end
+        g.slits[#g.slits + 1] = cwPoly({ P(X(30), 437), P(X(112), 443), P(X(112), 458), P(X(30), 464) })
+        local cap = {}
+        for i = 0, 11 do
+            local a = math.rad(i * 30)
+            cap[#cap + 1] = P(X(112) + math.cos(a) * 7.5, 450.5 + math.sin(a) * 7.5)
+        end
+        g.slits[#g.slits + 1] = cwPoly(cap)
+    end
+    -- Chevrons: thin outline legs pointing at the centre, a filled one inside.
+    g.chevLegs = {}
+    for _, c in ipairs({ { 772, 126, 800, 214 }, { 828, 126, 800, 214 }, { 772, 777, 800, 689 }, { 828, 777, 800, 689 } }) do
+        local a, b = P(c[1], c[2]), P(c[3], c[4])
+        g.chevLegs[#g.chevLegs + 1] = bandPoly(a.x, a.y, b.x, b.y, 2 * k)
+    end
+    g.chevFill = { cwPoly(list({ { 784, 132 }, { 816, 132 }, { 800, 178 } })), cwPoly(list({ { 784, 771 }, { 816, 771 }, { 800, 725 } })) }
+    -- Dots by the notch, zoom dots, the compass ring.
+    local function disc(cx, cy, r)
+        local pts = {}
+        for i = 0, 15 do
+            local a = math.rad(i * 22.5)
+            pts[#pts + 1] = P(cx + math.cos(a) * r, cy + math.sin(a) * r)
+        end
+        return cwPoly(pts)
+    end
+    g.notchDots = { disc(1187, 435, 5), disc(1208, 435, 7.5), disc(1234, 434, 11.5) }
+    g.zoomDots = { disc(252, 512, 21), disc(252, 555, 13), disc(252, 582, 7) }
+    g.compass = P(1414, 440)
+    g.ring = {}
+    for i = 0, 35 do
+        local a0, a1 = math.rad(i * 10), math.rad(i * 10 + 10)
+        local function at(a, r) return P(1414 + math.cos(a) * r, 440 + math.sin(a) * r) end
+        g.ring[#g.ring + 1] = cwPoly({ at(a0, 46.5), at(a1, 46.5), at(a1, 41.5), at(a0, 41.5) })
+    end
+    g.compassMark = cwPoly(list({ { 1406, 388 }, { 1422, 388 }, { 1414, 402 } }))
+    -- Range scale ticks.
+    g.scale = {}
+    for i = 0, 8 do
+        local a = P(1346, 578 - i * 32.5)
+        g.scale[#g.scale + 1] = { x = a.x, y = a.y, w = (i % 4 == 0 and 22 or 12) * k }
+    end
+    g.winTop, g.winBot = oy + 236 * k, oy + 676 * k
+    rf = g
+    return g
+end
+
+local rfTri = { { x = 0, y = 0 }, { x = 0, y = 0 }, { x = 0, y = 0 } }
+local function rfFont(px, weight, k)
+    return UI.Font(math.max(6, math.floor(px * k * 1080 / ScrH() + 0.5)), weight)
+end
+
+local function drawRangefinder(fire)
+    local kind = kindUp()
+    local me = LocalPlayer()
+    local w, h = ScrW(), ScrH()
+    local g = (rf and rf.w == w and rf.h == h) and rf or buildRF(w, h)
+    local k, P = g.k, g.P
+
+    -- Stencil: 2 = inside the frame, 1 = the window (fan + INVERT).
+    draw.NoTexture()
+    surface.SetTexture(0)
+    render.SetStencilWriteMask(0xFF)
+    render.SetStencilTestMask(0xFF)
+    render.SetStencilReferenceValue(0)
+    render.ClearStencil()
+    render.SetStencilEnable(true)
+    render.SetStencilWriteMask(2)
+    render.SetStencilTestMask(2)
+    render.SetStencilReferenceValue(2)
+    render.SetStencilCompareFunction(STENCIL_ALWAYS)
+    render.SetStencilPassOperation(STENCIL_REPLACE)
+    render.SetStencilFailOperation(STENCIL_KEEP)
+    render.SetStencilZFailOperation(STENCIL_KEEP)
+    render.OverrideColorWriteEnable(true, false)
+    surface.SetDrawColor(255, 255, 255, 255)
+    surface.DrawPoly(g.outer)
+    render.SetStencilWriteMask(1)
+    render.SetStencilReferenceValue(1)
+    render.SetStencilPassOperation(STENCIL_INVERT)
+    for _, t in ipairs(g.winTris) do surface.DrawPoly(t) end
+    render.OverrideColorWriteEnable(false)
+    render.SetStencilPassOperation(STENCIL_KEEP)
+
+    -- Outside the frame: solid black.
+    render.SetStencilTestMask(2)
+    render.SetStencilReferenceValue(0)
+    render.SetStencilCompareFunction(STENCIL_EQUAL)
+    surface.SetDrawColor(0, 0, 0, 255)
+    surface.DrawRect(0, 0, w, h)
+    -- The frame's glass (inside the frame, not the window).
+    render.SetStencilTestMask(3)
+    render.SetStencilReferenceValue(2)
+    surface.SetDrawColor(RF_GLASS)
+    surface.DrawRect(0, 0, w, h)
+    -- The window: night vision, or clear glass with faint scanlines.
+    render.SetStencilReferenceValue(3)
+    if nv then
+        local ok, err = pcall(nvLayer, w, h, P(320, 0).x, g.oy + 222 * k, P(1280, 0).x, g.oy + 688 * k)
+        if not ok then render.SetStencilEnable(false) ErrorNoHalt(tostring(err) .. "\n") return end
+    else
+        surface.SetDrawColor(18, 24, 30, 22)
+        surface.DrawRect(0, 0, w, h)
+        local step = math.max(3, S(4, h))
+        local off = math.floor(RealTime() * 30) % step
+        surface.SetDrawColor(0, 0, 0, 34)
+        for y = math.floor(g.oy + 222 * k) + off, g.oy + 688 * k, step do surface.DrawRect(0, y, w, math.max(1, math.floor(step / 2))) end
+    end
+    render.SetStencilEnable(false)
+    draw.NoTexture()
+
+    -- Slits, boxes, outlines.
+    surface.SetDrawColor(RF_BOX)
+    for _, q in ipairs(g.boxes) do surface.DrawPoly(q) end
+    for _, l in ipairs(g.lines) do
+        surface.SetDrawColor(l.col)
+        surface.DrawPoly(l.q)
+    end
+    surface.SetDrawColor(0, 0, 0, 255)     -- (the slits cut through the frame's edge line)
+    for _, q in ipairs(g.slits) do surface.DrawPoly(q) end
+    surface.SetDrawColor(RF_INK)
+    for _, q in ipairs(g.chevLegs) do surface.DrawPoly(q) end
+    for _, q in ipairs(g.chevFill) do surface.DrawPoly(q) end
+    for _, q in ipairs(g.notchDots) do surface.DrawPoly(q) end
+
+    -- Readings.
+    local ang = me:EyeAngles()
+    local heading = (90 - ang.y) % 360
+    local elev = math.floor(-ang.p + 0.5)
+    local tr = util.TraceLine({ start = me:EyePos(), endpos = me:EyePos() + me:GetAimVector() * 32768, filter = me, mask = MASK_SHOT })
+    local metres = tr.Hit and not tr.HitSky and math.floor(tr.HitPos:Distance(tr.StartPos) * 0.01905 + 0.5) or nil
+    local z = fire and 1 or zoom(kind)
+    local r = range(kind)
+    local frac = math.Clamp(math.log(math.max(z, r[1]) / r[1]) / math.log(r[2] / r[1]), 0, 1)
+
+    -- Zoom dots (lit by zoom step).
+    local lit = z >= 5 and 3 or (z >= 3 and 2 or 1)
+    for i, q in ipairs(g.zoomDots) do
+        surface.SetDrawColor(RF_INK.r, RF_INK.g, RF_INK.b, i <= lit and 255 or 77)
+        surface.DrawPoly(q)
+    end
+
+    -- Left readouts.
+    local big, mid, small = rfFont(22, 600, k), rfFont(30, 600, k), rfFont(11, 600, k)
+    local function at(x, y) local p = P(x, y) return p.x, p.y end
+    local tx, ty = at(276, 352)
+    draw.SimpleText("ELV · ZOOM", small, tx, ty, RF_DIM, TEXT_ALIGN_RIGHT, TEXT_ALIGN_BOTTOM)
+    tx, ty = at(276, 380)
+    draw.SimpleText(string.format("%+03d  x%.1f", elev, z), big, tx, ty, RF_INK, TEXT_ALIGN_RIGHT, TEXT_ALIGN_BOTTOM)
+    local pos = me:GetPos() * 0.01905
+    tx, ty = at(276, 408)
+    draw.SimpleText(string.format("%d. %d. %d", math.floor(pos.x), math.floor(pos.y), math.floor(pos.z)), big, tx, ty, RF_INK, TEXT_ALIGN_RIGHT, TEXT_ALIGN_BOTTOM)
+    tx, ty = at(276, 425)
+    draw.SimpleText("GRID", small, tx, ty, RF_DIM, TEXT_ALIGN_RIGHT, TEXT_ALIGN_BOTTOM)
+    tx, ty = at(210, 528)
+    draw.SimpleText(metres and string.format("%04d", math.min(metres, 9999)) or "----", mid, tx, ty, RF_INK, TEXT_ALIGN_RIGHT, TEXT_ALIGN_BOTTOM)
+    tx, ty = at(210, 552)
+    draw.SimpleText("RNG M", small, tx, ty, RF_DIM, TEXT_ALIGN_RIGHT, TEXT_ALIGN_BOTTOM)
+
+    -- Range scale (0-200 m) and its marker.
+    draw.NoTexture()
+    surface.SetDrawColor(RF_INK)
+    local th = math.max(2, math.floor(3 * k))
+    for _, t in ipairs(g.scale) do surface.DrawRect(t.x, t.y, t.w, th) end
+    local my = 579 - math.min(metres or 0, 200) / 200 * 260
+    local m1, m2, m3 = P(1344, my), P(1322, my - 8), P(1322, my + 8)
+    rfTri[1].x, rfTri[1].y, rfTri[2].x, rfTri[2].y, rfTri[3].x, rfTri[3].y = m1.x, m1.y, m3.x, m3.y, m2.x, m2.y
+    surface.SetDrawColor(RF_INK.r, RF_INK.g, RF_INK.b, metres and 255 or 90)
+    surface.DrawPoly(cwPoly(rfTri))
+    local sf = rfFont(15, 600, k)
+    tx, ty = at(1340, 312)
+    draw.SimpleText("200", sf, tx, ty, RF_INK, TEXT_ALIGN_RIGHT, TEXT_ALIGN_BOTTOM)
+    tx, ty = at(1340, 584)
+    draw.SimpleText("0", sf, tx, ty, RF_INK, TEXT_ALIGN_RIGHT, TEXT_ALIGN_BOTTOM)
+
+    -- Compass: N / E / S / W turning with you, the mark at the top.
+    draw.NoTexture()
+    surface.SetDrawColor(RF_INK)
+    for _, q in ipairs(g.ring) do surface.DrawPoly(q) end
+    surface.DrawPoly(g.compassMark)
+    local c = g.compass
+    for i = 0, 7 do
+        local a = math.rad(i * 45 + 22.5 - heading - 90)
+        local q = bandPoly(c.x + math.cos(a) * 35 * k, c.y + math.sin(a) * 35 * k, c.x + math.cos(a) * 40 * k, c.y + math.sin(a) * 40 * k, 2 * k)
+        if q then surface.DrawPoly(q) end
+    end
+    local nf, of = rfFont(15, 700, k), rfFont(12, 600, k)
+    for i, l in ipairs({ "N", "E", "S", "W" }) do
+        local a = math.rad((i - 1) * 90 - heading - 90)
+        draw.SimpleText(l, i == 1 and nf or of, c.x + math.cos(a) * 27 * k, c.y + math.sin(a) * 27 * k,
+            i == 1 and RF_INK or ColorAlpha(RF_INK, 205), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+    tx, ty = at(1414, 518)
+    draw.SimpleText(string.format("%03d", math.floor(heading + 0.5) % 360), big, tx, ty, RF_INK, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM)
+    tx, ty = at(1414, 538)
+    draw.SimpleText("BRG", small, tx, ty, RF_DIM, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM)
+
+    -- Pitch ladder: a dash every 5 degrees, following the spotting ring
+    -- (the screen middle when nothing is ringed). Only while looking: in
+    -- weapon mode it would sit over what you shoot at.
+    if not fire then
+        local lx = w * 0.5
+        local K = Rhylib.Skills
+        local t = K and K.visorTarget
+        if IsValid(t) then
+            local sp = t:WorldSpaceCenter():ToScreen()
+            if sp.visible then lx = math.Clamp(sp.x, g.ox + 500 * k, g.ox + 1100 * k) end
+        end
+        draw.NoTexture()
+        local lf = rfFont(11, 600, k)
+        local base = math.floor(-ang.p / 5) * 5
+        for a = math.max(base - 30, -90), math.min(base + 30, 90), 5 do
+            local y = h * 0.5 + (-ang.p - a) * 9 * k
+            if y >= g.winTop and y <= g.winBot then
+                local major = a % 10 == 0
+                local hw = (major and 14 or 8) * k
+                surface.SetDrawColor(RF_INK.r, RF_INK.g, RF_INK.b, a == 0 and 255 or 190)
+                surface.DrawRect(lx - hw, y - 2 * k, hw * 2, math.max(2, math.floor(4 * k)))
+                if major then
+                    draw.SimpleText((a > 0 and "+" or "") .. a, lf, lx + 22 * k, y, ColorAlpha(RF_INK, 200), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                    draw.NoTexture()
+                end
+            end
+        end
+
+    end   -- (not fire: the ladder)
+
+    if not fire then
+        local hint = "Wheel: zoom  ·  hold " .. keyName(keyVar) .. ": night vision  ·  "
+            .. (G.AutoMode() and "draw a weapon: weapon mode  ·  " .. keyName(keyVar) .. ": lower"
+                or keyName(keyVar) .. ": weapon mode")
+        draw.SimpleText(hint, UI.Font(S(13, h)), w * 0.5, h - S(36, h), Color(200, 200, 200, 140), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+end
+
 -- fire: weapon mode (drawn under the normal HUD, 1x).
 local function drawViewer(fire)
     local kind = kindUp()
+    if kind == 2 then return drawRangefinder(fire) end   -- (its own viewer)
     local me = LocalPlayer()
     local w, h = ScrW(), ScrH()
     local sh = (shape and shape.w == w and shape.h == h) and shape or buildShape(w, h)
@@ -673,6 +1053,9 @@ local function drawViewer(fire)
     -- The window into the stencil (fan + INVERT = an exact concave fill).
     draw.NoTexture()
     surface.SetTexture(0)
+    render.SetStencilWriteMask(0xFF)
+    render.SetStencilTestMask(0xFF)
+    render.SetStencilReferenceValue(0)
     render.ClearStencil()
     render.SetStencilEnable(true)
     render.SetStencilWriteMask(1)
