@@ -33,6 +33,10 @@
     ... }, get / set with Colors) is colour squares and a mixer.
     Menus.SettingsPageId(tab) returns "settings" (an old tab name picks
     the group); Menus.settingsGroup is the group it opens on.
+    Menus.SettingGroupTop(group, fn(sp)) puts something above a group's
+    rows (the crosshair's live preview). preview = true on a row: hovering
+    or dragging it clears the menu so the HUD shows; preview =
+    "thirdperson": also shows your third-person camera while you do.
     Client only.
 ]]
 
@@ -259,6 +263,12 @@ local function addRow(sp, st)
     return row
 end
 
+-- Menus.SettingGroupTop(group, fn(sp)): something drawn above a group's
+-- rows (a live preview). Same group again = replaced.
+-- Example: Rhylib.Menus.SettingGroupTop("Crosshair", function(sp) ... end)
+Menus.settingGroupTop = Menus.settingGroupTop or {}
+function Menus.SettingGroupTop(group, fn) Menus.settingGroupTop[group] = fn end
+
 -- Fills the page's right side with one group (or the search results).
 local function fillGroup(sp, rows, group, q)
     sp:Clear()
@@ -289,6 +299,11 @@ local function fillGroup(sp, rows, group, q)
         return
     end
     if group == "Controls" and Menus.ControlsTop then Menus.ControlsTop(sp) end
+    local top = Menus.settingGroupTop[group]
+    if top then
+        local ok, err = pcall(top, sp)
+        if not ok then Rhylib.Error("menus", "settings top %s: %s", group, tostring(err)) end
+    end
     -- (a group made of several sections keeps their headings)
     local secs, bySec = {}, {}
     for _, r in ipairs(rows) do

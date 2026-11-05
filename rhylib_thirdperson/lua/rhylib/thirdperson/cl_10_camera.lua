@@ -18,8 +18,15 @@
       past cover but your gun can't), a small marker shows where the bolt
       will actually hit.
 
+    Camera placement is the player's own (client convars
+    rhylib_thirdperson_dist / _offset / _height / _aimdist, Settings >
+    Camera & freelook) inside the server's limits (config thirdperson
+    distMin, distMax, offsetMax, heightMin, heightMax, aimDistMin,
+    aimDistMax). While one of those rows is hovered or dragged in the
+    pause menu, third person shows (TP.previewing) so the change is seen.
+
     Adds Rhylib.ThirdPerson (TP): Mode, Wanted, Active, Toggle,
-    SwapShoulder, and the live camera state (camAng, camPos, aimPoint,
+    SwapShoulder, Offsets, previewing, and the live camera state (camAng, camPos, aimPoint,
     aimFrac, side, camHeight). Other addons read TP.Wanted() / TP.Active()
     (e.g. the body camera) and turn TP.camAng (rhylib_weapons view recoil).
     Freelook (middle mouse, cl_20_freelook.lua) is in this addon too.
@@ -40,14 +47,37 @@ local sideVar = CreateClientConVar("rhylib_thirdperson_side", "1", true, false, 
 local crouchVar = CreateClientConVar("rhylib_thirdperson_crouchup", "14", true, false, "How far the camera rises while crouching, so it clears the arms")
 local crouchMoveVar = CreateClientConVar("rhylib_thirdperson_crouchmove", "0.5", true, false, "While moving crouched, how far the camera rises back toward standing height (0 = crouch height, 1 = standing)")
 local allowedVar = GetConVar("rhylib_thirdperson_allowed")
+-- The player's own camera (Settings > Camera & freelook), clamped to the
+-- server's limits (config thirdperson distMin ... aimDistMax).
+local distVar = CreateClientConVar("rhylib_thirdperson_dist", "62", true, false, "Third person: how far behind you the camera sits (units)")
+local offsetVar = CreateClientConVar("rhylib_thirdperson_offset", "20", true, false, "Third person: how far out to the shoulder side the camera sits (units)")
+local heightVar = CreateClientConVar("rhylib_thirdperson_height", "3", true, false, "Third person: camera height above (or below) your eyes (units)")
+local aimDistVar = CreateClientConVar("rhylib_thirdperson_aimdist", "30", true, false, "Third person: how far behind you the camera sits while aiming (units)")
 
 local sensitivity = GetConVar("sensitivity")
 local mYaw = GetConVar("m_yaw")
 local mPitch = GetConVar("m_pitch")
 
 -- Camera offsets from the eyes: back, sideways (toward the shoulder), up.
+-- From the player's settings, clamped (TP.Offsets); aiming keeps three
+-- quarters of the side offset and a third of the height.
 local HIP = { back = 62, side = 20, up = 3 }
 local AIM = { back = 30, side = 15, up = 1 }
+local cfg = Rhylib.Config.For("thirdperson")
+-- TP.Offsets(): the camera's hip and aimed offsets now ({ back, side, up }
+-- each), the player's settings inside the server's limits.
+function TP.Offsets()
+    local dmin, dmax = cfg("distMin"), cfg("distMax")
+    HIP.back = math.Clamp(distVar:GetFloat(), math.min(dmin, dmax), math.max(dmin, dmax))
+    HIP.side = math.Clamp(offsetVar:GetFloat(), 0, math.max(0, cfg("offsetMax")))
+    local hmin, hmax = cfg("heightMin"), cfg("heightMax")
+    HIP.up = math.Clamp(heightVar:GetFloat(), math.min(hmin, hmax), math.max(hmin, hmax))
+    local amin, amax = cfg("aimDistMin"), cfg("aimDistMax")
+    AIM.back = math.min(HIP.back, math.Clamp(aimDistVar:GetFloat(), math.min(amin, amax), math.max(amin, amax)))
+    AIM.side = HIP.side * 0.75
+    AIM.up = HIP.up / 3
+    return HIP, AIM
+end
 local HULL = Vector(5, 5, 5)
 local FAR = 32768
 local MIN_AIM_DIST = 40      -- closer than this, just aim where the camera looks
@@ -73,8 +103,20 @@ end
 function TP.Wanted()
     local m = TP.Mode()
     if m == "first" then return false end
-    return m == "third" or enabledVar:GetBool()
+    return m == "third" or enabledVar:GetBool() or TP.previewing == true
 end
+
+-- While a camera setting is hovered or dragged in the pause menu
+-- (rhylib_menus preview "thirdperson"), third person shows even if you
+-- play in first person, so you see what you change.
+TP.previewing = false
+Rhylib.Hook.Add("Think", "thirdperson.preview", function()
+    local M = Rhylib.Menus
+    local on = M and M.PreviewHover and IsValid(M.pause) and M.PreviewHover() == "thirdperson" or false
+    -- (only the flag: the camera's own switch on / off code sets up and
+    -- puts back the angles, as for P)
+    TP.previewing = on
+end)
 
 -- TP.Active(): third person really in use now: wanted, alive, not in a
 -- vehicle or spectating, not looking through binoculars (rhylib_gear).
@@ -251,6 +293,7 @@ Rhylib.Hook.Add("CalcView", "thirdperson.camera", function(ply, pos, angles, fov
     TP.aimFrac = math.Approach(TP.aimFrac, isAiming(ply) and 1 or 0, ft * 6)
     TP.side = math.Approach(TP.side, sideVar:GetFloat() >= 0 and 1 or -1, ft * 5)
 
+    TP.Offsets()
     local f = TP.aimFrac
     local back = Lerp(f, HIP.back, AIM.back)
     local side = Lerp(f, HIP.side, AIM.side) * TP.side
@@ -377,4 +420,32 @@ Rhylib.Hook.Add("Think", "thirdperson.keys", function()
     if gui.IsGameUIVisible() or gui.IsConsoleVisible() or LocalPlayer():IsTyping() or IsValid(vgui.GetKeyboardFocus()) then return end
     if toggle then TP.Toggle() end
     if swap and TP.Active() then TP.SwapShoulder() end
+end)
+
+-- Settings rows (rhylib_menus): the camera placement, with the live
+-- preview; the ranges follow the server's limits.
+local function addCameraSettings()
+    local M = Rhylib.Menus
+    if not (M and M.AddSetting) then return end
+    local function row(id, order, title, desc, var, lo, hi)
+        lo, hi = math.min(lo, hi), math.max(lo, hi)
+        if hi <= lo then hi = lo + 1 end   -- (a slider needs some range)
+        M.AddSetting("Third person", { id = id, order = order, title = title, desc = desc, kind = "slider", convar = var,
+            min = lo, max = hi, decimals = 0, preview = "thirdperson",
+            showIf = function() return TP.Mode() ~= "first" end })
+    end
+    row("tp.dist", 41, "Camera distance", "How far behind you (hover or drag: the menu clears to show it)", "rhylib_thirdperson_dist", cfg("distMin"), cfg("distMax"))
+    row("tp.offset", 42, "Camera to the side", "How far out over your shoulder", "rhylib_thirdperson_offset", 0, cfg("offsetMax"))
+    row("tp.height", 43, "Camera height", "Above or below your eyes", "rhylib_thirdperson_height", cfg("heightMin"), cfg("heightMax"))
+    row("tp.aimdist", 44, "Camera distance aiming", "How close it comes while you aim", "rhylib_thirdperson_aimdist", cfg("aimDistMin"), cfg("aimDistMax"))
+end
+addCameraSettings()
+Rhylib.Hook.Add("InitPostEntity", "thirdperson.camsettings", addCameraSettings)
+-- (the server changed a limit: the sliders' ranges follow)
+Rhylib.Hook.Add("Rhylib.ConfigChanged", "thirdperson.camsettings", function(m)
+    if m == "thirdperson" then
+        addCameraSettings()
+        local M = Rhylib.Menus
+        if M and M.RefillSettings then M.RefillSettings() end
+    end
 end)

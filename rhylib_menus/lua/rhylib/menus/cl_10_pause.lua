@@ -450,13 +450,22 @@ end
 -- HUD preview: while the mouse is on a setting marked `preview` (HUD
 -- shape sliders), the game isn't dimmed or blurred, and while dragging it
 -- the menu fades so the HUD behind it shows.
--- Menus.PreviewHover(): true while the hovered panel (or one of up to 8
--- parents) has rhylibPreview set (cl_20_settings sets it on preview rows).
+-- Menus.PreviewHover(): the rhylibPreview value (true, or a kind such as
+-- "thirdperson") while the hovered panel (or one of up to 8 parents) has
+-- it set (cl_20_settings sets it on preview rows), else false. While the
+-- left mouse is held after pressing on such a row (dragging a slider)
+-- it keeps that value even if the mouse slips off.
+local dragPreview
 function Menus.PreviewHover()
+    if dragPreview and input.IsMouseDown(MOUSE_LEFT) then return dragPreview end
+    dragPreview = nil
     local p = vgui.GetHoveredPanel()
     for _ = 1, 8 do
         if not IsValid(p) then return false end
-        if p.rhylibPreview then return true end
+        if p.rhylibPreview then
+            if input.IsMouseDown(MOUSE_LEFT) then dragPreview = p.rhylibPreview end
+            return p.rhylibPreview
+        end
         p = p:GetParent()
     end
     return false
@@ -465,7 +474,9 @@ end
 function PANEL:Think()
     local hover = Menus.PreviewHover()
     self.previewing = hover
-    local want = (hover and input.IsMouseDown(MOUSE_LEFT)) and 60 or 255
+    -- (dragging a preview row: the menu fades; a camera row fades it on
+    -- hover too, so your trooper behind it shows)
+    local want = ((hover and input.IsMouseDown(MOUSE_LEFT)) and 60) or (hover == "thirdperson" and 90) or 255
     for _, pnl in ipairs({ self.side, self.page }) do
         if IsValid(pnl) then
             local a = pnl:GetAlpha()

@@ -201,9 +201,17 @@ local function line(x1, y1, x2, y2, w)
 end
 
 -- Set up for a batch of strokes: smooth (textured) or plain.
-local function beginStrokes()
-    if smoothVar:GetBool() then
-        if not strokeMat or RealTime() - strokeAt > 5 then buildStroke() end
+-- noBuild (the Settings preview, inside a panel): never render the
+-- stroke texture there (clipping and the panel offset would spoil it);
+-- it is made in PreRender instead, and plain lines show until then.
+local wantStroke = false
+local function beginStrokes(noBuild)
+    if smoothVar:GetBool() and noBuild and not strokeMat then
+        wantStroke = true
+        draw.NoTexture()
+        padNow = 0
+    elseif smoothVar:GetBool() then
+        if not noBuild and (not strokeMat or RealTime() - strokeAt > 5) then buildStroke() end
         surface.SetMaterial(strokeMat)
         padNow = PAD
     else
@@ -321,6 +329,16 @@ function X.Draw(wep, x, y)
     else
         offsets[1], offsets[2], offsets[3] = 0, 0, 0
     end
+    X.Paint(x, y, r, offsets, dynamic, t - X.hitTime, X.hitKind)
+end
+
+-- X.Paint(x, y, r, offsets, dynamic, hitAge, hitKind): draws the crosshair
+-- with the player's look settings: r = the ring radius in pixels,
+-- offsets = { kick px per arc }, hitAge / hitKind = the hit marker (age
+-- in seconds). X.Draw calls it; the Settings preview draws a fake burst
+-- with it. Works in any Paint (panel or HUD).
+function X.Paint(x, y, r, offsets, dynamic, hitAge, hitKind)
+    local s = ScrH() / 1080
     -- Centre follows recoil (setting): toward the arc that kicked out most.
     local fx, fy = x, y
     if followVar:GetBool() and dynamic then
@@ -351,7 +369,7 @@ function X.Draw(wep, x, y)
         colLineNow.r, colLineNow.g, colLineNow.b = own.r, own.g, own.b
     end
     colOutlineNow.a = colOutline.a * op
-    beginStrokes()
+    beginStrokes(X.painting == "preview")
     if outlineVar:GetBool() then
         surface.SetDrawColor(colOutlineNow)
         drawShape(x, y, r, offsets, s, (LINE * thick + (OUTLINE - LINE)) * s, inner, outer, k, L, (OUTLINE - LINE) * 0.5 * s, fx, fy)
@@ -362,12 +380,12 @@ function X.Draw(wep, x, y)
 
     -- Hit marker: four diagonal ticks around the ring, fading out. Head
     -- hits are red; dropping someone shows a larger, longer red X.
-    local kill = X.hitKind == 2
+    local kill = hitKind == 2
     local show = kill and KILL_SHOW or HIT_SHOW
-    local age = t - X.hitTime
+    local age = hitAge or 99
     if age < show then
         local f = 1 - age / show
-        local base = X.hitKind == 0 and own or colHead
+        local base = hitKind == 0 and own or colHead
         colMark.r, colMark.g, colMark.b, colMark.a = base.r, base.g, base.b, 255 * f
         local grow = kill and (1 + 0.4 * (1 - f)) or 1
         local r0 = (r + 5 * s) * grow
@@ -383,6 +401,37 @@ function X.Draw(wep, x, y)
         end
     end
 end
+
+-- X.DrawPreview(x, y, t): a sample crosshair for the Settings page: a
+-- short burst every 1.6 s (the outer part kicks out and settles while
+-- "Spread on the crosshair" is on; a hit marker on the last shot).
+local previewOffsets = { 0, 0, 0 }
+local KICK = { { 0.4, 1, 0.2 }, { 0.9, 0.5, 0.3 }, { 0.2, 0.8, 1 } }
+function X.DrawPreview(x, y, t)
+    local s = ScrH() / 1080
+    local dynamic = dynamicVar:GetBool()
+    local r = (MIN_RADIUS * 1.6 + math.Clamp(gapVar:GetFloat(), 0, 30)) * s
+    local cyc = t % 1.6
+    for i = 1, 3 do previewOffsets[i] = 0 end
+    if dynamic then
+        for n = 0, 2 do
+            local at = n * 0.12
+            if cyc >= at then
+                local f = math.exp(-(cyc - at) * 7)
+                for i = 1, 3 do previewOffsets[i] = previewOffsets[i] + KICK[n + 1][i] * 10 * s * f end
+            end
+        end
+    end
+    X.painting = "preview"
+    X.Paint(x, y, r, previewOffsets, dynamic, cyc >= 0.24 and (cyc - 0.24) or 99, 0)
+    X.painting = nil
+end
+Rhylib.Hook.Add("PreRender", "weapons.crosshair.stroke", function()
+    if wantStroke then
+        wantStroke = false
+        if not strokeMat then buildStroke() end
+    end
+end)
 
 Rhylib.Net.ReceiveBatch("wep.hit", function()
     return net.ReadUInt(2)
@@ -400,6 +449,30 @@ end)
 Rhylib.Hook.Add("InitPostEntity", "weapons.hitsound.setting", function()
     local Menus = Rhylib.Menus
     if Menus and Menus.AddSetting then
+        -- Settings > Crosshair: a live preview above the rows.
+        if Menus.SettingGroupTop then
+            Menus.SettingGroupTop("Crosshair", function(sp)
+                local K = Menus.Kit
+                local box = vgui.Create("DPanel", sp)
+                box:Dock(TOP)
+                box:SetTall(K.S(170))
+                box:DockMargin(0, 0, K.S(10), K.S(8))
+                local bg1, bg2 = Color(86, 99, 110), Color(42, 44, 37)
+                function box:Paint(w, h)
+                    -- (a sky-to-ground backdrop, so light and dark colours both show)
+                    for i = 0, 7 do
+                        local f = i / 7
+                        surface.SetDrawColor(Lerp(f, bg1.r, bg2.r), Lerp(f, bg1.g, bg2.g), Lerp(f, bg1.b, bg2.b), 255)
+                        surface.DrawRect(0, math.floor(h * i / 8), w, math.ceil(h / 8) + 1)
+                    end
+                    K.SetCol(K.C.edgeDark)
+                    surface.DrawOutlinedRect(0, 0, w, h)
+                    X.DrawPreview(w * 0.5, h * 0.5, RealTime())
+                    draw.SimpleText("LIVE PREVIEW", K.Font(11, 700), K.S(10), K.S(14), K.C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                    draw.SimpleText("a short burst every second or two", K.Font(11), K.S(10), h - K.S(12), K.C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                end
+            end)
+        end
         Menus.AddSetting("Weapons", { id = "wep.hitsound", order = 10, title = "Hit sounds",
             desc = "A click when your bolt hits someone", kind = "toggle", convar = "rhylib_hitsound" })
         Menus.AddSetting("Weapons", { id = "wep.xhinner", order = 12, title = "Crosshair centre", wide = 640,
