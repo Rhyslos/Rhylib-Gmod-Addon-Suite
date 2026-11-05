@@ -766,9 +766,12 @@ local function drawBlocksB(x, y, w, h, m)
     render.SetScissorRect(0, 0, 0, 0, false)
 end
 
--- The closed chat: the newest lines float on their own, each on a soft
--- dark band with its channel's colour on the left, fading after
--- SHOW_TIME seconds. Look A also shows the channel pill.
+-- The closed chat: the newest lines float on their own, fading after
+-- SHOW_TIME seconds; outside the visor each sits on a soft dark band
+-- (one smooth gradient) with its channel's colour on the left; in the
+-- visor (already on the dark cheek) no band, and every line keeps inside
+-- the cheek's edge. Look A also shows the channel pill.
+local GRAD = Material("vgui/gradient-l")
 local function drawFeed(x, y, w, h, m, widthAt)
     local now = RealTime()
     local yy = y + h
@@ -792,6 +795,16 @@ local function drawFeed(x, y, w, h, m, widthAt)
         local src = msg.ch and lineSegs(msg) or msg
         local lines = wrap(src, m.font, avail - ind)
         local bh = #lines * lineH + math.floor(6 * s)
+        -- (the visor narrows upward: fit the block's top line too)
+        if widthAt and #lines > 1 then
+            for _ = 1, 2 do
+                local top = math.floor((math.min(w, widthAt(yy - bh)) - padX * 2) / 8) * 8
+                if top >= avail or top - ind < 60 then break end
+                avail = top
+                lines = wrap(src, m.font, avail - ind)
+                bh = #lines * lineH + math.floor(6 * s)
+            end
+        end
         yy = yy - bh
         if yy < y then return end
         -- (the band is as wide as its widest line)
@@ -804,14 +817,16 @@ local function drawFeed(x, y, w, h, m, widthAt)
             end
         end
         bw = bw + ind + padX * 2
-        -- a band that fades out to the right
-        for k = 0, 3 do
-            setCol(COL_FEED, COL_FEED.a * alpha / 255 * (1 - k * 0.22))
-            surface.DrawRect(x + math.floor(bw * k / 4), yy, math.ceil(bw / 4), bh)
-        end
-        if msg.ch then
-            setCol(msg.ch.color, alpha)
-            surface.DrawRect(x, yy, math.max(2, math.floor(3 * s)), bh)
+        if not widthAt then
+            -- a dark band fading out to the right (one smooth gradient)
+            setCol(COL_FEED, COL_FEED.a * alpha / 255)
+            surface.SetMaterial(GRAD)
+            surface.DrawTexturedRect(x, yy, bw, bh)
+            draw.NoTexture()
+            if msg.ch then
+                setCol(msg.ch.color, alpha)
+                surface.DrawRect(x, yy, math.max(2, math.floor(3 * s)), bh)
+            end
         end
         local ly = yy + math.floor(3 * s)
         for k, line in ipairs(lines) do
@@ -1000,7 +1015,9 @@ local function drawWindowMessages(ox, oy, L, m, visor)
     local r = L.msgs
     local x, y = ox + r.x, oy + r.y
     if visor then
+        render.SetScissorRect(x, y, x + r.w, y + r.h, true)
         drawLinesA(x, y, r.w, r.h, m, true, function(ly) return Chat.VisorEdgeX(ly) - x - m.pad end, false)
+        render.SetScissorRect(0, 0, 0, 0, false)
     elseif m.st == "b" then
         drawBlocksB(x, y, r.w, r.h, m)
     else
@@ -1041,7 +1058,9 @@ Rhylib.Hook.Add("HUDPaint", "chat.feed", function()
     end
     local r = L.msgs
     if visor then
+        render.SetScissorRect(x + r.x, y + r.y, x + r.x + r.w, y + r.y + r.h, true)
         drawFeed(x + r.x, y + r.y, r.w, r.h, m, function(ly) return Chat.VisorEdgeX(ly) - (x + r.x) - m.pad end)
+        render.SetScissorRect(0, 0, 0, 0, false)
     else
         -- (the whole window's height: nothing else is drawn there while closed)
         drawFeed(x, y, w, h - math.floor(6 * m.s), m)

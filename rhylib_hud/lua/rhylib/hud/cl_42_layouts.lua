@@ -503,13 +503,13 @@ local function drawF5(entries, active, alpha, s, ai)
 end
 
 -- HUD.DrawVisorLayout(name, entries, active, alpha, s): draws layout
--- "f5", the realistic hotbar for "real" (cl_62_realistic.lua), or f4 for
+-- "f5", the realistic hotbar for "real" / "realalt" (cl_62_realistic.lua), or f4 for
 -- any other name. Called by cl_40_hotbar.lua's HUDPaint
 -- in the visor (with the inventory). entries = the hotbar entries,
 -- active = the held weapon, alpha = the hotbar's fade (the ammo parts
 -- ignore it), s = HUD.Scale().
 function HUD.DrawVisorLayout(name, entries, active, alpha, s)
-    if name == "real" and HUD.DrawRealHotbar then
+    if (name == "real" or name == "realalt") and HUD.DrawRealHotbar then
         HUD.DrawRealHotbar(entries, active, alpha)
         return
     end

@@ -1,22 +1,23 @@
 --[[
     "Realistic" first-person HUD (client): the clone helmet as seen from
-    inside in the show. Picked like the other layouts (layout "real",
-    Settings > HUD > First-person HUD, or rhylib_hud_layout real).
+    inside in the show. Two layouts: "real" (Realistic, the default:
+    the simple right cheek) and "realalt" (Realistic Alternative: the
+    ammo dial and hotbar panel). Picked like the other layouts (Settings >
+    HUD > First-person HUD, or rhylib_hud_layout real / realalt).
 
     The helmet: a visor window with an arched top, the cheek pads coming
     in from the screen sides in a straight slope to the chin opening, and
     the chin opening narrowing a little toward the bottom.
 
     On the visor:
-      top        a broken white rim along the arch, a thin line under it
+      top        a solid white rim along the arch, a thin line under it
                  and the heading ticks (N, NE, ...), turning as you turn
       sides      the show's side details: a notched block at the screen
                  edge, a two-part curved blade bracket and a curved ladder
                  of bars: armour (blue) on the left, health (red; yellow
                  sim health with a training gun) on the right, filled from
-                 the bottom, the number above. Client convar
-                 rhylib_hud_real_tall 1 stretches them over the whole side
-                 of the visor (more bars), 0 keeps them compact
+                 the bottom, the number above, stretched over the whole
+                 side of the visor
       cheek edges  stamina, from the chin outward, on both cheeks
       chin       two pillars: the voice meters (rhylib_radio R.VoiceLevels):
                  your own radio voice on the left, the loudest radio voice
@@ -32,11 +33,12 @@
                  spare magazine pips and the cell / spare line over the
                  hotbar: one row of tall tiles with their counts when they
                  fit (wide screens, or 4 slots), else four columns (4, 6
-                 with a backpack, 7 with the staff tool slot). Client convar
-                 rhylib_hud_real_strip 1 swaps it for a simpler look: the
-                 big count with the weapon lines, a row of round ticks,
-                 the cell bar, a slanted bar by the chin and one row of
-                 slanted tiles under a line naming their groups
+                 with a backpack, 7 with the staff tool slot) on
+                 Realistic Alternative; Realistic has a simpler look: the
+                 same fire-mode squares, the big count with the weapon
+                 lines, a row of round ticks, the cell bar and one row of
+                 slanted tiles filling the cheek under a line naming
+                 their groups
       left cheek   the chat, the radio compass and the radio squares
                  (rhylib_chat and rhylib_radio place themselves with
                  HUD.RealGeo / HUD.RealCheekY / HUD.RealChinX)
@@ -54,10 +56,6 @@
 local HUD = Rhylib.HUD
 local UI = Rhylib.UI
 
-local tallVar = CreateClientConVar("rhylib_hud_real_tall", "0", true, false,
-    "Realistic HUD: stretch the side ladders over the whole side of the visor (0/1)")
-local stripVar = CreateClientConVar("rhylib_hud_real_strip", "0", true, false,
-    "Realistic HUD: the simple right cheek (round ticks, one row of hotbar tiles) (0/1)")
 
 local INK = Color(232, 241, 247)
 local COL_SHELL = Color(12, 14, 16, 250)
@@ -70,7 +68,9 @@ local COL_EXHAUSTED = Color(226, 75, 74)
 -- HUD.RealisticActive(): true while the visor shows with the "real" layout.
 function HUD.RealisticActive()
     if not (HUD.VisorActive and HUD.VisorActive()) then return false end
-    return HUD.VisorLayout and HUD.VisorLayout() == "real" or false
+    if not HUD.VisorLayout then return false end
+    local l = HUD.VisorLayout()
+    return l == "real" or l == "realalt"
 end
 
 --------------------------------------------------------------------------
@@ -170,7 +170,7 @@ local function curveTo(list, p0, p1, p2, steps)
 end
 
 --------------------------------------------------------------------------
--- Geometry (cached per screen size and the tall setting)
+-- Geometry (cached per screen size)
 --------------------------------------------------------------------------
 
 -- The side details in design units (left side; the right side mirrors).
@@ -205,8 +205,6 @@ local SIDE_LINES = {
     { 0, 414, 123, 446, 0.8 }, { 0, 428, 150, 463, 0.8 },
 }
 
--- The rim's dash pattern along the design's 1600 width (on, off, ...).
-local RIM_DASH = { 220, 14, 60, 14, 380, 14, 40, 30 }
 
 local geo = { key = "" }
 
@@ -236,13 +234,14 @@ end
 -- The right cheek (screen px): R.modes (four squares by the chin edge,
 -- each { poly, tx, ty }), the ammo dial (x, y, r, bg, rim, ring, cell) and
 -- the panel (x0, x1, yb: the room for the weapon lines and
--- hotbar); for the simple look R.frame / R.ticks.
+-- hotbar); R.modeRightX(y): the squares' right edge (both looks).
 local function buildRight(g)
     local W, H, s = g.W, g.H, g.s
     local R = {}
     local function xl(y) return W - chinAt(g, y) + 8 * s end
     local function xr(y) return xl(y) + 38 * s end
     R.modes = {}
+    R.modeRightX = xr   -- (the squares' right edge at a screen y)
     local rows = { { 724, 763 }, { 768, 798 }, { 803, 833 }, { 838, 868 } }
     for i, r in ipairs(rows) do
         local y0, y1 = r[1] * s, r[2] * s
@@ -282,18 +281,6 @@ local function buildRight(g)
     local p = { x1 = W - 32 * s, yb = 870 * s }
     p.x0 = d.x + d.r + 11 * s     -- (as the chat on the left: all the room to the edge)
     R.panel = p
-    -- Simple look: a slanted bar by the chin with five ticks.
-    local cx = W * 0.5
-    local function X(x) return cx + (x - 800) * s end
-    R.frame = poly({ { X(1058), 742 * s }, { X(1070), 742 * s }, { X(1050), 880 * s }, { X(1038), 880 * s } })
-    R.ticks = {}
-    for i = 0, 4 do
-        local y = 748 + i * 9
-        local x = 1070 - 20 * (y - 742) / 138
-        R.ticks[#R.ticks + 1] = poly({ { X(x), y * s }, { X(x + 26), y * s }, { X(x + 25), (y + 4) * s }, { X(x - 1), (y + 4) * s } })
-    end
-    R.tickRight = X(1096)
-    R.frameX = function(y) return X(1070 - 20 * (y / s - 742) / 138) end
     return R
 end
 
@@ -355,26 +342,15 @@ local function build(W, H, tall)
     end
     g.tris, g.edges = tris, edges
 
-    -- Rim dashes (thick) and the thin line under them.
+    -- The rim (one solid thick line along the arch) and the thin line under it.
     local rim = {}
     local N = 120
-    local pat, pi, left = RIM_DASH, 1, RIM_DASH[1] * W / 1600
-    local on = true
     local px, py = 0, g.rimY(0)
     for i = 1, N do
         local x = W * i / N
         local y = g.rimY(x)
-        local seg = math.sqrt((x - px) ^ 2 + (y - py) ^ 2)
-        if on then
-            local q = band(px, py, x, y, 3 * s)
-            if q then rim[#rim + 1] = q end
-        end
-        left = left - seg
-        while left <= 0 do
-            pi = pi % #pat + 1
-            left = left + pat[pi] * W / 1600
-            on = not on
-        end
+        local q = band(px, py, x, y, 2 * s)
+        if q then rim[#rim + 1] = q end
         px, py = x, y
     end
     g.rim = rim
@@ -447,8 +423,7 @@ end
 function HUD.RealGeo()
     local W, H = ScrW(), ScrH()
     if (W < 16 or H < 16) and geo.W then return geo end   -- (minimised: keep the last good one)
-    local tall = tallVar:GetBool()
-    if geo.W ~= W or geo.H ~= H or geo.tall ~= tall then build(W, H, tall) end
+    if geo.W ~= W or geo.H ~= H then build(W, H, true) end
     return geo
 end
 
@@ -610,7 +585,7 @@ local function drawStamina(g)
 end
 
 --------------------------------------------------------------------------
--- Right cheek: weapon, fire modes, rounds (two looks, rhylib_hud_real_strip)
+-- Right cheek: weapon, fire modes, rounds (two looks: real and realalt)
 --------------------------------------------------------------------------
 
 local COL_MODE = Color(240, 166, 74)
@@ -707,19 +682,12 @@ end
 -- weapon lines sit just above it.
 local panelRows, panelRowsAt, panelTh = 0, 0, 42
 
--- Default look: fire-mode squares by the chin, the ammo dial, the panel
--- with the weapon lines (the hotbar grid is drawn into it by
--- HUD.DrawRealHotbar).
-local function drawMirror(g, ai)
-    local s = g.s
+-- Fire-mode squares by the chin (both looks): the one in use amber, a
+-- toggle that's on blue, SAFE amber while the safety is on.
+local function drawModes(g, ai, wep)
     local C = HUD.Colors
     local R = g.right
-    local wep = LocalPlayer():GetActiveWeapon()
-    local p = R.panel
     draw.NoTexture()
-
-    -- Fire modes: the one in use amber, a toggle that's on blue, SAFE
-    -- amber while the safety is on.
     local list = fireModes(wep)
     local armed = ai and not ai.unarmed
     local safe = armed and ai.safe
@@ -743,6 +711,20 @@ local function drawMirror(g, ai)
         end
         draw.NoTexture()
     end
+end
+
+-- Default look: fire-mode squares by the chin, the ammo dial, the panel
+-- with the weapon lines (the hotbar grid is drawn into it by
+-- HUD.DrawRealHotbar).
+local function drawMirror(g, ai)
+    local s = g.s
+    local C = HUD.Colors
+    local R = g.right
+    local wep = LocalPlayer():GetActiveWeapon()
+    local p = R.panel
+    draw.NoTexture()
+
+    drawModes(g, ai, wep)
 
     -- Ammo dial: a ring of 30 segments for the magazine, the cell inside.
     local d = R.dial
@@ -800,10 +782,7 @@ local function drawStrip(g, ai)
     local s, W = g.s, g.W
     local C = HUD.Colors
     local R = g.right
-    draw.NoTexture()
-    setCol(INK, 230)
-    surface.DrawPoly(R.frame)
-    for _, q in ipairs(R.ticks) do surface.DrawPoly(q) end
+    drawModes(g, ai, LocalPlayer():GetActiveWeapon())
     if not ai then return end
 
     local right = W - 40 * s
@@ -841,7 +820,7 @@ local function drawStrip(g, ai)
 
     -- Round ticks (one per round, up to 60) and the cell bar.
     if not hasClip then return end
-    local x0, x1 = math.max(W - 400 * s, R.tickRight + 20 * s), W - 40 * s
+    local x0, x1 = R.modeRightX(752 * s) + 28 * s, W - 40 * s
     local n = ai.maxClip and ai.maxClip > 0 and math.min(ai.maxClip, 60) or 0
     if n > 0 and x1 > x0 then
         local step = (x1 - x0) / n
@@ -863,7 +842,7 @@ local function drawStrip(g, ai)
 end
 
 local function drawRight(g, ai)
-    if stripVar:GetBool() then drawStrip(g, ai) else drawMirror(g, ai) end
+    if HUD.VisorLayout() == "realalt" then drawMirror(g, ai) else drawStrip(g, ai) end
 end
 
 -- One stack of six bars, lit from the bottom.
@@ -883,8 +862,6 @@ end
 
 local function drawPillars(g, ai)
     local C = HUD.Colors
-    setCol(INK, 215)
-    for _, q in ipairs(g.pillar) do surface.DrawPoly(q) end
     -- With rhylib_radio: the voice meters, your own (outgoing) on the left
     -- and the loudest radio voice you hear (incoming) on the right, in the
     -- channel's colour.
@@ -909,14 +886,18 @@ local function drawPillars(g, ai)
     drawStack(g.stack[1], lit, col)
 end
 
--- Drawn before the other HUD parts (priority -10, as the normal visor).
-Rhylib.Hook.Add("HUDPaint", "hud.realistic", function()
-    if not HUD.RealisticActive() then return end
-    if ScrW() < 16 or ScrH() < 16 then return end
-    local g = HUD.RealGeo()
-    local s = g.s
+-- The parts that never change (the shell, its edges, the rim, the line
+-- under it, the side details, the chin pillars) are drawn once per screen
+-- size into a render target and put on screen as one picture each frame.
+-- Rebuilt on a new screen size and every few seconds. That keeps this
+-- HUD's draw calls low: hundreds of polygons a frame
+-- could overflow the engine's shared drawing buffer on heavy views
+-- (white text, stretched triangles for a frame).
+local staticRT, staticMat, staticKey
+local staticAt = 0
+
+local function paintStatic(g)
     draw.NoTexture()
-    surface.SetTexture(0)
     setCol(COL_SHELL)
     for _, t in ipairs(g.tris) do surface.DrawPoly(t) end
     for _, edge in ipairs(g.edges) do
@@ -929,8 +910,6 @@ Rhylib.Hook.Add("HUDPaint", "hud.realistic", function()
             surface.DrawLine(p[1], p[2] - 2, q[1], q[2] - 2)
         end
     end
-
-    -- Top: rim dashes, the thin line, the heading.
     setCol(INK, 215)
     for _, q in ipairs(g.rim) do surface.DrawPoly(q) end
     setCol(INK, 90)
@@ -938,14 +917,93 @@ Rhylib.Hook.Add("HUDPaint", "hud.realistic", function()
         local p, q = g.base[i], g.base[i + 1]
         surface.DrawLine(p[1], p[2], q[1], q[2])
     end
-    drawCompass(g)
-    draw.NoTexture()
-
-    -- Sides.
     for _, d in ipairs(g.side) do
         setCol(INK, 235 * (d.a or 1))
         surface.DrawPoly(d.t)
     end
+    setCol(INK, 215)
+    for _, q in ipairs(g.pillar) do surface.DrawPoly(q) end
+end
+
+-- Builds the picture for this screen size (premultiplied colour, so it
+-- blends exactly like drawing the parts one by one). One render target
+-- and material per screen size, kept. A failed build waits 10 s before
+-- trying again (the parts are drawn one by one meanwhile).
+local staticByName = {}
+local staticFailAt = -100
+
+local function renderStatic(g)
+    local name = "rhylib_real_static_" .. g.W .. "x" .. g.H
+    local c = staticByName[name]
+    if not c then
+        local rt = GetRenderTargetEx(name, g.W, g.H, RT_SIZE_LITERAL, MATERIAL_RT_DEPTH_NONE,
+            bit.bor(1, 4, 8, 256, 512), 0, IMAGE_FORMAT_RGBA8888)
+        local mat = CreateMaterial(name .. "_mat", "UnlitGeneric", {
+            ["$basetexture"] = name, ["$translucent"] = "1", ["$vertexalpha"] = "1", ["$vertexcolor"] = "1" })
+        mat:SetTexture("$basetexture", rt)
+        c = { rt = rt, mat = mat }
+        staticByName[name] = c
+    end
+    render.PushRenderTarget(c.rt)
+    render.OverrideAlphaWriteEnable(true, true)
+    render.Clear(0, 0, 0, 0)
+    cam.Start2D()
+    render.OverrideBlend(true, BLEND_SRC_ALPHA, BLEND_ONE_MINUS_SRC_ALPHA, BLENDFUNC_ADD,
+        BLEND_ONE, BLEND_ONE_MINUS_SRC_ALPHA, BLENDFUNC_ADD)
+    local ok, err = pcall(paintStatic, g)
+    render.OverrideBlend(false)
+    cam.End2D()
+    render.OverrideAlphaWriteEnable(false)
+    render.PopRenderTarget()
+    if not ok then error(err, 0) end
+    staticRT, staticMat = c.rt, c.mat
+end
+
+local function buildStatic(g)
+    if RealTime() - staticFailAt < 10 then return false end
+    local ok, err = pcall(renderStatic, g)
+    draw.NoTexture()
+    if not ok then
+        staticKey, staticFailAt = nil, RealTime()
+        ErrorNoHalt("Rhylib HUD: realistic static layer: " .. tostring(err) .. "\n")
+        return false
+    end
+    staticKey, staticAt = g.key, RealTime()
+    return true
+end
+
+-- Rebuilt at once after a new screen size or getting the game's focus
+-- back (a render target can come back empty after alt-tab).
+local hadFocus = true
+Rhylib.Hook.Add("OnScreenSizeChanged", "hud.realistic.static", function() staticKey = nil end)
+Rhylib.Hook.Add("Think", "hud.realistic.focus", function()
+    local f = system.HasFocus()
+    if f and not hadFocus then staticKey = nil end
+    hadFocus = f
+end)
+
+-- Drawn before the other HUD parts (priority -10, as the normal visor).
+Rhylib.Hook.Add("HUDPaint", "hud.realistic", function()
+    if not HUD.RealisticActive() then return end
+    if ScrW() < 16 or ScrH() < 16 then return end
+    local g = HUD.RealGeo()
+    local s = g.s
+    -- (rebuilt now and then too: a render target can come back empty after
+    -- alt-tab or a lost graphics device)
+    local cached = (staticKey == g.key and RealTime() - staticAt < 5) or buildStatic(g)
+    if cached then
+        surface.SetDrawColor(255, 255, 255, 255)
+        surface.SetMaterial(staticMat)
+        render.OverrideBlend(true, BLEND_ONE, BLEND_ONE_MINUS_SRC_ALPHA, BLENDFUNC_ADD)
+        surface.DrawTexturedRect(0, 0, g.W, g.H)
+        render.OverrideBlend(false)
+        draw.NoTexture()
+    else
+        paintStatic(g)   -- (the picture couldn't be made: draw the parts)
+    end
+    drawCompass(g)
+    draw.NoTexture()
+
     local ply = LocalPlayer()
     local C = HUD.Colors
     local maxAr = ply.GetMaxArmor and ply:GetMaxArmor() or 100
@@ -980,7 +1038,7 @@ end, -10)
 -- cheek, one tile per entry (4, 6 with a backpack, the extra slot last).
 -- Default: one row of tall tiles (with their count) at the bottom of
 -- the panel when they fit, else four columns. Simple
--- look (rhylib_hud_real_strip): one row of slanted tiles under a line
+-- look (layout real): one row of slanted tiles under a line
 -- naming the groups (loadout, backpack, staff).
 local function heldIn(e, active)
     if e.wep ~= nil and e.wep == active then return true end
@@ -1079,8 +1137,8 @@ local function stripHotbar(g, entries, active, alpha)
     local lean = 6.5 * s       -- (each tile leans right: top edge this far right of the middle)
     local right = W - 44 * s
     -- (narrower tiles where the cheek is short: 4:3 / 5:4 screens)
-    local avail = right - (R.frameX(y0 + th) + 14 * s)
-    local tw = math.max(math.floor(14 * s), math.min(math.floor(62 * s), math.floor((avail - (n - 1) * gap) / n)))
+    local avail = right - (R.modeRightX(y0 + th) + 28 * s + lean)
+    local tw = math.max(math.floor(14 * s), math.min(math.floor(150 * s), math.floor((avail - (n - 1) * gap) / n)))
     local total = n * tw + (n - 1) * gap
     local x0 = math.floor(right - total)
     local r = HUD.HotbarRect
@@ -1089,7 +1147,7 @@ local function stripHotbar(g, entries, active, alpha)
 
     -- The line over the tiles, a stretch of it per group with its name.
     local ly = math.floor(800 * s)
-    local lx0 = math.min(math.max(W - 500 * s, R.tickRight + 10 * s), x0 - lean)
+    local lx0 = math.min(R.modeRightX(ly) + 28 * s, x0 - lean)
     surface.SetDrawColor(INK.r, INK.g, INK.b, 89 * alpha / 255)
     surface.DrawRect(math.floor(lx0), ly, math.floor(W - 40 * s - lx0), 1)
     local gx0, gx1, gk = nil, nil, nil
@@ -1154,19 +1212,6 @@ end
 function HUD.DrawRealHotbar(entries, active, alpha)
     if #entries == 0 then return end
     local g = HUD.RealGeo()
-    if stripVar:GetBool() then stripHotbar(g, entries, active, alpha) else gridHotbar(g, entries, active, alpha) end
+    if HUD.VisorLayout() == "realalt" then gridHotbar(g, entries, active, alpha) else stripHotbar(g, entries, active, alpha) end
 end
 
--- Settings > HUD (only with this layout): tall side ladders, and the
--- simple right cheek.
-Rhylib.Hook.Add("InitPostEntity", "hud.realistic.setting", function()
-    local Menus = Rhylib.Menus
-    if not (Menus and Menus.AddSetting) then return end
-    local function shown() return HUD.VisorLayout and HUD.VisorLayout() == "real" end
-    Menus.AddSetting("HUD", { id = "hud.realtall", order = 11, title = "Realistic HUD: tall side ladders",
-        desc = "Stretch the armour and health ladders over the whole side of the visor", kind = "toggle",
-        convar = "rhylib_hud_real_tall", showIf = shown })
-    Menus.AddSetting("HUD", { id = "hud.realstrip", order = 12, title = "Realistic HUD: simple right cheek",
-        desc = "A plainer right cheek: the round count with a row of round ticks and the hotbar in one row, instead of the fire-mode squares, the ammo dial and the hotbar panel",
-        kind = "toggle", convar = "rhylib_hud_real_strip", showIf = shown })
-end)

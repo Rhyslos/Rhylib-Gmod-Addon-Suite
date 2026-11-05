@@ -25,19 +25,23 @@ Config.Register("hud", "iconRange", 1500, "How far away speaking and typing icon
 -- First-person HUD layouts. Each player picks one in the pause menu's
 -- settings (client convar rhylib_hud_firstperson); empty means the server
 -- default, which an admin sets with rhylib_hud_layout <name> (sent as the
--- global "rhylib_hud_layout"). "thirdperson" keeps the third-person HUD
--- in first person: no helmet visor.
+-- global "rhylib_hud_layout"). Names players see: real = Realistic (the
+-- helmet with the simple right cheek), realalt = Realistic Alternative
+-- (the helmet with the ammo dial and hotbar panel), f5 = Simplified,
+-- f4 = Simplified Alternative, thirdperson = Simple HUD (the third-person
+-- HUD in first person: no helmet visor).
 Rhylib.HUD.Layouts = {
-    f5 = "Curve tiles over a wide ammo plate",
-    f4 = "Ammo strip on an even hotbar row",
     real = "Realistic: the clone helmet from the show",
-    thirdperson = "The third-person HUD (no helmet visor)",
+    realalt = "Realistic Alternative: the helmet with the ammo dial and hotbar panel",
+    f5 = "Simplified: curve tiles over a wide ammo plate",
+    f4 = "Simplified Alternative: ammo strip on an even hotbar row",
+    thirdperson = "Simple HUD: the third-person HUD (no helmet visor)",
 }
-Rhylib.HUD.LAYOUT_ORDER = { "f5", "f4", "real", "thirdperson" }
-Rhylib.HUD.DEFAULT_LAYOUT = "f5"
+Rhylib.HUD.LAYOUT_ORDER = { "real", "realalt", "f5", "f4", "thirdperson" }
+Rhylib.HUD.DEFAULT_LAYOUT = "real"
 
 local choiceVar = CLIENT and CreateClientConVar("rhylib_hud_firstperson", "", true, false,
-    "First-person HUD: f5, f4, real or thirdperson (empty = the server's default)")
+    "First-person HUD: real, realalt, f5, f4 or thirdperson (empty = the server's default)")
 
 -- HUD.ServerLayout(): the server's default layout name ("f5", "f4" or
 -- "thirdperson"), from the Global2String an admin sets with

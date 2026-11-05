@@ -69,6 +69,10 @@
     uses it).
 ]]
 
+-- Plain white for untextured polygons (draw.NoTexture alone can leave
+-- another texture bound).
+local WHITE_MAT = Material("vgui/white")
+
 local G = Rhylib.Gear
 local UI = Rhylib.UI
 
@@ -917,7 +921,7 @@ local function drawRangefinder(fire)
 
     -- Stencil: 2 = inside the frame, 1 = the window (fan + INVERT).
     draw.NoTexture()
-    surface.SetTexture(0)
+    surface.SetMaterial(WHITE_MAT)   -- (binds plain white for sure)
     render.SetStencilWriteMask(0xFF)
     render.SetStencilTestMask(0xFF)
     render.SetStencilReferenceValue(0)
@@ -1101,7 +1105,7 @@ local function drawViewer(fire)
 
     -- The window into the stencil (fan + INVERT = an exact concave fill).
     draw.NoTexture()
-    surface.SetTexture(0)
+    surface.SetMaterial(WHITE_MAT)   -- (binds plain white for sure)
     render.SetStencilWriteMask(0xFF)
     render.SetStencilTestMask(0xFF)
     render.SetStencilReferenceValue(0)
@@ -1225,7 +1229,7 @@ Rhylib.Hook.Add("HUDPaint", "gear.visor.layer", function()
     render.SetStencilZFailOperation(STENCIL_REPLACE)
     render.OverrideColorWriteEnable(true, false)
     draw.NoTexture()
-    surface.SetTexture(0)
+    surface.SetMaterial(WHITE_MAT)   -- (binds plain white for sure)
     surface.SetDrawColor(255, 255, 255, 255)
     for i = 1, #tris do surface.DrawPoly(tris[i]) end
     render.OverrideColorWriteEnable(false, false)

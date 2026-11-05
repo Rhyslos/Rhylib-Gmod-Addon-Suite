@@ -35,6 +35,10 @@
     radarHoldTo times the range, then go (squad mates and pings stay).
 ]]
 
+-- Plain white for untextured polygons (draw.NoTexture alone can leave
+-- another texture bound).
+local WHITE_MAT = Material("vgui/white")
+
 local R = Rhylib.Radio
 R.radarExtras = R.radarExtras or {}   -- [id] = fn(cx, cy, r, myPos, fx, fy, k): extra radar blips
 local UI = Rhylib.UI
@@ -282,7 +286,7 @@ local DARK, LIGHT = Color(12, 14, 16), Color(235, 235, 235)
 
 local function drawSquares(list, s, noNotch)
     draw.NoTexture()
-    surface.SetTexture(0)
+    surface.SetMaterial(WHITE_MAT)   -- (binds plain white for sure)
     local font = UI.Font(11, 700)
     for i, pts in ipairs(list) do
         local col, a, bright = squareState(i)

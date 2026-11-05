@@ -1186,3 +1186,8 @@ I.nextUid = nextUid
 I.sendSet = sendSet
 I.sendDims = sendDims
 I.changed = changed
+-- I.findSpot(st, id) -> cid, x, y, rot (or nil): where Inv.AddItem would put
+-- one new item in state st (its worn slot, then the grids in SEARCH order).
+-- Reads st only, changes nothing (rhylib_armoury's quartermaster plans a
+-- whole kit on a copy of the state with it).
+I.findSpot = findSpot

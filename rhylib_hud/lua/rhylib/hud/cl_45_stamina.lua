@@ -15,6 +15,10 @@
     own voice meter sits under them (rhylib_radio cl_20_hud.lua).
 ]]
 
+-- Plain white for untextured polygons (draw.NoTexture alone can leave
+-- another texture bound).
+local WHITE_MAT = Material("vgui/white")
+
 local HUD = Rhylib.HUD
 
 local COL_TRACK = Color(255, 255, 255, 22)
@@ -42,7 +46,7 @@ local function drawVisor(frac, col, a, alpha)
     -- (a texture left bound by an earlier draw made the strip dark grey;
     -- clear it the same way the radio squares do)
     draw.NoTexture()
-    surface.SetTexture(0)
+    surface.SetMaterial(WHITE_MAT)   -- (binds plain white for sure)
     for _, side in ipairs({ -1, 1 }) do
         local strip = HUD.VisorStrip(side, from, STRIP_END, off, HUD.VISOR_BAR_THICK or 0.009, STRIP_STEPS)
         -- Track, then the filled part at the chin end.
@@ -53,7 +57,7 @@ local function drawVisor(frac, col, a, alpha)
         local filled = math.Clamp(frac, 0, 1) * STRIP_STEPS
         local n = math.floor(filled)
         draw.NoTexture()
-        surface.SetTexture(0)
+        surface.SetMaterial(WHITE_MAT)   -- (binds plain white for sure)
         surface.SetDrawColor(col.r, col.g, col.b, a)
         for i = STRIP_STEPS - n + 1, STRIP_STEPS do surface.DrawPoly(strip.quads[i]) end
         local part = filled - n

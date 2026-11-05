@@ -36,6 +36,9 @@
                         your rank allows. (rhylib_gear_cabinet)
       Training armoury  training copies of the guns, and training ammo
       and ammo          (rhylib_training_armoury, rhylib_training_ammo).
+      Quartermaster     an NPC: three saved loadouts per player; swaps your
+                        whole kit for one from the armoury stock
+                        (rhylib_quartermaster; *_50_quartermaster.lua).
 
     Admins place them from the spawn menu (Rhy's tab), then make them
     permanent with the toolgun's Permanent tool (or run

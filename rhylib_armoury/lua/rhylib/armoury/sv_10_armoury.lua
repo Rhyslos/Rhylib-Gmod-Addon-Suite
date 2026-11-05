@@ -21,6 +21,9 @@
     specialist racks; rhylib_medical), Rhylib.CanSearchLocker(ply, ent)
     (true = may open a locked locker; rhylib_mp), Rhylib.PlayerRoles(ply)
     (in A.Roles).
+    The cabinets' stock lists are also A.WeaponStock / A.AmmoStock /
+    A.GearStock / A.RoleStock (the quartermaster, sv_50_quartermaster.lua,
+    uses the same lists).
 ]]
 
 local A = Rhylib.Armoury
@@ -587,6 +590,15 @@ Rhylib.Hook.Add("Rhylib.CharacterReset", "armoury.wipe", function(sid)
         end
     end
 end)
+
+-- The stock lists the cabinets use, for the quartermaster
+-- (sv_50_quartermaster.lua): A.WeaponStock(training) -> ids,
+-- A.AmmoStock(training) -> ids, A.GearStock(ply or nil) -> ids,
+-- A.RoleStock(roles, "weapons" | "gear") -> ids.
+A.WeaponStock = weaponStock
+A.AmmoStock = ammoStock
+A.GearStock = gearStock
+A.RoleStock = roleStock
 
 --------------------------------------------------------------------------
 -- Admin commands

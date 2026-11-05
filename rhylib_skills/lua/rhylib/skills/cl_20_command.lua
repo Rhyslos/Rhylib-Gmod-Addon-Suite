@@ -8,6 +8,10 @@
     skills.squad (index into K.SQUAD_OPS, 3 bits). Client only.
 ]]
 
+-- Plain white for untextured polygons (draw.NoTexture alone can leave
+-- another texture bound).
+local WHITE_MAT = Material("vgui/white")
+
 local K = Rhylib.Skills
 local UI = Rhylib.UI
 
@@ -18,7 +22,7 @@ local function edgeGlow(col, alpha, w, h)
     local e = math.floor(h * 0.11)
     local step = math.max(1, math.ceil(e / STRIPS))
     draw.NoTexture()
-    surface.SetTexture(0)
+    surface.SetMaterial(WHITE_MAT)   -- (binds plain white for sure)
     for i = 0, e - 1, step do
         local t = 1 - i / e
         local a = alpha * t * t * t   -- (eased: bright at the edge, gone well before the middle)

@@ -60,7 +60,7 @@ local function captureWeapon(ply, inst, staying, primary)
     if not def or not def.weapon then return end
     local wep = ply:GetWeapon(def.weapon)
     if IsValid(wep) and wep.GetInventoryData then
-        local issued, loadout = inst.data and inst.data.issued, inst.data and inst.data.loadout
+        local issued, loadout, stock = inst.data and inst.data.issued, inst.data and inst.data.loadout, inst.data and inst.data.stock
         local twin = twinOf(ply, inst)
         inst.rhylibSpareClip = nil
         if twin and not staying then
@@ -71,7 +71,7 @@ local function captureWeapon(ply, inst, staying, primary)
         else
             inst.data = wep:GetInventoryData() or inst.data
         end
-        inst.data.issued, inst.data.loadout = issued, loadout  -- keep the armoury / job marks
+        inst.data.issued, inst.data.loadout, inst.data.stock = issued, loadout, stock  -- keep the armoury / job / stock marks
     end
 end
 
@@ -243,9 +243,9 @@ Rhylib.Hook.Add("PlayerDroppedWeapon", "inventory.nodrop", function(ply, wep)
     if wep.GetInventoryData then
         for _, inst in pairs(Inv.Get(ply).byUid) do
             if inst.id == class then
-                local issued, loadout = inst.data and inst.data.issued, inst.data and inst.data.loadout
+                local issued, loadout, stock = inst.data and inst.data.issued, inst.data and inst.data.loadout, inst.data and inst.data.stock
                 inst.data = wep:GetInventoryData() or inst.data
-                inst.data.issued, inst.data.loadout = issued, loadout
+                inst.data.issued, inst.data.loadout, inst.data.stock = issued, loadout, stock
                 break
             end
         end
