@@ -461,7 +461,8 @@ end
 local function addPage()
     local M = Rhylib.Menus
     if not (M and M.AddPage and M.Kit) then return end
-    M.AddPage("radio", { title = "Radio", order = 31, group = "unit", build = build })
+    M.AddPage("radio", { title = "Radio & squads", order = 50, section = "you", icon = "radio", build = build,
+        key = function() return GetConVarString("rhylib_radio_menukey") end })
 end
 Rhylib.Hook.Add("InitPostEntity", "radio.page", addPage)
 addPage()

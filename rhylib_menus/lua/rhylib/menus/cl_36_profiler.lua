@@ -183,8 +183,9 @@ end
 
 Menus.AddPage("profiler", {
     title = "Profiler",
-    order = 70,
-    group = "staff",
+    order = 260,
+    section = "staff",
+    icon = "profiler",
     visible = function()
         local me = LocalPlayer()
         if not IsValid(me) then return false end

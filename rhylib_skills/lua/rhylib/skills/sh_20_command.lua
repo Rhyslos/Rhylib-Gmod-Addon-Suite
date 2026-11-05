@@ -48,6 +48,7 @@ reg("reinfSquad", { "ct_trooper", "ct_medic", "ct_rifleman", "ct_heavy" }, "Rein
 reg("squadSignals", { follow = "/group", regroup = "/come", hold = "/stop", move = "/advance", aggroUp = "/advance", aggroDown = "/group", dismiss = "" },
     "Squad wheel: hand-signal chat command each order runs (for a hand-signal animation addon; \"\" = none)")
 reg("squadSignalMode", "hooks", "Squad wheel: how signals reach the animation addon: hooks (PlayerSay hooks only, nothing in chat), gamemode (also the gamemode's chat, e.g. DarkRP chat commands), say (a real chat line)")
+Config.Meta("skills", "squadSignalMode", { options = { { "hooks", "Hooks only (nothing in chat)" }, { "gamemode", "Gamemode chat too" }, { "say", "A real chat line" } } })
 
 local function cfg(k) return Config.Get("skills", k) end
 

@@ -24,6 +24,7 @@ Rhylib.Menus = Rhylib.Menus or {}
 
 local Config = Rhylib.Config
 Config.Register("menus", "title", "", "Title on the pause menu and scoreboard (empty = the server name)")
+Config.Register("menus", "scoreboardTag", "Grand Army of the Republic", "Small line above the title on the scoreboard (empty = none)")
 Config.Register("menus", "killfeedTime", 6, "Seconds a killfeed line stays")
 Config.Register("menus", "killfeedMax", 6, "Most killfeed lines at once")
 

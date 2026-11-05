@@ -7,7 +7,7 @@
     the host file's value or the default).
 
     Perm rhylib.settings (superadmin).
-    Saved: Data "core" "settings" = { { m, k, v }, ... }, loaded when this
+    Saved: Data "core" "settings" = { { m, k, v, w = who, t = os.time() }, ... }, loaded when this
     file loads (before the other addons load, so they see the overrides
     from the start).
     Nets:
@@ -16,11 +16,15 @@
       core.cfglist     server -> that client: catalogue, compressed JSON in
                        parts, rows { m, k, d = default, b = base (host file
                        or default), o = override, s = desc, x = meta,
-                       p = map change needed }; an empty list when denied
+                       p = map change needed, w = who changed it, t = when
+                       (os.time) }; an empty list when denied
       core.cfgset      client -> server: module string, key string, has
                        bool, then (if has) JSON {v=value}; has false = reset
-                       (rate 4/s, burst 8)
-      core.cfgsync     server -> everyone: module, key, has, JSON (one change)
+                       (rate 8/s, burst 32)
+      core.cfgsync     server -> everyone: module, key, has, JSON (one change),
+                       then who (string) and when (UInt 32 os.time)
+      core.cfgerr      server -> the asker: module, key, why (a refused value;
+                       the page shows it on the row)
       core.cfgallreq   client -> server once its Lua is loaded (once per player)
       core.cfgall      server -> that client: every override, compressed
                        JSON in parts { { m, k, v } }
@@ -29,7 +33,9 @@
     Checks on cfgset: the setting must exist, same type as the default,
     numbers finite and |v| <= 1e6, not negative when the default isn't,
     arrays stay arrays with the same kind of first item; model settings
-    must be a models/...mdl path the server has (see badModel).
+    must be a models/...mdl path the server has (see badModel); meta
+    options: one of them; meta kind "rank": a rank prefix of
+    rhylib_roster (when installed); meta min / max: inside the range.
     The admin module's settings (ranks, owners, levels) aren't editable
     here: a bad value could lock everyone out or promote someone.
     Console: rhylib_settings_reset <module> [key] (no key = the whole module).
@@ -44,6 +50,7 @@ Rhylib.Net.Register("core.cfgset")
 Rhylib.Net.Register("core.cfgsync")
 Rhylib.Net.Register("core.cfgall")
 Rhylib.Net.Register("core.cfgallreq")
+Rhylib.Net.Register("core.cfgerr")
 
 Rhylib.Perms.Register("rhylib.settings", "superadmin", "Change server settings in the Server settings page")
 
@@ -66,10 +73,16 @@ Rhylib.Settings = Rhylib.Settings or {}
 -- value) back into Colors. Server copy; the client has its own.
 Rhylib.Settings.FixColors = fixColors
 
+-- Who changed each override and when: [m .. "\0" .. k] = { w = name, t = os.time() }.
+local changed = {}
+
 local function saved()
     local list = {}
     for m, keys in pairs(Config.overrides) do
-        for k, v in pairs(keys) do list[#list + 1] = { m = m, k = k, v = v } end
+        for k, v in pairs(keys) do
+            local c = changed[m .. "\0" .. k]
+            list[#list + 1] = { m = m, k = k, v = v, w = c and c.w, t = c and c.t }
+        end
     end
     return list
 end
@@ -87,6 +100,7 @@ do
             if isstring(e.m) and isstring(e.k) and e.v ~= nil and not PROTECTED[e.m] then
                 Config.overrides[e.m] = Config.overrides[e.m] or {}
                 Config.overrides[e.m][e.k] = fixColors(e.v)
+                if isstring(e.w) or isnumber(e.t) then changed[e.m .. "\0" .. e.k] = { w = isstring(e.w) and e.w or nil, t = tonumber(e.t) } end
             end
         end
     end
@@ -138,7 +152,9 @@ Rhylib.Net.Receive("core.cfgreq", function(ply)
             for k, d in pairs(keys) do
                 local ov = Config.overrides[m] and Config.overrides[m][k]
                 local pend = Rhylib.Models and Rhylib.Models.pending[m .. "\0" .. k] or nil
-                list[#list + 1] = { m = m, k = k, d = d.default, b = Config.Base(m, k), o = ov, s = d.desc, x = d.meta, p = pend }
+                local c = changed[m .. "\0" .. k]
+                list[#list + 1] = { m = m, k = k, d = d.default, b = Config.Base(m, k), o = ov, s = d.desc, x = d.meta, p = pend,
+                    w = c and c.w, t = c and c.t }
             end
         end
         sendCompressed("core.cfglist", list, ply)
@@ -208,12 +224,40 @@ local function badModel(value)
 end
 
 local function broadcast(m, k, value)
+    local c = changed[m .. "\0" .. k]
     Rhylib.Net.Start("core.cfgsync")
     net.WriteString(m)
     net.WriteString(k)
     net.WriteBool(value ~= nil)
     if value ~= nil then net.WriteString(wrap(value)) end
+    net.WriteString(c and c.w or "")
+    net.WriteUInt(c and c.t or 0, 32)
     net.Broadcast()
+end
+
+-- The rank prefixes rhylib_roster knows (nil without it).
+local function rankSet()
+    local R = Rhylib.Roster
+    if not (R and R.Ranks) then return nil end
+    local set = {}
+    for _, r in ipairs(R.Ranks()) do set[r[1]] = true end
+    return set
+end
+
+-- meta checks: options, rank, min / max. Returns why or nil.
+local function badMeta(value, meta)
+    if not istable(meta) then return nil end
+    local opts = Config.OptionValues(meta)
+    if opts and not opts[value] then return "pick one of the listed choices" end
+    if meta.kind == "rank" and isstring(value) then
+        local set = rankSet()
+        if set and not set[value] then return "that isn't a rank (" .. value .. ")" end
+    end
+    if isnumber(value) then
+        if isnumber(meta.min) and value < meta.min then return "the lowest it can be is " .. meta.min end
+        if isnumber(meta.max) and value > meta.max then return "the highest it can be is " .. meta.max end
+    end
+    return nil
 end
 
 -- Rhylib.Settings.Set(module, key, value | nil, by): set (or with nil
@@ -227,6 +271,8 @@ local function setValue(m, k, value, by)
     if not def or PROTECTED[m] then return false, "no such setting" end
     if value ~= nil then
         if not sameKind(value, def.default, 0, def.meta and def.meta.signed) then return false, "that isn't a valid value" end
+        local why = badMeta(value, def.meta)
+        if why then return false, why end
         if m == "models" or Config.IsModelDefault(def.default) then
             if isstring(value) then value = string.Trim((string.gsub(value, "\\", "/"))) end
             if m == "models" and value == "" then value = nil end   -- (empty = back to the shipped model)
@@ -237,6 +283,11 @@ local function setValue(m, k, value, by)
     if (m == "models" or Config.IsModelDefault(def.default)) and Rhylib.Models then
         Rhylib.Models.pending[m .. "\0" .. k] = true
     end
+    if value == nil then
+        changed[m .. "\0" .. k] = nil
+    else
+        changed[m .. "\0" .. k] = { w = IsValid(by) and by:Nick() or "Console", t = os.time() }
+    end
     Config.SetOverride(m, k, value)
     save()
     broadcast(m, k, value)
@@ -246,6 +297,17 @@ local function setValue(m, k, value, by)
 end
 Rhylib.Settings = Rhylib.Settings or {}
 Rhylib.Settings.Set = function(m, k, value, by) return setValue(m, k, value, by) end
+
+-- A refused change: the asker's page shows why on the row (and a chat
+-- line when no page is listening, cl_15_settings.lua).
+local function refuse(ply, m, k, why)
+    if not IsValid(ply) then return end
+    Rhylib.Net.Start("core.cfgerr")
+    net.WriteString(m)
+    net.WriteString(k)
+    net.WriteString(tostring(why or "that isn't a valid value"))
+    net.Send(ply)
+end
 
 Rhylib.Net.Receive("core.cfgset", function(ply)
     local m, k = net.ReadString(), net.ReadString()
@@ -259,16 +321,14 @@ Rhylib.Net.Receive("core.cfgset", function(ply)
             local t = util.JSONToTable(raw or "")
             if istable(t) then value = fixColors(t.v) end   -- (not "and ... or nil": false is a value)
             if value == nil then
-                if IsValid(ply) then ply:ChatPrint("[Settings] " .. m .. "." .. k .. ": that isn't a valid value") end
+                refuse(ply, m, k, "that isn't a valid value")
                 return
             end
         end
         local ok, why = setValue(m, k, value, ply)
-        if not ok and IsValid(ply) then
-            ply:ChatPrint("[Settings] " .. ((def.meta and def.meta.name) or (m .. "." .. k)) .. ": " .. tostring(why))
-        end
+        if not ok then refuse(ply, m, k, why) end
     end)
-end, { rate = 4, burst = 8 })
+end, { rate = 8, burst = 32 })
 
 -- Undo from the console (e.g. a value that broke something):
 -- rhylib_settings_reset <module> [key].
@@ -282,6 +342,7 @@ concommand.Add("rhylib_settings_reset", function(ply, _, args)
             if k == nil or key == k then list[#list + 1] = key end
         end
         for _, key in ipairs(list) do
+            changed[m .. "\0" .. key] = nil
             Config.SetOverride(m, key, nil)
             broadcast(m, key, nil)
         end

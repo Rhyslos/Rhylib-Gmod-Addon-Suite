@@ -721,9 +721,10 @@ local function addPage()
     local Menus = Rhylib.Menus
     if not (Menus and Menus.AddPage) then return end
     Menus.AddPage(PAGE, {
-        title = "Jobs",
-        order = 65,
-        group = "staff",
+        title = "Job editor",
+        order = 240,
+        section = "staff",
+        icon = "editor",
         visible = function()
             local me = LocalPlayer()
             if not (IsValid(me) and DarkRP and RPExtraTeams) then return false end

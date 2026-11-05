@@ -657,8 +657,24 @@ function Admin.MapList()
     return out
 end
 
+-- Maps played, newest first: Data "admin" "mapHistory" = { { m = name, t = os.time() }, ... } (20 kept).
+-- The map that just loaded goes to the top.
+local function mapHistory()
+    local h = Data.Get(KEY, "mapHistory")
+    return istable(h) and h or {}
+end
+Rhylib.Hook.Add("InitPostEntity", "admin.maphistory", function()
+    local cur = string.lower(game.GetMap())
+    local h = mapHistory()
+    local out = { { m = cur, t = os.time() } }
+    for _, e in ipairs(h) do
+        if istable(e) and isstring(e.m) and e.m ~= cur and #out < 20 then out[#out + 1] = e end
+    end
+    Data.Set(KEY, "mapHistory", out)
+end)
+
 -- Lists for the staff menu: 0 maps, 1 bans, 2 log, 3 warnings of a SteamID64.
--- Rows: maps { name, "1" if current }, bans { sid, name, reason, byName,
+-- Rows: maps { name, "1" if current, last played (os.time, "" = never seen) }, bans { sid, name, reason, byName,
 -- time left }, log { time, text } (150 newest), warnings { at, reason, byName }.
 -- At most 255 rows and 300 characters a field. No permission = no reply.
 Rhylib.Net.Receive("admin.listget", function(ply)
@@ -670,9 +686,13 @@ Rhylib.Net.Receive("admin.listget", function(ply)
     if which == 3 and not Admin.Has(ply, "warn") then return end
     local rows = {}
     if which == 0 then
+        local last = {}
+        for _, e in ipairs(mapHistory()) do
+            if istable(e) and isstring(e.m) and not last[e.m] then last[e.m] = tostring(math.floor(tonumber(e.t) or 0)) end
+        end
         for k, m in ipairs(Admin.MapList()) do
             if k > 255 then break end
-            rows[k] = { m, m == string.lower(game.GetMap()) and "1" or "" }
+            rows[k] = { m, m == string.lower(game.GetMap()) and "1" or "", last[m] or "" }
         end
     elseif which == 1 then
         for k in pairs(banIndex()) do

@@ -50,6 +50,7 @@ Config.Register("logistics", "sensorMaxTotal", 40, "Sensor array: most beacons o
 Config.Register("logistics", "sensorModel", "models/theinvisibleman/swbf/scarifprops/generatorpillar_01.mdl", "Sensor array: beacon model (falls back to an HL2 radio when it isn't installed)")
 Config.Register("logistics", "sensorScale", 0.5, "Sensor array: size of the beacon model (1 = the model's own size)")
 Config.Register("logistics", "officerRank", "LT", "Lowest rank (rhylib_roster rank prefix) that counts as an officer: sees everything on the command post and gets sensor alerts")
+Config.Meta("logistics", "officerRank", { kind = "rank" })
 
 Rhylib.Perms.Register("rhylib.logistics.admin", "admin", "Logistics: see everything on the command post and get sensor alerts")
 

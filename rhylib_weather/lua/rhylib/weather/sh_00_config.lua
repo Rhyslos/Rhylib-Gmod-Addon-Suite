@@ -56,6 +56,7 @@ local Config = Rhylib.Config
 Config.Describe("weather", { name = "Weather", category = "Server & interface" })
 Config.Register("weather", "kind", "clear", "Weather for everyone: clear, mist, fog, rain, storm, heavystorm, snow, heavysnow, sandstorm or heavysandstorm")
 Config.Register("weather", "intensity", 0.7, "How strong the weather is, 0.1 (light) to 1 (heavy)")
+Config.Meta("weather", "intensity", { min = 0.1, max = 1, step = 0.05 })
 Config.Register("weather", "fadeTime", 12, "Seconds a change takes: the old weather fades out while the new one fades in")
 Config.Register("weather", "visorFx", true, "Weather shows on the helmet visor (drops, frost, dust); !weather <kind> noef turns it off for that weather, the next !weather without noef back on")
 Config.Register("weather", "fog", true, "Weather fog (thicker in storms, heavy snow and sandstorms); off keeps the map's own fog")
@@ -124,6 +125,11 @@ W.KINDS = {
         disrupt = true, grade = { -0.08, 0.9, 0.75, 0.045, 0.018, -0.02 } },
 }
 W.ORDER = { "clear", "mist", "fog", "rain", "storm", "heavystorm", "snow", "heavysnow", "sandstorm", "heavysandstorm" }
+do
+    local opts = {}
+    for i, k in ipairs(W.ORDER) do opts[i] = { k, W.KINDS[k].name } end
+    Rhylib.Config.Meta("weather", "kind", { options = opts })
+end
 
 -- Old names that still read (a saved "blizzard" from before heavysnow).
 W.ALIASES = { blizzard = "heavysnow" }

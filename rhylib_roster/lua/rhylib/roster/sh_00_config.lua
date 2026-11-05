@@ -58,6 +58,8 @@ Config.Register("roster", "ranks", {
 }, "The rank ladder, lowest first: { prefix, name }")
 Config.Register("roster", "manageRank", "SGT", "Lowest rank that can add members, pass cadets and promote")
 Config.Register("roster", "boardRank", "LT", "Lowest rank that can post on the battalion board")
+Config.Meta("roster", "manageRank", { kind = "rank" })
+Config.Meta("roster", "boardRank", { kind = "rank" })
 Config.Register("roster", "blockedNumbers", { "1337", "6969", "0420", "6767", "6967", "6769" }, "Clone numbers nobody can take")
 Config.Register("roster", "nickMax", 20, "Longest nickname")
 Config.Register("roster", "quals", {

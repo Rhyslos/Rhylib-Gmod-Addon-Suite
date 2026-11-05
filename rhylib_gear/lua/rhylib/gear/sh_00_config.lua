@@ -190,6 +190,7 @@ Config.Register("gear", "lightMaxPlayers", 2, "Helmet lights: other players whos
 Config.Register("gear", "bareHeadshotDowns", true, "With the helmet off, any head hit downs you", { section = "Armour parts" })
 Config.Register("gear", "visorZoom", 3, "Sun visor: the zoom it gives while aiming a gun (no scope of its own)", { section = "Sun visor" })
 Config.Register("gear", "nvMode", 1, "Night vision: 1 = amplified (a wide shadowless light from your eyes that turns itself down where it's already bright; default), 2 = the world drawn fully lit (can glare at light sources), 0 = only the green filter", { section = "Night vision" })
+Config.Meta("gear", "nvMode", { options = { { 1, "Amplified light (default)" }, { 2, "World drawn fully lit" }, { 0, "Green filter only" } } })
 Config.Register("gear", "nvGain", 2.5, "Night vision (amplified): strength of the light in the dark", { section = "Night vision" })
 Config.Register("gear", "nvLift", 0.04, "Night vision: how much the darkest parts are lifted (the green floor)", { section = "Night vision" })
 Config.Register("gear", "nvColour", 0.6, "Night vision: how much of the real colours stays (0 = plain green picture, 1 = full colour under the green tint); colours keep their own hue, so unit markings stay readable", { section = "Night vision" })

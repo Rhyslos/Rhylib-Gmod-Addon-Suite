@@ -23,8 +23,11 @@
     Icons are small vector glyphs drawn here (ICONS / GLYPHS), so there
     are no materials to ship. K.DrawGlyph(name, x, y, size, col, bg) draws
     one for other code.
-    Client only; needs rhylib_menus (page "skills", Character group). Also
-    receives skills.note (bad bool, text) and prints it to chat.
+    Client only; needs rhylib_menus (page "skills", side bar section You,
+    with the unspent points as a badge). The Skills key (client convar
+    rhylib_skills_menukey, default m; Settings > Controls) or console
+    command rhylib_skills opens it (K.OpenPage). Also receives skills.note
+    (bad bool, text) and prints it to chat.
     The layout (PerformLayout below) is the tricky part: it lines each
     skill up under the skills it needs so links are straight lines. A
     group of skills too many for its column (six orders in a narrow menu)
@@ -36,6 +39,62 @@
 ]]
 
 local K = Rhylib.Skills
+
+-- The Skills key (default M): opens the pause menu on Skills, or closes it
+-- when it's already showing Skills. Rebind in Settings > Controls.
+local menuKey = CreateClientConVar("rhylib_skills_menukey", "m", true, false, "Open the Skills page")
+
+-- K.OpenPage(): the pause menu on Skills (closes it if Skills is showing).
+function K.OpenPage()
+    local M = Rhylib.Menus
+    if not (M and M.OpenPause and M.pages and M.pages.skills) then return end
+    if IsValid(M.pause) then
+        if M.pause.pageId == "skills" then M.ClosePause() else M.pause:ShowPage("skills") end
+        return
+    end
+    M.lastPage = "skills"
+    M.OpenPause()
+end
+concommand.Add("rhylib_skills", K.OpenPage)
+
+local keyWas = false
+Rhylib.Hook.Add("Think", "skills.menukey", function()
+    local k = menuKey:GetString()
+    local down = false
+    if k ~= "" then
+        local code = input.GetKeyCode(k)
+        down = code and code > 0 and input.IsButtonDown(code) or false
+    end
+    local pressed = down and not keyWas
+    keyWas = down
+    if not pressed then return end
+    if gui.IsGameUIVisible() or gui.IsConsoleVisible() then return end
+    local ply = LocalPlayer()
+    if not IsValid(ply) or ply:IsTyping() then return end
+    local f = vgui.GetKeyboardFocus()
+    if IsValid(f) and f:GetClassName() == "TextEntry" then return end
+    -- (setting a key in Settings > Controls: that press is the new key)
+    local M = Rhylib.Menus
+    if M and M.keyTrapping then return end
+    K.OpenPage()
+end)
+
+-- The Skills key replaces whatever game bind sits on the same key.
+Rhylib.Hook.Add("PlayerBindPress", "skills.menukey", function(_, bind, pressed, code)
+    if string.find(bind, "messagemode", 1, true) then return end
+    local key = string.lower(menuKey:GetString())
+    if key == "" then return end
+    local b = code and code > 0 and input.GetKeyName(code) or input.LookupBinding(bind, true)
+    if b and string.lower(b) == key then return true end
+end)
+
+local function addKeySetting()
+    local M = Rhylib.Menus
+    if not (M and M.AddSetting) then return end
+    M.AddSetting("Skills", { id = "skills.menu", order = 10, title = "Skills page", kind = "key", convar = "rhylib_skills_menukey", short = "SKILLS" })
+end
+addKeySetting()
+Rhylib.Hook.Add("InitPostEntity", "skills.keysetting", addKeySetting)
 
 -- K.lastNote = { text, bad, at = RealTime() }: the last skills.note, drawn
 -- in the Skills page's side panel for a while.
@@ -1229,8 +1288,19 @@ local function addPage()
     if not (Menus and Menus.AddPage and Rhylib.UI and Rhylib.UI.Kit) then return end
     Menus.AddPage("skills", {
         title = "Skills",
-        order = 22,
-        group = "character",
+        order = 20,
+        section = "you",
+        icon = "skills",
+        key = function() return menuKey:GetString() end,
+        -- (unspent points; nothing when there are none or points are free)
+        badge = function()
+            local ply = LocalPlayer()
+            if not (IsValid(ply) and K.Points and K.Spent and K.Set) then return nil end
+            local pts = K.Points(ply)
+            if pts == math.huge then return nil end
+            local left = pts - K.Spent(K.Set(ply))
+            return left > 0 and left or nil
+        end,
         build = build,
     })
 end

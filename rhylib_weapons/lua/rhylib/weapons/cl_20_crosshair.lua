@@ -408,17 +408,26 @@ Rhylib.Hook.Add("InitPostEntity", "weapons.hitsound.setting", function()
         Menus.AddSetting("Weapons", { id = "wep.xhouter", order = 13, title = "Crosshair outer part", wide = 560,
             desc = "Shows the spread and the kick of each shot", kind = "choice", convar = "rhylib_crosshair_outer", options = X.OUTER_OPTIONS,
             get = function() local v = outerVar:GetString() return X.OUTER[v] and v or "arcs" end })
-        local cols = {}
-        for _, c in ipairs(X.COLOURS) do cols[#cols + 1] = { c[1], c[2] } end
-        Menus.AddSetting("Weapons", { id = "wep.xhcolour", order = 14, title = "Crosshair colour", wide = 560,
-            kind = "choice", convar = "rhylib_crosshair_colour", options = cols,
-            get = function() local v = colourVar:GetString() return (COLOUR_BY_ID[v] or v == "custom") and v or "white" end })
-        Menus.AddSetting("Weapons", { id = "wep.xhr", order = 14.1, title = "Custom colour: red", desc = "With colour Custom",
-            kind = "slider", convar = "rhylib_crosshair_r", min = 0, max = 255, decimals = 0 })
-        Menus.AddSetting("Weapons", { id = "wep.xhg", order = 14.2, title = "Custom colour: green", desc = "With colour Custom",
-            kind = "slider", convar = "rhylib_crosshair_g", min = 0, max = 255, decimals = 0 })
-        Menus.AddSetting("Weapons", { id = "wep.xhb", order = 14.3, title = "Custom colour: blue", desc = "With colour Custom",
-            kind = "slider", convar = "rhylib_crosshair_b", min = 0, max = 255, decimals = 0 })
+        -- Colour: squares for the named colours and a mixer (Custom = the
+        -- r / g / b convars); kind "colour" on the Settings page.
+        local swatches = {}
+        for _, c in ipairs(X.COLOURS) do if c[3] then swatches[#swatches + 1] = c[3] end end
+        Menus.AddSetting("Weapons", { id = "wep.xhcolour", order = 14, title = "Crosshair colour",
+            desc = "Pick a colour, or the last square for any colour", kind = "colour", convar = "rhylib_crosshair_colour", swatches = swatches,
+            get = function()
+                local v = colourVar:GetString()
+                if COLOUR_BY_ID[v] then return COLOUR_BY_ID[v] end
+                return Color(rVar:GetInt(), gVar:GetInt(), bVar:GetInt())
+            end,
+            set = function(c)
+                for id, col in pairs(COLOUR_BY_ID) do
+                    if col.r == c.r and col.g == c.g and col.b == c.b then RunConsoleCommand("rhylib_crosshair_colour", id) return end
+                end
+                RunConsoleCommand("rhylib_crosshair_colour", "custom")
+                RunConsoleCommand("rhylib_crosshair_r", tostring(c.r))
+                RunConsoleCommand("rhylib_crosshair_g", tostring(c.g))
+                RunConsoleCommand("rhylib_crosshair_b", tostring(c.b))
+            end })
         Menus.AddSetting("Weapons", { id = "wep.xhgap", order = 16.1, title = "Crosshair gap",
             desc = "Extra room between the centre and the outer part", kind = "slider", convar = "rhylib_crosshair_gap", min = 0, max = 30, decimals = 0 })
         Menus.AddSetting("Weapons", { id = "wep.xhlength", order = 16.2, title = "Crosshair outer length",

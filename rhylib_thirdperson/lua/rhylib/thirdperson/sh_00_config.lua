@@ -4,6 +4,8 @@
 --   third person, "first" first person only.
 Rhylib.Config.Describe("thirdperson", { name = "Third person", category = "Server & interface" })
 Rhylib.Config.Register("thirdperson", "mode", "choice", "Third person: choice (players switch with P), third (always third person), first (first person only)")
+Rhylib.Config.Meta("thirdperson", "mode", { name = "Camera mode", options = {
+    { "choice", "Players choose (P switches)" }, { "third", "Always third person" }, { "first", "First person only" } } })
 
 -- Old switch, still honoured: 0 = first person only.
 CreateConVar("rhylib_thirdperson_allowed", "1", { FCVAR_ARCHIVE, FCVAR_REPLICATED, FCVAR_NOTIFY },

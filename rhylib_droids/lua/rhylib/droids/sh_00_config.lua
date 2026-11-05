@@ -153,6 +153,7 @@ Config.Register("droids", "coverFlankCheck", 1, "Cover: seconds between checks w
 Config.Register("droids", "squadSize", 8, "Squads: most NPCs in one squad when the toolgun places several or a preset squad (bigger groups become several squads)")
 Config.Register("droids", "squadMax", 16, "Squads: most NPCs a GM can group into one squad in the toolgun's Command mode")
 Config.Register("droids", "squadFormation", "box", "Squads: formation of new squads (box, wedge, line, column, spread); a preset squad placed in box keeps the block it was placed in")
+Config.Meta("droids", "squadFormation", { options = { { "box", "Box" }, { "wedge", "Wedge" }, { "line", "Line" }, { "column", "Column" }, { "spread", "Spread" } } })
 Config.Register("droids", "squadSpacing", 80, "Squads: units between neighbours in a formation")
 Config.Register("droids", "squadGap", 50, "Squads: members keep at least this far from each other (units)")
 Config.Register("droids", "squadCatchUp", 1.35, "Squads: speed multiplier for a member behind its slot")
@@ -171,6 +172,7 @@ Config.Register("droids", "crowdMax", 1.4, "Most the crowd rule widens the aim c
 -- attack), admin-only markers (attack here, defend this, fall back here)
 -- and one aggression level for every droid that GMs turn up or down live.
 Config.Register("droids", "aggression", 3, "Droid aggression 1-5: 1 retreat (withdraw from the enemy: run, turn and fire, run on; last stand when cornered), 2 fall back (to a fallback marker or their post while firing, then back off from anyone close, no pushing), 3 moderate (default), 4 march forward firing (charge when spread out or in tight spaces), 5 running charge. GMs change it live with !droidaggro or the toolgun")
+Config.Meta("droids", "aggression", { options = { { 1, "1 · Retreat" }, { 2, "2 · Fall back" }, { 3, "3 · Moderate" }, { 4, "4 · March forward" }, { 5, "5 · Running charge" } } })
 -- Retreat : mode "retreat" (toolgun order) and
 -- aggression 1. Nowhere in particular, just away from the enemy.
 Config.Register("droids", "retreatLeg", 550, "Retreat: how far each run away from the enemy goes before turning to fight")
@@ -195,6 +197,7 @@ Config.Register("droids", "pathPerTick", 4, "Most route and cover searches all d
 -- Commander's Reinforcements skill calls a squad of them.
 Config.Register("droids", "cloneMax", 40, "Most clone NPCs alive at once")
 Config.Register("droids", "cloneAggro", 3, "Clone NPC aggression 1-5 (same scale as the droids'; 3 = moderate)")
+Config.Meta("droids", "cloneAggro", { options = { { 1, "1 · Retreat" }, { 2, "2 · Fall back" }, { 3, "3 · Moderate" }, { 4, "4 · March forward" }, { 5, "5 · Running charge" } } })
 Config.Register("droids", "cloneFollowRadius", 600, "Clones following an officer fight at most this far from them")
 Config.Register("droids", "ctModel", "models/hazo/npc/ct_trp/npc_ct_trp_f.mdl", "Clone trooper NPC model (troopers, riflemen, heavies; the _h version works too)")
 Config.Register("droids", "ctMedicModel", "models/hazo/npc/ct_medic/npc_ct_medic_f.mdl", "Clone medic NPC model")
@@ -441,10 +444,12 @@ end)
 -- Droid spawner (entities/rhylib_droid_spawner.lua): what a new one starts with
 -- (admins change each one with E on it).
 Config.Register("droids", "spawnerPreset", "droid_small", "Droid spawner: preset squad a new spawner sends (droid_small, droid_medium, droid_large, droid_b2, droid_mortar)")
+Config.Meta("droids", "spawnerPreset", { options = { { "droid_small", "Small squad" }, { "droid_medium", "Medium squad" }, { "droid_large", "Large squad" }, { "droid_b2", "B2s" }, { "droid_mortar", "Mortars" } } })
 Config.Register("droids", "spawnerTotal", 60, "Droid spawner: droids a new spawner sends in all before it is empty")
 Config.Register("droids", "spawnerCap", 20, "Droid spawner: most of one spawner's droids alive at once")
 Config.Register("droids", "spawnerInterval", 30, "Droid spawner: seconds between squads")
 Config.Register("droids", "spawnerMode", "patrol", "Droid spawner: what its squads do (patrol, roam, attack, guard)")
+Config.Meta("droids", "spawnerMode", { options = { { "patrol", "Patrol" }, { "roam", "Roam" }, { "attack", "Attack" }, { "guard", "Guard" } } })
 Config.Register("droids", "spawnerHealth", 2000, "Droid spawner: damage it takes before it breaks")
 Config.Register("droids", "spawnerModel", "models/props_combine/combine_dispenser.mdl", "Droid spawner: model (a placeholder until a droid factory model is picked)")
 

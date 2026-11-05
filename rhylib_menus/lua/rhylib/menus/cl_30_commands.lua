@@ -23,7 +23,11 @@
     (the admin mod, or Rhylib's own command) checks the rights. The page is
     only listed for staff (Menus.IsStaff).
     Adds: Menus.AdminMod, Menus.RunPlayerAction, Menus.AddCommand,
-    Menus.commands, Menus.IsStaff, page "commands" (Staff group, order 50).
+    Menus.commands, Menus.IsStaff, Menus.commandsTab (the tab "commands"
+    opens on next, then cleared), pages "commands" (shown as Players; Staff
+    section, order 210) and "staffhome" (Staff home, order 200: players,
+    staff online, downed now, the map; buttons to the staff pages; the
+    newest admin log lines with rhylib_admin and its logs permission).
 ]]
 
 local Menus = Rhylib.Menus
@@ -126,7 +130,7 @@ end
 Menus.AddCommand("Server", {
     id = "hud.layout", order = 10,
     title = "Default first-person HUD", desc = "For players who haven't picked their own",
-    choices = { { "f5", "F5" }, { "f4", "F4" }, { "thirdperson", "3rd person" } },
+    choices = { { "f5", "F5" }, { "f4", "F4" }, { "real", "Realistic" }, { "thirdperson", "3rd person" } },
     current = function() return Rhylib.HUD and Rhylib.HUD.ServerLayout and Rhylib.HUD.ServerLayout() end,
     run = function(arg) RunConsoleCommand("rhylib_hud_layout", arg) end,
 })
@@ -554,10 +558,12 @@ local function buildServer(sp)
     end
 end
 
+-- (Menus.commandsTab: the tab to open on next time, e.g. "server" from Staff home)
 Menus.AddPage("commands", {
-    title = "Commands",
-    order = 50,
-    group = "staff",
+    title = "Players",
+    order = 210,
+    section = "staff",
+    icon = "players",
     visible = isStaff,
     build = function(page)
         local mod = Menus.AdminMod()
@@ -603,6 +609,129 @@ Menus.AddPage("commands", {
             b:SetWide(K.S(140))
             b:DockMargin(0, 0, K.S(6), 0)
         end
-        show("players")
+        show(Menus.commandsTab or "players")
+        Menus.commandsTab = nil
+    end,
+})
+
+--------------------------------------------------------------------------
+-- Staff home: who's on, the map, buttons to the staff pages, and the
+-- newest lines of the admin log (rhylib_admin, permission logs).
+--------------------------------------------------------------------------
+
+local function goPage(id, tab)
+    return function()
+        if tab then Menus.commandsTab = tab end
+        if IsValid(Menus.pause) then Menus.pause:ShowPage(id) end
+    end
+end
+
+Menus.AddPage("staffhome", {
+    title = "Staff home",
+    order = 200,
+    section = "staff",
+    icon = "staffhome",
+    visible = isStaff,
+    build = function(page)
+        local S, C = K.S, K.C
+        local facts = vgui.Create("DPanel", page)
+        facts:Dock(TOP)
+        facts:SetTall(S(74))
+        function facts:Paint(w, h)
+            local staff = 0
+            local down = 0
+            for _, p in ipairs(player.GetAll()) do
+                if p:IsAdmin() then staff = staff + 1 end
+                local St = Rhylib.State
+                if St and St.IsDown and St.IsDown(p) then down = down + 1 end
+            end
+            local list = {
+                { "Players", player.GetCount() .. " / " .. game.MaxPlayers() },
+                { "Staff online", tostring(staff) },
+                { "Downed now", tostring(down) },
+                { "Map", game.GetMap() },
+            }
+            local cw = w / #list
+            for i, f in ipairs(list) do
+                local x = (i - 1) * cw
+                K.SetCol(C.row)
+                surface.DrawRect(x + (i > 1 and S(4) or 0), 0, cw - S(4), h)
+                K.Caps(f[1], x + S(16), S(22))
+                draw.SimpleText(K.Fit(f[2], K.Font(20, 700), cw - S(28)), K.Font(20, 700), x + S(16), S(48), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            end
+        end
+
+        local h1 = K.Heading(page, "Go to")
+        h1:Dock(TOP)
+        h1:DockMargin(0, S(14), 0, S(8))
+        local grid = vgui.Create("DIconLayout", page)
+        grid:Dock(TOP)
+        grid:SetSpaceX(S(8))
+        grid:SetSpaceY(S(8))
+        local shortcuts = {
+            { "commands", "Players", "players", "Kick, bring, heal, revive...", nil },
+            { "commands", "Server tools", "commands", "Calls, cleanup, default HUD...", "server" },
+            { "maps", "Maps", "maps", "Change or restart the map", nil },
+            { "serversettings", "Server settings", "server", "Every setting, with Apply", nil },
+            { "jobeditor", "Job editor", "editor", "Make and change jobs", nil },
+            { "rosterquiz", "Training quiz", "quiz", "The basic training questions", nil },
+            { "profiler", "Profiler", "profiler", "Live server numbers", nil },
+        }
+        for _, sc in ipairs(shortcuts) do
+            local pg = Menus.pages[sc[1]]
+            if pg and (not pg.visible or pg.visible()) then
+                local b = grid:Add("DButton")
+                b:SetText("")
+                b:SetSize(S(210), S(70))
+                local fn = goPage(sc[1], sc[5])
+                function b:Paint(w, hh)
+                    K.SetCol(self:IsHovered() and C.buttonHover or C.row)
+                    surface.DrawRect(0, 0, w, hh)
+                    K.SetCol(C.edgeDark)
+                    surface.DrawOutlinedRect(0, 0, w, hh)
+                    K.Icon(sc[3], S(14), S(14), S(20), C.accent)
+                    draw.SimpleText(sc[2], K.Font(15, 700), S(44), S(24), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                    draw.SimpleText(K.Fit(sc[4], K.Font(12), w - S(24)), K.Font(12), S(14), S(50), C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                    return true
+                end
+                function b:DoClick()
+                    surface.PlaySound("ui/buttonclick.wav")
+                    fn()
+                end
+            end
+        end
+        grid:InvalidateLayout(true)
+        grid:SizeToChildren(false, true)
+
+        -- The newest admin log lines.
+        local A = Rhylib.Admin
+        if A and A.RequestList and A.Has and A.Has(LocalPlayer(), "logs") then
+            local h2 = K.Heading(page, "Admin log")
+            h2:Dock(TOP)
+            h2:DockMargin(0, S(14), 0, S(8))
+            local sp = K.Scroll(page)
+            sp:Dock(FILL)
+            K.Label(sp, "Loading...", 13, nil, C.textDim):Dock(TOP)
+            A.RequestList(2, "", function(rows)
+                if not IsValid(sp) then return end
+                sp:Clear()
+                for i, r in ipairs(rows) do
+                    if i > 40 then break end
+                    local row = vgui.Create("DPanel", sp)
+                    row:Dock(TOP)
+                    row:SetTall(S(26))
+                    row:DockMargin(0, 0, S(8), S(2))
+                    local when = os.date("%d %b %H:%M", tonumber(r[1]) or 0)
+                    local txt = r[2] or ""
+                    function row:Paint(w, hh)
+                        K.SetCol(C.row)
+                        surface.DrawRect(0, 0, w, hh)
+                        draw.SimpleText(when, K.Font(12), S(10), hh * 0.5, C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                        draw.SimpleText(K.Fit(txt, K.Font(13), w - S(130)), K.Font(13), S(110), hh * 0.5, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                    end
+                end
+                if #rows == 0 then K.Label(sp, "Nothing in the log yet.", 13, nil, C.textDim):Dock(TOP) end
+            end)
+        end
     end,
 })

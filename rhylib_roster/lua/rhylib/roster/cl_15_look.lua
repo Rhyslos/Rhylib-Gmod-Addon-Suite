@@ -266,8 +266,8 @@ local function addLookPage()
     if not (Menus and Menus.AddPage and K()) then return end
     Menus.AddPage("looks", {
         title = "Appearance",
-        order = 21,
-        group = "character",
+        order = 11,
+        group = "trooper",
         visible = function() return LocalPlayer():GetNW2Bool("rhylib_char", false) end,
         build = function(page)
             local k = K()

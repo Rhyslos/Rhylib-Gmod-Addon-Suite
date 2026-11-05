@@ -1,5 +1,5 @@
 --[[
-    Keyboard layout (Settings > Layout): a drawn keyboard and mouse with
+    Keyboard layout (Settings > Keyboard map): a drawn keyboard and mouse with
     every key Rhylib uses, coloured by section, a short label on each key
     and, on hover, everything that key does (combos included). Keys that
     only have a game bind show it dimly so the board is easy to read.
@@ -14,8 +14,8 @@
         one, the others are modifiers.
     Rebuilt when the page opens and every 2 s while it's open (rebinds).
 
-    Client only. Adds one page, "settings.layout" (group "settings",
-    right after Controls). Nothing to call from outside: add keys with
+    Client only. Adds Menus.BuildKeyboardMap(panel), which the Settings
+    page's Keyboard map group calls. Nothing else to call: add keys with
     Menus.AddSetting (kind "key") or Menus.AddControl and they show here.
     To give a key a short cap label, set `short` on the setting, or add
     its convar / control text to SHORT below.
@@ -503,9 +503,5 @@ local function build(page)
     go:DockMargin(0, 0, S(10), S(10))
 end
 
-Menus.AddPage("settings.layout", {
-    title = "Layout",
-    group = "settings",
-    order = 100 + #Menus.SETTING_TABS + 1,   -- (right after Controls)
-    build = build,
-})
+-- Settings > Keyboard map draws it (cl_20_settings.lua).
+Menus.BuildKeyboardMap = build

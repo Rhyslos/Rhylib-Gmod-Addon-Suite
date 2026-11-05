@@ -44,6 +44,7 @@ local Config = Rhylib.Config
 Config.Register("skills", "freePoints", true, "Every skill is free and can be reset any time (testing)")
 Config.Register("skills", "startPoints", 24, "Skill points everyone has while freePoints is off (every path costs 24, so any one can be finished)")
 Config.Register("skills", "commandRank", "LT", "Lowest rank (roster prefix) that can learn and issue command orders")
+Config.Meta("skills", "commandRank", { kind = "rank" })
 Config.Register("skills", "resetCooldownDays", 7, "Free skill resets: one every this many days per player while freePoints is off (0 = none; the Rhylib.CanResetSkills hook still decides first)")
 Config.Register("skills", "onePath", true, "Only one category (Trooper, Support, Officer, Airborne, Medic, Shock Trooper) at a time")
 

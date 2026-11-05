@@ -8,8 +8,10 @@
     load keeps the base value. Read Config.Get when needed, or listen to
     hook Rhylib.ConfigChanged (fires here for every override received).
 
-    The page (rhylib_menus) sets S.onList() (catalogue arrived) and
-    S.onChanged(m, k) (one setting changed) to redraw itself.
+    The page (rhylib_menus) sets S.onList() (catalogue arrived),
+    S.onChanged(m, k) (one setting changed; the catalogue row also gets
+    w = who and t = when) and S.onError(m, k, why) (a refused change;
+    return true when shown, else it goes to chat) to redraw itself.
 ]]
 
 local Config = Rhylib.Config
@@ -60,11 +62,14 @@ Rhylib.Net.Receive("core.cfgsync", function()
         local t = util.JSONToTable(net.ReadString()) or {}
         v = fixColors(t.v)
     end
+    local who, at = net.ReadString(), net.ReadUInt(32)
     Config.SetOverride(m, k, v)
     -- (keep the staff page's catalogue in step)
     for _, e in ipairs(S.list or {}) do
         if e.m == m and e.k == k then
             e.o = v
+            e.w = who ~= "" and who or nil
+            e.t = at > 0 and at or nil
             -- (a model change: things already placed need a map change)
             if m == "models" or Config.IsModelDefault(e.d) then e.p = true end
         end
@@ -81,6 +86,13 @@ Rhylib.Net.Receive("core.cfglist", function()
         return a.k < b.k
     end)
     if S.onList then S.onList() end
+end)
+
+-- A refused change: the page shows it on the row (S.onError), else a chat line.
+Rhylib.Net.Receive("core.cfgerr", function()
+    local m, k, why = net.ReadString(), net.ReadString(), net.ReadString()
+    if S.onError and S.onError(m, k, why) then return end
+    chat.AddText(Color(235, 90, 80), "[Settings] ", Color(225, 225, 225), m .. "." .. k .. ": " .. why)
 end)
 
 -- S.Request(): ask the server for the catalogue (answer: S.list, then S.onList()).

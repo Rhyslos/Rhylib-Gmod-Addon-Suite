@@ -269,8 +269,9 @@ local function addPage()
     if not (Menus and Menus.AddPage) then return end
     Menus.AddPage("rosterquiz", {
         title = "Training quiz",
-        order = 66,
-        group = "staff",
+        order = 250,
+        section = "staff",
+        icon = "quiz",
         visible = function()
             local me = LocalPlayer()
             if not IsValid(me) then return false end

@@ -129,8 +129,9 @@ local function addPage()
     if not (Menus and Menus.AddPage and Rhylib.UI and Rhylib.UI.Kit) then return end
     Menus.AddPage("class", {
         title = "Class",
-        order = 23,   -- (right under Skills)
-        group = "character",
+        order = 21,   -- (right under Skills)
+        section = "you",
+        icon = "class",
         visible = function() return K.ClassMode() end,
         build = build,
     })

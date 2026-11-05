@@ -169,7 +169,6 @@ end
 -- Menus.OpenControls(): open the pause menu on Settings > Controls (F1,
 -- rhylib_controls).
 function Menus.OpenControls()
-    Menus.settingsTab = "Controls"
     Menus.lastPage = Menus.SettingsPageId("Controls")
     if IsValid(Menus.pause) then
         Menus.pause:ShowPage(Menus.SettingsPageId("Controls"))
@@ -196,7 +195,7 @@ local A = Menus.AddControl
 
 A("Menus", "ESC", "Rhy's menu (Shift + Esc: the game's own menu)")
 A("Menus", "F1", "This controls page")
-A("Menus", "F4", "Jobs, shop and character")
+A("Menus", "F4", "Jobs (and the shop)")
 A("Menus", "{+showscores}", "Scoreboard (right-click frees the mouse)")
 
 A("Interaction", "hold {+use} on a player", "Interaction wheel: move the mouse to an action, let go to do it (middle cancels)", function() return Menus.Wheel ~= nil end)

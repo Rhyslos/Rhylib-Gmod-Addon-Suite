@@ -32,6 +32,11 @@
                                         registered default is the default)
       meta.section (Register)           the Server settings page section
                                         ("B1 grenades") for that setting
+      meta.options / kind / min / max / step / unit / advanced
+                                        the control the page gives it, and
+                                        the values the server accepts
+      Config.Meta(module, key, meta)    add meta later
+      Config.OptionValues(meta)         the options as a set
       Config.Describe(module, { name, category, sections? })
                                         the module's shown name and sidebar
                                         category on the Server settings page
@@ -53,12 +58,30 @@ Config.overrides = Config.overrides or {}  -- [module][key] = value from the Ser
 -- accepts values of the same type. desc is shown on that page.
 -- meta (optional): extra facts for the Server settings page, e.g.
 -- { name = "Shown name", group = "Weapons" } (model overrides use it),
--- { section = "B1 grenades" } (the section chip the setting sits under).
+-- { section = "B1 grenades" } (the section the setting sits under),
+-- signed = true (negatives allowed), and the control it gets:
+--   options = { { value, "Label" }, ... } or { value, ... }: a dropdown;
+--             the server refuses anything else
+--   kind = "rank": a dropdown of rhylib_roster's rank prefixes ("LT")
+--   min, max (numbers; the server refuses values outside), step, unit
+--             ("units", "s", "%"): a number with a bar when both min and
+--             max are given
+--   advanced = true: under the module's Advanced fold (tables, JSON and
+--             vectors always are)
+-- Config.Meta(module, key, meta) adds these later (before or after
+-- Register).
 -- Registering again replaces the default (Lua refresh safe).
 -- Example: Rhylib.Config.Register("myaddon", "range", 500, "How far it reaches (units)")
 local sectionFor   -- (below: Config.Sections patterns)
+Config.pendingMeta = Config.pendingMeta or {}   -- [module][key] = meta from Config.Meta
 function Config.Register(module, key, default, desc, meta)
     Config.defs[module] = Config.defs[module] or {}
+    local extra = Config.pendingMeta[module] and Config.pendingMeta[module][key]
+    if extra then
+        -- (Config.Meta wins, whichever came first)
+        meta = meta and table.Copy(meta) or {}
+        for mk, mv in pairs(extra) do meta[mk] = mv end
+    end
     local d = { default = default, desc = desc or "", meta = meta }
     Config.defs[module][key] = d
     if not (meta and meta.section) then
@@ -68,6 +91,34 @@ function Config.Register(module, key, default, desc, meta)
             d.meta.section, d.meta.autoSection = sec, true
         end
     end
+end
+
+-- Config.Meta(module, key, meta): merges meta fields (see Register) into a
+-- setting, now or when it registers. Shared: call it where both realms
+-- run, so the server checks the same options / range the page shows.
+-- Example: Rhylib.Config.Meta("weather", "kind", { options = { { "clear", "Clear" }, { "rain", "Rain" } } })
+function Config.Meta(module, key, meta)
+    Config.pendingMeta[module] = Config.pendingMeta[module] or {}
+    local pm = Config.pendingMeta[module][key] or {}
+    for mk, mv in pairs(meta or {}) do pm[mk] = mv end
+    Config.pendingMeta[module][key] = pm
+    local d = Config.defs[module] and Config.defs[module][key]
+    if d then
+        d.meta = d.meta or {}
+        for mk, mv in pairs(meta or {}) do d.meta[mk] = mv end
+    end
+end
+
+-- Config.OptionValues(meta): the allowed values of an options list (or
+-- nil when it has none), as a set. Shared.
+function Config.OptionValues(meta)
+    local o = meta and meta.options
+    if not istable(o) then return nil end
+    local set = {}
+    for _, opt in ipairs(o) do
+        if istable(opt) then set[opt[1]] = true else set[opt] = true end
+    end
+    return set
 end
 
 -- Config.IsModelDefault(default): true for a model path setting (a string

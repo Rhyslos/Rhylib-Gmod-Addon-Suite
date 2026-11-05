@@ -2,29 +2,29 @@
     F4 menu (DarkRP), as pages of the pause menu: F4 opens the pause menu
     on Jobs (a fresh F4 press closes it). Replaces DarkRP's own F4 menu.
       Jobs       jobs by category; pick one to see its model, description
-                 and weapons, then become it (or start a vote). With
-                 rhylib_roster: a Skin row under the model (the skins that
-                 model has; saved to your character like the Appearance
-                 page, net roster.look).
+                 and weapons, then become it (or start a vote). The
+                 preview wears your skin (picked on Trooper > Appearance).
       Shop       entities, shipments, single weapons, ammo and vehicles you
                  can buy as your current job (only shown when the server
                  has anything to sell).
-      Character  job, kills, carried weight; with rhylib_roster the clone
-                 number, battalion, rank and qualifications; with
-                 rhylib_skills the skill points left; buttons to the
-                 Appearance, Skills and Battalion pages (when installed);
-                 money, salary and the money /
-                 door commands only while money is in use (rhylib_roster's
-                 money setting, R.MoneyOn); RP name only without
-                 rhylib_roster (names come from the character).
+      Trooper > Overview ("character")  your model, name, battalion,
+                 rank, job and qualifications (rhylib_roster); tiles to
+                 Skills (points left, rhylib_skills), Jobs and Battalion;
+                 the service record (clone number, kills, carried weight;
+                 money and salary only while money is in use,
+                 R.MoneyOn); quick actions (appearance, inventory, class,
+                 the money / door commands while money is on, RP name
+                 only without rhylib_roster).
 
     Everything runs DarkRP's own console commands ("darkrp <command>"),
     so DarkRP checks money, limits and jobs on the server as usual.
     Without DarkRP, F4 does what it did before.
 
-    Client only. Pages: "jobs" (group play, order 1), "shop" (play, 2),
-    "character" (shown as Profile; group character, order 20); each only
-    while DarkRP is loaded. Adds Menus.ToggleF4 and console command
+    Client only. Pages: "jobs" (section you, order 30, key F4), "shop"
+    (you, 32), "character" (the Overview tab of the Trooper group, order
+    10); each only while DarkRP is loaded. Adds Menus.ToggleF4,
+    Menus.SkillPointsLeft(ply) (left, total; nil without rhylib_skills;
+    math.huge = free) and console command
     rhylib_f4. Replaces DarkRP.openF4Menu / toggleF4Menu / closeF4Menu /
     getF4MenuPanel so DarkRP's own calls open ours.
     The client-side checks (job full, customCheck, can afford) only grey
@@ -239,51 +239,17 @@ local function buildJobs(body, frame)
         mp:Dock(LEFT)
         mp:SetWide(s(260))
         mp:SetFOV(36)
-        -- Skin (rhylib_roster looks, the same one as the Appearance page):
-        -- one button per skin the shown model has; picking one saves it to
-        -- your character at once (all jobs).
-        local R = Rhylib.Roster
-        local skinRow
+        -- (the preview wears your own skin when the model has it; skins
+        -- are picked on Trooper > Appearance)
         local function mySkin() return LocalPlayer():GetNW2Int("rhylib_skin", 0) end
-        local function buildSkins(ent)
-            if not IsValid(skinRow) then return end
-            skinRow:Clear()
-            local n = math.min(#R.SKINS, IsValid(ent) and ent:SkinCount() or 1)
-            skinRow:SetVisible(n > 1)
-            if n <= 1 then return end
-            local opts = {}
-            for i = 1, n do opts[i] = R.SKINS[i] end
-            local lbl = K.Label(skinRow, "Skin", 12, 700, C.textDim)
-            lbl:Dock(LEFT)
-            lbl:SetWide(s(40))
-            local ch = K.Choices(skinRow, opts, mySkin, function(v)
-                local me = LocalPlayer()
-                if v == mySkin() then return end
-                Rhylib.Net.Start("roster.look")
-                R.WriteLook({ hair = me:GetNW2String("rhylib_hair", "hair_reg"), fhair = me:GetNW2String("rhylib_fhair", ""),
-                    hcol = me:GetNW2Int("rhylib_haircol", 0), skin = v })
-                net.SendToServer()
-                local e = mp:GetEntity()
-                if IsValid(e) then e:SetSkin(v) end
-            end)
-            ch:Dock(FILL)
-        end
-        if R and R.SKINS and R.WriteLook and LocalPlayer():GetNW2Bool("rhylib_char", false) then
-            skinRow = vgui.Create("DPanel", mp)
-            skinRow:Dock(BOTTOM)
-            skinRow:DockMargin(0, s(4), 0, 0)
-            skinRow:SetTall(s(26))
-            skinRow.Paint = nil
-        end
 
         local function setModel(m)
             if not m then return end
             mp:SetModel(m)
             local ent = mp:GetEntity()
-            if IsValid(ent) and skinRow then
+            if IsValid(ent) then
                 local sk = mySkin()
                 if sk < (ent:SkinCount() or 1) then ent:SetSkin(sk) end
-                buildSkins(ent)
             end
             if IsValid(ent) then
                 local mn, mx = ent:GetRenderBounds()
@@ -498,62 +464,219 @@ end
 -- Character tab
 --------------------------------------------------------------------------
 
+-- Skill points left (rhylib_skills), or nil without it. math.huge = free.
+local function skillPointsLeft(ply)
+    local Sk = Rhylib.Skills
+    if not (Sk and Sk.Points and Sk.Spent and Sk.Set) then return nil end
+    local pts = Sk.Points(ply)
+    if pts == math.huge then return math.huge, pts end
+    return math.max(0, pts - Sk.Spent(Sk.Set(ply))), pts
+end
+Menus.SkillPointsLeft = skillPointsLeft
+
+local function goPage(id)
+    return function()
+        if IsValid(Menus.pause) and Menus.pages and Menus.pages[id] then Menus.pause:ShowPage(id) end
+    end
+end
+
+-- A clickable tile: caps label, a big line, a dim line, a link line.
+local function tile(parent, label, getBig, getDim, link, fn, col)
+    local s = K.S
+    local b = vgui.Create("DButton", parent)
+    b:SetText("")
+    function b:Paint(w, h)
+        local on = fn ~= nil
+        K.SetCol(on and self:IsHovered() and C.buttonHover or C.row)
+        surface.DrawRect(0, 0, w, h)
+        K.SetCol(C.edgeDark)
+        surface.DrawOutlinedRect(0, 0, w, h)
+        K.SetCol(col or C.accent)
+        surface.DrawRect(0, 0, w, s(2))
+        K.Caps(label, s(14), s(20))
+        draw.SimpleText(K.Fit(getBig(), K.Font(19, 700), w - s(28)), K.Font(19, 700), s(14), s(46), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        draw.SimpleText(K.Fit(getDim() or "", K.Font(13), w - s(28)), K.Font(13), s(14), s(70), C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        if link and on then
+            draw.SimpleText(link, K.Font(13, 700), s(14), h - s(16), col or C.accent, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        end
+        return true
+    end
+    function b:DoClick()
+        if not fn then return end
+        surface.PlaySound("ui/buttonclick.wav")
+        fn()
+    end
+    return b
+end
+
+-- Trooper > Overview: who you are (model, name, battalion, rank, job,
+-- qualifications), tiles to Skills / Jobs / Battalion, the service
+-- record and quick actions.
 local function buildCharacter(body, frame)
     local s = K.S
     local ply = LocalPlayer()
-    local stats = vgui.Create("DPanel", body)
-    stats:Dock(TOP)
-    stats:SetTall(s(150))
-    function stats:Paint(w, h)
+    local R = Rhylib.Roster
+    local function char() return R and R.Get and R.Get(ply) or { has = false } end
+    local function jobName() return (ply.getDarkRPVar and ply:getDarkRPVar("job")) or team.GetName(ply:Team()) end
+
+    -- Who you are.
+    local top = vgui.Create("DPanel", body)
+    top:Dock(TOP)
+    top:SetTall(s(200))
+    function top:Paint(w, h)
         K.SetCol(C.row)
         surface.DrawRect(0, 0, w, h)
         K.SetCol(C.edgeDark)
         surface.DrawOutlinedRect(0, 0, w, h)
-        local lines = {
-            { "Name", ply:Nick() },
-            { "Job", (ply.getDarkRPVar and ply:getDarkRPVar("job")) or team.GetName(ply:Team()) },
-        }
-        if moneyOn() then
-            lines[#lines + 1] = { "Money", money(myMoney()) }
-            lines[#lines + 1] = { "Salary", money(ply.getDarkRPVar and ply:getDarkRPVar("salary") or 0) }
+        local x = s(196)
+        local c = char()
+        local name = (R and R.FullName and R.FullName(ply)) or ply:Nick()
+        draw.SimpleText(K.Fit(string.upper(name), K.Font(28, 700), w - x - s(16)), K.Font(28, 700), x, s(38), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        local tc = team.GetColor(ply:Team()) or C.accent
+        local unit
+        if c.has then
+            unit = (c.bn ~= "" and c.bn or (c.trained and "No battalion yet" or "Cadet: waiting for basic training"))
+            if c.rank and c.rank > 0 and R.RankName then unit = unit .. "  ·  " .. R.RankName(c.rank) end
         end
-        -- The character (rhylib_roster) and skill points (rhylib_skills).
-        local R = Rhylib.Roster
-        if R and R.Get then
-            local c = R.Get(ply)
-            if c.has then
-                lines[#lines + 1] = { "Clone number", c.num ~= "" and c.num or "-" }
-                lines[#lines + 1] = { "Battalion", c.bn ~= "" and c.bn or (c.trained and "None yet" or "Cadet: waiting for basic training") }
-                lines[#lines + 1] = { "Rank", R.RankName and R.RankName(c.rank) or tostring(c.rank) }
-                local q = {}
-                for id in string.gmatch(ply:GetNW2String("rhylib_quals", ""), "[^,]+") do q[#q + 1] = R.QualName and R.QualName(id) or id end
-                lines[#lines + 1] = { "Qualifications", #q > 0 and table.concat(q, ", ") or "None" }
+        if unit then
+            -- (a small diamond in the job's colour)
+            local dx, dy, r = x + s(6), s(72), s(5)
+            draw.NoTexture()
+            K.SetCol(tc)
+            surface.DrawPoly({ { x = dx, y = dy - r }, { x = dx + r, y = dy }, { x = dx, y = dy + r }, { x = dx - r, y = dy } })
+            draw.SimpleText(unit, K.Font(16, 600), x + s(18), dy, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        end
+        draw.SimpleText("Job: " .. jobName(), K.Font(14), x, s(100), C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        -- Qualifications as chips.
+        local cx = x
+        local f = K.Font(12, 700)
+        surface.SetFont(f)
+        for id in string.gmatch(ply:GetNW2String("rhylib_quals", ""), "[^,]+") do
+            local q = R and R.QualName and R.QualName(id) or id
+            local tw = surface.GetTextSize(q) + s(14)
+            if cx + tw > w - s(12) then break end
+            K.SetCol(C.good, 160)
+            surface.DrawOutlinedRect(cx, s(124), tw, s(22))
+            draw.SimpleText(q, f, cx + tw * 0.5, s(135), C.good, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            cx = cx + tw + s(6)
+        end
+    end
+    local mp = vgui.Create("DModelPanel", top)
+    mp:SetPos(s(8), s(8))
+    mp:SetSize(s(172), s(184))
+    mp:SetFOV(30)
+    mp:SetModel(ply:GetModel())
+    local ent = mp:GetEntity()
+    if IsValid(ent) then
+        ent:SetSkin(ply:GetSkin())
+        for i = 0, ply:GetNumBodyGroups() - 1 do ent:SetBodygroup(i, ply:GetBodygroup(i)) end
+        local mn, mx = ent:GetRenderBounds()
+        local size = math.max(mx.z - mn.z, 1)
+        mp:SetLookAt(Vector(0, 0, size * 0.62))
+        mp:SetCamPos(Vector(size * 1.25, size * 0.2, size * 0.7))
+        local seq = ent:LookupSequence("idle_all_01")
+        if seq and seq > 0 then ent:ResetSequence(seq) end
+    end
+    function mp:LayoutEntity(e)
+        e:SetAngles(Angle(0, 20 + math.sin(RealTime() * 0.6) * 18, 0))
+        self:RunAnimation()
+    end
+
+    -- Tiles.
+    local tiles = vgui.Create("DPanel", body)
+    tiles:Dock(TOP)
+    tiles:DockMargin(0, s(10), 0, 0)
+    tiles:SetTall(s(118))
+    tiles.Paint = nil
+    local list = {}
+    if Menus.pages.skills then
+        list[#list + 1] = tile(tiles, "Skills", function()
+            local left = skillPointsLeft(ply)
+            if left == math.huge then return "Free (testing)" end
+            if not left then return "-" end
+            return left == 1 and "1 point to spend" or (left .. " points to spend")
+        end, function()
+            local left, pts = skillPointsLeft(ply)
+            if not pts or pts == math.huge then return "" end
+            return (pts - left) .. " of " .. pts .. " spent"
+        end, "Spend points ›", goPage("skills"), C.warn)
+    end
+    if Menus.pages.jobs and isDarkRP() then
+        list[#list + 1] = tile(tiles, "Job", jobName, function()
+            local j = RPExtraTeams and RPExtraTeams[ply:Team()]
+            if not j then return "" end
+            local lim = jobLimit(j)
+            local n = team.NumPlayers(ply:Team())
+            return lim and lim > 0 and (n .. " of " .. lim .. " slots taken") or (n .. " on this job")
+        end, "Change job ›", goPage("jobs"))
+    end
+    if Menus.pages.roster then
+        list[#list + 1] = tile(tiles, "Battalion", function()
+            local c = char()
+            return c.bn ~= "" and c.bn or "None yet"
+        end, function()
+            local c = char()
+            if not c.bn or c.bn == "" then return "" end
+            local n = 0
+            for _, p in ipairs(player.GetAll()) do
+                if p:GetNW2String(Rhylib.NW.BATTALION, "") == c.bn then n = n + 1 end
             end
+            return n .. " online"
+        end, "See your unit ›", goPage("roster"), team.GetColor(ply:Team()))
+    end
+    function tiles:PerformLayout(w, h)
+        local n = #list
+        if n == 0 then return end
+        local gap = s(10)
+        local tw = (w - gap * (n - 1)) / n
+        for i, t in ipairs(list) do
+            t:SetPos(math.floor((i - 1) * (tw + gap)), 0)
+            t:SetSize(math.floor(tw), h)
         end
-        local Sk = Rhylib.Skills
-        if Sk and Sk.Points and Sk.Spent and Sk.Set then
-            local pts = Sk.Points(ply)
-            lines[#lines + 1] = { "Skill points", pts == math.huge and "Free (testing)" or (math.max(0, pts - Sk.Spent(Sk.Set(ply))) .. " left of " .. pts) }
-        end
+    end
+    if #list == 0 then tiles:SetVisible(false) end
+
+    -- Service record.
+    local h1 = K.Heading(body, "Service record")
+    h1:Dock(TOP)
+    h1:DockMargin(0, s(14), 0, s(8))
+    local rec = vgui.Create("DPanel", body)
+    rec:Dock(TOP)
+    rec:SetTall(s(66))
+    function rec:Paint(w, h)
+        K.SetCol(C.row)
+        surface.DrawRect(0, 0, w, h)
+        K.SetCol(C.edgeDark)
+        surface.DrawOutlinedRect(0, 0, w, h)
+        local c = char()
+        local lines = {}
+        if c.has then lines[#lines + 1] = { "Clone number", c.num ~= "" and c.num or "-" } end
         lines[#lines + 1] = { "Kills / deaths", ply:Frags() .. " / " .. ply:Deaths() }
         local weight = ply:GetNW2Float("rhylib_weight", -1)
         if weight >= 0 then
             lines[#lines + 1] = { "Carrying", string.format("%.1f / %.0f kg", weight, ply:GetNW2Float("rhylib_carry", 20)) }
         end
-        local need = s(24) + math.ceil(#lines / 2) * s(42)
-        if math.abs(self:GetTall() - need) > 1 then self:SetTall(need) end   -- (as many rows as lines)
-        local colW = w / 2
+        if moneyOn() then
+            lines[#lines + 1] = { "Money", money(myMoney()) }
+            lines[#lines + 1] = { "Salary", money(ply.getDarkRPVar and ply:getDarkRPVar("salary") or 0) }
+        end
+        local per = math.min(#lines, 5)
+        local rows = math.ceil(#lines / per)
+        local need = rows * s(58) + s(8)
+        if math.abs(self:GetTall() - need) > 1 then self:SetTall(need) end
+        local colW = (w - s(16)) / per
         for i, l in ipairs(lines) do
-            local cx = s(16) + ((i - 1) % 2) * colW
-            local cy = s(24) + math.floor((i - 1) / 2) * s(42)
+            local cx = s(16) + ((i - 1) % per) * colW
+            local cy = s(22) + math.floor((i - 1) / per) * s(58)
             K.Caps(l[1], cx, cy)
-            draw.SimpleText(tostring(l[2]), K.Font(16, 600), cx, cy + s(18), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            draw.SimpleText(tostring(l[2]), K.Font(17, 700), cx, cy + s(20), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
         end
     end
 
-    local h = K.Heading(body, "Actions")
-    h:Dock(TOP)
-    h:DockMargin(0, s(14), 0, s(8))
+    -- Quick actions.
+    local h2 = K.Heading(body, "Quick actions")
+    h2:Dock(TOP)
+    h2:DockMargin(0, s(14), 0, s(8))
     local grid = vgui.Create("DIconLayout", body)
     grid:Dock(FILL)
     grid:SetSpaceX(s(8))
@@ -562,9 +685,17 @@ local function buildCharacter(body, frame)
         local n = tonumber(string.Trim(text or ""))
         return n and n > 0 and math.floor(n) or nil
     end
+    local actions = {}
+    local looks = Menus.pages.looks
+    if looks and (not looks.visible or looks.visible()) then actions[#actions + 1] = { "Change appearance", goPage("looks") } end
+    actions[#actions + 1] = { "Open inventory", function()
+        frame:Remove()
+        if Rhylib.Inventory and Rhylib.Inventory.Toggle then Rhylib.Inventory.Toggle() end
+    end }
+    local cls = Menus.pages.class
+    if cls and (not cls.visible or cls.visible()) then actions[#actions + 1] = { "Pick class", goPage("class") } end
     -- Money and door actions only while money is in use; the name comes
     -- from the character when rhylib_roster is installed.
-    local actions = {}
     if moneyOn() then
         actions[#actions + 1] = { "Drop money", function()
             K.Prompt("Drop money", "How much?", "", function(t) local n = number(t) if n then RunConsoleCommand("darkrp", "dropmoney", tostring(n)) end end)
@@ -583,21 +714,6 @@ local function buildCharacter(body, frame)
             K.Prompt("RP name", "Your new name", ply:Nick(), function(t) t = string.Trim(t) if t ~= "" then RunConsoleCommand("darkrp", "rpname", t) end end)
         end }
     end
-    -- Shortcuts to the character's own pages (when their addons are there).
-    local function goPage(id)
-        return function()
-            if IsValid(Menus.pause) and Menus.pages and Menus.pages[id] then Menus.pause:ShowPage(id) end
-        end
-    end
-    if Menus.pages then
-        if Menus.pages.looks then actions[#actions + 1] = { "Appearance", goPage("looks") } end
-        if Menus.pages.skills then actions[#actions + 1] = { "Skills", goPage("skills") } end
-        if Menus.pages.roster then actions[#actions + 1] = { "Battalion", goPage("roster") } end
-    end
-    actions[#actions + 1] = { "Inventory", function()
-        frame:Remove()
-        if Rhylib.Inventory and Rhylib.Inventory.Toggle then Rhylib.Inventory.Toggle() end
-    end }
     for _, a in ipairs(actions) do
         local b = K.Button(grid, a[1], a[2])
         b:SetSize(s(200), s(36))
@@ -632,29 +748,18 @@ local function shopHasItems()
     return false
 end
 
-local function page(id, title, order, fn, group, visible)
-    Menus.AddPage(id, {
-        title = title,
-        order = order,
-        group = group,
-        visible = visible or isDarkRP,
-        build = function(p)
-            Menus.pages[id].sub = sub()
-            fn(p, frame)
-        end,
-    })
-end
-page("jobs", "Jobs", 1, buildJobs, "play")
-page("shop", "Shop", 2, buildShop, "play", function() return isDarkRP() and shopHasItems() end)
-page("character", "Profile", 20, buildCharacter, "character")
-
--- The side bar group is "Jobs & shop" only when there's a shop.
-local function groupTitle()
-    if Menus.groups and Menus.groups.play then
-        Menus.groups.play.title = (isDarkRP() and not shopHasItems()) and "Jobs" or "Jobs & shop"
+local function page(id, def, fn)
+    def.visible = def.visible or isDarkRP
+    def.build = function(p)
+        Menus.pages[id].sub = sub()
+        fn(p, frame)
     end
+    Menus.AddPage(id, def)
 end
-Rhylib.Hook.Add("InitPostEntity", "menus.f4group", groupTitle)
+page("jobs", { title = "Jobs", order = 30, section = "you", icon = "jobs", key = "F4" }, buildJobs)
+page("shop", { title = "Shop", order = 32, section = "you", icon = "shop",
+    visible = function() return isDarkRP() and shopHasItems() end }, buildShop)
+page("character", { title = "Overview", order = 10, group = "trooper" }, buildCharacter)
 
 -- Menus.ToggleF4(): F4. Opens the pause menu on Jobs; if it's already open
 -- on Jobs it closes it, on another page it switches to Jobs.

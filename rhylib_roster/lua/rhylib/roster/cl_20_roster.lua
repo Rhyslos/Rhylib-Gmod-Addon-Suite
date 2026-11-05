@@ -222,8 +222,9 @@ local function addPage()
     if not (Menus and Menus.AddPage) then return end
     Menus.AddPage("roster", {
         title = "Battalion",
-        order = 30,
-        group = "unit",
+        order = 40,
+        section = "you",
+        icon = "battalion",
         build = function(page)
             data = nil   -- fresh every time the page opens
             build(page)

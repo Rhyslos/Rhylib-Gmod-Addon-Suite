@@ -84,6 +84,14 @@ Config.Register("chat", "localRange", 600, "How far local chat carries (units)")
 Config.Register("chat", "advertCooldown", 30, "Seconds between adverts per player")
 Config.Register("chat", "maxLength", 300, "Longest message in characters")
 Config.Register("chat", "commandRank", "LT", "Lowest roster rank in the Command channel (battalion commanders always are)")
+do
+    local opts = {}
+    for _, c in ipairs(Chat.CHANNELS) do
+        if not (c.private or c.staff or c.needs or c.id == "admin") then opts[#opts + 1] = { c.id, c.name } end
+    end
+    Config.Meta("chat", "defaultChannel", { options = opts })
+    Config.Meta("chat", "commandRank", { kind = "rank" })
+end
 
 -- Who a channel reaches (shared: the server routes with it, the client
 -- only lists channels you can use).

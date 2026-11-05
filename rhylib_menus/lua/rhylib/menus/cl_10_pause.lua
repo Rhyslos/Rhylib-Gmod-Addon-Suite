@@ -6,26 +6,39 @@
 
     Pages (Settings, Commands, ...) register themselves:
         Rhylib.Menus.AddPage("skills", {
-            title = "Skills", order = 10,
-            group = "character",                        -- optional submenu
+            title = "Skills", order = 20,
+            section = "you",                           -- side bar section
+            icon = "skills",                           -- a K.Icon name
+            badge = function() return 3 end,           -- optional count
+            key = "M",                                 -- optional key hint
             visible = function() return true end,      -- optional
             build = function(panel) ... end,            -- fill the page panel
         })
-    Groups (Menus.AddGroup) are submenus in the side bar: clicking one
-    opens it (and its first page); a group with one page is a plain
-    button. Pages without a group are plain buttons too.
 
-    page fields: title, order (lower = higher up; default 50), group (a
-    Menus.AddGroup id), visible() (hidden when it returns false), build(panel)
-    (called every time the page is shown, into a cleared panel; errors are
-    caught and printed), sub (optional dim text on the page's header; may
-    be set by build).
+    The side bar is one flat list in three sections: You, Options, Staff
+    (Menus.SECTIONS). A page in a tab group (Menus.AddGroup with tabs =
+    true: Trooper) is not listed itself: the group has one entry,
+    and its pages show as tabs along the page's header.
+
+    page fields: title, order (lower = higher up; default 50), section
+    ("you" / "options" / "staff"; default from the group, else "you"),
+    group (a Menus.AddGroup id), icon, badge() (a number or short text in a
+    pill on the entry; nil / 0 hides it), key (text or function: a dim key
+    hint on the entry), visible() (hidden when it returns false),
+    build(panel) (called every time the page is shown, into a cleared
+    panel; errors are caught and printed), sub (optional dim text on the
+    page's header; may be set by build), beforeLeave(go) (optional: return
+    false to stay on the page when another is picked, and call go() later
+    to switch after all).
+    group fields: title, order, section, icon, key, tabs (true: one side
+    bar entry, pages as header tabs). The old groups play / character /
+    unit / staff only give their pages a section now.
 
     Client only. Adds: Menus.AddPage, Menus.AddGroup, Menus.pages,
-    Menus.groups, Menus.PAGE_ALIAS, Menus.OpenPause, Menus.ClosePause,
-    Menus.RefreshPause, Menus.PreviewHover, Menus.pause (the open panel,
-    a "RhylibPauseMenu"), Menus.lastPage. Console command: rhylib_menu.
-    Hook: OnPauseMenuShow "menus.pause" (decides what Esc does).
+    Menus.groups, Menus.SECTIONS, Menus.PAGE_ALIAS, Menus.OpenPause,
+    Menus.ClosePause, Menus.RefreshPause, Menus.PreviewHover, Menus.pause
+    (the open panel, a "RhylibPauseMenu"), Menus.lastPage, Menus.lastTab. Console command:
+    rhylib_menu. Hook: OnPauseMenuShow "menus.pause" (decides what Esc does).
 ]]
 
 local Menus = Rhylib.Menus
@@ -34,7 +47,7 @@ local C = K.C
 
 -- Menus.AddPage(id, page): adds (or replaces) a pause menu page. See the
 -- header for the fields. Safe to call again on a Lua refresh.
--- Example: Rhylib.Menus.AddPage("mypage", { title = "My page", group = "unit", order = 40,
+-- Example: Rhylib.Menus.AddPage("mypage", { title = "My page", section = "you", icon = "jobs", order = 40,
 --              build = function(p) Rhylib.Menus.Kit.Label(p, "Hello", 14):Dock(TOP) end })
 Menus.pages = Menus.pages or {}
 function Menus.AddPage(id, page)
@@ -42,19 +55,26 @@ function Menus.AddPage(id, page)
     Menus.pages[id] = page
 end
 
--- Submenus, in side bar order (a flat list was messy).
--- Menus.AddGroup(id, { title, order }): adds a submenu. The five below are
--- the built-in ones; pages name one of them in their `group` field.
+-- Side bar sections, in order.
+Menus.SECTIONS = {
+    { id = "you", title = "You" },
+    { id = "options", title = "Options" },
+    { id = "staff", title = "Staff" },
+}
+
+-- Menus.AddGroup(id, { title, order, section, icon, key, tabs }): a group
+-- of pages. With tabs = true it is one side bar entry and its pages are
+-- tabs on the page header.
 Menus.groups = Menus.groups or {}
 function Menus.AddGroup(id, g)
     g.id = id
     Menus.groups[id] = g
 end
-Menus.AddGroup("play", { title = "Jobs & shop", order = 10 })
-Menus.AddGroup("character", { title = "Character", order = 20 })
-Menus.AddGroup("unit", { title = "Unit", order = 30 })
-Menus.AddGroup("settings", { title = "Settings", order = 40 })
-Menus.AddGroup("staff", { title = "Staff", order = 50 })
+Menus.AddGroup("play", { title = "Jobs & shop", order = 10, section = "you" })
+Menus.AddGroup("character", { title = "Character", order = 20, section = "you" })
+Menus.AddGroup("unit", { title = "Unit", order = 30, section = "you" })
+Menus.AddGroup("trooper", { title = "Trooper", order = 10, section = "you", icon = "trooper", tabs = true })
+Menus.AddGroup("staff", { title = "Staff", order = 200, section = "staff" })
 
 -- Old page ids still used by other code (and saved as the last page).
 -- id -> new id, or a function returning it. ShowPage resolves through it.
@@ -67,29 +87,63 @@ local function sortedPages()
     for _, p in pairs(Menus.pages) do
         if visible(p) then list[#list + 1] = p end
     end
-    table.sort(list, function(a, b) return (a.order or 50) < (b.order or 50) end)
+    table.sort(list, function(a, b)
+        local oa, ob = a.order or 50, b.order or 50
+        if oa ~= ob then return oa < ob end
+        return a.id < b.id
+    end)
     return list
 end
 
--- Side bar entries: { group = g, pages = {...} } or { page = p }, in order.
--- Only visible pages count; a group with no visible pages isn't listed.
-local function navEntries()
-    local byGroup, entries = {}, {}
+local function tabGroup(p)
+    local g = p and p.group and Menus.groups[p.group]
+    return g and g.tabs and g or nil
+end
+
+-- The visible pages of a tab group, in order.
+local function groupPages(gid)
+    local out = {}
     for _, p in ipairs(sortedPages()) do
-        local g = p.group and Menus.groups[p.group]
+        if p.group == gid then out[#out + 1] = p end
+    end
+    return out
+end
+
+local function sectionOf(p)
+    if p.section then return p.section end
+    local g = p.group and Menus.groups[p.group]
+    return g and g.section or "you"
+end
+
+-- Side bar entries by section: { [sectionId] = { entry, ... } }, each
+-- entry { title, icon, key, badge, target = page id, group = id or nil }.
+local function navEntries()
+    local bySection, seen = {}, {}
+    for _, p in ipairs(sortedPages()) do
+        local g = tabGroup(p)
+        local e
         if g then
-            if not byGroup[g.id] then
-                byGroup[g.id] = { group = g, pages = {}, order = g.order or 50 }
-                entries[#entries + 1] = byGroup[g.id]
+            if not seen[g.id] then
+                seen[g.id] = true
+                e = { title = g.title, icon = g.icon, key = g.key, target = p.id, group = g.id, order = g.order or p.order or 50,
+                    section = g.section or sectionOf(p) }
             end
-            local list = byGroup[g.id].pages
-            list[#list + 1] = p
         else
-            entries[#entries + 1] = { page = p, order = p.order or 50 }
+            e = { title = p.title, icon = p.icon, key = p.key, badge = p.badge, target = p.id, order = p.order or 50, section = sectionOf(p) }
+        end
+        if e then
+            local list = bySection[e.section]
+            if not list then list = {} bySection[e.section] = list end
+            list[#list + 1] = e
         end
     end
-    table.sort(entries, function(a, b) return a.order < b.order end)
-    return entries
+    for _, list in pairs(bySection) do
+        table.sort(list, function(a, b)
+            if a.order ~= b.order then return a.order < b.order end
+            return a.target < b.target
+        end)
+    end
+    return bySection
 end
 
 local function title()
@@ -98,8 +152,106 @@ local function title()
     return t
 end
 
+local function textOf(v)
+    if isfunction(v) then
+        local ok, r = pcall(v)
+        v = ok and r or nil
+    end
+    if v == nil or v == false or v == 0 or v == "" then return nil end
+    return tostring(v)
+end
+
+-- A side bar entry: icon, label, a badge pill and a dim key hint.
+local function navItem(parent, e, isOn, onClick)
+    local s = K.S
+    local b = vgui.Create("DButton", parent)
+    b:SetText("")
+    b:SetTall(s(36))
+    b:Dock(TOP)
+    b:DockMargin(0, 0, s(8), s(2))   -- (room for the scroll bar)
+    function b:Paint(w, h)
+        local on = isOn()
+        if on then
+            K.SetCol(C.buttonDown)
+            surface.DrawRect(0, 0, w, h)
+            K.SetCol(C.accent)
+            surface.DrawRect(0, 0, s(3), h)
+        elseif self:IsHovered() then
+            K.SetCol(C.buttonHover, 160)
+            surface.DrawRect(0, 0, w, h)
+        end
+        local ic = s(18)
+        K.Icon(e.icon or "menu", s(12), (h - ic) * 0.5, ic, on and C.accent or C.textDim)
+        local right = w - s(10)
+        -- (badge and key text asked a few times a second, not every frame)
+        local now = RealTime()
+        if not self.textAt or now > self.textAt then
+            self.textAt = now + 0.25
+            local k = textOf(e.key)
+            self.keyText = k and string.upper(k) or nil
+            self.badgeText = textOf(e.badge)
+        end
+        local key = self.keyText
+        if key then
+            local f = K.Font(11, 700)
+            surface.SetFont(f)
+            local tw = surface.GetTextSize(key)
+            local bw = tw + s(10)
+            K.SetCol(C.edgeLight, 120)
+            surface.DrawOutlinedRect(right - bw, h * 0.5 - s(9), bw, s(18))
+            draw.SimpleText(key, f, right - bw * 0.5, h * 0.5, C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            right = right - bw - s(6)
+        end
+        local badge = self.badgeText
+        if badge then
+            local f = K.Font(12, 700)
+            surface.SetFont(f)
+            local tw = surface.GetTextSize(badge)
+            local bw = math.max(s(20), tw + s(10))
+            K.SetCol(C.warn)
+            surface.DrawRect(right - bw, h * 0.5 - s(9), bw, s(18))
+            draw.SimpleText(badge, f, right - bw * 0.5, h * 0.5, C.bg, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            right = right - bw - s(6)
+        end
+        local f = K.Font(15, on and 700 or 500)
+        local x = s(40)
+        draw.SimpleText(K.Fit(e.title, f, right - x), f, x, h * 0.5, on and C.text or C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        return true
+    end
+    function b:DoClick()
+        surface.PlaySound("ui/buttonclick.wav")
+        onClick()
+    end
+    return b
+end
+
+-- A plain side bar action (Resume, Game menu, Disconnect).
+local function actionItem(parent, text, icon, col, fn)
+    local s = K.S
+    local b = vgui.Create("DButton", parent)
+    b:SetText("")
+    b:SetTall(s(34))
+    function b:Paint(w, h)
+        K.SetCol(self:IsHovered() and C.buttonHover or C.button)
+        surface.DrawRect(0, 0, w, h)
+        K.SetCol(C.edgeDark)
+        surface.DrawOutlinedRect(0, 0, w, h)
+        K.SetCol(col or C.accent, 220)
+        surface.DrawRect(1, 1, s(3), h - 2)
+        local ic = s(16)
+        K.Icon(icon, s(13), (h - ic) * 0.5, ic, col or C.accent)
+        draw.SimpleText(string.upper(text), K.Font(13, 700), s(40), h * 0.5, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        return true
+    end
+    function b:DoClick()
+        surface.PlaySound("ui/buttonclick.wav")
+        fn()
+    end
+    return b
+end
+
 -- The pause menu panel ("RhylibPauseMenu"): full screen. Left: the side
--- bar (server title, Resume, page buttons, Game menu, Disconnect). Right:
+-- bar (server title, Resume, the sections, Game menu, Disconnect). Right:
 -- the page area (the same width for every page). Opens on the last page
 -- shown (Menus.lastPage), else the first page.
 local PANEL = {}
@@ -123,35 +275,30 @@ function PANEL:Init()
         surface.DrawRect(s(16), s(76), w - s(32), 1)
     end
 
-    local function nav(text, fn, opts)
-        local b = K.Button(side, text, fn, opts)
-        b:Dock(TOP)
-        b:DockMargin(0, 0, 0, s(6))
-        b.opts.align = "left"
-        return b
-    end
-
-    nav("Resume", function() Menus.ClosePause() end, { accent = true })
+    local resume = actionItem(side, "Resume", "resume", C.accent, function() Menus.ClosePause() end)
+    resume:Dock(TOP)
+    resume:DockMargin(0, 0, 0, s(6))
     local bottom = vgui.Create("DPanel", side)
     bottom:Dock(BOTTOM)
     bottom:SetTall(s(34) * 2 + s(6))
     bottom.Paint = nil
-    local quit = K.Button(bottom, "Disconnect", function()
+    local quit = actionItem(bottom, "Disconnect", "power", C.bad, function()
         RunConsoleCommand("disconnect")
-    end, { danger = true, align = "left" })
+    end)
     quit:Dock(BOTTOM)
-    local gm = K.Button(bottom, "Game menu  (Shift + Esc)", function()
+    local gm = actionItem(bottom, "Game menu  (Shift + Esc)", "menu", C.textDim, function()
         Menus.ClosePause()
         Menus.passGameUI = true  -- let this one through the hook below
         gui.ActivateGameUI()
-    end, { align = "left" })
+    end)
     gm:Dock(BOTTOM)
     gm:DockMargin(0, 0, 0, s(6))
 
-    -- The page buttons live in their own panel (made after the bottom buttons so FILL leaves them room), rebuilt when a submenu opens.
-    local navBox = vgui.Create("DPanel", side)
+    -- The entries live in their own scroll panel (made after the bottom
+    -- buttons so FILL leaves them room).
+    local navBox = K.Scroll(side)
     navBox:Dock(FILL)
-    navBox.Paint = nil
+    navBox:DockMargin(0, s(4), 0, s(8))
     self.navBox = navBox
 
     -- The page area.
@@ -163,15 +310,10 @@ function PANEL:Init()
     function page.Paint(p, w, h)
         local pg = self.pageId and Menus.pages[self.pageId]
         if not pg then return end
-        -- (in a submenu: "Group · Page")
-        local g = pg.group and Menus.groups[pg.group]
-        local t = pg.title
-        if g and g.title ~= pg.title then
-            local n = 0
-            for _, p in pairs(Menus.pages) do if p.group == pg.group and visible(p) then n = n + 1 end end
-            if n > 1 then t = g.title .. "  ·  " .. pg.title end
-        end
-        K.Plate(0, 0, w, h, { title = t, sub = pg.sub, ticks = "all", header = s(34) })
+        local g = tabGroup(pg)
+        local sub = pg.sub
+        if sub and self.tabEnd then sub = K.Fit(sub, K.Font(13), w - self.tabEnd - s(24)) end
+        K.Plate(0, 0, w, h, { title = g and g.title or pg.title, sub = sub, ticks = "all", header = s(34) })
     end
 
     local first = sortedPages()[1]
@@ -192,67 +334,117 @@ function PANEL:Resolve(id)
     return a or id
 end
 
--- Side bar: groups (open = their pages listed under them) and pages.
+-- Side bar: section headings and their entries.
 function PANEL:BuildNav()
     local box = self.navBox
     if not IsValid(box) then return end
     box:Clear()
     local s = K.S
     local me = self
-    local cur = self.pageId and Menus.pages[self.pageId]
-    for _, e in ipairs(navEntries()) do
-        if e.page or #e.pages == 1 then
-            -- A page, or a group with one page: one button.
-            local p = e.page or e.pages[1]
-            local b = K.Button(box, e.page and p.title or e.group.title, function() me:ShowPage(p.id) end,
-                { align = "left", selected = function() return me.pageId == p.id end })
-            b:Dock(TOP)
-            b:DockMargin(0, 0, 0, s(6))
-        else
-            local g = e.group
-            local open = self.openGroup == g.id
-            local b = K.Button(box, g.title, function()
-                if me.openGroup == g.id then
-                    me.openGroup = nil
-                    me:BuildNav()
-                else
-                    -- (opening a submenu shows its first page)
-                    me.openGroup = g.id
-                    local inside = cur and cur.group == g.id
-                    if inside then me:BuildNav() else me:ShowPage(e.pages[1].id) end
-                end
-            end, { align = "left", selected = function() local c = me.pageId and Menus.pages[me.pageId] return c and c.group == g.id end })
-            b:Dock(TOP)
-            b:DockMargin(0, 0, 0, open and s(4) or s(6))
-            function b:PaintOver(w, h)
-                draw.SimpleText(open and "-" or "+", K.Font(16, 700), w - s(14), h * 0.5, C.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+    local bySection = navEntries()
+    local firstSection = true
+    for _, sec in ipairs(Menus.SECTIONS) do
+        local list = bySection[sec.id]
+        if list and #list > 0 then
+            local head = vgui.Create("DPanel", box)
+            head:Dock(TOP)
+            head:SetTall(s(firstSection and 22 or 30))
+            local label = sec.title
+            function head:Paint(w, h)
+                K.Caps(label, s(4), h - s(10), C.label)
             end
-            if open then
-                for i, p in ipairs(e.pages) do
-                    local sb = K.Button(box, p.title, function() me:ShowPage(p.id) end,
-                        { align = "left", small = true, selected = function() return me.pageId == p.id end })
-                    sb:Dock(TOP)
-                    sb:DockMargin(s(18), 0, 0, i == #e.pages and s(10) or s(4))
-                end
+            firstSection = false
+            for _, e in ipairs(list) do
+                navItem(box, e, function()
+                    local cur = me.pageId and Menus.pages[me.pageId]
+                    if e.group then return cur ~= nil and cur.group == e.group end
+                    return me.pageId == e.target
+                end, function()
+                    -- (a tab group opens on the tab last shown in it)
+                    local target = e.target
+                    if e.group and Menus.lastTab and Menus.lastTab[e.group] then
+                        local t = Menus.pages[Menus.lastTab[e.group]]
+                        if t and visible(t) and t.group == e.group then target = t.id end
+                    end
+                    me:ShowPage(target)
+                end)
             end
         end
     end
 end
 
--- PANEL:ShowPage(id): shows a page (rebuilds it from scratch) and opens its
--- group in the side bar. Example: Rhylib.Menus.pause:ShowPage("skills")
+-- The tabs of a tab group, in the page header right of the title.
+function PANEL:BuildTabs(pg)
+    self.tabEnd = nil
+    local g = tabGroup(pg)
+    if not g then return end
+    local s = K.S
+    local me = self
+    local pages = groupPages(g.id)
+    if #pages < 2 then return end
+    surface.SetFont(K.Font(15, 700))
+    local x = s(12) + surface.GetTextSize(string.upper(g.title)) + s(22)
+    local f = K.Font(13, 600)
+    surface.SetFont(f)
+    for _, p in ipairs(pages) do
+        local w = surface.GetTextSize(p.title) + s(24)
+        local t = vgui.Create("DButton", self.page)
+        t:SetText("")
+        t:SetPos(x, 0)
+        t:SetSize(w, s(34))
+        local id = p.id
+        function t:Paint(tw, th)
+            local on = me.pageId == id
+            if self:IsHovered() and not on then
+                K.SetCol(C.buttonHover, 120)
+                surface.DrawRect(0, 0, tw, th - 1)
+            end
+            if on then
+                K.SetCol(C.accent)
+                surface.DrawRect(s(4), th - s(3), tw - s(8), s(3))
+            end
+            draw.SimpleText(p.title, f, tw * 0.5, th * 0.5, on and C.text or C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            return true
+        end
+        function t:DoClick()
+            surface.PlaySound("ui/buttonclick.wav")
+            me:ShowPage(id)
+        end
+        x = x + w
+    end
+    self.tabEnd = x
+end
+
+-- PANEL:ShowPage(id): shows a page (rebuilds it from scratch).
+-- Example: Rhylib.Menus.pause:ShowPage("skills")
 function PANEL:ShowPage(id)
     id = self:Resolve(id)
     local pg = Menus.pages[id]
     if not pg then return end
-    -- (a refresh of the same page keeps a submenu the player closed shut)
-    if pg.group and id ~= self.pageId then self.openGroup = pg.group end
+    -- (the page being left may hold the switch: beforeLeave(go) returns
+    -- false and calls go() later, e.g. after "Apply / Discard / Stay")
+    local cur = self.pageId and Menus.pages[self.pageId]
+    if cur and cur.beforeLeave and id ~= self.pageId and not self.leaving then
+        local me = self
+        local ok, res = pcall(cur.beforeLeave, function()
+            if not IsValid(me) then return end
+            me.leaving = true
+            me:ShowPage(id)
+            me.leaving = false
+        end)
+        if ok and res == false then return end
+    end
     self.pageId = id
     Menus.lastPage = id
+    if pg.group then
+        Menus.lastTab = Menus.lastTab or {}
+        Menus.lastTab[pg.group] = id
+    end
     self:BuildNav()
     self.page:Clear()
     local ok, err = pcall(pg.build, self.page)
     if not ok then Rhylib.Error("menus", "page %s: %s", id, tostring(err)) end
+    self:BuildTabs(pg)
 end
 
 -- HUD preview: while the mouse is on a setting marked `preview` (HUD
@@ -343,6 +535,11 @@ Rhylib.Hook.Add("OnPauseMenuShow", "menus.pause", function()
     -- pick only (the page stays open behind it).
     local SP = Menus.Spawn
     if SP and SP.pick and SP.Close and SP.Close() then return false end
+    -- Esc with a dropdown list (or colour mixer) open closes only that.
+    if K.DropdownOpen and K.DropdownOpen() then
+        if K.CloseDropdown then K.CloseDropdown() end
+        return false
+    end
     if Menus.CloseAll() then return false end
     Menus.OpenPause()
     return false

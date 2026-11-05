@@ -1,18 +1,34 @@
 --[[
     Chat, client side: replaces the default chat box.
 
-    Closed: the last messages fade out after a while. Or, pinned with
+    Closed: the newest messages float on their own (a soft dark band with
+    the channel's colour on the left) and fade after 12 s. Or, pinned with
     /togglechat (rhylib_chat_pinned 1), the whole window stays on screen
     and opening the chat just lets you type.
-    Open (your chat key): a dark frame in the HUD's style with a header,
-    the history (scroll with the mouse wheel), the input line, and your
-    current channel on the left of it. Click the channel name to pick
-    another. Typing a channel command (/local, /public, ...) followed by a
-    space switches channel straight away. Typing "/" shows matching
-    commands (and player names after /pm); Tab or Enter fills one in,
-    Up/Down picks (with no list open, Up/Down walks through what you sent).
-    Messages from players show the sender's model portrait, or their Steam
-    avatar if they have left.
+    Open (your chat key), two looks (client convar rhylib_chat_style,
+    Settings > Interface > Chat "Chat look"):
+      b "Comms" (default)  a header band in the channel's colour with a
+                           diamond and "COMMS · SQUAD ALPHA" (the squad
+                           name and size from rhylib_radio); one row per
+                           message: a rank chip edged in the sender's job
+                           colour, the name, the channel in its colour,
+                           the time, the text under them, the channel's
+                           colour down the left; system lines dim; channel
+                           buttons above the input (click to talk there).
+      a "Tabs"             tabs along the top (All and each channel you
+                           can use, unread counts; a tab only filters what
+                           you see); one line per message with a solid
+                           channel pill, rank, name, text and the time; a
+                           solid channel button by the input (click to
+                           pick where you talk).
+    In first person under the helmet visor the chat fills the left cheek
+    (its top edge follows the helmet) with one line per message and the
+    channel pill, in both looks.
+    Typing a channel command (/local, /public, ...) followed by a space
+    switches channel straight away. Typing "/" shows matching commands
+    (and player names after /pm); Tab or Enter fills one in, Up/Down picks
+    (with no list open, Up/Down walks through what you sent). The mouse
+    wheel scrolls back.
 
     Where it sits:
       helmet visor (first person)  bottom-left, in the grey cheek area; its
@@ -23,15 +39,17 @@
     join messages) shows up here too.
 
     Drawing: the window panel only paints its frame and the input box.
-    The messages, avatars and pop-up lists are drawn on top afterwards in
-    screen space (PostRenderVGUI), because avatar images can only be drawn
-    by hand there. Nothing allocates per frame.
+    The messages and pop-up lists are drawn on top afterwards in screen
+    space (PostRenderVGUI), over the text entry. Wrapped lines are cached
+    per message.
 
     Client only. Adds to Rhylib.Chat: Chat.Add, Chat.Open, Chat.Close,
     Chat.Rect, Chat.VisorEdgeX, Chat.ShowEvent, Chat.lines, Chat.current,
-    Chat.history, Chat.panel (the open window, a "RhylibChat" panel).
+    Chat.history, Chat.tab (look A's tab, a channel id or nil = All),
+    Chat.unread ([channel id] = new lines), Chat.panel (the open window,
+    a "RhylibChat" panel).
     Replaces chat.AddText (the old one is kept in Chat.oldAddText).
-    Client convar: rhylib_chat_pinned (0/1, /togglechat).
+    Client convars: rhylib_chat_pinned (0/1, /togglechat), rhylib_chat_style (b / a).
     Net: receives chat.msg; sends chat.send and chat.typing (see sv_10_chat).
     Other addons read Chat.Rect (rhylib_radio sizes its visor parts around it).
 ]]
@@ -43,6 +61,7 @@ Chat.lines = Chat.lines or {}      -- { time, segs = { { col, text }, ... }, sid
 Chat.current = Chat.current or nil -- current channel
 Chat.scroll = 0
 Chat.history = Chat.history or {}  -- lines you sent this session, oldest first
+Chat.unread = Chat.unread or {}    -- [channel id] = lines since its tab was looked at (look A)
 
 local function maxLength()
     return Rhylib.Config.Get("chat", "maxLength") or 300
@@ -65,6 +84,15 @@ local COL_SYSTEM = Color(170, 176, 180)
 local COL_ROW = Color(20, 22, 21, 250)
 local COL_ROW_PICK = Color(38, 50, 64, 255)
 local COL_ROW_LINE = Color(40, 44, 40, 255)
+local COL_DIM2 = Color(109, 111, 104)
+local COL_SEP = Color(26, 29, 27, 255)
+local COL_FEED = Color(10, 12, 11, 170)
+local COL_B_BG = Color(14, 16, 15, 240)
+local COL_A_BG = Color(12, 14, 13, 222)
+local COL_B_EDGE = Color(42, 45, 41, 255)
+local COL_WHITE = Color(255, 255, 255)
+local COL_ACCENT = Color(133, 183, 235)
+local COL_DARK = Color(20, 20, 19)
 
 -- The channel plain text goes to: Chat.current, else config chat
 -- defaultChannel, else Public.
@@ -77,17 +105,30 @@ end
 -- Messages
 --------------------------------------------------------------------------
 
--- Chat.Add(segs, sid): adds a line to the chat box (not the console).
--- segs: list of { Color, text } pieces drawn in order.
--- sid: the sender's SteamID64, for the portrait/avatar (nil for system lines).
+-- Chat.Add(segs, sid, info): adds a line to the chat box (not the console).
+-- segs: list of { Color, text } pieces drawn in order (lines without info).
+-- sid: the sender's SteamID64 (nil for system lines).
+-- info (a channel message, from chat.msg): { ch, name, nameCol, rank,
+-- bnCol, text, action, to }; the line is then drawn from these.
 -- Example: Rhylib.Chat.Add({ { Color(255, 200, 80), "[Squad] " }, { color_white, "Moving out" } })
-function Chat.Add(segs, sid)
+function Chat.Add(segs, sid, info)
     local lines = Chat.lines
-    -- The sender's model now, for their portrait (falls back to the Steam avatar).
-    local p = sid and player.GetBySteamID64(sid)
-    lines[#lines + 1] = { time = RealTime(), segs = segs, sid = sid, model = IsValid(p) and p:GetModel() or nil }
+    local line = { time = RealTime(), segs = segs, sid = sid, at = os.date("%H:%M") }
+    if info then
+        for k, v in pairs(info) do line[k] = v end
+        -- (look A: a count on the tabs you aren't looking at; not your own lines)
+        local ch = info.ch
+        local mine = sid and IsValid(LocalPlayer()) and sid == LocalPlayer():SteamID64()
+        if ch and not mine and GetConVarString("rhylib_chat_style") == "a"
+            and (not IsValid(Chat.panel) or (Chat.tab and Chat.tab ~= ch.id)) then
+            Chat.unread[ch.id] = (Chat.unread[ch.id] or 0) + 1
+        end
+    end
+    lines[#lines + 1] = line
     if #lines > MAX_LINES then table.remove(lines, 1) end
-    if Chat.scroll > 0 then Chat.scroll = Chat.scroll + 1 end  -- keep the view still while scrolled up
+    -- (keep the view still while scrolled up; the scroll counts messages,
+    -- on look A only those on the tab you look at)
+    if Chat.scroll > 0 and (not Chat.tab or (line.ch and line.ch.id == Chat.tab)) then Chat.scroll = Chat.scroll + 1 end
 end
 
 -- Everything chat.AddText receives (colours, strings, players) lands here too.
@@ -144,7 +185,15 @@ net.Receive(Rhylib.Net.Name("chat.msg"), function()
         end
         segs[#segs + 1] = { ch.id == "event" and ch.color or COL_TEXT, ": " .. text }
     end
-    Chat.Add(segs, IsValid(sender) and sender:SteamID64() or nil)
+    -- What the comms look draws: rank chip (rhylib_roster prefix), name, text.
+    local R = Rhylib.Roster
+    local rank = ""
+    if IsValid(sender) and R and R.Get and R.Prefix and R.Get(sender).has then rank = R.Prefix(sender) or "" end
+    local to
+    if ch.private then to = (target == LocalPlayer()) and "→ you" or ("→ " .. (IsValid(target) and target:Nick() or "?")) end
+    Chat.Add(segs, IsValid(sender) and sender:SteamID64() or nil, {
+        ch = ch, name = name, nameCol = nameCol, rank = rank, bnCol = nameCol, text = text, action = ch.action, to = to,
+    })
     if ch.id == "event" then
         Chat.ShowEvent(name, text)
         surface.PlaySound("buttons/blip1.wav")
@@ -153,30 +202,6 @@ net.Receive(Rhylib.Net.Name("chat.msg"), function()
     end
     MsgC(ch.color, "[" .. ch.name .. "] ", nameCol, name, COL_TEXT, (ch.action and " " or ": ") .. text .. "\n")
 end)
-
---------------------------------------------------------------------------
--- Avatars: one AvatarImage per sender, drawn by hand.
---------------------------------------------------------------------------
-
-local avatars, avatarCount = {}, 0
-
-local function avatarFor(sid)
-    local a = avatars[sid]
-    if IsValid(a) then return a end
-    if avatarCount > 64 then  -- plenty for a busy chat; start over rather than grow forever
-        for _, p in pairs(avatars) do
-            if IsValid(p) then p:Remove() end
-        end
-        avatars, avatarCount = {}, 0
-    end
-    a = vgui.Create("AvatarImage")
-    a:SetPaintedManually(true)
-    a:SetSize(32, 32)
-    a:SetSteamID(sid, 32)
-    avatars[sid] = a
-    avatarCount = avatarCount + 1
-    return a
-end
 
 --------------------------------------------------------------------------
 -- Layout and shape
@@ -248,7 +273,8 @@ end
 -- Chat.Rect(): x, y, w, h of the chat area in screen pixels, and whether
 -- it's the visor version (true while rhylib_hud's helmet visor is drawn).
 -- Visor: the left cheek; its width leaves room for rhylib_radio's compass
--- (Radio.CompassChatWidth). Otherwise: bottom-left, 22% of the screen wide.
+-- (Radio.CompassChatWidth). Otherwise: bottom-left, 30% of the screen
+-- wide (460-620 px at 1080p), 360 px tall.
 -- Example: local x, y, w, h, visor = Rhylib.Chat.Rect()
 function Chat.Rect()
     local W, H = ScrW(), ScrH()
@@ -268,7 +294,9 @@ function Chat.Rect()
         end
         return mx, top, w, bottom - top, true
     end
-    local w, h = math.floor(W * 0.22), math.floor(260 * s)
+    local w = math.floor(math.Clamp(W * 0.3, 460 * s, 620 * s))
+    w = math.min(w, math.floor(W * 0.45))
+    local h = math.floor(360 * s)
     return math.floor(24 * s), H - math.floor(210 * s) - h, w, h, false
 end
 
@@ -402,176 +430,622 @@ local function text(str, x, y, col, alpha)
     surface.DrawText(str)
 end
 
--- Draws messages bottom-up into the box (screen px); open = all, scrollable.
--- widthAt(lineTop): optional, the width a line at that height may use
--- (the visor chat narrows toward the top). Widths snap to 8 px so the
--- wrap cache stays small.
-local function drawMessages(x, y, w, h, font, lineH, open, widthAt)
+local function setCol(col, a)
+    drawCol.r, drawCol.g, drawCol.b, drawCol.a = col.r, col.g, col.b, a or col.a or 255
+    surface.SetDrawColor(drawCol)
+end
+
+-- The look: "b" (comms rows, default) or "a" (tabs and channel pills).
+-- Settings > Interface > Chat "Chat look" (rhylib_chat_style).
+local styleVar = CreateClientConVar("rhylib_chat_style", "b", true, false, "Chat look: b = comms rows (default), a = tabs and channel pills")
+local function style() return styleVar:GetString() == "a" and "a" or "b" end
+
+-- Sizes (1080p numbers scaled). One table per look and place, rebuilt
+-- when the screen height changes.
+local metricsCache = {}
+local function metrics(visor)
+    local st = style()
+    local H = ScrH()
+    local key = (visor and "v" or "t") .. st
+    local c = metricsCache[key]
+    if c and c.H == H then return c end
+    local s = H / 1080
+    local function S(n) return math.floor(n * s + 0.5) end
+    c = {
+        H = H, s = s, st = st, visor = visor,
+        font = UI.Font(visor and 16 or 17),
+        small = UI.Font(visor and 14 or 15),
+        nameF = UI.Font(16, 700), labelF = UI.Font(12, 700), chipF = UI.Font(13, 700), timeF = UI.Font(13),
+        pillF = UI.Font(visor and 11 or 12, 700),
+        lineH = S(visor and 20 or 22), smallH = S(visor and 18 or 20),
+        header = visor and 0 or S(st == "b" and 40 or 38),
+        inputH = S(visor and 24 or (st == "b" and 44 or 46)),
+        pad = S(visor and 7 or 10),
+        rowH = S(visor and 18 or 24),
+        chipH = S(28),
+    }
+    metricsCache[key] = c
+    return c
+end
+
+-- The parts of the window, in panel coordinates (kept per size and look).
+local layoutCache = {}
+local makeLayout
+local function layout(w, h, m)
+    local key = w .. "x" .. h .. (m.visor and "v" or "t") .. m.st .. m.H
+    local L = layoutCache[key]
+    if L then return L end
+    if table.Count(layoutCache) > 8 then layoutCache = {} end
+    L = makeLayout(w, h, m)
+    layoutCache[key] = L
+    return L
+end
+makeLayout = function(w, h, m)
+    local s = m.s
+    local function S(n) return math.floor(n * s + 0.5) end
+    local L = {}
+    if m.visor then
+        local iy = h - m.inputH - S(3)
+        L.input = { x = m.pad, y = iy, w = w - m.pad - S(6), h = m.inputH }
+        L.chan = { x = m.pad + 1, y = iy + 1, w = S(70), h = m.inputH - 2 }
+        L.msgs = { x = m.pad, y = math.floor(m.pad * 0.5), w = w - m.pad * 2, h = h - m.inputH - math.floor(m.pad * 1.5) }
+        L.entry = { x = L.chan.x + L.chan.w + S(10), y = iy, w = w - (L.chan.x + L.chan.w + S(10)) - S(8), h = m.inputH }
+        L.listBottom = h - m.inputH - S(6)
+    elseif m.st == "b" then
+        L.header = { x = 0, y = 0, w = w, h = m.header }
+        L.input = { x = S(10), y = h - S(10) - m.inputH, w = w - S(20), h = m.inputH }
+        L.chips = { x = S(10), y = L.input.y - S(6) - m.chipH, w = w - S(20), h = m.chipH }
+        L.msgs = { x = 0, y = m.header, w = w, h = L.chips.y - S(4) - m.header }
+        L.entry = { x = L.input.x + S(12), y = L.input.y, w = L.input.w - S(24) - S(120), h = m.inputH }
+        L.listBottom = L.chips.y - S(4)
+    else
+        L.header = { x = 0, y = 0, w = w, h = m.header }
+        L.input = { x = 0, y = h - m.inputH, w = w, h = m.inputH }
+        L.chan = { x = S(10), y = L.input.y + S(8), w = S(104), h = m.inputH - S(16) }
+        local ex = L.chan.x + L.chan.w + S(10)
+        L.msgs = { x = S(12), y = m.header + S(8), w = w - S(24), h = L.input.y - S(8) - (m.header + S(8)) }
+        L.entry = { x = ex, y = L.input.y, w = w - ex - S(110), h = m.inputH }
+        L.listBottom = L.input.y - S(4)
+    end
+    return L
+end
+
+local function inRect(r, x, y) return r and x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h end
+
+-- Channels you can pick (chips, tabs), with or without the private one.
+local function usableChannels(withPM)
+    local out = {}
+    for _, ch in ipairs(Chat.CHANNELS) do
+        if ch.private then
+            if withPM then out[#out + 1] = ch end
+        elseif Chat.CanUse(LocalPlayer(), ch) then
+            out[#out + 1] = ch
+        end
+    end
+    return out
+end
+
+-- Look B: channel chips above the input. Look A: tabs along the top
+-- (All first; a filter, not the channel you send on). { x, y, w, h, ch }.
+local CHIP_SKIP = { admin = true, event = true, advert = true, rp = true }
+local rectCache = { at = 0 }
+local function chipRects(L, m)
+    if rectCache.chipsFor == L and RealTime() < rectCache.at then return rectCache.chips end
+    local out = {}
+    local r = L.chips
+    if not r then return out end
+    local x = r.x
+    surface.SetFont(m.chipF)
+    for _, ch in ipairs(usableChannels(false)) do
+        if not CHIP_SKIP[ch.id] or ch == currentChannel() then
+            local cw = surface.GetTextSize(ch.name) + math.floor(22 * m.s)
+            if x + cw > r.x + r.w then break end
+            out[#out + 1] = { x = x, y = r.y, w = cw, h = r.h, ch = ch }
+            x = x + cw + math.floor(4 * m.s)
+        end
+    end
+    rectCache.chipsFor, rectCache.chips, rectCache.at = L, out, RealTime() + 0.25
+    return out
+end
+local function tabRects(L, m)
+    if rectCache.tabsFor == L and RealTime() < (rectCache.tabsAt or 0) then return rectCache.tabs end
+    local out = {}
+    local r = L.header
+    if not r then return out end
+    local x = r.x
+    surface.SetFont(m.chipF)
+    local list = { false }
+    for _, ch in ipairs(usableChannels(true)) do
+        if not CHIP_SKIP[ch.id] then list[#list + 1] = ch end
+    end
+    for _, ch in ipairs(list) do
+        local name = ch and ch.name or "All"
+        local n = ch and Chat.unread[ch.id] or 0
+        local cw = surface.GetTextSize(name) + math.floor(28 * m.s) + (n > 0 and math.floor(26 * m.s) or 0)
+        if x + cw > r.x + r.w then break end
+        out[#out + 1] = { x = x, y = r.y, w = cw, h = r.h, ch = ch or nil, all = not ch, name = name }
+        x = x + cw
+    end
+    rectCache.tabsFor, rectCache.tabs, rectCache.tabsAt = L, out, RealTime() + 0.25
+    return out
+end
+
+-- Is this line shown on the open window's tab (look A)?
+local function onTab(msg)
+    if not Chat.tab then return true end
+    return msg.ch ~= nil and msg.ch.id == Chat.tab
+end
+
+-- The pieces of a channel line in one font (look A, the visor and the
+-- closed feed): rank, name, text. Cached on the line.
+local function lineSegs(msg)
+    if msg.flat then return msg.flat end
+    local segs = {}
+    if msg.rank and msg.rank ~= "" then segs[#segs + 1] = { COL_DIM, msg.rank .. " " } end
+    if msg.action then
+        segs[#segs + 1] = { msg.ch.color, "* " }
+        segs[#segs + 1] = { msg.nameCol or COL_TEXT, msg.name or "" }
+        segs[#segs + 1] = { msg.ch.color, " " .. (msg.text or "") }
+    else
+        segs[#segs + 1] = { msg.nameCol or COL_TEXT, msg.name or "" }
+        if msg.to then segs[#segs + 1] = { COL_DIM, msg.to } end
+        segs[#segs + 1] = { msg.ch.id == "event" and msg.ch.color or COL_TEXT, "  " .. (msg.text or "") }
+    end
+    msg.flat = { segs = segs }
+    return msg.flat
+end
+
+-- A small solid pill with the channel's name.
+local pillW = {}
+local function pill(ch, x, y, h, font, alpha)
+    local name = string.upper(ch.name)
+    local key = name .. font
+    local w = pillW[key]
+    if not w then
+        surface.SetFont(font)
+        w = surface.GetTextSize(name) + math.floor(10 * ScrH() / 1080)
+        pillW[key] = w
+    end
+    setCol(ch.color, alpha)
+    surface.DrawRect(x, y, w, h)
+    surface.SetFont(font)
+    local tw, th = surface.GetTextSize(name)
+    drawCol.r, drawCol.g, drawCol.b, drawCol.a = 20, 20, 19, alpha
+    surface.SetTextColor(drawCol)
+    surface.SetTextPos(x + math.floor((w - tw) * 0.5), y + math.floor((h - th) * 0.5))
+    surface.DrawText(name)
+    return w
+end
+local function pillWidth(ch, font)
+    local name = string.upper(ch.name)
+    local w = pillW[name .. font]
+    if w then return w end
+    surface.SetFont(font)
+    w = surface.GetTextSize(name) + math.floor(10 * ScrH() / 1080)
+    pillW[name .. font] = w
+    return w
+end
+
+-- One-line messages (look A, the visor): a channel pill, then rank, name
+-- and text, wrapped; the time on the right (third person). Bottom-up.
+-- widthAt(lineTop): the visor narrows toward the top. Widths snap to 8 px
+-- so the wrap cache stays small.
+local function drawLinesA(x, y, w, h, m, open, widthAt, withTime)
     local now = RealTime()
     local yy = y + h
     local skip = open and Chat.scroll or 0
-    local avSize = lineH - 2
-    local indent = avSize + math.floor(lineH * 0.3)
-    surface.SetFont(font)
+    local lineH = m.lineH
+    local timeW = withTime and math.floor(48 * m.s) or 0
+    local pillH = lineH - math.floor(6 * m.s)
+    surface.SetFont(m.font)
     for i = #Chat.lines, 1, -1 do
         local msg = Chat.lines[i]
         local age = now - msg.time
         if not open and age > SHOW_TIME then break end
-        local alpha = open and 255 or math.Clamp((SHOW_TIME - age) * 255, 0, 255)
-        local ind = msg.sid and indent or 0
-        local avail = widthAt and math.min(w, widthAt(yy - lineH)) or w
-        avail = math.floor(avail / 8) * 8
-        if avail - ind < 60 then return end  -- no room left up here
-        local lines = wrap(msg, font, avail - ind)
-        if widthAt and #lines > 1 then
-            -- Its top line sits higher, where there may be less room.
-            local topAvail = math.floor(math.min(w, widthAt(yy - #lines * lineH)) / 8) * 8
-            if topAvail < avail and topAvail - ind >= 60 then lines = wrap(msg, font, topAvail - ind) end
-        end
-        for k = #lines, 1, -1 do
-            if skip > 0 then
-                skip = skip - 1
-            else
-                yy = yy - lineH
-                if yy < y then return end
-                for _, part in ipairs(lines[k]) do
-                    text(part[2], x + ind + part[3], yy, part[1], alpha)
-                end
-                if k == 1 and msg.sid and alpha > 20 then
-                    if msg.model and UI.DrawPortrait then
-                        UI.DrawPortrait(msg.model, x, yy + 1, avSize, alpha)
-                    else
-                        local av = avatarFor(msg.sid)
-                        av:SetAlpha(alpha)
-                        av:SetPos(x, yy + 1)
-                        av:SetSize(avSize, avSize)
-                        av:PaintManual()
+        if open and onTab(msg) and skip > 0 then
+            skip = skip - 1
+        elseif not open or onTab(msg) then
+            local alpha = open and 255 or math.Clamp((SHOW_TIME - age) * 255, 0, 255)
+            local ind = msg.ch and (pillWidth(msg.ch, m.pillF) + math.floor(8 * m.s)) or math.floor(12 * m.s)
+            local avail = widthAt and math.min(w, widthAt(yy - lineH)) or w
+            avail = math.floor((avail - timeW) / 8) * 8
+            if avail - ind < 60 then return end
+            local src = msg.ch and lineSegs(msg) or msg
+            local lines = wrap(src, m.font, avail - ind)
+            if widthAt and #lines > 1 then
+                local topAvail = math.floor(math.min(w, widthAt(yy - #lines * lineH)) / 8) * 8
+                if topAvail < avail and topAvail - ind >= 60 then lines = wrap(src, m.font, topAvail - ind) end
+            end
+            for k = #lines, 1, -1 do
+                do
+                    yy = yy - lineH
+                    if yy < y then return end
+                    surface.SetFont(m.font)
+                    for _, part in ipairs(lines[k]) do
+                        text(part[2], x + ind + part[3], yy, part[1], alpha)
                     end
-                    surface.SetFont(font)  -- (painting may change it)
+                    if k == 1 then
+                        if msg.ch then
+                            pill(msg.ch, x, yy + math.floor((lineH - pillH) * 0.5), pillH, m.pillF, alpha)
+                        else
+                            setCol(COL_DIM, alpha)
+                            surface.DrawRect(x + 2, yy + math.floor(lineH * 0.5) - 2, 4, 4)
+                        end
+                        if withTime and msg.at then
+                            surface.SetFont(m.timeF)
+                            local tw = surface.GetTextSize(msg.at)
+                            text(msg.at, x + w - tw, yy + math.floor(2 * m.s), COL_DIM2, alpha)
+                        end
+                        surface.SetFont(m.font)
+                    end
                 end
             end
         end
     end
 end
 
--- Sizes shared by the open window and the closed feed, so lines don't jump.
-local function metrics(visor)
-    local s = ScrH() / 1080
-    return {
-        s = s,
-        font = UI.Font(visor and 17 or 18),
-        lineH = math.floor((visor and 21 or 23) * s),
-        header = visor and 0 or math.floor(20 * s),  -- the visor chat has no header bar (its top is the curve)
-        inputH = math.floor((visor and 24 or 28) * s),
-        pad = math.floor(7 * s),
-        rowH = math.floor((visor and 18 or 22) * s),
-    }
-end
-
--- The message area inside the frame (screen px).
-local function messageArea(x, y, w, h, m)
-    return x + m.pad, y + m.header + m.pad * 0.5, w - m.pad * 2, h - m.header - m.inputH - m.pad * 1.5
-end
-
--- Frame: dark plate, header bar, edges and corner ticks, input box and
--- channel button. Drawn at origin (ox, oy): 0, 0 inside the window panel,
--- or the screen position when the chat is pinned but closed.
--- hint: text in the input box when it isn't being typed in.
-local localPts = {}
-local function drawFrame(ox, oy, sx, sy, w, h, visor, m, chanW, hover, hint)
-    local pts, top = shape(sx, sy, w, h, visor)
-    for i, p in ipairs(pts) do
-        localPts[i] = localPts[i] or { x = 0, y = 0 }
-        localPts[i].x, localPts[i].y = p.x - sx + ox, p.y - sy + oy
+-- Look B rows: rank chip, name, channel label, time; the text under them;
+-- a coloured line on the left. Returns the wrapped text and the row height.
+local function blockB(msg, w, m)
+    local s = m.s
+    if msg.ch then
+        local tx = math.floor((12 + 36 + 10) * s)
+        local tw = math.floor((w - tx - math.floor(12 * s)) / 8) * 8
+        msg.body = msg.body or { segs = { { msg.action and msg.ch.color or (msg.ch.id == "event" and msg.ch.color or COL_TEXT),
+            msg.action and ("* " .. (msg.text or "")) or (msg.text or "") } } }
+        local lines = wrap(msg.body, m.font, math.max(60, tw))
+        return lines, math.floor(7 * s) + math.floor(21 * s) + #lines * m.lineH + math.floor(7 * s), tx
     end
-    for i = #pts + 1, #localPts do localPts[i] = nil end
+    local lines = wrap(msg, m.small, math.max(60, math.floor((w - math.floor(28 * s)) / 8) * 8))
+    return lines, math.floor(6 * s) * 2 + #lines * m.smallH, math.floor(14 * s)
+end
 
+local function drawBlockB(msg, x, y, w, bh, lines, tx, m)
+    local s = m.s
+    setCol(COL_SEP)
+    surface.DrawRect(x, y + bh - 1, w, 1)
+    if msg.ch then
+        setCol(msg.ch.color)
+        surface.DrawRect(x, y, math.max(2, math.floor(3 * s)), bh)
+        local top = y + math.floor(7 * s)
+        -- rank chip, edged in the battalion's colour
+        local cx, cw, ch = x + math.floor(12 * s), math.floor(36 * s), math.floor(19 * s)
+        if msg.rank and msg.rank ~= "" then
+            setCol(msg.bnCol or COL_DIM)
+            surface.DrawOutlinedRect(cx, top + 1, cw, ch)
+            surface.SetFont(m.chipF)
+            local rw, rh = surface.GetTextSize(msg.rank)
+            text(msg.rank, cx + math.floor((cw - rw) * 0.5), top + 1 + math.floor((ch - rh) * 0.5), COL_TEXT, 255)
+        end
+        local name = msg.name or ""
+        surface.SetFont(m.nameF)
+        local nw = surface.GetTextSize(name)
+        text(name, x + tx, top, COL_TEXT, 255)
+        local lx = x + tx + nw + math.floor(8 * s)
+        surface.SetFont(m.labelF)
+        msg.label = msg.label or (string.upper(msg.ch.name) .. (msg.to and (" " .. msg.to) or ""))
+        local label = msg.label
+        text(label, lx, top + math.floor(4 * s), msg.ch.color, 255)
+        if msg.at then
+            surface.SetFont(m.timeF)
+            local tw = surface.GetTextSize(msg.at)
+            text(msg.at, x + w - math.floor(12 * s) - tw, top + math.floor(2 * s), COL_DIM2, 255)
+        end
+        surface.SetFont(m.font)
+        local ly = top + math.floor(21 * s)
+        for _, line in ipairs(lines) do
+            for _, part in ipairs(line) do text(part[2], x + tx + part[3], ly, part[1], 255) end
+            ly = ly + m.lineH
+        end
+    else
+        surface.SetFont(m.small)
+        local ly = y + math.floor(6 * s)
+        for _, line in ipairs(lines) do
+            for _, part in ipairs(line) do text(part[2], x + tx + part[3], ly, part[1], 220) end
+            ly = ly + m.smallH
+        end
+    end
+end
+
+-- Look B messages: rows bottom-up, clipped to the area.
+local function drawBlocksB(x, y, w, h, m)
+    local yy = y + h
+    local skip = Chat.scroll
+    render.SetScissorRect(x, y, x + w, y + h, true)
+    for i = #Chat.lines, 1, -1 do
+        local msg = Chat.lines[i]
+        if skip > 0 then
+            skip = skip - 1
+        else
+            local lines, bh, tx = blockB(msg, w, m)
+            yy = yy - bh
+            drawBlockB(msg, x, yy, w, bh, lines, tx, m)
+            if yy <= y then break end
+        end
+    end
+    render.SetScissorRect(0, 0, 0, 0, false)
+end
+
+-- The closed chat: the newest lines float on their own, each on a soft
+-- dark band with its channel's colour on the left, fading after
+-- SHOW_TIME seconds. Look A also shows the channel pill.
+local function drawFeed(x, y, w, h, m, widthAt)
+    local now = RealTime()
+    local yy = y + h
+    local lineH = m.lineH
+    local s = m.s
+    local padX = math.floor(10 * s)
+    local gap = math.floor(4 * s)
+    local pillOn = m.st == "a"
+    local pillH = lineH - math.floor(6 * s)
+    surface.SetFont(m.font)
+    for i = #Chat.lines, 1, -1 do
+        local msg = Chat.lines[i]
+        local age = now - msg.time
+        if age > SHOW_TIME then break end
+        local alpha = math.Clamp((SHOW_TIME - age) * 255, 0, 255)
+        local ind = (pillOn and msg.ch) and (pillWidth(msg.ch, m.pillF) + math.floor(8 * s)) or 0
+        surface.SetFont(m.font)   -- (pillWidth may have set the pill font)
+        local avail = widthAt and math.min(w, widthAt(yy - lineH)) or w
+        avail = math.floor((avail - padX * 2) / 8) * 8
+        if avail - ind < 60 then return end
+        local src = msg.ch and lineSegs(msg) or msg
+        local lines = wrap(src, m.font, avail - ind)
+        local bh = #lines * lineH + math.floor(6 * s)
+        yy = yy - bh
+        if yy < y then return end
+        -- (the band is as wide as its widest line)
+        local bw = 0
+        for _, line in ipairs(lines) do
+            local last = line[#line]
+            if last then
+                local lw = last[3] + surface.GetTextSize(last[2])
+                if lw > bw then bw = lw end
+            end
+        end
+        bw = bw + ind + padX * 2
+        -- a band that fades out to the right
+        for k = 0, 3 do
+            setCol(COL_FEED, COL_FEED.a * alpha / 255 * (1 - k * 0.22))
+            surface.DrawRect(x + math.floor(bw * k / 4), yy, math.ceil(bw / 4), bh)
+        end
+        if msg.ch then
+            setCol(msg.ch.color, alpha)
+            surface.DrawRect(x, yy, math.max(2, math.floor(3 * s)), bh)
+        end
+        local ly = yy + math.floor(3 * s)
+        for k, line in ipairs(lines) do
+            for _, part in ipairs(line) do text(part[2], x + padX + ind + part[3], ly, part[1], alpha) end
+            if k == 1 and pillOn and msg.ch then
+                pill(msg.ch, x + padX, ly + math.floor((lineH - pillH) * 0.5), pillH, m.pillF, alpha)
+                surface.SetFont(m.font)
+            end
+            ly = ly + lineH
+        end
+        yy = yy - gap
+    end
+end
+
+-- Your radio squad (rhylib_radio's directory), or nil.
+local function mySquad()
+    local R = Rhylib.Radio
+    if not (R and R.SquadOf and R.dir and R.dir.squads) then return nil end
+    local ok, id = pcall(R.SquadOf, LocalPlayer())
+    return ok and id and R.dir.squads[id] or nil
+end
+
+-- What the look B header says: "COMMS · SQUAD ALPHA" and "4 in squad".
+local function headerText(ch)
+    if ch.id == "squad" then
+        local sq = mySquad()
+        if sq then
+            local n = sq.members and #sq.members or 0
+            return "COMMS  ·  SQUAD " .. string.upper(sq.name or ""), n .. " in squad"
+        end
+    end
+    return "COMMS  ·  " .. string.upper(ch.name), ch.desc
+end
+
+local function diamond(cx, cy, r, col, inner, innerCol)
     draw.NoTexture()
-    surface.SetDrawColor(COL_BG)
-    surface.DrawPoly(localPts)
+    setCol(col)
+    surface.DrawPoly({ { x = cx, y = cy - r }, { x = cx + r, y = cy }, { x = cx, y = cy + r }, { x = cx - r, y = cy } })
+    if inner then
+        setCol(innerCol)
+        surface.DrawPoly({ { x = cx, y = cy - inner }, { x = cx + inner, y = cy }, { x = cx, y = cy + inner }, { x = cx - inner, y = cy } })
+    end
+end
 
-    -- Header bar: a band along the top, under the shaped edge (third person).
-    local headW = visor and 0 or math.min(w, (top[2] and top[2][1] or sx + w) - sx)
+-- The window's frame, drawn at ox, oy (0, 0 in the open panel, the screen
+-- position when pinned). sx, sy: its screen position (the visor shape).
+-- hint: text in the input when nobody types (pinned). mx, my: the mouse
+-- in panel coordinates (hover), or nil.
+local localPts = {}
+local function drawFrame(ox, oy, sx, sy, w, h, visor, m, L, mx, my, hint, menuOpen)
     local ch = currentChannel()
-    if headW > 0 then
-    surface.SetDrawColor(COL_HEADER)
-    surface.DrawRect(ox, oy, headW, m.header)
-    surface.SetDrawColor(ch.color.r, ch.color.g, ch.color.b, 170)
-    surface.DrawRect(ox, oy + m.header - 1, headW, 1)
-    draw.SimpleText("COMMS", UI.Font(12, 700), ox + m.pad, oy + m.header * 0.5, COL_DIM, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-    draw.SimpleText(string.upper(ch.name), UI.Font(12, 700), ox + m.pad + math.floor(48 * m.s), oy + m.header * 0.5, ch.color, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    local s = m.s
+    local Kit = UI.Kit
+    if visor then
+        -- The cheek shape (its top-right edge follows the helmet).
+        local pts, top = shape(sx, sy, w, h, visor)
+        for i, p in ipairs(pts) do
+            localPts[i] = localPts[i] or { x = 0, y = 0 }
+            localPts[i].x, localPts[i].y = p.x - sx + ox, p.y - sy + oy
+        end
+        for i = #pts + 1, #localPts do localPts[i] = nil end
+        draw.NoTexture()
+        surface.SetDrawColor(COL_BG)
+        surface.DrawPoly(localPts)
+        surface.SetDrawColor(COL_EDGE_DARK)
+        for i = 1, #localPts do
+            local a, b = localPts[i], localPts[i % #localPts + 1]
+            surface.DrawLine(a.x, a.y, b.x, b.y)
+        end
+        surface.SetDrawColor(COL_EDGE_LIGHT)
+        for i = 1, #top - 1 do
+            surface.DrawLine(top[i][1] - sx + ox, top[i][2] - sy + oy + 1, top[i + 1][1] - sx + ox, top[i + 1][2] - sy + oy + 1)
+        end
+        local r = L.input
+        local iw = math.min(r.w, math.floor(Chat.VisorEdgeX(sy + r.y) - sx) - m.pad - math.floor(6 * s))
+        surface.SetDrawColor(COL_INPUT)
+        surface.DrawRect(ox + r.x, oy + r.y, iw, r.h)
+        surface.SetDrawColor(COL_INPUT_EDGE)
+        surface.DrawOutlinedRect(ox + r.x, oy + r.y, iw, r.h)
+        local c = L.chan
+        local hover = menuOpen or (mx and inRect(c, mx, my))
+        surface.SetDrawColor(hover and COL_ROW_PICK or COL_HEADER)
+        surface.DrawRect(ox + c.x, oy + c.y, c.w, c.h)
+        setCol(ch.color)
+        surface.DrawRect(ox + c.x, oy + c.y, 3, c.h)
+        draw.SimpleText(ch.name, UI.Font(13, 700), ox + c.x + (c.w - math.floor(10 * s)) * 0.5 + 2, oy + c.y + c.h * 0.5, ch.color, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        if Kit and Kit.Arrow then Kit.Arrow(ox + c.x + c.w - math.floor(8 * s), oy + c.y + c.h * 0.5, math.floor(7 * s), "down", ch.color) end
+        if hint then draw.SimpleText(hint, m.font, ox + L.entry.x, oy + r.y + r.h * 0.5, COL_DIM, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER) end
+        return
     end
 
-    -- Edges: dark outline with a light line along the top and the slope.
-    surface.SetDrawColor(COL_EDGE_DARK)
-    for i = 1, #localPts do
-        local a, b = localPts[i], localPts[i % #localPts + 1]
-        surface.DrawLine(a.x, a.y, b.x, b.y)
-    end
-    surface.SetDrawColor(COL_EDGE_LIGHT)
-    for i = 1, #top - 1 do
-        surface.DrawLine(top[i][1] - sx + ox, top[i][2] - sy + oy + 1, top[i + 1][1] - sx + ox, top[i + 1][2] - sy + oy + 1)
+    if m.st == "b" then
+        surface.SetDrawColor(COL_B_BG)
+        surface.DrawRect(ox, oy, w, h)
+        surface.SetDrawColor(COL_B_EDGE)
+        surface.DrawOutlinedRect(ox, oy, w, h)
+        -- header band: the channel's colour, a diamond, what you talk on
+        local hd = L.header
+        setCol(ch.color, 26)
+        surface.DrawRect(ox, oy, w, hd.h)
+        setCol(ch.color)
+        surface.DrawRect(ox, oy, math.floor(4 * s), hd.h)
+        diamond(ox + math.floor(20 * s), oy + hd.h * 0.5, math.floor(8 * s), ch.color, math.floor(5 * s), COL_B_BG)
+        local title, right = headerText(ch)
+        surface.SetFont(UI.Font(13))
+        local rw = right and surface.GetTextSize(right) or 0
+        draw.SimpleText(Kit and Kit.Fit and Kit.Fit(title, UI.Font(18, 700), w - math.floor(60 * s) - rw) or title, UI.Font(18, 700),
+            ox + math.floor(38 * s), oy + hd.h * 0.5, COL_TEXT, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        if right then draw.SimpleText(right, UI.Font(13), ox + w - math.floor(12 * s), oy + hd.h * 0.5, COL_DIM, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER) end
+        -- channel chips
+        for _, r in ipairs(chipRects(L, m)) do
+            local on = r.ch == ch
+            local hov = mx and inRect(r, mx, my)
+            if on then
+                setCol(r.ch.color, 30)
+                surface.DrawRect(ox + r.x, oy + r.y, r.w, r.h)
+            elseif hov then
+                surface.SetDrawColor(COL_ROW_PICK)
+                surface.DrawRect(ox + r.x, oy + r.y, r.w, r.h)
+            end
+            setCol(on and r.ch.color or COL_B_EDGE)
+            surface.DrawOutlinedRect(ox + r.x, oy + r.y, r.w, r.h)
+            draw.SimpleText(r.ch.name, on and UI.Font(13, 700) or UI.Font(13, 500), ox + r.x + r.w * 0.5, oy + r.y + r.h * 0.5,
+                on and COL_WHITE or COL_DIM, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
+        -- input
+        local r = L.input
+        surface.SetDrawColor(COL_INPUT)
+        surface.DrawRect(ox + r.x, oy + r.y, r.w, r.h)
+        surface.SetDrawColor(COL_B_EDGE)
+        surface.DrawOutlinedRect(ox + r.x, oy + r.y, r.w, r.h)
+        draw.SimpleText("/ for commands", UI.Font(13), ox + r.x + r.w - math.floor(12 * s), oy + r.y + r.h * 0.5, COL_DIM2, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+        if hint then draw.SimpleText(hint, m.font, ox + L.entry.x, oy + r.y + r.h * 0.5, COL_DIM, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER) end
+        return
     end
 
-    -- Corner ticks, bottom-left and bottom-right.
-    local t = math.floor(8 * m.s)
-    surface.SetDrawColor(COL_TICK)
-    surface.DrawRect(ox, oy + h - 2, t, 2)
-    surface.DrawRect(ox, oy + h - t, 2, t)
-    surface.DrawRect(ox + w - t, oy + h - 2, t, 2)
-    surface.DrawRect(ox + w - 2, oy + h - t, 2, t)
-
-    -- Input line and the channel button.
-    local iy = oy + h - m.inputH - math.floor(3 * m.s)
-    local iw = w - m.pad - math.floor(6 * m.s)
-    if visor then  -- stop short of the curved edge at the input's top
-        iw = math.min(iw, math.floor(Chat.VisorEdgeX(sy + (iy - oy)) - sx) - m.pad - math.floor(6 * m.s))
+    -- Look A: tabs along the top, a solid channel button by the input.
+    surface.SetDrawColor(COL_A_BG)
+    surface.DrawRect(ox, oy, w, h)
+    surface.SetDrawColor(COL_B_EDGE)
+    surface.DrawOutlinedRect(ox, oy, w, h)
+    local hd = L.header
+    surface.DrawRect(ox, oy + hd.h - 1, w, 1)
+    for _, r in ipairs(tabRects(L, m)) do
+        local on = (r.all and not Chat.tab) or (r.ch and Chat.tab == r.ch.id)
+        local col = r.ch and r.ch.color or COL_ACCENT
+        if mx and inRect(r, mx, my) and not on then
+            surface.SetDrawColor(COL_ROW_PICK)
+            surface.DrawRect(ox + r.x, oy + r.y, r.w, r.h - 1)
+        end
+        if on then
+            setCol(col)
+            surface.DrawRect(ox + r.x, oy + r.y + r.h - math.floor(2 * s), r.w, math.floor(2 * s))
+        end
+        local n = r.ch and Chat.unread[r.ch.id] or 0
+        local tx = ox + r.x + math.floor(14 * s)
+        draw.SimpleText(r.name, on and UI.Font(13, 700) or UI.Font(13, 500), tx, oy + r.y + r.h * 0.5, on and COL_WHITE or COL_DIM, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        if n > 0 then
+            surface.SetFont(on and UI.Font(13, 700) or UI.Font(13, 500))
+            local tw = surface.GetTextSize(r.name)
+            local label = n > 99 and "99+" or tostring(n)
+            local px = tx + tw + math.floor(6 * s)
+            local pw, ph = math.floor(20 * s), math.floor(16 * s)
+            setCol(col)
+            surface.DrawRect(px, oy + r.y + (r.h - ph) * 0.5, pw, ph)
+            draw.SimpleText(label, UI.Font(10, 700), px + pw * 0.5, oy + r.y + r.h * 0.5, COL_DARK, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
     end
+    local r = L.input
     surface.SetDrawColor(COL_INPUT)
-    surface.DrawRect(ox + m.pad, iy, iw, m.inputH)
-    surface.SetDrawColor(COL_INPUT_EDGE)
-    surface.DrawOutlinedRect(ox + m.pad, iy, iw, m.inputH)
-    surface.SetDrawColor(hover and COL_ROW_PICK or COL_HEADER)
-    surface.DrawRect(ox + m.pad + 1, iy + 1, chanW, m.inputH - 2)
-    surface.SetDrawColor(ch.color)
-    surface.DrawRect(ox + m.pad + 1, iy + 1, 3, m.inputH - 2)
-    draw.SimpleText(ch.name .. " ▾", UI.Font(visor and 13 or 14, 700), ox + m.pad + 1 + (chanW + 3) * 0.5, iy + m.inputH * 0.5,
-        ch.color, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-    if hint then
-        draw.SimpleText(hint, m.font, ox + m.pad + chanW + math.floor(12 * m.s), iy + m.inputH * 0.5, COL_DIM, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    surface.DrawRect(ox + r.x + 1, oy + r.y, r.w - 2, r.h - 1)
+    surface.SetDrawColor(COL_B_EDGE)
+    surface.DrawRect(ox + r.x, oy + r.y, r.w, 1)
+    local c = L.chan
+    local hover = menuOpen or (mx and inRect(c, mx, my))
+    setCol(ch.color, hover and 210 or 255)
+    surface.DrawRect(ox + c.x, oy + c.y, c.w, c.h)
+    draw.SimpleText(string.upper(ch.name), UI.Font(12, 700), ox + c.x + (c.w - math.floor(12 * s)) * 0.5, oy + c.y + c.h * 0.5, COL_DARK, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    if Kit and Kit.Arrow then Kit.Arrow(ox + c.x + c.w - math.floor(10 * s), oy + c.y + c.h * 0.5, math.floor(7 * s), "down", COL_DARK) end
+    draw.SimpleText(hint and "" or "Enter to send", UI.Font(12), ox + r.x + r.w - math.floor(12 * s), oy + r.y + r.h * 0.5, COL_DIM2, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+    if hint then draw.SimpleText(hint, m.font, ox + L.entry.x, oy + r.y + r.h * 0.5, COL_DIM, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER) end
+end
+
+-- The messages for the window (open or pinned) at screen ox, oy.
+local function drawWindowMessages(ox, oy, L, m, visor)
+    local r = L.msgs
+    local x, y = ox + r.x, oy + r.y
+    if visor then
+        drawLinesA(x, y, r.w, r.h, m, true, function(ly) return Chat.VisorEdgeX(ly) - x - m.pad end, false)
+    elseif m.st == "b" then
+        drawBlocksB(x, y, r.w, r.h, m)
+    else
+        drawLinesA(x, y, r.w, r.h, m, true, nil, true)
     end
 end
 
--- Width of the channel button on the left of the input line.
-local function chanWidth(visor, m)
-    return math.floor((visor and 70 or 80) * m.s)
-end
-
--- Closed chat. Normally: recent messages only, fading, no frame. Pinned
--- (/togglechat): the whole window stays up, and opening the chat just
--- lets you type into it.
+-- Closed chat. Normally: recent messages only, floating and fading.
+-- Pinned (/togglechat): the whole window stays up, and opening the chat
+-- just lets you type into it.
 local pinVar = CreateClientConVar("rhylib_chat_pinned", "0", true, false, "Keep the chat window always visible (0/1). Toggle in chat with /togglechat")
 
-local function bindName()
+local hintText, hintAt = "", 0
+local function pinnedHint()
+    if RealTime() < hintAt then return hintText end
+    hintAt = RealTime() + 1
     local key = input.LookupBinding("messagemode")
-    return key and string.upper(key) or "your chat key"
+    hintText = "Press " .. (key and string.upper(key) or "your chat key") .. " to type"
+    return hintText
 end
 
 Rhylib.Hook.Add("HUDPaint", "chat.feed", function()
     if IsValid(Chat.panel) then return end
     local pinned = pinVar:GetBool()
-    local x, y, w, h, visor = Chat.Rect()
-    local m = metrics(visor)
-    if pinned then
-        local Rh = Rhylib.HUD
-        if Rh and Rh.Hidden and Rh.Hidden() then return end
-        drawFrame(x, y, x, y, w, h, visor, m, chanWidth(visor, m), false, "Press " .. bindName() .. " to type")
-    else
+    if not pinned then
         local last = Chat.lines[#Chat.lines]
         if not last or RealTime() - last.time > SHOW_TIME then return end
     end
-    local ax, ay, aw, ah = messageArea(x, y, w, h, m)
-    drawMessages(ax, ay, aw, ah, m.font, m.lineH, pinned, visor and function(ly) return Chat.VisorEdgeX(ly) - ax - m.pad end)
+    local x, y, w, h, visor = Chat.Rect()
+    local m = metrics(visor)
+    local L = layout(w, h, m)
+    if pinned then
+        local Rh = Rhylib.HUD
+        if Rh and Rh.Hidden and Rh.Hidden() then return end
+        drawFrame(x, y, x, y, w, h, visor, m, L, nil, nil, pinnedHint())
+        drawWindowMessages(x, y, L, m, visor)
+        return
+    end
+    local r = L.msgs
+    if visor then
+        drawFeed(x + r.x, y + r.y, r.w, r.h, m, function(ly) return Chat.VisorEdgeX(ly) - (x + r.x) - m.pad end)
+    else
+        -- (the whole window's height: nothing else is drawn there while closed)
+        drawFeed(x, y, w, h - math.floor(6 * m.s), m)
+    end
 end)
 
 Rhylib.Hook.Add("HUDShouldDraw", "chat.hidedefault", function(name)
@@ -717,7 +1191,11 @@ function PANEL:Init()
         e:DrawTextEntryText(COL_TEXT, Color(70, 100, 140), COL_TEXT)
         local len = #e:GetValue()
         if len == 0 then
-            draw.SimpleText("Message " .. currentChannel().name .. "…", self.m.font, 2, h * 0.5, COL_DIM, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            local ch = currentChannel()
+            local to = ch.name
+            local sq = ch.id == "squad" and mySquad()
+            if sq and sq.name then to = "squad " .. sq.name end
+            draw.SimpleText("Message " .. to .. "…", self.m.font, 2, h * 0.5, COL_DIM, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
         elseif len > maxLength() - 40 then
             draw.SimpleText(len .. "/" .. maxLength(), UI.Font(12), w - 4, h * 0.5, len >= maxLength() and Color(226, 75, 74) or COL_DIM,
                 TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
@@ -814,17 +1292,17 @@ function PANEL:Layout()
     local x, y, w, h, visor = Chat.Rect()
     self.visor = visor
     self.m = metrics(visor)
+    self.st = self.m.st
     local m = self.m
     self:SetPos(x, y)
     self:SetSize(w, h)
-    self.chanW = chanWidth(visor, m)
-    local ix = self.chanW + math.floor(10 * m.s)
+    self.L = layout(w, h, m)
+    local r = self.L.entry
     self.entry:SetFont(m.font)
-    local iy = h - m.inputH - math.floor(3 * m.s)
-    local right = w
-    if visor then right = math.min(w, math.floor(Chat.VisorEdgeX(y + iy) - x)) end
-    self.entry:SetPos(ix, iy)
-    self.entry:SetSize(right - ix - math.floor(8 * m.s), m.inputH)
+    local right = r.x + r.w
+    if visor then right = math.min(right, math.floor(Chat.VisorEdgeX(y + r.y) - x) - math.floor(8 * m.s)) end
+    self.entry:SetPos(r.x, r.y)
+    self.entry:SetSize(math.max(40, right - r.x), r.h)
 end
 
 function PANEL:UpdateSuggest()
@@ -834,21 +1312,17 @@ end
 
 function PANEL:Think()
     local x, y, w, h, visor = Chat.Rect()
-    if visor ~= self.visor or w ~= self:GetWide() then self:Layout() end
-end
-
-function PANEL:ChannelButtonHit(mx, my)
-    local h, m = self:GetTall(), self.m
-    return mx >= m.pad and mx <= m.pad + self.chanW and my >= h - m.inputH - math.floor(3 * m.s) and my <= h
+    local px, py = self:GetPos()
+    if visor ~= self.visor or x ~= px or y ~= py or w ~= self:GetWide() or h ~= self:GetTall() or style() ~= self.st or ScrH() ~= self.m.H then self:Layout() end
 end
 
 -- Rows of a pop-up list (suggestions or channels), in panel coordinates:
--- just above the input line, inside the frame.
+-- just above the input line (or the chips), inside the frame.
 function PANEL:ListRows(list)
-    local m = self.m
-    local h = self:GetTall()
-    local bottom = h - m.inputH - math.floor(6 * m.s)
-    local maxRows = math.max(1, math.floor((bottom - m.header) / m.rowH))
+    local m, L = self.m, self.L
+    local bottom = L.listBottom
+    local top = L.header and L.header.h or 0
+    local maxRows = math.max(1, math.floor((bottom - top) / m.rowH))
     local n = math.min(#list, maxRows)
     local rows = {}
     local sx, sy = self:LocalToScreen(0, 0)
@@ -864,6 +1338,7 @@ end
 function PANEL:OnMousePressed(code)
     if code ~= MOUSE_LEFT then return end
     local mx, my = self:CursorPos()
+    local L, m = self.L, self.m
     if self.menu then
         for _, r in ipairs(self:ListRows(self.menu)) do
             if mx >= r.x and mx <= r.x + r.w and my >= r.y and my <= r.y + r.h then
@@ -879,9 +1354,30 @@ function PANEL:OnMousePressed(code)
         self.entry:RequestFocus()
         return
     end
-    if self:ChannelButtonHit(mx, my) then
+    if L.chan and inRect(L.chan, mx, my) then
         self.menu = channelRows()
         return
+    end
+    if not self.visor and self.st == "b" then
+        for _, r in ipairs(chipRects(L, m)) do
+            if inRect(r, mx, my) then
+                surface.PlaySound("ui/buttonclick.wav")
+                Chat.current = r.ch
+                self.entry:RequestFocus()
+                return
+            end
+        end
+    elseif not self.visor then
+        for _, r in ipairs(tabRects(L, m)) do
+            if inRect(r, mx, my) then
+                surface.PlaySound("ui/buttonclick.wav")
+                Chat.tab = r.ch and r.ch.id or nil
+                if r.ch then Chat.unread[r.ch.id] = nil end
+                Chat.scroll = 0
+                self.entry:RequestFocus()
+                return
+            end
+        end
     end
     for i, r in ipairs(self:ListRows(self.suggest)) do
         if mx >= r.x and mx <= r.x + r.w and my >= r.y and my <= r.y + r.h then
@@ -893,16 +1389,16 @@ function PANEL:OnMousePressed(code)
     self.entry:RequestFocus()
 end
 
+-- (the scroll counts messages; never past the oldest)
 function PANEL:OnMouseWheeled(delta)
-    Chat.scroll = math.max(0, Chat.scroll + delta * 3)
+    Chat.scroll = math.Clamp(Chat.scroll + delta, 0, math.max(0, #Chat.lines - 1))
     return true
 end
 
 function PANEL:Paint(w, h)
     local sx, sy = self:LocalToScreen(0, 0)
     local mx, my = self:CursorPos()
-    local hover = self:ChannelButtonHit(mx, my) or self.menu ~= nil
-    drawFrame(0, 0, sx, sy, w, h, self.visor, self.m, self.chanW, hover)
+    drawFrame(0, 0, sx, sy, w, h, self.visor, self.m, self.L, mx, my, nil, self.menu ~= nil)
 end
 
 -- One row of a pop-up list.
@@ -916,21 +1412,24 @@ local function drawRow(px, py, r, picked, m)
     surface.SetDrawColor(col)
     surface.DrawRect(x, y, 3, r.h)
     local current = r.item.ch and r.item.ch == currentChannel()
-    draw.SimpleText(r.item.label .. (current and "  ●" or ""), UI.Font(14, 700), x + 10 * m.s, y + r.h * 0.5, col, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    draw.SimpleText(r.item.label .. (current and "  (now)" or ""), UI.Font(14, 700), x + 10 * m.s, y + r.h * 0.5, col, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
     draw.SimpleText(r.item.desc, UI.Font(12), x + r.w - 8 * m.s, y + r.h * 0.5, COL_DIM, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
 end
 
--- Messages, avatars and lists, on top of the frame, in screen space
--- (after all VGUI, so avatars can be painted by hand).
+-- Messages and lists, on top of the frame, in screen space (after all
+-- VGUI, so they draw over the frame's children).
 Rhylib.Hook.Add("PostRenderVGUI", "chat.window", function()
     local p = Chat.panel
     if not IsValid(p) then return end
     local px, py = p:LocalToScreen(0, 0)
-    local w, h, m = p:GetWide(), p:GetTall(), p.m
-    local ax, ay, aw, ah = messageArea(px, py, w, h, m)
-    drawMessages(ax, ay, aw, ah, m.font, m.lineH, true, p.visor and function(ly) return Chat.VisorEdgeX(ly) - ax - m.pad end)
+    local w, m, L = p:GetWide(), p.m, p.L
+    drawWindowMessages(px, py, L, m, p.visor)
     if Chat.scroll > 0 then
-        draw.SimpleText("▲ " .. Chat.scroll, UI.Font(12), px + w - m.pad, py + m.header * 0.5, COL_DIM, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+        local r = L.msgs
+        local ly = py + r.y + math.floor(10 * m.s)
+        local rx = px + r.x + r.w - m.pad
+        if p.visor then rx = math.min(rx, Chat.VisorEdgeX(ly + math.floor(8 * m.s)) - m.pad * 2) end
+        draw.SimpleText("+" .. Chat.scroll .. " newer", UI.Font(12), rx, ly, COL_DIM, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
     end
 
     local list = p.menu or p.suggest
