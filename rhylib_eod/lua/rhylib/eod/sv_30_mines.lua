@@ -191,7 +191,7 @@ end
 
 -- Explosions nearby set mines off (a moment later: chains ripple out).
 Rhylib.Hook.Add("Rhylib.Explosion", "eod.mines", function(pos, reach, tier, attacker, inflictor, kind)
-    if IsValid(attacker) and attacker.IsRhylibDroid then return end   -- (droids know their mines)
+    if IsValid(attacker) and (attacker.IsRhylibDroid or attacker.rhylibDroidShot) then return end   -- (droids know their mines; rhylibDroidShot: a droid's rocket / shell whose droid is gone)
     local r2 = math.max(reach or 0, 60) ^ 2
     for m in pairs(E.mines) do
         if IsValid(m) and m ~= inflictor and not m.IsTrainingMine and not m.eodOver and not m:GetSafe() and m:GetPos():DistToSqr(pos) <= r2 then
@@ -208,7 +208,7 @@ function E.MineShot(mine, dmg)
     if dmg:IsDamageType(DMG_BLAST) then return end   -- (blasts: the Rhylib.Explosion hook above, with its own reach)
     local a = dmg:GetAttacker()
     if IsValid(a) and a:IsPlayer() and holdsTool(a) then return end
-    if IsValid(a) and a.IsRhylibDroid then return end   -- (droids don't shoot their own mines)
+    if IsValid(a) and (a.IsRhylibDroid or a.rhylibDroidShot) then return end   -- (droids don't shoot their own mines)
     timer.Simple(0, function() E.MineBoom(mine, "mine") end)
 end
 

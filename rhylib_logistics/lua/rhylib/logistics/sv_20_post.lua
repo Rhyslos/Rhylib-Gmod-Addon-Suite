@@ -1,7 +1,7 @@
 --[[
     Command post (server): what its window shows (cl_20_post.lua), per
     viewer (L.Access):
-      everyone      Logistics: supply crates, medical crates, ammo, gear
+      everyone      Logistics: supply depots (what they hold), supply crates, medical crates, ammo, gear
                     cabinets and armouries (rhylib_armoury) within
                     postRadius, with the items left in each crate, and the
                     armoury stock running lowest (sv_50_stock.lua);
@@ -12,7 +12,8 @@
       officers      + Orders: the call-ins (sv_60_calls.lua, net logi.call).
 
     Net logi.post (server -> that player): Entity post, UInt 2 access,
-    UInt 32 length, compressed JSON { supplies = { {name, kind, left, dist} }
+    UInt 32 length, compressed JSON { supplies = { {name, kind, left, dist}
+    or depot rows {name, kind, text, empty, dist} }
     (left -1 endless, -2 shared stock), stock = { {id, name, left, max} },
     beacons = { {label, owner, power, state, count, ago} } }. Sent on E
     (once a second at most) and on Refresh: net logi.postreq (client ->
@@ -57,6 +58,10 @@ local function build(ply, post, access)
                     dist = math.floor(e:GetPos():Distance(pos) / UNITS_PER_M) }
             end
         end
+    end
+    -- (supply depots, sv_70_depots.lua: what they hold as the row's text)
+    if L.DepotRows then
+        for _, row in ipairs(L.DepotRows(pos, r)) do data.supplies[#data.supplies + 1] = row end
     end
     table.sort(data.supplies, function(a, b) return a.dist < b.dist end)
     if access >= L.ACCESS_TECH then

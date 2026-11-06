@@ -76,7 +76,7 @@ end
 -- hands/viewmodels, ropes and lying bodies.
 local SKIP = { gmod_hands = true, predicted_viewmodel = true, viewmodel = true, rhylib_rope = true, rhylib_zipline = true, rhylib_zipline_end = true,
     rhylib_world_item = true, gmod_gamerules = true, physgun_beam = true,
-    rhylib_grenade = true, rhylib_he_planted = true, rhylib_b2_rocket = true }   -- (live explosives)
+    rhylib_grenade = true, rhylib_he_planted = true, rhylib_b2_rocket = true, rhylib_spider_shell = true }   -- (live explosives)
 
 -- P.Why(ent): nil if ent may be made permanent, else a reason for the player.
 function P.Why(e)

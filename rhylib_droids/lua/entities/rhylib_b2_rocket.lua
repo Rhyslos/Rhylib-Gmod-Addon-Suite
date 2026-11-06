@@ -40,6 +40,7 @@ if SERVER then
         self:SetModelScale(0.5, 0)
         self:SetMoveType(MOVETYPE_NONE)
         self:SetSolid(SOLID_NONE)
+        self.rhylibDroidShot = true   -- (counts as a droid's when its droid is gone: no droid damage, no mines)
         self:SetTraining(self.training and true or false)
         self.vel = self.vel or Vector(0, 0, 0)
         self.dieAt = CurTime() + 8

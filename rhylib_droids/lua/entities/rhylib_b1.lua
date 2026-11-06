@@ -2,7 +2,8 @@
     B1 battle droid: a NextBot with an E-5. See rhylib/droids/sh_00_config.lua.
     Also the base of the other droids (ENT.DroidKind picks a row of D.KINDS:
     rhylib_b2, rhylib_b2_cannon, rhylib_b1_<variant>, rhylib_b1_training,
-    rhylib_b2_training).
+    rhylib_b2_training; rhylib_spider overrides firing, moving, animation
+    and drawing in its own file).
 
     Cover (B1 kinds, `cover`): hit coverHits times within coverWindow, or
     suppressed (Z-6 skill, flash charge), it runs to a navmesh hiding spot
@@ -116,7 +117,7 @@ local function resolveAnims(ent)
     a.walk = a.walk or a.run or a.idle
     a.run = a.run or a.walk
     anims[mdl] = a
-    if SERVER then
+    if SERVER and not ent.QuietAnims then   -- (QuietAnims: a subclass with its own animation, e.g. rhylib_spider)
         Rhylib.Print("droids", "%s: %d sequences; idle=%s walk=%s run=%s shoot=%s", mdl, ent:GetSequenceCount(),
             tostring(ent:GetSequenceActivityName(ent:SelectWeightedSequence(a.idle))),
             tostring(ent:GetSequenceActivityName(ent:SelectWeightedSequence(a.walk))),
@@ -145,9 +146,9 @@ end
 function ENT:Initialize()
     local D = Rhylib.Droids
     local k = self:Kind()
-    -- (a model that isn't installed: the B1's; clones never get a droid model)
+    -- (a model that isn't installed: the row's fallback, else the B1's; clones never get a droid model)
     local mdl = D.KindModel(k)
-    self:SetModel(util.IsValidModel(mdl or "") and mdl or (self.IsRhylibClone and D.CLONE_FALLBACK or D.B1_MODEL))
+    self:SetModel(util.IsValidModel(mdl or "") and mdl or k.fallback or (self.IsRhylibClone and D.CLONE_FALLBACK or D.B1_MODEL))
     self.Training = k.training
     -- Clones: players walk through them (a medic on the body blocked
     -- the way out). Both realms, see sh_00_config ShouldCollide.
@@ -222,6 +223,7 @@ if SERVER then
     end
     local function seePoint(t)
         if t:IsPlayer() then return t:EyePos() end
+        if t.rhylibObjTarget then return t:WorldSpaceCenter() end   -- (a low crate: its middle, so cover hides it)
         return t:WorldSpaceCenter() + Vector(0, 0, 12)
     end
 
@@ -291,11 +293,11 @@ if SERVER then
         return D.DroidTargets()
     end
 
-    -- Is e on the other side (for being shot at)?
+    -- Is e on the other side (for being shot at)? (droids: event targets too)
     function ENT:IsFoe(e)
         if not IsValid(e) then return false end
         if self.IsRhylibClone then return e.IsRhylibDroid == true end
-        return e:IsPlayer() or e.IsRhylibClone == true
+        return e:IsPlayer() or e.IsRhylibClone == true or (e.rhylibObjTarget == true and not self.Training)
     end
 
     -- Aggression 1-5: a squad's own level (toolgun Command mode) first;
@@ -338,9 +340,13 @@ if SERVER then
         local cur = self.target
         -- Targets in range, sorted nearest first (insertion sort, few).
         local n, curD = 0, nil
+        local etMul = D.Cfg("etPriority") ^ 2
         for _, p in ipairs(self:TargetList()) do
             local d = IsValid(p) and p:GetPos():DistToSqr(pos) or math.huge   -- (cached lists can hold removed NPCs)
-            if d < range * range then
+            local inRange = d < range * range
+            -- (an event target sorts as further away: troopers first; range is the real one)
+            if p.rhylibObjTarget and d < math.huge then d = d * (p.DroidPriority and p.DroidPriority ^ 2 or etMul) end
+            if inRange then
                 if p == cur then curD = d end
                 local i = n
                 while i > 0 and candD[i] > d do
@@ -361,10 +367,12 @@ if SERVER then
             end
         end
         local i = 1
+        local objTr = 0   -- (things to shoot: at most 2 of the traces, so crates behind cover don't hide a trooper)
         while i <= n and traces < MAX_TRACES and candD[i] < limit do
             local p = cand[i]
-            if p ~= cur then
+            if p ~= cur and not (p.rhylibObjTarget and objTr >= 2) then
                 traces = traces + 1
+                if p.rhylibObjTarget then objTr = objTr + 1 end
                 if self:CanSee(p) then best = p break end
             end
             i = i + 1
@@ -516,7 +524,8 @@ if SERVER then
             if now - at < 1.5 and IsValid(d) then n = n + 1 else f[d] = nil end
         end
         extra = extra * math.min(1 + D.Cfg("crowdMult") * math.max(0, n - D.Cfg("crowdFree")), D.Cfg("crowdMax")) * (mult or 1)
-        self:FireAtPos(t:WorldSpaceCenter() + Vector(0, 0, 8), t:GetVelocity():Length2D(), extra)   -- chest
+        -- (chest; an event target: its middle, a low crate would be missed above)
+        self:FireAtPos(t:WorldSpaceCenter() + (t.rhylibObjTarget and vector_origin or Vector(0, 0, 8)), t:GetVelocity():Length2D(), extra)
     end
 
     -- ENT:FireAtPos(aim, speed, extra): one bolt toward a point.
@@ -573,6 +582,8 @@ if SERVER then
         local popper = self:Kind().poppers
         n:SetPos(from)
         n.thrower = self
+        -- (a droid's: still a droid's if the droid dies before it goes off: event targets, mines)
+        if not self.IsRhylibClone then n.rhylibDroidShot = true end
         if popper then
             -- Clone trooper: a droid popper (EMP), which never stuns players.
             n.kind = "emp"
@@ -611,7 +622,7 @@ if SERVER then
         if d < D.Cfg("b1NadeMin") or d > D.Cfg("b1NadeMax") then return false end
         local chance = D.Cfg(k.poppers and "ctPopperChance" or "b1NadeFightChance")
         for _, p in ipairs(self:TargetList()) do
-            if p ~= t and IsValid(p) and p:GetPos():DistToSqr(pos) < 250 * 250 then
+            if p ~= t and IsValid(p) and not p.rhylibObjTarget and p:GetPos():DistToSqr(pos) < 250 * 250 then
                 chance = chance * 2
                 break
             end
@@ -824,7 +835,7 @@ if SERVER then
         local r = D.Cfg(self:Kind().range) * 1.5
         local pos = self:GetPos()
         for _, p in ipairs(self:TargetList()) do
-            if IsValid(p) and p:GetPos():DistToSqr(pos) < r * r then return true end
+            if IsValid(p) and not p.rhylibObjTarget and p:GetPos():DistToSqr(pos) < r * r then return true end
         end
         return false
     end
@@ -832,8 +843,11 @@ if SERVER then
     -- The nearest target anywhere (attack mode hunting; distance only).
     function ENT:NearestTarget(maxDist)
         local pos, best, bestD = self:GetPos(), nil, (maxDist or 6000) ^ 2
+        local etMul = D.Cfg("etPriority") ^ 2
         for _, p in ipairs(self:TargetList()) do
             local d = IsValid(p) and p:GetPos():DistToSqr(pos) or math.huge
+            -- (things to shoot count as further away, as in Look)
+            if p.rhylibObjTarget and d < math.huge then d = d * (p.DroidPriority and p.DroidPriority ^ 2 or etMul) end
             if d < bestD then best, bestD = p, d end
         end
         return best

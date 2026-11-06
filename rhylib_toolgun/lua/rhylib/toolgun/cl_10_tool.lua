@@ -25,10 +25,12 @@
     spawn window's "Alertness" row sets it too.
     Droid labels add the squad number (S12), its own aggression (A4) and
     its stealth state (UNAWARE, SUSPICIOUS, SEARCHING, ALARM).
-    The droid spawner also shows in the spawn window's NPCs tab ("Rhy's
-    Droid spawner") and its Entities tile picks it for the toolgun; on all
-    three, right-click > Change spawner settings (menus hook
-    Rhylib.SpawnTabItems).
+    The droid and clone spawners (Rhy's tab, Spawners) also show in the
+    spawn window's NPCs tab ("Rhy's Spawners") and their Entities tiles
+    pick them for the toolgun; on all three, right-click > Change spawner
+    settings (menus hook Rhylib.SpawnTabItems). Each side keeps its own
+    settings for the next ones placed (rhylib_tool_sp_* droids,
+    rhylib_tool_csp_* clones).
     Look: the Rhy's tab's placing controls are one plate under the tiles,
     a row each with a caps caption (New droids: the five modes in their
     colours; Aggression 1-5; Alertness, Unaware in blue; full access
@@ -86,21 +88,58 @@ local cvSpMode = CreateClientConVar("rhylib_tool_sp_mode", "patrol", true, false
 local cvSpTotal = CreateClientConVar("rhylib_tool_sp_total", "60", true, false, "Toolgun: droid spawner droids in all")
 local cvSpCap = CreateClientConVar("rhylib_tool_sp_cap", "20", true, false, "Toolgun: droid spawner alive at once")
 local cvSpInterval = CreateClientConVar("rhylib_tool_sp_interval", "30", true, false, "Toolgun: droid spawner seconds between squads")
+-- The clone spawner's, the same way.
+local cvCspPreset = CreateClientConVar("rhylib_tool_csp_preset", "clone_squad", true, false, "Toolgun: clone spawner preset squad")
+local cvCspMode = CreateClientConVar("rhylib_tool_csp_mode", "patrol", true, false, "Toolgun: clone spawner orders (patrol, roam, attack, guard)")
+local cvCspTotal = CreateClientConVar("rhylib_tool_csp_total", "60", true, false, "Toolgun: clone spawner clones in all")
+local cvCspCap = CreateClientConVar("rhylib_tool_csp_cap", "20", true, false, "Toolgun: clone spawner alive at once")
+local cvCspInterval = CreateClientConVar("rhylib_tool_csp_interval", "30", true, false, "Toolgun: clone spawner seconds between squads")
 local SP_MODES = { patrol = 1, roam = 2, attack = 3, guard = 4 }
+-- The event target's settings for the next ones (rhylib_droids D.TargetWindow).
+local cvEtName = CreateClientConVar("rhylib_tool_et_name", "Target", true, false, "Toolgun: event target name")
+local cvEtModel = CreateClientConVar("rhylib_tool_et_model", "models/props_junk/wood_crate002a.mdl", true, false, "Toolgun: event target model")
+local cvEtScale = CreateClientConVar("rhylib_tool_et_scale", "1", true, false, "Toolgun: event target size (0.5-3)")
+local cvEtHealth = CreateClientConVar("rhylib_tool_et_health", "800", true, false, "Toolgun: event target health")
+local cvEtExplode = CreateClientConVar("rhylib_tool_et_explode", "0", true, false, "Toolgun: event target blows up when destroyed")
+local cvEtRadius = CreateClientConVar("rhylib_tool_et_radius", "300", true, false, "Toolgun: event target blast radius (units)")
 
--- The droid spawner settings window for the next ones placed
--- (rhylib_droids D.Spawner.Window).
-local function spawnerSettings()
+local function targetSettings()
+    local D = Rhylib.Droids
+    if not (D and D.TargetWindow) then return end
+    local st = { name = cvEtName:GetString(), model = cvEtModel:GetString(), scale = cvEtScale:GetFloat(), health = cvEtHealth:GetInt(),
+        explode = cvEtExplode:GetBool(), radius = cvEtRadius:GetInt() }
+    D.TargetWindow(st, "Event target: new ones", "What the next event targets you place are", function(v)
+        RunConsoleCommand("rhylib_tool_et_name", v.name or "")
+        RunConsoleCommand("rhylib_tool_et_model", v.model or "")
+        RunConsoleCommand("rhylib_tool_et_scale", tostring(v.scale or 1))
+        RunConsoleCommand("rhylib_tool_et_health", tostring(v.health or 800))
+        RunConsoleCommand("rhylib_tool_et_explode", v.explode and "1" or "0")
+        RunConsoleCommand("rhylib_tool_et_radius", tostring(v.radius or 300))
+    end)
+end
+-- (each side's convars: preset, mode, total, cap, interval, and their names' prefix)
+local SP_CV = {
+    droid = { cvSpPreset, cvSpMode, cvSpTotal, cvSpCap, cvSpInterval, pre = "rhylib_tool_sp_" },
+    clone = { cvCspPreset, cvCspMode, cvCspTotal, cvCspCap, cvCspInterval, pre = "rhylib_tool_csp_" },
+}
+local function spCv(e) return SP_CV[e and e.spawner == "clone" and "clone" or "droid"] end
+
+-- The droid / clone spawner settings window for the next ones placed
+-- (rhylib_droids D.Spawner.Window). side = "droid" or "clone".
+local function spawnerSettings(side)
     local D = Rhylib.Droids
     if not (D and D.Spawner and D.Spawner.Window) then return end
-    local st = { preset = cvSpPreset:GetString(), mode = cvSpMode:GetString(), total = cvSpTotal:GetInt(),
-        cap = cvSpCap:GetInt(), interval = cvSpInterval:GetInt() }   -- (no Running row: placed ones always run)
-    D.Spawner.Window(st, nil, "Droid spawner: new ones", "What the next droid spawners you place send out", function(v)
-        RunConsoleCommand("rhylib_tool_sp_preset", v.preset)
-        RunConsoleCommand("rhylib_tool_sp_mode", v.mode)
-        RunConsoleCommand("rhylib_tool_sp_total", tostring(v.total))
-        RunConsoleCommand("rhylib_tool_sp_cap", tostring(v.cap))
-        RunConsoleCommand("rhylib_tool_sp_interval", tostring(v.interval))
+    local cv = SP_CV[side] or SP_CV.droid
+    local clones = side == "clone"
+    local st = { preset = cv[1]:GetString(), mode = cv[2]:GetString(), total = cv[3]:GetInt(),
+        cap = cv[4]:GetInt(), interval = cv[5]:GetInt(), clones = clones or nil }   -- (no Running row: placed ones always run)
+    local what = clones and "clone" or "droid"
+    D.Spawner.Window(st, nil, (clones and "Clone" or "Droid") .. " spawner: new ones", "What the next " .. what .. " spawners you place send out", function(v)
+        RunConsoleCommand(cv.pre .. "preset", v.preset)
+        RunConsoleCommand(cv.pre .. "mode", v.mode)
+        RunConsoleCommand(cv.pre .. "total", tostring(v.total))
+        RunConsoleCommand(cv.pre .. "cap", tostring(v.cap))
+        RunConsoleCommand(cv.pre .. "interval", tostring(v.interval))
     end)
 end
 
@@ -113,28 +152,30 @@ local function pickEntry(id)
     if IsValid(tg) and w ~= tg then input.SelectWeapon(tg) end
 end
 
--- The droid spawner in the spawn window's NPCs tab (its own "Rhy's Droid
--- spawner" category) and on its Entities tab tile: click picks it for the
--- toolgun, right-click has Change spawner settings (menus hook
+-- The droid and clone spawners in the spawn window's NPCs tab (their own
+-- "Rhy's Spawners" category) and on their Entities tab tiles: click picks
+-- one for the toolgun, right-click has Change spawner settings (menus hook
 -- Rhylib.SpawnTabItems).
 local SPAWNER_TIP = "Click: pick it for the toolgun, then LMB places one facing you.\nRight-click: Change spawner settings (its squad, orders, numbers, timing)"
 Rhylib.Hook.Add("Rhylib.SpawnTabItems", "toolgun.spawner", function(tabId, items)
-    local e
-    for _, x in ipairs(Tool.Entries()) do if x.spawner then e = x break end end
-    if not (e and Tool.CanEntry(LocalPlayer(), e)) then return end
-    local function menu(m) m:AddOption("Change spawner settings", spawnerSettings) end
-    if tabId == "entities" then
-        for _, it in ipairs(items) do
-            if it.extra == e.class then
-                it.tip, it.run = SPAWNER_TIP, function() pickEntry(e.id) end
-                local old = it.menu
-                it.menu = function(m) menu(m) if old then old(m) end end
+    for _, e in ipairs(Tool.Entries()) do
+        if e.spawner and Tool.CanEntry(LocalPlayer(), e) then
+            local side = e.spawner
+            local function menu(m) m:AddOption("Change spawner settings", function() spawnerSettings(side) end) end
+            if tabId == "entities" then
+                for _, it in ipairs(items) do
+                    if it.extra == e.class then
+                        it.tip, it.run = SPAWNER_TIP, function() pickEntry(e.id) end
+                        local old = it.menu
+                        it.menu = function(m) menu(m) if old then old(m) end end
+                    end
+                end
+            elseif tabId == "npcs" then
+                items[#items + 1] = { cat = "Rhy's Spawners", name = e.name, extra = e.class, admin = true, tip = SPAWNER_TIP,
+                    model = Tool.EntryModel(e), run = function() pickEntry(e.id) end, menu = menu,
+                    selected = function() return cvEntry:GetString() == e.id end }
             end
         end
-    elseif tabId == "npcs" then
-        items[#items + 1] = { cat = "Rhy's Droid spawner", name = e.name, extra = e.class, admin = true, tip = SPAWNER_TIP,
-            model = Tool.EntryModel(e), run = function() pickEntry(e.id) end, menu = menu,
-            selected = function() return cvEntry:GetString() == e.id end }
     end
 end)
 
@@ -434,13 +475,15 @@ local function buildTab(body)
                     or e.order and "Click: pick it; LMB sets the mode of every NPC of that side near where you aim"
                     or e.follow and "LMB: pick a clone (or all near the spot); RMB: they follow you, or the player you aim at"
                     or e.preset and "LMB: places the whole squad in a grid facing you (front row where you aim, commander and B2s at the back)"
-                    or e.spawner and "LMB: places a droid spawner facing you. Right-click: Change spawner settings (its squad, orders, numbers, timing)"
+                    or e.spawner and ("LMB: places a " .. (e.spawner == "clone" and "clone" or "droid") .. " spawner facing you. Right-click: Change spawner settings (its squad, orders, numbers, timing)")
+                    or e.eventTarget and "LMB: places an event target droids attack (only they can hurt it). Right-click: Change event target settings (model, size, health, blast). E on a placed one: its own settings"
                     or (e.class .. "\nClick: pick it for the toolgun (LMB places)"),
                 mat = SP.IconMat({ sp.IconOverride, "entities/" .. (e.class or e.id) .. ".png" }),
                 model = Tool.EntryModel(e),   -- (3D tile picture and hover preview)
                 selected = function() return cvEntry:GetString() == e.id end,
-                -- (right-click: the droid spawner's settings for the next ones)
-                menu = e.spawner and function(m) m:AddOption("Change spawner settings", spawnerSettings) end or nil,
+                -- (right-click: the spawner's / event target's settings for the next ones)
+                menu = e.spawner and function(m) m:AddOption("Change spawner settings", function() spawnerSettings(e.spawner) end) end
+                    or e.eventTarget and function(m) m:AddOption("Change event target settings", targetSettings) end or nil,
                 run = function() pickEntry(e.id) end,   -- (back to the toolgun if something else is out)
             }
           end
@@ -598,11 +641,20 @@ function Tool.Click(wep, which)
     net.WriteUInt(math.Clamp(cvAlert:GetInt(), 0, 2), 2)
     net.WriteFloat(Tool.rot or 0)   -- (the preview's turn, cl_40_ghost)
     if e.spawner then
-        net.WriteString(cvSpPreset:GetString())
-        net.WriteUInt(SP_MODES[cvSpMode:GetString()] or 1, 3)
-        net.WriteUInt(math.Clamp(cvSpTotal:GetInt(), 1, 1000), 10)
-        net.WriteUInt(math.Clamp(cvSpCap:GetInt(), 1, 100), 7)
-        net.WriteUInt(math.Clamp(cvSpInterval:GetInt(), 5, 600), 10)
+        local cv = spCv(e)
+        net.WriteString(cv[1]:GetString())
+        net.WriteUInt(SP_MODES[cv[2]:GetString()] or 1, 3)
+        net.WriteUInt(math.Clamp(cv[3]:GetInt(), 1, 1000), 10)
+        net.WriteUInt(math.Clamp(cv[4]:GetInt(), 1, 100), 7)
+        net.WriteUInt(math.Clamp(cv[5]:GetInt(), 5, 600), 10)
+    end
+    if e.eventTarget then
+        net.WriteString(string.sub(cvEtName:GetString(), 1, 32))
+        net.WriteString(string.sub(cvEtModel:GetString(), 1, 200))
+        net.WriteFloat(math.Clamp(cvEtScale:GetFloat(), 0.5, 3))
+        net.WriteUInt(math.Clamp(cvEtHealth:GetInt(), 1, 100000), 17)
+        net.WriteBool(cvEtExplode:GetBool())
+        net.WriteUInt(math.Clamp(cvEtRadius:GetInt(), 16, 2000), 11)
     end
     net.SendToServer()
 end

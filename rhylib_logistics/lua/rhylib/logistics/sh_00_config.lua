@@ -45,6 +45,7 @@ Config.Describe("logistics", { name = "Logistics", category = "Soldiers", sectio
     { "Building", { "^build", "^etool", "^repair", "^skill", "^crate", "^carry", "^staffCrate" } },
     { "Armoury stock", { "^stock", "^resupply" } },
     { "Garrison & call-ins", { "^garrison", "^call" } },
+    { "Supply depots", { "^depot", "^supplyCrate", "^fuel" } },
 } })
 Config.Register("logistics", "postRadius", 3000, "Command post: supplies within this range are listed (units)")
 Config.Register("logistics", "postModel", "models/ace/sw/rh/cgi_holotable_bottom.mdl", "Command post: model (the battalion computer's for now)")
@@ -60,6 +61,22 @@ Config.Register("logistics", "officerRank", "LT", "Lowest rank (rhylib_roster ra
 Config.Meta("logistics", "officerRank", { kind = "rank" })
 
 Rhylib.Perms.Register("rhylib.logistics.admin", "admin", "Logistics: see everything on the command post and get sensor alerts")
+
+-- Supply depots (entities/rhylib_supply_depot.lua, rhylib_supply_crate.lua,
+-- rhylib_fuel_canister.lua; sv_70_depots.lua).
+Config.Register("logistics", "depotModel", "models/props_c17/signpole001.mdl", "Supply depot: the marker in its middle (a placeholder until one is picked)")
+Config.Register("logistics", "depotRadius", 260, "Supply depot: ring radius when the toolgun gives none (units)")
+Config.Register("logistics", "depotLabelRange", 790, "Supply depot, crates, canisters: labels show within this distance (units)")
+Config.Register("logistics", "supplyCrateModel", "models/props_junk/wood_crate001a.mdl", "Supply crate: model (a placeholder until one is picked)")
+Config.Register("logistics", "supplyCrateAmount", 100, "Supply crate: supplies in one (RP only: what's lost when it's destroyed)")
+Config.Register("logistics", "supplyCrateHealth", 250, "Supply crate: damage it takes before it breaks (only droids and explosions hurt it)")
+Config.Register("logistics", "supplyCrateHeavy", false, "Supply crate: two troopers carry it (or one with Heavy lifter)")
+Config.Register("logistics", "supplyCratePriority", 1.5, "Supply crate: droids pick one as if it were this many times further away than it is (1 = like a trooper)")
+Config.Register("logistics", "fuelModel", "models/props_junk/gascan001a.mdl", "Fuel canister: model (a placeholder until one is picked)")
+Config.Register("logistics", "fuelHits", 3, "Fuel canister: hits from any gun that set it off (explosions set it off at once)")
+Config.Register("logistics", "fuelRadius", 240, "Fuel canister: blast radius (units; 52 = 1 m)")
+Config.Register("logistics", "fuelDamage", 110, "Fuel canister: blast damage at its middle (less further out)")
+Config.Register("logistics", "fuelNear", 420, "Fuel canister: droids only shoot at one while a player or clone is within this distance of it (units)")
 
 L.Cfg = Config.For and Config.For("logistics") or function(k) return Config.Get("logistics", k) end
 

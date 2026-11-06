@@ -487,6 +487,10 @@ local PRESETS = {
     droid_b2 = { rows = { { "b2", "b2", "b2", "b2" }, { "b2", "b2", "b2", "b2" } } },
     droid_mortar = { rows = { { "b1", "b1", "b1" }, { "b1", "b1", "b1" }, { "b2_cannon", "b1_commander", "b2_cannon" } },
         defend = "b2_cannon" },
+    -- (4 B1s in front, a spider droid behind them)
+    droid_spider = { rows = { { "b1", "b1", "b1", "b1" }, { "spider" } } },
+    -- (4 B1s and a crab droid up front with them)
+    droid_crab = { rows = { { "b1", "crab", "b1" }, { "b1", "b1" } } },
 }
 D.PRESETS = PRESETS
 

@@ -294,7 +294,8 @@ Rhylib.After("armoury", function()
     if A and A.AMMO_STOCK then
         -- (with rhylib_logistics the field kit, from the gear cabinet, is the kit)
         local list = { E.DEVICE, E.SCANNER, E.ARMORKIT, E.RMINE }
-        if not Rhylib.Has("logistics") then table.insert(list, 1, E.KIT) end
+        -- (installed, not loaded: rhylib_logistics loads after this addon)
+        if not (Rhylib.Has("logistics") or file.Exists("autorun/rhylib_logistics.lua", "LUA")) then table.insert(list, 1, E.KIT) end
         for _, id in ipairs(list) do
             if not table.HasValue(A.AMMO_STOCK, id) then A.AMMO_STOCK[#A.AMMO_STOCK + 1] = id end
         end

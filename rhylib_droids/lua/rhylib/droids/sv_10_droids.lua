@@ -58,14 +58,23 @@ function D.Targets()
 end
 
 -- D.DroidTargets() -> what droids shoot at: the players above plus living
--- clone NPCs (the same table as D.Targets() when there are no clones).
+-- clone NPCs and things (set D.objTargets: event targets, rhylib_logistics
+-- depot crates and fuel canisters; the same table as D.Targets() when
+-- there are none). A thing has ent.rhylibObjTarget = true, Health() > 0,
+-- optional ent.DroidPriority (picked as if that many times further away;
+-- default etPriority) and ent:DroidTargetable() -> false to skip it for now.
+-- D.AddObjectTarget(ent) / D.RemoveObjectTarget(ent).
+D.objTargets = D.objTargets or {}
+D.eventTargets = D.eventTargets or {}   -- (event targets only: their HUD)
+function D.AddObjectTarget(ent) if IsValid(ent) then ent.rhylibObjTarget = true D.objTargets[ent] = true end end
+function D.RemoveObjectTarget(ent) D.objTargets[ent] = nil end
 local mixed, mixedAt = {}, 0
 function D.DroidTargets()
     local now = CurTime()
     if now - mixedAt < 0.25 then return mixed end
     mixedAt = now
     local base = D.Targets()
-    if next(D.clones) == nil then
+    if next(D.clones) == nil and next(D.objTargets) == nil then
         mixed = base
         return mixed
     end
@@ -73,6 +82,10 @@ function D.DroidTargets()
     for i = 1, #base do mixed[i] = base[i] end
     for c in pairs(D.clones) do
         if IsValid(c) and c:Health() > 0 then mixed[#mixed + 1] = c end
+    end
+    for t in pairs(D.objTargets) do
+        if not IsValid(t) then D.objTargets[t] = nil
+        elseif t:Health() > 0 and not t.broken and not (t.DroidTargetable and not t:DroidTargetable()) then mixed[#mixed + 1] = t end
     end
     return mixed
 end
@@ -257,7 +270,8 @@ Rhylib.Hook.Add("EntityTakeDamage", "droids.friendly", function(ent, dmg)
     local att = dmg:GetAttacker()
     if not IsValid(att) then return end
     if ent.IsRhylibDroid then
-        if att.IsRhylibDroid then return true end
+        -- (rhylibDroidShot: a droid's rocket or shell whose droid is gone, credited to itself)
+        if att.IsRhylibDroid or att.rhylibDroidShot then return true end
     elseif ent.IsRhylibClone then
         if att:IsPlayer() or att.IsRhylibClone then return true end
     elseif att.IsRhylibClone and ent:IsPlayer() then

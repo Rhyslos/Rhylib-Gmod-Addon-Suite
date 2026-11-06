@@ -20,7 +20,9 @@
       shake                 { amplitude, frequency, duration, radius }
       decal                 true = a "Scorch" decal under pos (decalFilter)
       direct                { ent, damage }: blast damage to ent first (the
-                            thing a rocket hit itself), then the blast
+                            thing a rocket hit itself), then the blast;
+                            while that hit is dealt W.directHit = ent
+                            (damage hooks can tell a direct hit apart)
       knock                 false = this blast never knocks anyone down
                             (sv_60_knockdown checks W.explodeNoKnock);
                             default: blasts of knockMin damage or more do
@@ -71,7 +73,10 @@ function W.Explode(o)
             di:SetInflictor(inflictor)
             di:SetDamagePosition(pos)
             di:SetDamageForce((d.ent:WorldSpaceCenter() - pos):GetNormalized() * d.damage * 20)
-            d.ent:TakeDamageInfo(di)
+            W.directHit = d.ent
+            -- (never left set, even if a damage hook errors)
+            ProtectedCall(function() d.ent:TakeDamageInfo(di) end)
+            W.directHit = nil
         end
         util.BlastDamage(inflictor, attacker, pos, o.radius, o.damage)
         W.explodeNoKnock = false

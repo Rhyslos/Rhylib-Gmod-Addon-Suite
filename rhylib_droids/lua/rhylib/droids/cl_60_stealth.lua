@@ -288,7 +288,7 @@ Rhylib.Hook.Add("HUDPaint", "droids.stealth", function()
             local d = m.ent
             if IsValid(d) and not d:IsDormant() then
                 hv:Set(d:GetPos())
-                hv.z = hv.z + (d:Kind().big and 104 or 90)
+                hv.z = hv.z + (d:Kind().labelZ or (d:Kind().big and 104 or 90))
                 local sp = hv:ToScreen()
                 if sp.visible then
                     if m.kind == 2 then
@@ -313,7 +313,7 @@ Rhylib.Hook.Add("HUDPaint", "droids.stealth", function()
             local v = IsValid(d) and staffM[d:EntIndex()]
             if v and d:GetPos():DistToSqr(eye) < 2500 * 2500 then
                 hv:Set(d:GetPos())
-                hv.z = hv.z + (d:Kind().big and 112 or 100)
+                hv.z = hv.z + (d:Kind().labelZ and d:Kind().labelZ + 8 or (d:Kind().big and 112 or 100))
                 local sp = hv:ToScreen()
                 if sp.visible then
                     local x, y = math.floor(sp.x - bw / 2), math.floor(sp.y)

@@ -27,6 +27,11 @@
       perma = true        the Permanent tool (Rhylib.Perma)
       place = fn          own placing: fn(ply, tr, count, yaw) -> list of entities
       conceal = radius    a rhylib_droids concealment area of that radius
+      zoneRadius = r      ent.ZoneRadius before Spawn (rhylib_logistics supply depot ring)
+      eventTarget = true  rhylib_droids event target; its settings
+                          (right-click its tile) go with tool.place
+      spawner = side      "droid" / "clone": a droid / clone spawner; its
+                          settings (right-click its tile) go with tool.place
       perm = "name"       limited access (see above)
       save                old console save command; kept but unused
     Entries whose class isn't installed are left out (orders, presets and
@@ -59,6 +64,8 @@ local ALL = {
     { id = "b2", name = "B2 super battle droid", cat = "Droid NPCs", class = "rhylib_b2", count = true },
     { id = "b2c", name = "B2 mortar droid", cat = "Droid NPCs", class = "rhylib_b2_cannon", count = true },
     { id = "b2r", name = "B2 rocket droid", cat = "Droid NPCs", class = "rhylib_b2_rocketdroid", count = true },
+    { id = "spider", name = "DSD1 dwarf spider droid", cat = "Droid NPCs", class = "rhylib_spider", count = true },
+    { id = "crab", name = "LM-432 crab droid", cat = "Droid NPCs", class = "rhylib_crab", count = true },
     { id = "b1_commander", name = "B1 commander droid", cat = "Droid NPCs", class = "rhylib_b1_commander", count = true },
     { id = "b1_heavy", name = "B1 heavy droid", cat = "Droid NPCs", class = "rhylib_b1_heavy", count = true },
     { id = "b1_aat", name = "B1 AAT crew droid", cat = "Droid NPCs", class = "rhylib_b1_aat", count = true },
@@ -82,12 +89,17 @@ local ALL = {
     { id = "ps_droid_large", name = "Droid squad, large (31)", cat = "Droid NPCs", preset = "droid_large" },
     { id = "ps_droid_b2", name = "B2 squad (8)", cat = "Droid NPCs", preset = "droid_b2" },
     { id = "ps_droid_mortar", name = "Mortar squad (9)", cat = "Droid NPCs", preset = "droid_mortar" },
-    -- Droid spawner (rhylib_droids): right-click its tile for its settings (sent with tool.place).
-    { id = "droid_spawner", name = "Droid spawner", cat = "Droid NPCs", class = "rhylib_droid_spawner", spawner = true },
+    { id = "ps_droid_spider", name = "Spider squad (5)", cat = "Droid NPCs", preset = "droid_spider" },
+    { id = "ps_droid_crab", name = "Crab squad (5)", cat = "Droid NPCs", preset = "droid_crab" },
+    -- Droid / clone spawner (rhylib_droids): right-click its tile for its settings (sent with tool.place).
+    { id = "droid_spawner", name = "Droid spawner", cat = "Spawners", class = "rhylib_droid_spawner", spawner = "droid" },
+    { id = "clone_spawner", name = "Clone spawner", cat = "Spawners", class = "rhylib_clone_spawner", spawner = "clone" },
     { id = "spawn", name = "Spawn point (set battalion with E)", cat = "Spawns", class = "rhylib_spawn_point", named = true, save = SPAWNS },
     { id = "eventspawn", name = "Event spawn (open it with E)", cat = "Spawns", class = "rhylib_event_spawn", named = true, save = SPAWNS },
     { id = "objective", name = "Objective marker (on everyone's HUD; E: who sees it)", cat = "Spawns", class = "rhylib_objective", named = true },
     { id = "mediczone", name = "Medic zone (revives the downed, heals, +1 ticket)", cat = "Spawns", class = "rhylib_medic_zone" },
+    -- Event target (rhylib_droids): right-click its tile for its model, size, health, blast (sent with tool.place).
+    { id = "event_target", name = "Event target (droids attack it; E: its settings)", cat = "Spawns", class = "rhylib_event_target", eventTarget = true },
     { id = "beacon", name = "Training respawn beacon", cat = "Training", class = "rhylib_training_beacon", named = true, save = TRAIN },
     { id = "tarmoury", name = "Training armoury", cat = "Training", class = "rhylib_training_armoury", save = ARMOURY },
     { id = "tammo", name = "Training ammo cabinet", cat = "Training", class = "rhylib_training_ammo", save = ARMOURY },
@@ -97,6 +109,12 @@ local ALL = {
     { id = "buildcrate", name = "Building supplies crate (logistics, full)", cat = "Base", class = "rhylib_build_crate" },
     { id = "sensor", name = "Sensor array beacon (logistics, full power)", cat = "Base", class = "rhylib_sensor_beacon" },
     { id = "resupply", name = "Armoury resupply crate (logistics: set down by an armoury)", cat = "Base", class = "rhylib_resupply_crate" },
+    -- Supply depots (rhylib_logistics): a ring that counts the supply crates and fuel canisters set down in it.
+    { id = "depot_s", name = "Supply depot, small: 3 m (name it in the Beacon name box)", cat = "Base", class = "rhylib_supply_depot", named = true, zoneRadius = 160 },
+    { id = "depot_m", name = "Supply depot, medium: 6 m", cat = "Base", class = "rhylib_supply_depot", named = true, zoneRadius = 320 },
+    { id = "depot_l", name = "Supply depot, large: 12 m", cat = "Base", class = "rhylib_supply_depot", named = true, zoneRadius = 640 },
+    { id = "supplycrate", name = "Supply crate (for a supply depot; droids shoot it)", cat = "Base", class = "rhylib_supply_crate", count = true },
+    { id = "fuelcan", name = "Fuel canister (for a supply depot; explosive)", cat = "Base", class = "rhylib_fuel_canister", count = true },
     -- Concealment areas (rhylib_droids stealth): count as foliage for unaware droids; staff see them with the toolgun.
     { id = "conceal_s", name = "Concealment area (foliage), small: 2.5 m", cat = "Base", class = "rhylib_concealment", conceal = 128 },
     { id = "conceal_m", name = "Concealment area (foliage), medium: 5 m", cat = "Base", class = "rhylib_concealment", conceal = 256 },
@@ -132,7 +150,7 @@ local ALL = {
 
 -- The Rhy's tab's categories, top to bottom (NPCs on their own,
 -- not alphabetical); others follow alphabetically.
-Tool.CAT_ORDER = { "Staff tools", "Clone NPCs", "Droid NPCs", "EOD", "Spawns", "Armoury", "Medical", "Base", "Training", "Testing" }
+Tool.CAT_ORDER = { "Staff tools", "Clone NPCs", "Droid NPCs", "Spawners", "EOD", "Spawns", "Armoury", "Medical", "Base", "Training", "Testing" }
 
 -- Tool.Entries(): the installed entries (built once on first call, after
 -- entities are registered; fires hook Rhylib.ToolEntries(list) then).
@@ -155,7 +173,8 @@ end
 -- model in Initialize (module config, then that entity's fallback).
 -- Orders have none; presets show their main unit.
 local PRESET_CLASS = { clone_squad = "rhylib_ct_trooper", clone_company = "rhylib_ct_trooper", droid_small = "rhylib_b1",
-    droid_medium = "rhylib_b1", droid_large = "rhylib_b1", droid_b2 = "rhylib_b2", droid_mortar = "rhylib_b2_cannon" }
+    droid_medium = "rhylib_b1", droid_large = "rhylib_b1", droid_b2 = "rhylib_b2", droid_mortar = "rhylib_b2_cannon",
+    droid_spider = "rhylib_spider", droid_crab = "rhylib_crab" }
 -- (on a client, util.IsValidModel is false for a model nobody has loaded
 -- yet even when it's installed: check the file instead)
 local function modelExists(m)
@@ -180,10 +199,15 @@ local CONFIG_MODEL = {
     rhylib_trainer = { "roster", "trainerModel" },
     rhylib_quartermaster = { "armoury", "qmModel" },
     rhylib_droid_spawner = { "droids", "spawnerModel" },
+    rhylib_clone_spawner = { "droids", "spawnerModel" },
+    rhylib_event_target = { "droids", "etModel" },
     rhylib_command_post = { "logistics", "postModel" },
     rhylib_command_post_field = { "logistics", "postFieldModel" },
     rhylib_build_crate = { "logistics", "crateModel" },
     rhylib_resupply_crate = { "logistics", "resupplyModel" },
+    rhylib_supply_depot = { "logistics", "depotModel" },
+    rhylib_supply_crate = { "logistics", "supplyCrateModel" },
+    rhylib_fuel_canister = { "logistics", "fuelModel" },
 }
 
 -- Tool.ClassModel(class): the model placing that class gives, or nil.
@@ -204,7 +228,7 @@ local function classModel(class)
     local D = Rhylib.Droids
     if t.DroidKind and D and D.KINDS then
         local k = D.KINDS[t.DroidKind] or D.KINDS.b1
-        return ok(D.KindModel and D.KindModel(k)) or (t.IsRhylibClone and D.CLONE_FALLBACK or D.B1_MODEL)
+        return ok(D.KindModel and D.KindModel(k)) or ok(k.fallback) or (t.IsRhylibClone and D.CLONE_FALLBACK or D.B1_MODEL)
     end
     -- armouries, cabinets, crates, lockers
     if t.ModelKey and Rhylib.Armoury and Rhylib.Armoury.MODELS and Rhylib.Armoury.MODELS[t.ModelKey] and (t.Base == "rhylib_armoury_base" or class == "rhylib_armoury_base") then

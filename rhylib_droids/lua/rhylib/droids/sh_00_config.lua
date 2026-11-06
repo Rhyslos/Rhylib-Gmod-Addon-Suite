@@ -19,6 +19,19 @@
       flies straight at you and dives into the floor just before you, so
       it works down hallways and indoors (needs sight of you); between
       rockets it suppresses like a B2 at half the rate.
+      DSD1 dwarf spider droid (rhylib_spider, entities/rhylib_spider.lua):
+      a four-legged walker as tough as a B2 (b2Health, same damage rules),
+      slow, turns its body to its target and fires one slow explosive
+      shell (rhylib_spider_shell) every spiderShellInterval seconds at a
+      target in sight, leading a moving one; backs off from anyone closer
+      than spiderShellMin (fires anyway when it can't). Model: spiderModel
+      (placeholder HL2 antlion).
+      LM-432 crab droid (rhylib_crab, entities/rhylib_crab.lua): the
+      spider's walker with two rapid-fire blasters (fires like a B2,
+      crabRPM), crabHealth, its armour by where a hit comes from: side
+      plates take crabSideMult, front and back crabFrontMult, hits from
+      above crabTopMult (its weak spot). Model: crabModel (placeholder
+      HL2 headcrab).
       Training B1 / B2 (rhylib_b1_training, rhylib_b2_training): like the
       B1 and B2 with orange-yellow bolts that only take sim health
       (rhylib_training).
@@ -36,7 +49,7 @@
       one droids stand and shoot.
 
     Spawn menu: NPCs tab, "Rhy's B1 battle droids", "Rhy's B2 super
-    battle droids" and "Rhy's Training droids"
+    battle droids", "Rhy's Spider droids", "Rhy's Crab droids" and "Rhy's Training droids"
     (admins). Droids don't hurt each other. At most maxActive droids exist at once.
 
     Clone troopers (rhylib_ct_*, spawn menu "Rhy's Clone troopers"):
@@ -113,6 +126,57 @@ Config.Register("droids", "artyCooldown", 4.5, "Mortar squad artillery: seconds 
 Config.Register("droids", "artySpread", 35, "Mortar squad artillery: miss distance per 1000 units (tightens on repeated shots at one target)")
 Config.Register("droids", "artyMaxFlight", 5.5, "Mortar squad artillery: longest rocket flight time (higher arcs at long range)")
 Config.Register("droids", "artyBlasterRange", 1500, "Mortar squad artillery: closer than this it also uses its blaster (a lone B2 mortar: mortarSelfRange)")
+
+-- DSD1 dwarf spider droid (rhylib_spider). Health is the B2's (b2Health).
+Config.Register("droids", "spiderModel", "models/antlion.mdl", "DSD1 dwarf spider droid model (a placeholder until a spider droid model is picked; a missing one falls back to the antlion)")
+Config.Register("droids", "spiderScale", 0, "Spider droid: model size (0 = sized to spiderHeight)")
+Config.Register("droids", "spiderHeight", 64, "Spider droid: body height (units): its hull, its eyes and, with spiderScale 0, the model's size")
+Config.Register("droids", "spiderSeqIdle", "", "Spider droid: standing animation (sequence name; empty = found by itself)")
+Config.Register("droids", "spiderSeqWalk", "", "Spider droid: walking animation (sequence name; empty = found by itself)")
+Config.Register("droids", "spiderSeqRun", "", "Spider droid: running animation (sequence name; empty = found by itself)")
+Config.Register("droids", "spiderMuzzleAttach", "", "Spider droid: model attachment the shells leave from (empty or missing = spiderMuzzleFwd / spiderMuzzleUp)")
+Config.Register("droids", "spiderMuzzleFwd", 30, "Spider droid: shells leave this far in front of its centre (units)")
+Config.Register("droids", "spiderMuzzleUp", 40, "Spider droid: shells leave this high above its feet (units)")
+Config.Register("droids", "spiderSpeed", 95, "Spider droid: run speed")
+Config.Register("droids", "spiderRange", 2800, "How far a spider droid sees and shoots")
+Config.Register("droids", "spiderReaction", 0.9, "Seconds before a spider droid starts firing at a new target")
+Config.Register("droids", "spiderTurnRate", 90, "Spider droid: how fast it turns its body (degrees per second)")
+Config.Register("droids", "spiderAimCone", 12, "Spider droid: fires only once its body points this close to the target (degrees)")
+Config.Register("droids", "spiderShellInterval", 6, "Spider droid: seconds between shells")
+Config.Register("droids", "spiderShellDamage", 65, "Spider droid shell: blast damage at the centre")
+Config.Register("droids", "spiderShellDirect", 60, "Spider droid shell: extra blast damage to what it hits")
+Config.Register("droids", "spiderShellRadius", 110, "Spider droid shell: blast radius (units)")
+Config.Register("droids", "spiderShellKnock", true, "Spider droid shell: can knock players down (only close to the impact, where the blast does weapons knockMin damage or more)")
+Config.Register("droids", "spiderShellSpeed", 900, "Spider droid shell: speed (units/s)")
+Config.Register("droids", "spiderShellSpread", 40, "Spider droid shell: miss distance per 1000 units of range")
+Config.Register("droids", "spiderShellMin", 350, "Spider droid: closer than this it backs off before firing (cornered: fires anyway)")
+Config.Register("droids", "spiderShellMax", 16, "Spider droid shells in flight at once, all spiders together")
+
+-- LM-432 crab droid (rhylib_crab).
+Config.Register("droids", "crabModel", "models/headcrabclassic.mdl", "LM-432 crab droid model (a placeholder until a crab droid model is picked; a missing one falls back to the headcrab)")
+Config.Register("droids", "crabScale", 0, "Crab droid: model size (0 = sized to crabHeight)")
+Config.Register("droids", "crabHeight", 56, "Crab droid: body height (units): its hull, its eyes and, with crabScale 0, the model's size")
+Config.Register("droids", "crabSeqIdle", "", "Crab droid: standing animation (sequence name; empty = found by itself)")
+Config.Register("droids", "crabSeqWalk", "", "Crab droid: walking animation (sequence name; empty = found by itself)")
+Config.Register("droids", "crabSeqRun", "", "Crab droid: running animation (sequence name; empty = found by itself)")
+Config.Register("droids", "crabMuzzleLeft", "", "Crab droid: model attachment the left gun fires from (empty or missing = crabMuzzleFwd / Side / Up)")
+Config.Register("droids", "crabMuzzleRight", "", "Crab droid: model attachment the right gun fires from (empty or missing = crabMuzzleFwd / Side / Up)")
+Config.Register("droids", "crabMuzzleFwd", 28, "Crab droid: bolts leave this far in front of its centre (units)")
+Config.Register("droids", "crabMuzzleSide", 16, "Crab droid: each gun this far left / right of its centre (units)")
+Config.Register("droids", "crabMuzzleUp", 34, "Crab droid: bolts leave this high above its feet (units)")
+Config.Register("droids", "crabHealth", 900, "Crab droid: health")
+Config.Register("droids", "crabSpeed", 120, "Crab droid: run speed")
+Config.Register("droids", "crabRange", 2400, "How far a crab droid sees and shoots")
+Config.Register("droids", "crabReaction", 0.6, "Seconds before a crab droid starts firing at a new target")
+Config.Register("droids", "crabTurnRate", 120, "Crab droid: how fast it turns its body (degrees per second)")
+Config.Register("droids", "crabAimCone", 25, "Crab droid: fires only while its body points this close to the target (degrees)")
+Config.Register("droids", "crabDamage", 11, "Crab droid: blaster damage per bolt")
+Config.Register("droids", "crabRPM", 520, "Crab droid: shots per minute, both guns together, fired without stopping (suppression)")
+Config.Register("droids", "crabSpread", 2.2, "Crab droid inaccuracy cone (degrees), more against moving targets")
+Config.Register("droids", "crabSideMult", 0.35, "Crab droid: damage taken from hits on its left or right side")
+Config.Register("droids", "crabFrontMult", 0.7, "Crab droid: damage taken from hits on its front or back")
+Config.Register("droids", "crabTopMult", 1.75, "Crab droid: damage taken from hits from above (its weak spot)")
+Config.Register("droids", "crabTopAngle", 35, "Crab droid: a hit counts as from above when it comes from at least this steep above its middle (degrees)")
 
 Config.Register("droids", "heavyHealth", 340, "B1 heavy: health")
 Config.Register("droids", "heavySpeed", 140, "B1 heavy: run speed")
@@ -281,7 +345,8 @@ D.B2T_MODEL = "models/aussiwozzi/cgi/b1droids/b2_battledroid_training.mdl"
                   Server settings change applies to new shots/spawns
       burst       { min, max } shots per burst (full-auto runs, cover bursts)
       style       how it fires in a fight (ENT:StyleFire): auto, semi,
-                  spray, suppress or mortar; rateKey: config key of a fire
+                  spray, suppress or mortar (shell: the spider's own,
+                  entities/rhylib_spider.lua); rateKey: config key of a fire
                   rate multiplier
       color       bolt colour index (rhylib_weapons BoltColor: 1 blue,
                   2 red, 8 training)
@@ -291,6 +356,9 @@ D.B2T_MODEL = "models/aussiwozzi/cgi/b1droids/b2_battledroid_training.mdl"
       cover       takes cover when hit   big      bigger hull and eye (B2s)
       dual        fires from both hands  rockets  B2 wrist rockets (mortar)
       direct      rockets fly level and dive (rocket droid; needs rockets)
+      category    spawn menu category (none: by the kind's name)
+      fallback    model when the row's model isn't installed (none: the B1's)
+      labelZ      height of the stealth "?" / "!" over it (none: by big)
       commander   boosts its side within cmdRadius
       medic       heals, treats and revives (clones)
       training    sim-only bolts and blasts, no kill credit
@@ -326,6 +394,21 @@ D.KINDS.b2_cannon = variant("b2", "B2 mortar droid", "models/aussiwozzi/cgi/b1dr
 -- (a level rocket that dives down just before you)
 D.KINDS.b2_rocket = variant("b2", "B2 rocket droid", "models/aussiwozzi/cgi/b1droids/b2_battledroid_cannon.mdl",
     { rpm = "b2RPM", rateKey = "b2RocketRate", burst = { 2, 4 }, dual = false, rockets = true, direct = true, style = "suppress" })
+
+-- DSD1 dwarf spider droid: a B2's toughness (big, b2Health), its own
+-- entity (rhylib_spider: shells, movement, animation). rpm / spread are
+-- never used (it fires no bolts).
+D.SPIDER_FALLBACK = "models/antlion.mdl"
+D.KINDS.spider = { name = "DSD1 dwarf spider droid", modelCfg = "spiderModel", fallback = D.SPIDER_FALLBACK, health = "b2Health", speed = "spiderSpeed",
+    range = "spiderRange", reaction = "spiderReaction", damage = "spiderShellDamage", rpm = "b2RPM", spread = "b2Spread", burst = { 1, 1 }, color = 2,
+    big = true, style = "shell", category = "Rhy's Spider droids", labelZ = 84 }
+
+-- LM-432 crab droid: its own entity (rhylib_crab: the spider's walker,
+-- two guns, armour by hit direction), bolts as the B2 fires them.
+D.CRAB_FALLBACK = "models/headcrabclassic.mdl"
+D.KINDS.crab = { name = "LM-432 crab droid", modelCfg = "crabModel", fallback = D.CRAB_FALLBACK, health = "crabHealth", speed = "crabSpeed",
+    range = "crabRange", reaction = "crabReaction", damage = "crabDamage", rpm = "crabRPM", spread = "crabSpread", burst = { 1, 1 }, color = 2,
+    big = true, sound = D.B2_SOUND, style = "suppress", category = "Rhy's Crab droids", labelZ = 76 }
 
 -- Training droids: yellow bolts (color 8), no kill credit.
 D.KINDS.b1t = variant("b1", "B1 training droid", D.B1T_MODEL, { training = true, color = 8 })
@@ -378,7 +461,8 @@ end
 -- D.SpawnClone create NPCs through it. New kinds need one.
 D.CLASSES = { b1 = 
 "rhylib_b1", b2 = "rhylib_b2", b1t = "rhylib_b1_training", b2t = "rhylib_b2_training", b2_cannon = "rhylib_b2_cannon", b2_rocket = "rhylib_b2_rocketdroid",
-    ct_trooper = "rhylib_ct_trooper", ct_rifleman = "rhylib_ct_rifleman", ct_heavy = "rhylib_ct_heavy", ct_medic = "rhylib_ct_medic", ct_commander = "rhylib_ct_commander" }
+    ct_trooper = "rhylib_ct_trooper", ct_rifleman = "rhylib_ct_rifleman", ct_heavy = "rhylib_ct_heavy", ct_medic = "rhylib_ct_medic", ct_commander = "rhylib_ct_commander",
+    spider = "rhylib_spider", crab = "rhylib_crab" }
 for _, v in ipairs({ "aat", "commander", "geonosis", "heavy", "marine", "security", "snow" }) do
     D.CLASSES["b1_" .. v] = "rhylib_b1_" .. v
 end
@@ -428,7 +512,7 @@ for kind, class in pairs(D.CLASSES) do
         Name = D.KINDS[kind].name,
         Class = class,
         -- (split up so they're easier to find)
-        Category = D.KINDS[kind].side == "republic" and "Rhy's Clone troopers" or D.KINDS[kind].training and "Rhy's Training droids"
+        Category = D.KINDS[kind].category or D.KINDS[kind].side == "republic" and "Rhy's Clone troopers" or D.KINDS[kind].training and "Rhy's Training droids"
             or (string.sub(kind, 1, 2) == "b2" and "Rhy's B2 super battle droids" or "Rhy's B1 battle droids"),
         AdminOnly = true,
     })
@@ -441,17 +525,32 @@ Rhylib.Hook.Add("ShouldCollide", "droids.clones", function(a, b)
     if (a.IsRhylibClone and b:IsPlayer()) or (b.IsRhylibClone and a:IsPlayer()) then return false end
 end)
 
--- Droid spawner (entities/rhylib_droid_spawner.lua): what a new one starts with
+-- Droid and clone spawners (entities/rhylib_droid_spawner.lua, rhylib_clone_spawner.lua): what a new one starts with
 -- (admins change each one with E on it).
-Config.Register("droids", "spawnerPreset", "droid_small", "Droid spawner: preset squad a new spawner sends (droid_small, droid_medium, droid_large, droid_b2, droid_mortar)")
-Config.Meta("droids", "spawnerPreset", { options = { { "droid_small", "Small squad" }, { "droid_medium", "Medium squad" }, { "droid_large", "Large squad" }, { "droid_b2", "B2s" }, { "droid_mortar", "Mortars" } } })
-Config.Register("droids", "spawnerTotal", 60, "Droid spawner: droids a new spawner sends in all before it is empty")
-Config.Register("droids", "spawnerCap", 20, "Droid spawner: most of one spawner's droids alive at once")
-Config.Register("droids", "spawnerInterval", 30, "Droid spawner: seconds between squads")
-Config.Register("droids", "spawnerMode", "patrol", "Droid spawner: what its squads do (patrol, roam, attack, guard)")
+Config.Register("droids", "spawnerPreset", "droid_small", "Droid spawner: preset squad a new spawner sends (droid_small, droid_medium, droid_large, droid_b2, droid_mortar, droid_spider, droid_crab)")
+Config.Meta("droids", "spawnerPreset", { options = { { "droid_small", "Small squad" }, { "droid_medium", "Medium squad" }, { "droid_large", "Large squad" }, { "droid_b2", "B2s" }, { "droid_mortar", "Mortars" }, { "droid_spider", "Spider squad" }, { "droid_crab", "Crab squad" } } })
+Config.Register("droids", "cloneSpawnerPreset", "clone_squad", "Clone spawner: preset squad a new clone spawner sends (clone_squad, clone_company)")
+Config.Meta("droids", "cloneSpawnerPreset", { options = { { "clone_squad", "Clone squad (8)" }, { "clone_company", "Clone company (22)" } } })
+
+-- Event targets (entities/rhylib_event_target.lua): what a new one starts
+-- with (the toolgun's own settings window overrides these per placement).
+Config.Register("droids", "etName", "Target", "Event target: name a new one gets")
+Config.Register("droids", "etModel", "models/props_junk/wood_crate002a.mdl", "Event target: model a new one gets (any prop model)")
+Config.Register("droids", "etScale", 1, "Event target: size of a new one (0.5-3)")
+Config.Register("droids", "etHealth", 800, "Event target: health of a new one")
+Config.Register("droids", "etExplode", false, "Event target: a new one blows up when destroyed")
+Config.Register("droids", "etRadius", 300, "Event target: blast radius of a new one (units; 52 = 1 m)")
+Config.Register("droids", "etBlastDamage", 120, "Event target: blast damage at its middle when one blows up (less further out; hurts everyone in the radius)")
+Config.Register("droids", "etPriority", 1.25, "Event target: droids pick one as if it were this many times further away than it is (1 = as eagerly as a trooper)")
+Config.Register("droids", "etMax", 30, "Event targets on the map at once")
+Config.Register("droids", "etBarRange", 3150, "Event target: the health bar over it shows within this distance while in sight (units)")
+Config.Register("droids", "spawnerTotal", 60, "Droid / clone spawner: NPCs a new spawner sends in all before it is empty")
+Config.Register("droids", "spawnerCap", 20, "Droid / clone spawner: most of one spawner's NPCs alive at once")
+Config.Register("droids", "spawnerInterval", 30, "Droid / clone spawner: seconds between squads")
+Config.Register("droids", "spawnerMode", "patrol", "Droid / clone spawner: what its squads do (patrol, roam, attack, guard)")
 Config.Meta("droids", "spawnerMode", { options = { { "patrol", "Patrol" }, { "roam", "Roam" }, { "attack", "Attack" }, { "guard", "Guard" } } })
-Config.Register("droids", "spawnerHealth", 2000, "Droid spawner: damage it takes before it breaks")
-Config.Register("droids", "spawnerModel", "models/props_combine/combine_dispenser.mdl", "Droid spawner: model (a placeholder until a droid factory model is picked)")
+Config.Register("droids", "spawnerHealth", 2000, "Droid / clone spawner: damage it takes before it breaks (a clone spawner only from droids)")
+Config.Register("droids", "spawnerModel", "models/props_combine/combine_dispenser.mdl", "Droid / clone spawner: model (a placeholder until a droid factory model is picked; the clone spawner is tinted blue)")
 
 --------------------------------------------------------------------------
 -- Server settings page: this module's name, side-bar category and
@@ -462,13 +561,16 @@ Config.Register("droids", "spawnerModel", "models/props_combine/combine_dispense
 local PAGE_SECTIONS = {
     { "General", { "^boltSpeed$", "^maxActive$", "^aggression$", "^pathPerTick$", "^walkMult$", "^runSpread$", "^walkSpread$", "^moveSpread$", "^marchGroup$" } },
     { "Squads", { "^squad" } },
-    { "Droid spawner", { "^spawner" } },
+    { "Droid & clone spawners", { "^spawner", "^cloneSpawner" } },
+    { "Event targets", { "^et[A-Z]" } },
     { "Roam, patrol & calls for help", { "^roamRadius$", "^patrolRadius$", "^wander", "^call", "^ctCall" } },
     { "Orders & areas", { "^guardRadius$", "^markerRadius$", "^brushRadius$" } },
     { "B1 grenades", { "^b1Nade" } },
     { "B1 battle droids", { "^b1", "^e5" } },
     { "B2 rockets & mortars", { "^b2Rocket", "^b2Direct", "^b2Slow", "^b2Dive", "^arty", "^mortar", "^b2cRPM$" } },
     { "B2 super battle droids", { "^b2" } },
+    { "Spider droids", { "^spider" } },
+    { "Crab droids", { "^crab" } },
     { "Heavy & commander droids", { "^suppress", "^heavy", "^cmdHealth$", "^cmdRadius$", "^cmdSpread$", "^cmdReaction$", "^cmdPause$", "^cmdDeath", "^smoke" } },
     { "Cover & accuracy", { "^cover", "^blindSpread$", "^retreatFrac$", "^flash", "^settle", "^crowd" } },
     { "Retreat", { "^retreat", "^lastStand" } },

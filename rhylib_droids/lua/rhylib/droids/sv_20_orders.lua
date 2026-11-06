@@ -230,7 +230,7 @@ function D.RetreatGroup(picked, side)
         local foes = side == 1 and D.CloneTargets and D.CloneTargets() or (D.DroidTargets and D.DroidTargets()) or {}
         local mid, nf = Vector(0, 0, 0), 0
         for _, e in ipairs(foes) do
-            if IsValid(e) and e:GetPos():DistToSqr(centre) < 4000 * 4000 then
+            if IsValid(e) and not e.rhylibObjTarget and e:GetPos():DistToSqr(centre) < 4000 * 4000 then
                 mid = mid + e:GetPos()
                 nf = nf + 1
             end

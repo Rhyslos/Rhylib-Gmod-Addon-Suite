@@ -11,9 +11,12 @@
                    (0 = the server's stealthDefault, 1 alert, 2 unaware:
                    rhylib_droids stealth), Float turn (degrees added to
                    the facing, from the placement preview); for the droid
-                   spawner entry also String preset, UInt 3 mode (1 patrol,
+                   spawner entry (droid or clone) also String preset, UInt 3 mode (1 patrol,
                    2 roam, 3 attack, 4 guard), UInt 10 total, UInt 7 alive
-                   cap, UInt 10 seconds between squads; rate 20/s. Several NPCs at
+                   cap, UInt 10 seconds between squads; for the event
+                   target entry also String name, String model, Float
+                   scale, UInt 17 health, Bool explode, UInt 11 radius;
+                   rate 20/s. Several NPCs at
                    once become squads (rhylib_droids): count placements
                    D.MakeSquads, a preset one D.MakeSquad that keeps its
                    placed block (box); not in roam mode.
@@ -237,6 +240,7 @@ local function place(ply, e, count, name, mode)
             if e.named and ent.SetBeaconName then ent:SetBeaconName(name ~= "" and name or "Beacon") end
             if e.marker then ent.MarkerKind, ent.MarkerSide = e.marker, e.side end
             if e.conceal then ent.ConcealRadius = e.conceal end   -- (rhylib_droids concealment area)
+            if e.zoneRadius then ent.ZoneRadius = e.zoneRadius end   -- (rhylib_logistics supply depot)
             ent:Spawn()
             ent:Activate()
             -- Sit on the surface: lift by how far the model reaches below its origin.
@@ -246,9 +250,14 @@ local function place(ply, e, count, name, mode)
                 local phys = ent:GetPhysicsObject()
                 if IsValid(phys) then phys:EnableMotion(false) end
             end
-            -- (a droid spawner: the settings picked for it; the entity checks them)
+            -- (a droid / clone spawner: the settings picked for it; the entity checks them)
             if IsValid(ent) and e.spawner and ent.ApplyConfig and ply.rhylibSpawnerCfg then
                 ent:ApplyConfig(table.Copy(ply.rhylibSpawnerCfg), true)
+            end
+            -- (an event target: the settings picked for it, made safe by rhylib_droids)
+            if IsValid(ent) and e.eventTarget and ent.ApplyConfig and ply.rhylibTargetCfg and D and D.CleanTargetCfg then
+                ent:ApplyConfig(D.CleanTargetCfg(ply.rhylibTargetCfg))
+                ent.rhylibPlacer = ply   -- (for the etMax notice without a prop-protection addon)
             end
             -- (entities with their own staff setup, e.g. a sensor beacon's full power)
             if IsValid(ent) and ent.StaffPlaced then ent:StaffPlaced(ply) end
@@ -309,11 +318,15 @@ Rhylib.Net.Receive("tool.place", function(ply)
     ply.rhylibToolRot = turn(net.ReadFloat())
     local e = Tool.ById(id)
     if not e then return end
-    -- (the droid spawner: its settings, from the tile's right-click window)
+    -- (a droid / clone spawner: its settings, from the tile's right-click window)
     if e.spawner then
         local modes = { "patrol", "roam", "attack", "guard" }
         ply.rhylibSpawnerCfg = { preset = string.sub(net.ReadString(), 1, 32), mode = modes[net.ReadUInt(3)] or "patrol",
             total = net.ReadUInt(10), cap = net.ReadUInt(7), interval = net.ReadUInt(10) }
+    end
+    if e.eventTarget then
+        ply.rhylibTargetCfg = { name = string.sub(net.ReadString(), 1, 32), model = string.sub(net.ReadString(), 1, 200), scale = net.ReadFloat(),
+            health = net.ReadUInt(17), explode = net.ReadBool(), radius = net.ReadUInt(11) }
     end
     if not e.count then count = 1 end
     allowedEntry(ply, e, function() place(ply, e, count, name, mode) end)
@@ -441,7 +454,7 @@ local function removable(ent)
     if ent.rhylibToolSpawned then return { class = ent:GetClass() } end
     local par = ent:GetParent()
     if IsValid(par) and par.rhylibToolSpawned then return { class = par:GetClass(), ent = par } end
-    if ent.IsRhylibDroid or ent.IsRhylibClone or ent:GetClass() == "rhylib_b2_rocket" then return { class = ent:GetClass() } end
+    if ent.IsRhylibDroid or ent.IsRhylibClone or ent:GetClass() == "rhylib_b2_rocket" or ent:GetClass() == "rhylib_spider_shell" then return { class = ent:GetClass() } end
     -- Grapple ropes and ziplines (staff with the full toolgun only: no entry);
     -- a zipline's far end stands for its line.
     local cls = ent:GetClass()

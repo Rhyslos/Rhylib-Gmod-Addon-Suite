@@ -240,7 +240,7 @@ local function run(ply, op, list, pl)
         return string.format("%d moving%s", n, face and " (facing set)" or ""), "good"
     elseif op == "attack" then
         local t = Entity(pl.v)
-        if not (IsValid(t) and (t:IsPlayer() or t:IsNPC() or t:IsNextBot())) then return "No target there", "bad" end
+        if not (IsValid(t) and (t:IsPlayer() or t:IsNPC() or t:IsNextBot() or t.rhylibObjTarget)) then return "No target there", "bad" end
         local singles = {}
         for side = 1, 2 do for _, d in ipairs(loose[side]) do singles[#singles + 1] = d end end
         local now = CurTime()

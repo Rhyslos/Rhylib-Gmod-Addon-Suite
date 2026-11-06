@@ -1,10 +1,11 @@
 --[[
-    Droid spawner settings window (client).
+    Droid and clone spawner settings window (client).
 
     D.Spawner.Window(st, presets, title, sub, onApply(st)): the window:
     squad (preset), orders, droids in all, alive at once, seconds between
     squads and, when st.running is set, running on / off. presets = list
-    of preset ids (nil = the droid presets below). Used:
+    of preset ids (nil = the droid presets below, or the clone ones when
+    st.clones is set; st.clones also makes the words say clones). Used:
       - by an admin pressing E on a placed spawner (net droids.spawner,
         sv_50_spawner.lua): Apply sends droids.spawnerset;
       - by the toolgun (rhylib_toolgun: right-click the Droid spawner tile,
@@ -24,13 +25,17 @@ local UI = Rhylib.UI
 
 local MODES = { "patrol", "roam", "attack", "guard" }
 local MODE_NAMES = { patrol = "Patrol", roam = "Roam", attack = "Attack", guard = "Guard" }
-local PRESETS = { "droid_small", "droid_medium", "droid_large", "droid_b2", "droid_mortar" }
-local PRESET_NAMES = { droid_small = "Small", droid_medium = "Medium", droid_large = "Large", droid_b2 = "B2s", droid_mortar = "Mortars" }
+local PRESETS = { "droid_small", "droid_medium", "droid_large", "droid_b2", "droid_mortar", "droid_spider", "droid_crab" }
+local CLONE_PRESETS = { "clone_squad", "clone_company" }
+local PRESET_NAMES = { clone_squad = "Squad", clone_company = "Company", droid_small = "Small", droid_medium = "Medium", droid_large = "Large", droid_b2 = "B2s", droid_mortar = "Mortars", droid_spider = "Spider", droid_crab = "Crab" }
+-- (the summary card's name where "<name> squad" reads wrong)
+local CARD_NAMES = { clone_squad = "Clone squad", clone_company = "Clone company" }
 -- (droids in each preset squad, for the summary)
-local PRESET_SIZE = { droid_small = 10, droid_medium = 16, droid_large = 31, droid_b2 = 8, droid_mortar = 9 }
+local PRESET_SIZE = { clone_squad = 8, clone_company = 22, droid_small = 10, droid_medium = 16, droid_large = 31, droid_b2 = 8, droid_mortar = 9, droid_spider = 5, droid_crab = 5 }
 
 -- (the summary card's lines; the last: when the last squad comes out if the cap never holds it back)
 local STAT_NAMES = { "Droids in all", "Alive at once", "Squads", "Last squad, earliest" }
+local STAT_NAMES_CLONES = { "Clones in all", "Alive at once", "Squads", "Last squad, earliest" }
 
 local GRAD = Material("vgui/gradient-l")
 local DIA = { {}, {}, {}, {} }
@@ -61,7 +66,9 @@ function SP.Window(st, list, title, sub, onApply)
     local s = K.S
     local C = K.C
     closePanel()
-    list = list or PRESETS
+    local clones = st.clones
+    list = list or (clones and CLONE_PRESETS or PRESETS)
+    local who = clones and "clones" or "droids"
     local f = vgui.Create("EditablePanel")
     SP.panel = f
     f:SetSize(math.min(ScrW() - s(40), s(980)), math.min(ScrH() - s(40), s(500)))
@@ -70,7 +77,7 @@ function SP.Window(st, list, title, sub, onApply)
     f:SetKeyboardInputEnabled(false)
     f:DockPadding(s(14), s(52), s(14), s(14))
     function f:Paint(w, h)
-        K.Plate(0, 0, w, h, { title = title or "Droid spawner", sub = sub or "What it sends out · stays until destroyed or empty", ticks = "all", header = s(38) })
+        K.Plate(0, 0, w, h, { title = title or (clones and "Clone spawner" or "Droid spawner"), sub = sub or "What it sends out · stays until destroyed or empty", ticks = "all", header = s(38) })
     end
 
     local bar = vgui.Create("DPanel", f)
@@ -98,8 +105,8 @@ function SP.Window(st, list, title, sub, onApply)
         local x, y = s(16), s(20)
         K.Caps("Each time", x, y)
         local size = PRESET_SIZE[st.preset]
-        draw.SimpleText((PRESET_NAMES[st.preset] or tostring(st.preset)) .. " squad", K.Font(20, 700), x, y + s(24), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-        draw.SimpleText((size and (size .. " droids · ") or "") .. (MODE_NAMES[st.mode] or tostring(st.mode)), K.Font(13), x, y + s(46), C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        draw.SimpleText(CARD_NAMES[st.preset] or ((PRESET_NAMES[st.preset] or tostring(st.preset)) .. " squad"), K.Font(20, 700), x, y + s(24), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        draw.SimpleText((size and (size .. " " .. who .. " · ") or "") .. (MODE_NAMES[st.mode] or tostring(st.mode)), K.Font(13), x, y + s(46), C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
         y = y + s(80)
         K.SetCol(C.edgeLight)
         surface.DrawRect(x, y, w - x * 2, 1)
@@ -111,7 +118,7 @@ function SP.Window(st, list, title, sub, onApply)
         vals[3] = squads or "—"
         vals[4] = squads and mmss((squads - 1) * gap) or "—"
         for i = 1, 4 do
-            K.Caps(STAT_NAMES[i], x, y)
+            K.Caps((clones and STAT_NAMES_CLONES or STAT_NAMES)[i], x, y)
             draw.SimpleText(vals[i], K.Font(15, 700), w - x, y, C.text, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
             y = y + s(26)
         end
@@ -200,10 +207,11 @@ function SP.Window(st, list, title, sub, onApply)
         if PRESET_SIZE[name] then sizes[#sizes + 1] = (PRESET_NAMES[name] or name) .. " " .. PRESET_SIZE[name] end
     end
     local r = row("Squad", #sizes > 0 and table.concat(sizes, " · ") or nil)
-    seg(r, opts, function() return st.preset end, function(v) st.preset = v end, s(math.min(400, 80 * #opts)))
+    -- (80 per option, at most half the window: seven presets fit at 4:3)
+    seg(r, opts, function() return st.preset end, function(v) st.preset = v end, math.min(s(80 * #opts), math.floor(f:GetWide() * 0.5)))
     local mopts = {}
     for _, m in ipairs(MODES) do mopts[#mopts + 1] = { m, MODE_NAMES[m] } end
-    r = row("Orders", "Patrol and Roam come out as groups; Attack hunts the nearest players")
+    r = row("Orders", clones and "Patrol and Roam come out as groups; Attack hunts the nearest droids" or "Patrol and Roam come out as groups; Attack hunts the nearest players")
     seg(r, mopts, function() return st.mode end, function(v) st.mode = v end, s(300))
 
     local b2 = vgui.Create("DPanel", body)
@@ -216,7 +224,7 @@ function SP.Window(st, list, title, sub, onApply)
         rr.right:SetWide(s(260))
         K.Slider(rr.right, lo, hi, 0, function() return st[key] end, function(v) st[key] = math.Round(v) end):Dock(FILL)
     end
-    slider("Droids in all", "A new number starts the count again", "total", 10, 500)
+    slider(clones and "Clones in all" or "Droids in all", "A new number starts the count again", "total", 10, 500)
     slider("Alive at once", "It waits until a whole squad fits under this", "cap", 1, 100)
     slider("Seconds between squads", nil, "interval", 5, 300)
     if st.running ~= nil then
@@ -244,11 +252,11 @@ end
 Rhylib.Net.Receive("droids.spawner", function()
     local ent = net.ReadEntity()
     local st = { preset = net.ReadString(), total = net.ReadUInt(10), cap = net.ReadUInt(7), interval = net.ReadUInt(10),
-        mode = MODES[net.ReadUInt(3)] or "patrol", running = net.ReadBool() }
+        mode = MODES[net.ReadUInt(3)] or "patrol", running = net.ReadBool(), clones = IsValid(ent) and ent.Clones or nil }
     local list = {}
     for i = 1, net.ReadUInt(4) do list[i] = net.ReadString() end
     if not IsValid(ent) then return end
-    SP.Window(st, #list > 0 and list or nil, "Droid spawner", nil, function(v)
+    SP.Window(st, #list > 0 and list or nil, st.clones and "Clone spawner" or "Droid spawner", nil, function(v)
         if not IsValid(ent) then return end
         Rhylib.Net.Start("droids.spawnerset")
         net.WriteEntity(ent)

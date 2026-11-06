@@ -1,12 +1,14 @@
 --[[
-    Droid spawner (admins; spawn menu "Rhy's Droids", or the toolgun's
-    spawn window). Keeps sending out droids in preset squads until it is
-    destroyed or has sent them all.
+    Droid spawner (admins; spawn menu "Rhy's Spawners", or the toolgun's
+    Spawners category). Keeps sending out droids in preset squads until it
+    is destroyed or has sent them all. Also the base of the clone spawner
+    (entities/rhylib_clone_spawner.lua: ENT.Clones = true, clone presets,
+    the clones' cap cloneMax, its own default preset cloneSpawnerPreset).
 
     Every `interval` seconds, when a whole squad fits under `cap` alive
     (a cap smaller than one squad counts as one squad) and it still has
     droids `left`, it spawns one preset squad
-    (D.SpawnPreset, droid presets only) just in front of it, facing the
+    (D.SpawnPreset, presets of its side only) just in front of it, facing the
     way it faces. Squads on Patrol or Roam are cut into patrol / roam
     groups (D.WanderGroups, patrols centred where they come out); Attack
     hunts the nearest players; Guard holds in front of it. The latest
@@ -15,7 +17,7 @@
     is at maxActive droids. Settings that make no sense (a clone preset, a
     typo) fall back to droid_small / patrol.
 
-    It has droids spawnerHealth health and breaks (with a bang) when it
+    It has spawnerHealth health and breaks (with a bang) when it
     runs out; its droids carry on. Admins press E on it for its settings
     (rhylib/droids/cl_50_spawner.lua, sv_50_spawner.lua): preset, how many
     in all, how many alive at once, seconds between squads, mode, on/off.
@@ -31,7 +33,7 @@ AddCSLuaFile()
 ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Droid spawner"
-ENT.Category = "Rhy's Droids"
+ENT.Category = "Rhy's Spawners"
 ENT.Spawnable = true
 ENT.AdminOnly = true
 ENT.RenderGroup = RENDERGROUP_BOTH
@@ -49,12 +51,17 @@ end
 
 local function D() return Rhylib.Droids end
 
--- Settings made safe: a droid preset, a known mode, numbers in range.
+-- ENT:PresetOk(pr): a preset of this spawner's side (clone presets: side 1).
+function ENT:PresetOk(pr)
+    return pr ~= nil and ((pr.side == 1) == (self.Clones == true))
+end
+
+-- Settings made safe: a preset of its side, a known mode, numbers in range.
 local MODES = { patrol = true, roam = true, attack = true, guard = true }
-local function clean(c)
+local function clean(self, c)
     local Dr = D()
     local pr = Dr and Dr.PRESETS and Dr.PRESETS[c.preset]
-    if not pr or pr.side == 1 then c.preset = "droid_small" end
+    if not self:PresetOk(pr) then c.preset = self.Clones and "clone_squad" or "droid_small" end
     if not MODES[c.mode] then c.mode = "patrol" end
     c.total = math.Clamp(math.floor(tonumber(c.total) or 60), 1, 1000)
     c.cap = math.Clamp(math.floor(tonumber(c.cap) or 20), 1, 100)
@@ -84,7 +91,8 @@ if SERVER then
         local phys = self:GetPhysicsObject()
         if IsValid(phys) then phys:EnableMotion(false) end
         local cfg = D().Cfg
-        self.cfg = clean({ preset = cfg("spawnerPreset"), total = cfg("spawnerTotal"), cap = cfg("spawnerCap"),
+        if self.Clones then self:SetColor(Color(150, 190, 255)) end
+        self.cfg = clean(self, { preset = cfg(self.Clones and "cloneSpawnerPreset" or "spawnerPreset"), total = cfg("spawnerTotal"), cap = cfg("spawnerCap"),
             interval = cfg("spawnerInterval"), mode = cfg("spawnerMode") })
         self.hp = math.max(1, tonumber(cfg("spawnerHealth")) or 1)
         self.mine = {}
@@ -99,7 +107,7 @@ if SERVER then
     -- A new total, or any Apply on an empty spawner, starts the count again.
     function ENT:ApplyConfig(cfg, running)
         local old = self.cfg.total
-        cfg = clean(cfg)
+        cfg = clean(self, cfg)
         self.cfg = cfg
         if cfg.total ~= old or self:GetLeft() <= 0 then self:SetLeft(cfg.total) end
         self:SetPreset(cfg.preset)
@@ -120,7 +128,7 @@ if SERVER then
         local Dr = D()
         if not (Dr and Dr.SpawnPreset and Dr.PRESETS) then return end
         local pr = Dr.PRESETS[self.cfg.preset]
-        if not pr or pr.side == 1 then return end
+        if not self:PresetOk(pr) then return end
         local yaw = self:GetAngles().y
         local fwd = Angle(0, yaw, 0):Forward()
         -- (SpawnPreset puts the front row at `at` facing yaw, the other rows
@@ -156,7 +164,12 @@ if SERVER then
             local size = math.min(presetSize(self.cfg.preset), self:GetLeft())
             -- (room for a whole squad under its cap, at least one squad's worth, and the map's)
             local room = alive + size <= math.max(self.cfg.cap, size)
-            local mapRoom = not Dr.Count or Dr.Count() < Dr.Cfg("maxActive")
+            local mapRoom
+            if self.Clones then
+                mapRoom = not Dr.CloneCount or Dr.CloneCount() < Dr.Cfg("cloneMax")
+            else
+                mapRoom = not Dr.Count or Dr.Count() < Dr.Cfg("maxActive")
+            end
             if room and mapRoom then
                 self:SpawnSquad()
                 self:SetNextAt(now + self.cfg.interval)
@@ -170,6 +183,9 @@ if SERVER then
 
     function ENT:OnTakeDamage(dmg)
         if self.broken then return end
+        -- (a clone spawner: only the enemy breaks it, not players or clones)
+        local att = dmg:GetAttacker()
+        if self.Clones and IsValid(att) and (att:IsPlayer() or att.IsRhylibClone) then return end
         self.hp = self.hp - dmg:GetDamage()
         if self.hp <= 0 then
             self.broken = true
@@ -210,7 +226,7 @@ function ENT:DrawTranslucent()
     local line3 = not self:GetRunning() and "Stopped (E: settings)" or (self:GetLeft() <= 0 and "Empty" or string.format("Next squad in %d s", math.ceil(wait)))
     cam.Start3D2D(pos, ang, 0.12)
         local f = Rhylib.UI and Rhylib.UI.Font and Rhylib.UI.Font(26, 700) or "DermaLarge"
-        draw.SimpleTextOutlined("Droid spawner · " .. self:GetPreset(), f, 0, 0, Color(255, 120, 90), TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 2, Color(0, 0, 0, 200))
+        draw.SimpleTextOutlined((self.Clones and "Clone spawner · " or "Droid spawner · ") .. self:GetPreset(), f, 0, 0, self.Clones and Color(110, 170, 255) or Color(255, 120, 90), TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 2, Color(0, 0, 0, 200))
         draw.SimpleTextOutlined(line2, f, 0, 30, Color(235, 238, 240), TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 2, Color(0, 0, 0, 200))
         draw.SimpleTextOutlined(line3, f, 0, 60, Color(200, 205, 210), TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 2, Color(0, 0, 0, 200))
     cam.End3D2D()

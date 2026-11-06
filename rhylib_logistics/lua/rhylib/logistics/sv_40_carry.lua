@@ -28,7 +28,8 @@ local L = Rhylib.Logistics
 
 L.carry = L.carry or {}
 -- Other crates carried the same way (armoury resupply crates,
--- sv_50_stock.lua): [crate] = true. They need IsHeavy, GetCarried,
+-- sv_50_stock.lua; supply crates and fuel canisters for supply depots,
+-- sv_70_depots.lua): [crate] = true. They need IsHeavy, GetCarried,
 -- SetCarried and SetHolders like the building crate.
 L.carriables = L.carriables or {}
 local function eachCrate(fn)
@@ -250,7 +251,8 @@ end)
 
 -- (no physgunning crates or built structures past the carrying rules; staff may)
 Rhylib.Hook.Add("PhysgunPickup", "logistics.carry", function(ply, e)
-    if IsValid(e) and (e:GetClass() == "rhylib_build_crate" or e:GetClass() == "rhylib_structure" or e:GetClass() == "rhylib_resupply_crate") and not ply:IsAdmin() then return false end
+    if IsValid(e) and (e:GetClass() == "rhylib_build_crate" or e:GetClass() == "rhylib_structure" or e:GetClass() == "rhylib_resupply_crate"
+        or e:GetClass() == "rhylib_supply_crate" or e:GetClass() == "rhylib_fuel_canister") and not ply:IsAdmin() then return false end
 end)
 
 Rhylib.Hook.Add("PlayerDeath", "logistics.carry", function(ply)

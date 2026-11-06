@@ -238,7 +238,12 @@ Rhylib.Net.Receive("logi.post", function()
     for _, it in ipairs(sup) do
         local left = it.left or -1
         local col = left == -2 and C.accent or (left < 0 and C.good or (left == 0 and C.bad or C.text))
-        row(it.name, it.kind .. " · " .. it.dist .. " m away", left == -2 and "Armoury stock" or (left < 0 and "Unlimited" or (left .. " left")), col)
+        if it.text then
+            -- (a supply depot: what it holds, red when empty)
+            row(it.name, it.kind .. " · " .. it.dist .. " m away", it.text, it.empty and C.bad or C.text)
+        else
+            row(it.name, it.kind .. " · " .. it.dist .. " m away", left == -2 and "Armoury stock" or (left < 0 and "Unlimited" or (left .. " left")), col)
+        end
     end
     if data.stock then
         band("Armoury stock", #data.stock == 0 and "all above 60%" or (#data.stock .. " running low"))

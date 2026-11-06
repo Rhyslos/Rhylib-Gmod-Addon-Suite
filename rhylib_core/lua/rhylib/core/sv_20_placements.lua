@@ -13,6 +13,7 @@
             command = "rhylib_mp_save",        -- optional console command
             perm = "rhylib.mp.admin",          -- who may run it (console always)
             freeze = true,                     -- default true: physics frozen
+            posOf = function(e) return e.home end, -- where to save it (optional; nil = GetPos)
         })
         PL:Save()  -> saved, notPermanent      PL:Load()  -> spawned
 
@@ -64,7 +65,7 @@ function Placements:Save()
         for _, e in ipairs(ents.FindByClass(class)) do
             if not (self.opts.filter and self.opts.filter(e) == false) then
                 if P.Is(e) then
-                    local p, a = e:GetPos(), e:GetAngles()
+                    local p, a = self.opts.posOf and self.opts.posOf(e) or e:GetPos(), e:GetAngles()
                     local row = { class = class, pos = { p.x, p.y, p.z }, ang = { a.p, a.y, a.r } }
                     if self.opts.save then
                         local ok, extra = pcall(self.opts.save, e)

@@ -46,7 +46,7 @@
     Hook Rhylib.SpawnTabItems(tabId, items) runs each time the Entities
     ("entities") or NPCs ("npcs") tab builds its tiles: add items or change
     them (fields as SP.Tile: cat, name, extra, tip, mat, model, run, menu,
-    spec, admin, selected). rhylib_toolgun puts the droid spawner there.
+    spec, admin, selected). rhylib_toolgun puts the droid and clone spawners there.
 
     Colours: kit tokens (K.C) and "spawn.bg" (the window's background).
 

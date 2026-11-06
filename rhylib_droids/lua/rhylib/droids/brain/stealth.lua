@@ -116,7 +116,8 @@ return function(ENT, env)
         -- 1. Who is near enough to see or hear (distance only).
         local n = 0
         for _, p in ipairs(self:TargetList()) do
-            if IsValid(p) and p:Health() > 0 then
+            -- (things to shoot, event targets, depot crates: only once alerted, by the normal look)
+            if IsValid(p) and p:Health() > 0 and not p.rhylibObjTarget then
                 local d2 = p:GetPos():DistToSqr(pos)
                 if d2 < far * far or d2 < stepR * stepR then
                     n = n + 1
