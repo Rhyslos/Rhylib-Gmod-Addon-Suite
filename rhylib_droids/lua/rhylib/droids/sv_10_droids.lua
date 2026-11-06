@@ -5,7 +5,8 @@
     D.clones, their own cap, targets and friendly-fire rules here too.
 
     Also: suppression (worse aim for a while), the EOD Signal blackout
-    check, the commander boost (D.Boosted) and its death penalty
+    check, the commander boost (D.Boosted; D.Leads: commanders that lead
+    only one family, the BX captain) and its death penalty
     (D.Rattle), the per-tick route budget and the cover spot registry.
 
     Target lists are cached for 0.25 s and shared by every NPC, so a big
@@ -155,7 +156,15 @@ end
 -- than itself (checked at most twice a second). Clones are also led by
 -- players with the Reinforcements skill (rhylib_skills; the player
 -- is the commander). Boosted: cone x cmdSpread, reaction x cmdReaction,
--- pause between bursts x cmdPause. Never while blacked out.
+-- pause between bursts x cmdPause. Never while blacked out. A commander
+-- kind with `leads` (a field name) boosts, rattles and lends smoke slots
+-- only to kinds with that field (D.Leads).
+-- D.Leads(cmd, npc) -> does this commander lead that NPC?
+function D.Leads(c, d)
+    local f = c.Kind and c:Kind().leads
+    return not f or (d.Kind and d:Kind()[f]) == true
+end
+
 function D.Boosted(droid)
     local now = CurTime()
     if (droid.rhylibBoostAt or 0) > now then return droid.rhylibBoost end
@@ -173,7 +182,7 @@ function D.Boosted(droid)
             if not IsValid(c) then
                 D.commanders[c] = nil
             elseif c ~= droid and (c.IsRhylibClone == true) == clone and c:Health() > 0 and c:GetPos():DistToSqr(pos) < r * r
-                and not D.BlackedOut(c) then
+                and D.Leads(c, droid) and not D.BlackedOut(c) then
                 boost = true
                 break
             end
@@ -204,7 +213,7 @@ function D.SmokeSlot(droid)
     local clone = droid.IsRhylibClone == true
     for c in pairs(D.commanders) do
         if IsValid(c) and c ~= droid and (c.IsRhylibClone == true) == clone and c:Health() > 0
-            and c:GetPos():DistToSqr(pos) < r * r and not D.BlackedOut(c) then
+            and c:GetPos():DistToSqr(pos) < r * r and D.Leads(c, droid) and not D.BlackedOut(c) then
             local slots = c.rhylibSmokeSlots or {}
             c.rhylibSmokeSlots = slots
             local n = 0
@@ -237,7 +246,7 @@ function D.Rattle(cmd)
     local r = D.Cfg("cmdRadius")
     local pos = cmd:GetPos()
     for d in pairs(cmd.IsRhylibClone and D.clones or D.active) do
-        if IsValid(d) and d ~= cmd and d:GetPos():DistToSqr(pos) < r * r then
+        if IsValid(d) and d ~= cmd and d:GetPos():DistToSqr(pos) < r * r and D.Leads(cmd, d) then
             D.Suppress(d, secs, D.Cfg("cmdDeathMult"))
             d.rhylibBoostAt = 0
         end

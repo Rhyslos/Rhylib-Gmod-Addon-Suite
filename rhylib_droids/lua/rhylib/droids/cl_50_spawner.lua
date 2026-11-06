@@ -25,13 +25,13 @@ local UI = Rhylib.UI
 
 local MODES = { "patrol", "roam", "attack", "guard" }
 local MODE_NAMES = { patrol = "Patrol", roam = "Roam", attack = "Attack", guard = "Guard" }
-local PRESETS = { "droid_small", "droid_medium", "droid_large", "droid_b2", "droid_mortar", "droid_spider", "droid_crab" }
+local PRESETS = { "droid_small", "droid_medium", "droid_large", "droid_b2", "droid_mortar", "droid_spider", "droid_crab", "droid_commando", "droid_droideka", "droid_company", "droid_division" }
 local CLONE_PRESETS = { "clone_squad", "clone_company" }
-local PRESET_NAMES = { clone_squad = "Squad", clone_company = "Company", droid_small = "Small", droid_medium = "Medium", droid_large = "Large", droid_b2 = "B2s", droid_mortar = "Mortars", droid_spider = "Spider", droid_crab = "Crab" }
+local PRESET_NAMES = { clone_squad = "Squad", clone_company = "Company", droid_small = "Small", droid_medium = "Medium", droid_large = "Large", droid_b2 = "B2s", droid_mortar = "Mortars", droid_spider = "Spider", droid_crab = "Crab", droid_commando = "Commandos", droid_droideka = "Droidekas", droid_company = "Company", droid_division = "Division" }
 -- (the summary card's name where "<name> squad" reads wrong)
 local CARD_NAMES = { clone_squad = "Clone squad", clone_company = "Clone company" }
 -- (droids in each preset squad, for the summary)
-local PRESET_SIZE = { clone_squad = 8, clone_company = 22, droid_small = 10, droid_medium = 16, droid_large = 31, droid_b2 = 8, droid_mortar = 9, droid_spider = 5, droid_crab = 5 }
+local PRESET_SIZE = { clone_squad = 8, clone_company = 22, droid_small = 10, droid_medium = 16, droid_large = 31, droid_b2 = 8, droid_mortar = 9, droid_spider = 5, droid_crab = 5, droid_commando = 7, droid_droideka = 2, droid_company = 33, droid_division = 66 }
 
 -- (the summary card's lines; the last: when the last squad comes out if the cap never holds it back)
 local STAT_NAMES = { "Droids in all", "Alive at once", "Squads", "Last squad, earliest" }

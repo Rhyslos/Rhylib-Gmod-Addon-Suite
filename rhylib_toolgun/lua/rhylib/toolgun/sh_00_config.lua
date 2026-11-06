@@ -66,7 +66,10 @@ local ALL = {
     { id = "b2r", name = "B2 rocket droid", cat = "Droid NPCs", class = "rhylib_b2_rocketdroid", count = true },
     { id = "spider", name = "DSD1 dwarf spider droid", cat = "Droid NPCs", class = "rhylib_spider", count = true },
     { id = "crab", name = "LM-432 crab droid", cat = "Droid NPCs", class = "rhylib_crab", count = true },
+    { id = "droideka", name = "Droideka", cat = "Droid NPCs", class = "rhylib_droideka", count = true },
     { id = "b1_commander", name = "B1 commander droid", cat = "Droid NPCs", class = "rhylib_b1_commander", count = true },
+    { id = "bx", name = "BX commando droid", cat = "Droid NPCs", class = "rhylib_bx_commando", count = true },
+    { id = "bx_captain", name = "BX commando captain", cat = "Droid NPCs", class = "rhylib_bx_captain", count = true },
     { id = "b1_heavy", name = "B1 heavy droid", cat = "Droid NPCs", class = "rhylib_b1_heavy", count = true },
     { id = "b1_aat", name = "B1 AAT crew droid", cat = "Droid NPCs", class = "rhylib_b1_aat", count = true },
     { id = "b1_geonosis", name = "B1 Geonosis droid", cat = "Droid NPCs", class = "rhylib_b1_geonosis", count = true },
@@ -74,6 +77,7 @@ local ALL = {
     { id = "b1_security", name = "B1 security droid", cat = "Droid NPCs", class = "rhylib_b1_security", count = true },
     { id = "b1_snow", name = "B1 snow droid", cat = "Droid NPCs", class = "rhylib_b1_snow", count = true },
     { id = "b1t", name = "B1 training droid", cat = "Droid NPCs", class = "rhylib_b1_training", count = true },
+    { id = "bx_training", name = "BX commando training droid", cat = "Droid NPCs", class = "rhylib_bx_training", count = true },
     { id = "b2t", name = "B2 training droid", cat = "Droid NPCs", class = "rhylib_b2_training", count = true },
     -- Clone troopers (friendly NPCs)
     { id = "ct_trooper", name = "Clone trooper", cat = "Clone NPCs", class = "rhylib_ct_trooper", count = true },
@@ -91,6 +95,10 @@ local ALL = {
     { id = "ps_droid_mortar", name = "Mortar squad (9)", cat = "Droid NPCs", preset = "droid_mortar" },
     { id = "ps_droid_spider", name = "Spider squad (5)", cat = "Droid NPCs", preset = "droid_spider" },
     { id = "ps_droid_crab", name = "Crab squad (5)", cat = "Droid NPCs", preset = "droid_crab" },
+    { id = "ps_droid_commando", name = "Commando squad (7)", cat = "Droid NPCs", preset = "droid_commando" },
+    { id = "ps_droid_droideka", name = "Droideka pair (2)", cat = "Droid NPCs", preset = "droid_droideka" },
+    { id = "ps_droid_company", name = "Droid company (33)", cat = "Droid NPCs", preset = "droid_company" },
+    { id = "ps_droid_division", name = "Droid division (66)", cat = "Droid NPCs", preset = "droid_division" },
     -- Droid / clone spawner (rhylib_droids): right-click its tile for its settings (sent with tool.place).
     { id = "droid_spawner", name = "Droid spawner", cat = "Spawners", class = "rhylib_droid_spawner", spawner = "droid" },
     { id = "clone_spawner", name = "Clone spawner", cat = "Spawners", class = "rhylib_clone_spawner", spawner = "clone" },
@@ -174,7 +182,7 @@ end
 -- Orders have none; presets show their main unit.
 local PRESET_CLASS = { clone_squad = "rhylib_ct_trooper", clone_company = "rhylib_ct_trooper", droid_small = "rhylib_b1",
     droid_medium = "rhylib_b1", droid_large = "rhylib_b1", droid_b2 = "rhylib_b2", droid_mortar = "rhylib_b2_cannon",
-    droid_spider = "rhylib_spider", droid_crab = "rhylib_crab" }
+    droid_spider = "rhylib_spider", droid_crab = "rhylib_crab", droid_company = "rhylib_b1", droid_division = "rhylib_spider", droid_commando = "rhylib_bx_captain", droid_droideka = "rhylib_droideka" }
 -- (on a client, util.IsValidModel is false for a model nobody has loaded
 -- yet even when it's installed: check the file instead)
 local function modelExists(m)

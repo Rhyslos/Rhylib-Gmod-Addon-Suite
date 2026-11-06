@@ -14,6 +14,12 @@
     climbs and dives onto it by itself. Fired without a lock it's laser
     guided: it climbs, then dives onto the spot you aim at (a red dot) and
     follows it while you keep the RPS-6 out.
+    Cluster mode (EOD Cluster rockets skill, V): fire at a spot (eye trace,
+    weapons clusterRange; at the sky / nothing: the ground under the end
+    of the trace). The same rhylib_topattack rocket climbs, then flies to
+    weapons clusterBurstHeight above that spot and bursts into
+    clusterCount bomblets that fall over clusterSpread and go off where
+    they land (rhylib_topattack: the bomblets and their settings).
 
     Uses a prop model (models/jajoff/sps/cgiweapons/tc13j/rps.mdl), held in
     first person by the trooper hands on the HL2 launcher (CarrierVM). The model's addon must be
@@ -83,8 +89,8 @@ SWEP.FireSoundLevel = 150
 SWEP.Explosive = { radius = 200, damage = 250, direct = 800 }   -- blast where the rocket lands (units, damage at the centre); direct = extra blast damage to what it hits itself
 
 SWEP.Mags = { "rocket" }
-SWEP.FireModes = { "semi", "lockon" }
-SWEP.SkillModes = { lockon = "eod_lockon" }   -- (rhylib_skills: EOD Top attack)
+SWEP.FireModes = { "semi", "lockon", "cluster" }
+SWEP.SkillModes = { lockon = "eod_lockon", cluster = "eod_cluster" }   -- (rhylib_skills: EOD Top attack, Cluster rockets)
 SWEP.ReloadTime = 3
 SWEP.AutoReload = false     -- reload with R like every other gun
 
@@ -131,6 +137,7 @@ local Config = Rhylib.Config
 Config.Register("weapons", "lockRange", 6000, "RPS-6 lock-on: longest lock (units)")
 Config.Register("weapons", "lockCone", 3.33, "RPS-6 lock-on: half the width of the lock-on hexagon in the sight (degrees from the crosshair); only targets inside it lock")
 Config.Register("weapons", "lockTime", 1.2, "RPS-6 lock-on: seconds of aiming at a target to lock it")
+Config.Register("weapons", "clusterRange", 6000, "RPS-6 cluster: furthest spot you can aim the burst at (units; further, or at the sky: the ground under the end of the aim)")
 
 -- LockTarget: what the lock is on (NULL = nothing). LockStart: CurTime()
 -- when that target was first held (0 = none). Set by the server only.
@@ -143,6 +150,11 @@ end
 -- SWEP:LockOn(): true while the fire mode is "lockon". Shared.
 function SWEP:LockOn()
     return self:GetFireModeName() == "lockon"
+end
+
+-- SWEP:ClusterMode(): true while the fire mode is "cluster". Shared.
+function SWEP:ClusterMode()
+    return self:GetFireModeName() == "cluster"
 end
 
 -- The lock-on area: a hexagon (points up and down, flat sides left and
@@ -189,14 +201,31 @@ function SWEP:LockedTarget()
     return t
 end
 
+-- SWEP:ClusterAim(owner) -> the spot a cluster rocket bursts over: what
+-- the eye trace hits within clusterRange; at the sky or nothing, the
+-- ground under the end of the trace (or that end, with no ground).
+-- Server only.
+function SWEP:ClusterAim(owner)
+    local eye = owner:EyePos()
+    local tr = util.TraceLine({ start = eye, endpos = eye + owner:GetAimVector() * Config.Get("weapons", "clusterRange"),
+        filter = owner, mask = MASK_SHOT })
+    if tr.Hit and not tr.HitSky then return tr.HitPos + tr.HitNormal * 8 end
+    local from = tr.HitPos - owner:GetAimVector() * 16
+    local down = util.TraceLine({ start = from, endpos = from - Vector(0, 0, 16000), mask = MASK_SOLID_BRUSHONLY })
+    if down.Hit and not down.HitSky then return down.HitPos + Vector(0, 0, 8) end
+    return from
+end
+
 -- SWEP:FireShot(): rhylib_base calls this for each shot. Normal mode uses
--- the base (an explosive bolt). Lock-on mode spawns rhylib_topattack instead
--- and passes it: dir, target (nil = laser guided), owner, weapon, explosive.
+-- the base (an explosive bolt). Lock-on and cluster modes spawn
+-- rhylib_topattack instead and pass it: dir, target (nil = laser guided),
+-- owner, weapon, explosive, and in cluster mode aimAt (ClusterAim).
 function SWEP:FireShot()
-    if not self:LockOn() then return BaseClass.FireShot(self) end
+    local cluster = self:ClusterMode()
+    if not self:LockOn() and not cluster then return BaseClass.FireShot(self) end
     -- Lock-on mode: always the top-attack rocket. Locked = it homes on the
     -- target by itself; not locked = it follows your aim (laser).
-    local t = self:LockedTarget()
+    local t = not cluster and self:LockedTarget() or nil
     local owner = self:GetOwner()
     if not IsValid(owner) then return end
     self:SetNextPrimaryFire(CurTime() + 60 / self:CurrentFireRate())
@@ -225,6 +254,7 @@ function SWEP:FireShot()
     m.owner = owner
     m.weapon = self
     m.explosive = self.Explosive
+    if cluster then m.aimAt = self:ClusterAim(owner) end
     m:Spawn()
     self:SetLockTarget(NULL)
     self:SetLockStart(0)
@@ -323,11 +353,20 @@ if CLIENT then
 
     -- Lock-on HUD: a hint line with no target; with one, a box of corners
     -- that closes in while it locks, "LOCKING n%" / "LOCKED · FIRE" and beeps.
+    -- Cluster mode: a hint line only.
     function SWEP:DrawHUD()
         if BaseClass.DrawHUD then BaseClass.DrawHUD(self) end
-        if not self:LockOn() then return end
+        local cluster = self:ClusterMode()
+        if not self:LockOn() and not cluster then return end
         local s = ScrH() / 1080
         local font = Rhylib.UI and Rhylib.UI.Font and Rhylib.UI.Font(13, 700) or "DermaDefaultBold"
+        if cluster then
+            local m = math.floor(Rhylib.Config.Get("weapons", "clusterBurstHeight") * 0.01905 + 0.5)
+            local ty = self.Scoped and self:Scoped() and ScrH() * 0.5 + ScrH() * 0.17 or ScrH() * 0.5 + 70 * s
+            draw.SimpleTextOutlined("CLUSTER · BURSTS " .. m .. " M ABOVE WHERE YOU AIM", font, ScrW() * 0.5, ty,
+                Color(220, 220, 220, 200), TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, Color(0, 0, 0, 160))
+            return
+        end
         local t = self:GetLockTarget()
         local cx, cy = ScrW() * 0.5, ScrH() * 0.5
         if not IsValid(t) then

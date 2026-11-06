@@ -98,7 +98,11 @@ K.CATEGORIES = {
     { id = "airborne", name = "Specialist", desc = "Airborne (jetpacks and getting in close) or Field technician (combat engineer: building, demolitions and jamming droids)",
       specs = {
           { id = "airborne", name = "Airborne", desc = "Jetpacks, hard landings and getting in close (indoors too)" },
-          { id = "eod", name = "Field technician", desc = "Combat engineer (EOD): armour repair, building, explosives and cracking armour; your wideband device also jams droids. Not Airborne: it only shares the page" },
+          { id = "eod", name = "Field technician", desc = "Combat engineer (EOD): armour repair, building, explosives and cracking armour; your wideband device also jams droids. Not Airborne: it only shares the page",
+            branches = {
+                { id = "grenadier", name = "Grenadier", desc = "The T-19 grenade launcher" },
+                { id = "antitank", name = "Anti-tank", desc = "RPS-6 top attack and cluster rockets" },
+            } },
       } },
     { id = "medic", name = "Medic", desc = "Medic jobs only: revives, treatment and the med bay", medicOnly = true,
       specs = {
@@ -409,7 +413,9 @@ K.NODES = {
     -- Field technician (EOD, rhylib_eod; no
     -- skill makes defusing easier, they're too niche: the defusal is the
     -- same for everyone). A combat engineer: shared trunk (12), then the
-    -- Demolitions skills (12). One path of 24. (A field technician's
+    -- Demolitions skills, and one end branch: Grenadier (the grenade
+    -- launcher, 4) or Anti-tank (Top attack and Cluster rockets, 2 + 2).
+    -- Each full path is 24. (A field technician's
     -- wideband device jams droids without a skill: rhylib_eod.)
     { id = "eod_manual", cat = "airborne", spec = "eod", tier = 1, cost = 1, name = "Bomb manual", icon = "search",
       desc = "An EOD manual tab on your datapad (every rule, reading, safeguard and module), and the datapad's Call the bomb squad reaches you." },
@@ -419,7 +425,7 @@ K.NODES = {
     { id = "eod_blast", cat = "airborne", spec = "eod", tier = 3, cost = 3, name = "Blast hardened", icon = "burst",
       desc = "30% less damage from every explosion (bombs, mines, grenades, rockets, mortars), and explosions never knock you down.",
       needs = { "eod_armor" } },
-    { id = "eod_launcher", cat = "airborne", spec = "eod", tier = 3, cost = 1, name = "Grenade launcher", icon = "grenade",
+    { id = "eod_launcher", cat = "airborne", spec = "eod", branch = "grenadier", tier = 3, cost = 4, name = "Grenade launcher", icon = "grenade",
       desc = "Carry the T-19 grenade launcher. It fires your thermal detonators on impact in a high arc out to 60 m; the range for your aim shows by the ammo counter.",
       needs = { "eod_armor" } },
     { id = "eod_pack", cat = "airborne", spec = "eod", tier = 4, cost = 2, name = "Explosives pack", icon = "weight",
@@ -433,7 +439,7 @@ K.NODES = {
     { id = "eod_demo", cat = "airborne", spec = "eod", tier = 5, cost = 3, name = "Demolitions", icon = "charge",
       desc = "Your thermal detonators (thrown or launched) and high explosive charges do 25% more damage over a 15% wider blast.",
       needs = { "eod_pack" } },
-    { id = "eod_lockon", cat = "airborne", spec = "eod", tier = 6, cost = 3, name = "Top attack", icon = "target",
+    { id = "eod_lockon", cat = "airborne", spec = "eod", branch = "antitank", tier = 6, cost = 2, name = "Top attack", icon = "target",
       desc = "RPS-6 lock-on mode (V): hold aim on a jammer or a droid until it locks, then fire. The rocket climbs first and dives onto the target from above.",
       needs = { "eod_demo" } },
     { id = "eod_antiarmor", cat = "airborne", spec = "eod", tier = 6, cost = 3, name = "Anti-armour", icon = "bolt",
@@ -442,6 +448,9 @@ K.NODES = {
     { id = "eod_render", cat = "airborne", spec = "eod", tier = 7, cost = 3, name = "Render safe", icon = "box",
       desc = "Recover the charge from a bomb you made safe: a high explosive charge (two from a large bomb).",
       needsGroups = { { "eod_lockon" }, { "eod_antiarmor" } }, needsLabel = "Needs Top attack or Anti-armour" },
+    { id = "eod_cluster", cat = "airborne", spec = "eod", branch = "antitank", tier = 7, cost = 2, name = "Cluster rockets", icon = "burst",
+      desc = "RPS-6 cluster mode (V): fire at a spot. The rocket climbs, bursts 10 m above where you aimed and drops a spread of bomblets that go off where they land.",
+      needs = { "eod_lockon" } },
 
     -- Medic (medic jobs only). Tier 1 also has the weapon choice (exclusive
     -- group "medic_gun": one or the other).

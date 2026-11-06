@@ -463,7 +463,8 @@ function D.CloneOdds(c)
 end
 
 -- Preset squads: rows from the front (where you aim) back toward you.
--- Each entry: { kinds..., width = n }. "defend" makes the first kinds
+-- Each entry: { kinds..., width = n }; "" = an empty spot (keeps the
+-- columns lined up: gaps, flanks). "defend" makes the first kinds
 -- named follow (guard) the given kind (mortar squad).
 local PRESETS = {
     clone_squad = { side = 1, rows = {
@@ -492,6 +493,42 @@ local PRESETS = {
     -- (4 B1s and a crab droid up front with them)
     droid_crab = { rows = { { "b1", "crab", "b1" }, { "b1", "b1" } } },
 }
+-- (BX commandos: a captain leading six)
+PRESETS.droid_commando = { rows = { { "bx", "bx", "bx", "bx" }, { "bx", "bx_captain", "bx" } } }
+-- (two droidekas, a spot apart)
+PRESETS.droid_droideka = { rows = { { "droideka", "", "droideka" } } }
+-- (a company: 4 rows of 5 B1s, a commander, 2 rows of 5 B2s with a
+-- rocket B2 and a mortar B2 in the middle; a crab on each flank)
+local E_ = ""
+PRESETS.droid_company = { rows = {
+    { E_, "b1", "b1", "b1", "b1", "b1", E_ },
+    { E_, "b1", "b1", "b1", "b1", "b1", E_ },
+    { "crab", "b1", "b1", "b1", "b1", "b1", "crab" },
+    { E_, "b1", "b1", "b1", "b1", "b1", E_ },
+    { E_, E_, E_, "b1_commander", E_, E_, E_ },
+    { E_, "b2", "b2", "b2_rocket", "b2", "b2", E_ },
+    { E_, "b2", "b2", "b2_cannon", "b2", "b2", E_ } } }
+-- (a division: two such companies side by side, each with its crab on
+-- the outer flank, and two spider droids one behind the other between
+-- them; the shells fly through droids)
+do
+    local rows = {}
+    local co = PRESETS.droid_company.rows
+    for r, row in ipairs(co) do
+        local left, right = {}, {}
+        for c = 1, #row do
+            left[c] = (c == #row) and E_ or row[c]       -- (the crab only on the outer side)
+            right[c] = (c == 1) and E_ or row[c]
+        end
+        local mid = (r == 2 or r == 4) and "spider" or E_
+        local out = {}
+        for c = 1, #left - 1 do out[#out + 1] = left[c] end   -- (the inner gap column dropped: the spider column is the gap)
+        out[#out + 1] = mid
+        for c = 2, #right do out[#out + 1] = right[c] end
+        rows[r] = out
+    end
+    PRESETS.droid_division = { rows = rows }
+end
 D.PRESETS = PRESETS
 
 -- D.SpawnPreset(name, origin, yaw, mode) -> spawned list, how many the
@@ -514,9 +551,10 @@ function D.SpawnPreset(name, origin, yaw, mode, limit)
     for r, row in ipairs(pr.rows) do
         local w = #row
         for c, kind in ipairs(row) do
-            want = want + 1
+            local spot = kind ~= ""   -- (false: an empty spot)
+            if spot then want = want + 1 end
             local clone = D.KINDS[kind] and D.KINDS[kind].side == "republic"
-            local room = clone and D.CloneCount() < D.Cfg("cloneMax") or not clone and D.Count() < D.Cfg("maxActive")
+            local room = spot and (clone and D.CloneCount() < D.Cfg("cloneMax") or not clone and D.Count() < D.Cfg("maxActive"))
             if limit and #made >= limit then room = false end   -- (limit: at most that many, front rows first)
             local p = origin - fwd * ((r - 1) * 85) + right * ((c - (w + 1) / 2) * 75)
             local g = ground(p) or p

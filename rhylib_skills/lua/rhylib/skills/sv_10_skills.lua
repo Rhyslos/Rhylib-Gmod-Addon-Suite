@@ -54,11 +54,12 @@ local RENAMED = { burst_fire = "rapid_fire", thruster_dodge = "combat_drop" }
 -- REWORKED[v] = the trees reworked in version v: a category id (the whole
 -- tab) or a specialisation id (only that spec's skills, e.g. eod for the
 -- Field technician, which shares the Specialist tab with Airborne).
-K.TREE_VERSION = 4
+K.TREE_VERSION = 5
 local REWORKED = {
     [2] = { trooper = true, support = true, officer = true, shocktrooper = true },
     [3] = { support = true, shocktrooper = true },
     [4] = { shocktrooper = true, eod = true, marksman = true },
+    [5] = { eod = true },   -- (Grenadier / Anti-tank branches)
 }
 local TREE_NAMES = { trooper = "Trooper", support = "Support", officer = "Officer", shocktrooper = "Shock Trooper", eod = "Field technician", marksman = "Marksman" }
 

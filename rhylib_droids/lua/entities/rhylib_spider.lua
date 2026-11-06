@@ -4,7 +4,7 @@
     like the others (no wall climbing).
 
     What this file changes from rhylib_b1:
-      - model: config spiderModel (placeholder models/antlion.mdl), sized
+      - model: config spiderModel (models/macieg/starwars/spider.mdl; missing: models/antlion.mdl), sized
         to spiderHeight (or spiderScale), hull spiderHeight tall, eyes near
         the top of the body
       - animation: spiderSeqIdle / spiderSeqWalk / spiderSeqRun sequence
@@ -15,7 +15,7 @@
       - main gun (style "shell", ENT:StyleFire): one explosive shell
         (entities/rhylib_spider_shell.lua: a B1 blaster bolt's look,
         spiderShellSize times as big, at the B1's bolt speed, droids
-        boltSpeed through rhylib_weapons Bolts.Speed) every
+        boltSpeed through rhylib_weapons Bolts.Speed, times spiderShellSpeedMult) every
         spiderShellInterval s at a target in sight, led by its speed,
         only once its body points within spiderAimCone of it and the way
         from the gun is clear (a wall in the way for 2 s: it steps
@@ -28,6 +28,28 @@
         (aggression 4-5) stops short of that range, inside its area.
       - muzzle: the spiderMuzzleAttach attachment, else spiderMuzzleFwd /
         spiderMuzzleUp from its feet
+      - head armour (spider only: ENT.HeadArmour; EntityTakeDamage
+        "droids.spider.armour" at -140, after the crab's armour): a hit
+        on its head takes spiderHeadMult of the damage, net (a Rhylib
+        bolt's head hit already had weapons headMult: that is taken back
+        out first). Its head: the trace's HITGROUP_HEAD (bolts and
+        bullets, traced again at the hit position), else, with a generic
+        hitbox or no trace (blasts), a hit position in its own frame more
+        than spiderHeadFwd x its hull's front half (OBBMaxs.x) forward.
+        Rockets are never reduced (W.directHit, or a blast whose inflictor
+        is a gun, the rocket bolts of the RPS-6 and other launchers, or a
+        rocket / missile entity such as rhylib_topattack or rpg_missile).
+      - belly weak spot (spider and walkers built on it, e.g. the crab;
+        config <CfgPrefix>BellyKill / BellyRadius / BellyHeight, same
+        hook): a frag grenade's blast (rhylib_grenade kinds fuse and
+        impact, thrown or launched, training ones too; HL2
+        npc_grenade_frag / grenade_ar2) whose centre is within
+        <CfgPrefix>BellyRadius x its hull half-width of its middle
+        (horizontally) and no higher than <CfgPrefix>BellyHeight x its
+        hull height above its feet kills it outright (damage its health
+        + 100, whatever armour scaled it to before). Fuse grenades roll
+        through its hull (ShouldCollide "droids.spider.belly", ENT.BellyGap)
+        so they can get under it; impact ones still burst on it.
     Health, damage rules, poppers, no knockdown and no cover are the B2's
     (kind.big, b2Health). Reaction time, aggression, squads, orders and
     stealth are the shared brain's.
@@ -50,6 +72,16 @@ ENT.QuietAnims = true   -- (the base's animation line and warning: this file pri
 -- hull half-width HullHalf)
 ENT.CfgPrefix = "spider"
 ENT.HullHalf = 20
+ENT.HeadArmour = true   -- (spiderHeadMult / spiderHeadFwd; walkers built on this file set their own)
+ENT.BellyGap = true     -- (fuse grenades roll through its hull: ShouldCollide below)
+
+-- Thrown (fuse) frag grenades pass through the hull, so one can roll under
+-- its belly (both realms; the droid has the custom collision check).
+Rhylib.Hook.Add("ShouldCollide", "droids.spider.belly", function(a, b)
+    if b.BellyGap then a, b = b, a end
+    if not a.BellyGap or b:GetClass() ~= "rhylib_grenade" then return end
+    if b.GetKind and b:GetKind() == 1 then return false end
+end)
 
 -- Animation choices per model: [model] = { idle, walk, run, noWalk },
 -- each { seq = n } or { act = ACT_* }.
@@ -125,6 +157,7 @@ function ENT:SpiderHull(h, scale)
 end
 
 function ENT:Initialize()
+    if self.BellyGap then self:SetCustomCollisionCheck(true) end
     if CLIENT then
         self.Training = self:Kind().training
         return
@@ -167,6 +200,109 @@ if SERVER then
     -- No bolts: it only fires shells.
     function ENT:FireAtPos() end
     function ENT:SuppressSmoke() return false end
+
+    -- Head armour and the belly weak spot: see the header.
+    local ROCKET_CLASS = { rhylib_b2_rocket = true, rhylib_topattack = true, rpg_missile = true }
+    local OTHER_NADE = { npc_grenade_frag = true, grenade_ar2 = true }
+    local BELLY_BELOW = 16   -- (a grenade's centre may sit this far under its feet: slopes, steps)
+
+    -- A rocket, direct or its blast?
+    local function isRocket(ent, dmg)
+        local W = Rhylib.Weapons
+        if W and W.directHit == ent then return true end
+        if not dmg:IsDamageType(DMG_BLAST) then return false end
+        local inf = dmg:GetInflictor()
+        if not IsValid(inf) then return false end
+        -- (rhylib_weapons rocket bolts: the launcher is the inflictor)
+        if inf:IsWeapon() then return true end
+        local c = inf:GetClass()
+        return ROCKET_CLASS[c] or string.find(c, "rocket", 1, true) ~= nil or string.find(c, "missile", 1, true) ~= nil
+    end
+
+    -- A frag grenade's blast -> where it went off, else nil.
+    local function grenadeAt(dmg)
+        if not dmg:IsDamageType(DMG_BLAST) then return nil end
+        local inf = dmg:GetInflictor()
+        if not IsValid(inf) then return nil end
+        local c = inf:GetClass()
+        if c == "rhylib_grenade" then
+            local k = inf.GetKind and inf:GetKind()
+            if k ~= 1 and k ~= 2 then return nil end   -- (fuse, impact)
+            return inf.Centre and inf:Centre() or inf:GetPos()
+        end
+        if OTHER_NADE[c] then return inf:GetPos() end
+        return nil
+    end
+
+    -- ENT:BellyHit(dmg) -> true for a frag grenade that went off under it.
+    function ENT:BellyHit(dmg)
+        local D = Rhylib.Droids
+        local pre = self.CfgPrefix
+        if not D.Cfg(pre .. "BellyKill") then return false end
+        local p = grenadeAt(dmg)
+        if not p then return false end
+        local lp = self:WorldToLocal(p)
+        local mx = self:OBBMaxs()
+        local r = math.max(D.Cfg(pre .. "BellyRadius"), 0) * math.min(mx.x, mx.y)
+        if lp.x * lp.x + lp.y * lp.y > r * r then return false end
+        return lp.z >= -BELLY_BELOW and lp.z <= math.max(D.Cfg(pre .. "BellyHeight"), 0) * mx.z
+    end
+
+    local headTr = {}
+    local headSelf
+    local headData = { mask = MASK_SHOT, ignoreworld = true, output = headTr,
+        filter = function(e) return e == headSelf end }
+    -- ENT:HeadHit(dmg) -> on its head?, the traced hit group.
+    function ENT:HeadHit(dmg)
+        local p = dmg:GetDamagePosition()
+        if not p or p:IsZero() then return false, HITGROUP_GENERIC end
+        local group = HITGROUP_GENERIC
+        if dmg:IsDamageType(DMG_BULLET) then
+            local dir = dmg:GetDamageForce()
+            if not dir:IsZero() then
+                dir:Normalize()
+                headSelf = self
+                headData.start, headData.endpos = p - dir * 12, p + dir * 12
+                util.TraceLine(headData)
+                headSelf = nil
+                if headTr.Entity == self then group = headTr.HitGroup end
+            end
+        end
+        if group == HITGROUP_HEAD then return true, group end
+        if group ~= HITGROUP_GENERIC then return false, group end
+        local lp = self:WorldToLocal(p)
+        return lp.x > Rhylib.Droids.Cfg(self.CfgPrefix .. "HeadFwd") * self:OBBMaxs().x, group
+    end
+
+    -- Did a Rhylib bolt already add weapons headMult here (sv_10_bolts:
+    -- the hitbox's group, or Rhylib.HitGroupAt for a generic one)?
+    local function boltHead(ent, dmg, group)
+        if not dmg:IsDamageType(DMG_BULLET) then return false end
+        local inf = dmg:GetInflictor()
+        if not (IsValid(inf) and (inf.IsRhylib or inf.IsRhylibClone or inf.IsRhylibDroid)) then return false end
+        if group == HITGROUP_HEAD then return true end
+        return group == HITGROUP_GENERIC and Rhylib.HitGroupAt ~= nil and Rhylib.HitGroupAt(ent, dmg:GetDamagePosition()) == HITGROUP_HEAD
+    end
+
+    -- After the crab's armour (-150), so nothing before it lowers a belly kill.
+    Rhylib.Hook.Add("EntityTakeDamage", "droids.spider.armour", function(ent, dmg)
+        if not ent.BellyHit then return end
+        -- (a droid popper's EMP kill: as for any big droid)
+        if dmg:IsDamageType(DMG_SHOCK) then return end
+        if ent:BellyHit(dmg) then
+            dmg:SetDamage(math.max(dmg:GetDamage(), ent:Health() + 100))
+            return
+        end
+        if not ent.HeadArmour or isRocket(ent, dmg) then return end
+        local head, group = ent:HeadHit(dmg)
+        if not head then return end
+        local m = math.max(Rhylib.Droids.Cfg(ent.CfgPrefix .. "HeadMult"), 0)
+        if boltHead(ent, dmg, group) then
+            local hm = Rhylib.Config.Get("weapons", "headMult")
+            if hm and hm > 0 then m = m / hm end
+        end
+        dmg:ScaleDamage(m)
+    end, -140)
 
     -- How many shells fly now (all spiders).
     local function shellCount(D)
@@ -219,7 +355,7 @@ if SERVER then
         local from = self:Muzzle()
         -- (the B1's bolt speed: droids boltSpeed, scaled as rhylib_weapons scales bolts)
         local W = Rhylib.Weapons
-        local speed = W and W.Bolts and W.Bolts.Speed and W.Bolts.Speed(D.Gun("b1")) or D.Cfg("boltSpeed")
+        local speed = (W and W.Bolts and W.Bolts.Speed and W.Bolts.Speed(D.Gun("b1")) or D.Cfg("boltSpeed")) * math.Clamp(tonumber(D.Cfg("spiderShellSpeedMult")) or 0.85, 0.1, 3)
         speed = math.max(speed, 50)
         local vel = speedOf(t)
         local low = tp + Vector(0, 0, 20)

@@ -16,9 +16,27 @@
     the RPS-6's (Explosive radius / damage), hook Rhylib.Explosion strength
     2 for comms jammers (kind "rocket"). Gives up after 12 s (explodes
     where it is).
-    Spawned by rhylib_rps6 with: dir, target, owner, weapon, explosive.
-    Shared (AddCSLuaFile): server flies it; client draws it, the flame and
-    every guided rocket's red laser dot (everyone sees the dot).
+    Cluster (rhylib_rps6 cluster mode, EOD Cluster rockets skill): spawned
+    with aimAt, it isn't guided; it climbs the same way and heads for
+    clusterBurstHeight above aimAt (lower under a ceiling). There it
+    bursts (a flash and a bang, no damage) into clusterCount bomblets,
+    dropped to land spread over clusterSpread round the spot under the
+    burst. Each goes off where it hits, or after clusterFuse:
+    W.Explode with clusterDamage / clusterRadius, kind "cluster",
+    strength 1 (hook Rhylib.Explosion: small comms jammers, mines).
+    A rocket that hits something on the way explodes there like a normal
+    rocket. Bomblets are not entities: the server moves them in a Tick
+    hook (one trace each a tick, only while some fall) and sends each
+    burst once (net wep.cluster: position, gravity, fuse, the bomblets'
+    velocities, to the players in its PVS); clients fly the same paths
+    and draw a glow and a short streak. At most clusterMax bomblets fall
+    at once (clusterMaxPlayer for one player); past that a burst drops
+    fewer.
+    Spawned by rhylib_rps6 with: dir, target, owner, weapon, explosive,
+    aimAt (cluster only).
+    Shared (AddCSLuaFile): server flies it; client draws it, the flame,
+    every guided rocket's red laser dot (everyone sees the dot) and the
+    bomblets.
 ]]
 
 AddCSLuaFile()
@@ -30,6 +48,14 @@ Config.Register("weapons", "topSpeed", 2000, "RPS-6 top attack: rocket speed (un
 Config.Register("weapons", "topTurn", 100, "RPS-6 top attack: fastest turn in the dive (degrees/s; the climb turns at 70% of it)")
 Config.Register("weapons", "topTurnAccel", 220, "RPS-6 top attack: how quickly the rocket gets into and out of a turn (degrees/s each second)")
 Config.Register("weapons", "topLaserFollow", 1200, "RPS-6 top attack, laser guided: how fast the point the rocket heads for follows the laser dot (units/s)")
+Config.Register("weapons", "clusterBurstHeight", 525, "RPS-6 cluster: how high above the spot you aimed at the rocket bursts (units; 525 = 10 m; lower under a ceiling)")
+Config.Register("weapons", "clusterCount", 10, "RPS-6 cluster: bomblets in one burst (up to 32)")
+Config.Register("weapons", "clusterSpread", 315, "RPS-6 cluster: radius the bomblets land in, round the spot under the burst (units; 315 = 6 m)")
+Config.Register("weapons", "clusterDamage", 50, "RPS-6 cluster: blast damage of one bomblet at its centre")
+Config.Register("weapons", "clusterRadius", 140, "RPS-6 cluster: blast radius of one bomblet (units)")
+Config.Register("weapons", "clusterFuse", 4, "RPS-6 cluster: seconds after the burst a bomblet that hit nothing goes off anyway")
+Config.Register("weapons", "clusterMax", 64, "RPS-6 cluster: most bomblets falling at once on the server (a burst past it drops fewer)")
+Config.Register("weapons", "clusterMaxPlayer", 20, "RPS-6 cluster: most bomblets falling at once from one player")
 
 ENT.Type = "anim"
 ENT.Base = "base_anim"
@@ -65,6 +91,111 @@ if SERVER then
     local tr = {}
     local trData = { mask = MASK_SHOT, output = tr }
 
+    -- Bomblets in the air: list of { pos, vel, owner, inflictor, fuseAt };
+    -- falling[owner] = how many are that player's.
+    Rhylib.Net.Register("wep.cluster")
+    local bomblets, falling = {}, {}
+    local btr = {}
+    local btrData = { mask = MASK_SHOT, output = btr }
+    local MAX_BURST = 32
+
+    local function gravity()
+        local g = GetConVar("sv_gravity")
+        return math.Clamp(math.floor(g and g:GetFloat() or 600), 50, 4095)   -- (whole units: sent in 12 bits)
+    end
+
+    local function boom(b, pos)
+        local r = Config.Get("weapons", "clusterRadius")
+        Rhylib.Weapons.Explode({
+            pos = pos, radius = r, damage = Config.Get("weapons", "clusterDamage"),
+            attacker = b.owner, inflictor = b.inflictor,
+            tier = 1, reach = r * 0.5, kind = "cluster",
+            effectData = { magnitude = 1, scale = 0.5 },
+            shake = { 3, 120, 0.4, r * 2.5 },
+        })
+    end
+
+    local function tick()
+        local now = CurTime()
+        local dt = engine.TickInterval()
+        local g = gravity()
+        local i = 1
+        while i <= #bomblets do
+            local b = bomblets[i]
+            local from = b.pos
+            local to = from + b.vel * dt
+            b.vel.z = b.vel.z - g * dt
+            btrData.start, btrData.endpos = from, to
+            util.TraceLine(btrData)
+            local gone = false
+            if btr.Hit then
+                if not btr.HitSky then boom(b, btr.HitPos + btr.HitNormal * 4) end
+                gone = true
+            elseif now >= b.fuseAt or not util.IsInWorld(to) then
+                if util.IsInWorld(to) then boom(b, to) end
+                gone = true
+            else
+                b.pos = to
+            end
+            if gone then
+                local o = b.ownerKey
+                falling[o] = (falling[o] or 1) - 1
+                if falling[o] <= 0 then falling[o] = nil end
+                bomblets[i] = bomblets[#bomblets]
+                bomblets[#bomblets] = nil
+            else
+                i = i + 1
+            end
+        end
+        if #bomblets == 0 then Rhylib.Hook.Remove("Tick", "weapons.cluster") end
+    end
+
+    -- burst(pos, owner, weapon): the flash and bang, then the bomblets,
+    -- each aimed to land at a random spot within clusterSpread of the
+    -- ground under pos.
+    local function burst(pos, owner, weapon)
+        local ed = EffectData()
+        ed:SetOrigin(pos)
+        util.Effect("HelicopterMegaBomb", ed, true, true)
+        sound.Play("ambient/explosions/explode_4.wav", pos, 120, 125)
+        util.ScreenShake(pos, 4, 100, 0.6, 1500)
+        local Dr = Rhylib.Droids
+        if Dr and Dr.HearNoise then Dr.HearNoise(pos, "blast", IsValid(owner) and owner or game.GetWorld()) end
+
+        local ownerKey = IsValid(owner) and owner or game.GetWorld()
+        local n = math.Clamp(math.floor(Config.Get("weapons", "clusterCount")), 0, MAX_BURST)
+        n = math.floor(math.min(n, math.max(0, math.floor(Config.Get("weapons", "clusterMax")) - #bomblets),
+            math.max(0, math.floor(Config.Get("weapons", "clusterMaxPlayer")) - (falling[ownerKey] or 0))))
+        if n <= 0 then return end
+        local g = gravity()
+        local ground = util.TraceLine({ start = pos, endpos = pos - Vector(0, 0, 4000), mask = MASK_SOLID_BRUSHONLY })
+        local h = math.max(40, pos.z - ground.HitPos.z)
+        local down = 80   -- (thrown down out of the casing, units/s)
+        local t = (-down + math.sqrt(down * down + 2 * g * h)) / g
+        local spread = math.max(0, Config.Get("weapons", "clusterSpread"))
+        local fuse = math.Clamp(Config.Get("weapons", "clusterFuse"), 0.5, 25)
+        local now = CurTime()
+        local inflictor = IsValid(weapon) and weapon or nil
+        local vels = {}
+        for k = 1, n do
+            local r = spread * math.sqrt(math.random())
+            local a = math.random() * math.pi * 2
+            local v = Vector(math.cos(a) * r / t, math.sin(a) * r / t, -down)
+            vels[k] = v
+            bomblets[#bomblets + 1] = { pos = Vector(pos), vel = Vector(v), owner = owner, inflictor = inflictor,
+                ownerKey = ownerKey, fuseAt = now + fuse }
+        end
+        falling[ownerKey] = (falling[ownerKey] or 0) + n
+        Rhylib.Hook.Add("Tick", "weapons.cluster", tick)
+        Rhylib.Net.Start("wep.cluster")
+        net.WriteVector(pos)
+        net.WriteUInt(g, 12)
+        net.WriteUInt(math.floor(fuse * 10), 8)
+        net.WriteUInt(n, 6)
+        for k = 1, n do net.WriteVector(vels[k]) end
+        net.SendPVS(pos)
+    end
+
     function ENT:Initialize()
         self:SetModel(self.Model)
         self:SetMoveType(MOVETYPE_NONE)
@@ -75,12 +206,18 @@ if SERVER then
         self.dieAt = CurTime() + 12
         local me, owner = self, self.owner
         self.filterFn = function(e) return e ~= me and e ~= owner end
-        if not IsValid(self.target) and IsValid(owner) and owner:IsPlayer() then
+        if self.aimAt then
+            -- cluster: the burst point, clusterBurstHeight over the aim
+            -- (under a ceiling: just below it)
+            local up = math.max(0, Config.Get("weapons", "clusterBurstHeight"))
+            local roof = util.TraceLine({ start = self.aimAt, endpos = self.aimAt + Vector(0, 0, up), mask = MASK_SOLID_BRUSHONLY })
+            self.burstAt = roof.Hit and roof.HitPos - Vector(0, 0, math.min(40, roof.Fraction * up)) or roof.HitPos
+        elseif not IsValid(self.target) and IsValid(owner) and owner:IsPlayer() then
             -- laser guided (fired without a lock)
             self:SetGuide(owner)
             if IsValid(self.weapon) then self:SetNW2String("rhylib_guideGun", self.weapon:GetClass()) end
         end
-        self.lastSpot = IsValid(self.target) and self.target:WorldSpaceCenter() or self:LaserSpot() or (self:GetPos() + self.dir * 2000)
+        self.lastSpot = self.burstAt or (IsValid(self.target) and self.target:WorldSpaceCenter()) or self:LaserSpot() or (self:GetPos() + self.dir * 2000)
 
         -- The top of the climb: part way to the target, high up (lower
         -- under a ceiling; no room = straight at it).
@@ -118,6 +255,15 @@ if SERVER then
             decal = true, decalFilter = self,
             direct = ex.direct and { ent = hit, damage = ex.direct } or nil,
         })
+        self:StopSound("weapons/rpg/rocket1.wav")
+        self:Remove()
+    end
+
+    -- ENT:Burst(pos): a cluster rocket opens at pos (the bomblets: below).
+    function ENT:Burst(pos)
+        if self.done then return end
+        self.done = true
+        burst(pos, self.owner, self.weapon)
         self:StopSound("weapons/rpg/rocket1.wav")
         self:Remove()
     end
@@ -189,8 +335,16 @@ if SERVER then
             self:Explode(tr.HitPos + tr.HitNormal * 4, tr.Entity)
             return
         end
+        -- cluster: burst at the point, or once it's close and going past it
+        if self.burstAt and self.phase == 2 then
+            local d2 = to:DistToSqr(self.burstAt)
+            if d2 < 60 * 60 or (d2 < 400 * 400 and (self.burstAt - to):Dot(self.dir) <= 0) then
+                self:Burst(to)
+                return
+            end
+        end
         -- close enough to the target: go off (a jammer's centre may sit in its hull)
-        if self.phase == 2 and to:DistToSqr(self.lastSpot) < 40 * 40 then
+        if self.phase == 2 and not self.burstAt and to:DistToSqr(self.lastSpot) < 40 * 40 then
             self:Explode(to, IsValid(self.target) and self.target or nil)
             return
         end
@@ -217,6 +371,69 @@ if CLIENT then
         render.SetMaterial(GLOW)
         render.DrawSprite(self:GetPos() - self:GetForward() * 10, 28, 28, FLAME)
     end
+end
+
+if CLIENT then
+    -- Cluster bomblets (net wep.cluster): flown on the same paths as on the
+    -- server, drawn as a glow with a short streak until they hit something.
+    local list = {}
+    local GLOW = Material("sprites/light_glow02_add")
+    local STREAK = Material("trails/smoke")
+    local HOT = Color(255, 180, 90)
+    local SMOKE = Color(200, 200, 200, 120)
+    local ctr = {}
+    local ctrData = { mask = MASK_SHOT, output = ctr }
+
+    -- (moved once a frame in Think; the draw hook can run several times a frame)
+    local function moveBomblets()
+        local now = CurTime()
+        local dt = FrameTime()
+        local i = 1
+        while i <= #list do
+            local b = list[i]
+            local from = b.pos
+            local to = from + b.vel * dt
+            b.vel.z = b.vel.z - b.g * dt
+            ctrData.start, ctrData.endpos = from, to
+            util.TraceLine(ctrData)
+            if ctr.Hit or now >= b.fuseAt then
+                list[i] = list[#list]
+                list[#list] = nil
+            else
+                b.pos = to
+                i = i + 1
+            end
+        end
+        if #list == 0 then
+            Rhylib.Hook.Remove("Think", "weapons.cluster")
+            Rhylib.Hook.Remove("PostDrawTranslucentRenderables", "weapons.cluster")
+        end
+    end
+    local function drawBomblets(depth, sky)
+        if depth or sky then return end
+        for _, b in ipairs(list) do
+            render.SetMaterial(STREAK)
+            render.DrawBeam(b.pos, b.pos - b.vel * 0.05, 4, 0, 1, SMOKE)
+            render.SetMaterial(GLOW)
+            render.DrawSprite(b.pos, 12, 12, HOT)
+        end
+    end
+
+    Rhylib.Net.Receive("wep.cluster", function()
+        local pos = net.ReadVector()
+        local g = net.ReadUInt(12)
+        local fuse = net.ReadUInt(8) / 10
+        local n = net.ReadUInt(6)
+        local now = CurTime()
+        for _ = 1, n do
+            if #list >= 128 then break end
+            list[#list + 1] = { pos = Vector(pos), vel = net.ReadVector(), g = g, fuseAt = now + fuse }
+        end
+        if #list > 0 then
+            Rhylib.Hook.Add("Think", "weapons.cluster", moveBomblets)
+            Rhylib.Hook.Add("PostDrawTranslucentRenderables", "weapons.cluster", drawBomblets)
+        end
+    end)
 end
 
 if CLIENT then

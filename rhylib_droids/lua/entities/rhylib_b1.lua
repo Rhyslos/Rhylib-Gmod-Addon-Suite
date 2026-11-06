@@ -3,7 +3,8 @@
     Also the base of the other droids (ENT.DroidKind picks a row of D.KINDS:
     rhylib_b2, rhylib_b2_cannon, rhylib_b1_<variant>, rhylib_b1_training,
     rhylib_b2_training; rhylib_spider overrides firing, moving, animation
-    and drawing in its own file).
+    and drawing in its own file; rhylib_bx_commando its moving while
+    fighting (flanking, leaps) and animation).
 
     Cover (B1 kinds, `cover`): hit coverHits times within coverWindow, or
     suppressed (Z-6 skill, flash charge), it runs to a navmesh hiding spot

@@ -32,6 +32,8 @@
     rhylib_droids is installed (stealth hearing).
     Other addons read during a hit: Rhylib.Skills.DamageMult (damage
     multiplier and crits), Rhylib.Weapons.ShieldBlocks (riot shields),
+    ent:BoltShield(bolt, tr) on the entity hit (true = stopped there, no
+    hit; rhylib_droids' droideka shield),
     Rhylib.Lying (hits on a lying player's ragdoll count for the player).
     Fields set on the target during TakeDamageInfo: ply.rhylibHitGroup
     (the body part, read by rhylib_medical; players and its test dummies,
@@ -265,6 +267,10 @@ local function applyHit(bolt, tr, group)
     if not IsValid(ent) then return end
     -- Clone NPC bolts never hurt players or clones (rhylib_droids).
     if bolt.clone and (ent:IsPlayer() or ent.IsRhylibClone or ent.IsRhylibDummy) then return end
+    -- Hook point: an entity with its own bolt shield (rhylib_droids'
+    -- droideka bubble) answers ent:BoltShield(bolt, tr); true = the bolt
+    -- stopped there (the entity does its own effect), no hit.
+    if ent.BoltShield and ent:BoltShield(bolt, tr) then return end
     -- Riot shields (sh_60_shield.lua): a bolt from the front stops on the shield.
     if ent:IsPlayer() and Rhylib.Weapons.ShieldBlocks and Rhylib.Weapons.ShieldBlocks(ent, bolt.dir) then
         local fx = EffectData()

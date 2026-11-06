@@ -45,6 +45,10 @@
         from the blast. Droid popper EMP (DMG_SHOCK) is never scaled, and
         a rocket straight into it (rhylib_weapons W.directHit, the RPS-6)
         always kills it.
+      - belly weak spot (rhylib_spider's, config crabBellyKill /
+        crabBellyRadius / crabBellyHeight): a frag grenade going off right
+        under it kills it; that hook (-140) runs after the armour above,
+        so the armour never lowers it. No spider head armour.
     Health crabHealth; poppers, no knockdown and no cover as for big droids.
 ]]
 
@@ -61,6 +65,7 @@ ENT.AdminOnly = true
 ENT.DroidKind = "crab"
 ENT.CfgPrefix = "crab"
 ENT.HullHalf = 22   -- (the model may be wider: the hull has to fit doors)
+ENT.HeadArmour = false   -- (no spider head armour; its belly weak spot is the spider's, crabBelly*)
 
 if SERVER then
     local attOf = {}

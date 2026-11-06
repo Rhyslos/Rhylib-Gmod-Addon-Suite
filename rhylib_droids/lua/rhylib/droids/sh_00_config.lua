@@ -25,8 +25,9 @@
       (rhylib_spider_shell: looks like a B1 bolt, spiderShellSize times
       as big, at the B1's bolt speed) every spiderShellInterval seconds
       at a target in sight, leading a moving one; backs off from anyone
-      closer than spiderShellMin (fires anyway when it can't). Model:
-      spiderModel (placeholder HL2 antlion).
+      closer than spiderShellMin (fires anyway when it can't). Its head
+      takes spiderHeadMult (rockets full). Model: spiderModel
+      (models/macieg/starwars/spider.mdl, else the HL2 antlion).
       LM-432 crab droid (rhylib_crab, entities/rhylib_crab.lua): the
       spider's walker with two rapid-fire blasters (crabRPM without
       stopping), mostly near misses that walk round the target: it aims
@@ -35,11 +36,28 @@
       the spot it last saw someone in cover (crabSuppressTime).
       crabHealth, its armour by where a hit comes from: side plates take
       crabSideMult, front and back crabFrontMult, hits from above
-      crabTopMult (its weak spot). Model: crabModel (placeholder HL2
-      headcrab).
+      crabTopMult. Model: crabModel (placeholder HL2 headcrab).
+      Spider and crab: a frag grenade going off right under one kills it
+      (spiderBelly* / crabBelly*).
+      Droideka (rhylib_droideka, entities/rhylib_droideka.lua): rolls
+      fast with no shield (droidekaSpeed, droidekaHealth), stops and
+      deploys (droidekaDeployTime): a shield bubble that stops bolts and
+      blasts from outside, two arm blasters in bursts. Hit from inside
+      the bubble x droidekaInsideMult; a frag grenade inside it, a direct
+      rocket hit or a rocket blast at the bubble kills it; a droid popper
+      drops the shield for
+      droidekaShieldDownTime s. Model: droidekaModel.
       Training B1 / B2 (rhylib_b1_training, rhylib_b2_training): like the
       B1 and B2 with orange-yellow bolts that only take sim health
       (rhylib_training).
+      BX commando droids (rhylib_bx_commando, entities/rhylib_bx_commando.lua):
+      the B1 brain with b1Health x bxHealthMult, faster (bxSpeed,
+      bxReaction); in a fight each takes its own angle round the target
+      (flanking, surrounding, higher spots first) and now and then leaps
+      up onto a roof or ledge (bxLeap*). Captain (rhylib_bx_captain):
+      bxCaptainHealth, bxCaptainDamage, a commander that boosts only
+      commandos (leads = "bx"). Training commando (rhylib_bx_training):
+      training bolts. Models: bxModel, bxCaptainModel, bxTrainingModel.
       Fewer but tougher: B1s take cover when hit a few times
       (or suppressed), blind fire from it, and pull back once when badly
       hurt; B2s don't. Route and cover searches are spread over ticks
@@ -54,7 +72,7 @@
       one droids stand and shoot.
 
     Spawn menu: NPCs tab, "Rhy's B1 battle droids", "Rhy's B2 super
-    battle droids", "Rhy's Spider droids", "Rhy's Crab droids" and "Rhy's Training droids"
+    battle droids", "Rhy's Spider droids", "Rhy's Crab droids", "Rhy's Droidekas", "Rhy's Commando droids" and "Rhy's Training droids"
     (admins). Droids don't hurt each other. At most maxActive droids exist at once.
 
     Clone troopers (rhylib_ct_*, spawn menu "Rhy's Clone troopers"):
@@ -133,7 +151,7 @@ Config.Register("droids", "artyMaxFlight", 5.5, "Mortar squad artillery: longest
 Config.Register("droids", "artyBlasterRange", 1500, "Mortar squad artillery: closer than this it also uses its blaster (a lone B2 mortar: mortarSelfRange)")
 
 -- DSD1 dwarf spider droid (rhylib_spider). Health is the B2's (b2Health).
-Config.Register("droids", "spiderModel", "models/antlion.mdl", "DSD1 dwarf spider droid model (a placeholder until a spider droid model is picked; a missing one falls back to the antlion)")
+Config.Register("droids", "spiderModel", "models/macieg/starwars/spider.mdl", "DSD1 dwarf spider droid model (a missing one falls back to the HL2 antlion)")
 Config.Register("droids", "spiderScale", 0, "Spider droid: model size (0 = sized to spiderHeight)")
 Config.Register("droids", "spiderHeight", 64, "Spider droid: body height (units): its hull, its eyes and, with spiderScale 0, the model's size")
 Config.Register("droids", "spiderSeqIdle", "", "Spider droid: standing animation (sequence name; empty = found by itself)")
@@ -152,10 +170,16 @@ Config.Register("droids", "spiderShellDamage", 65, "Spider droid shell: blast da
 Config.Register("droids", "spiderShellDirect", 60, "Spider droid shell: extra blast damage to what it hits")
 Config.Register("droids", "spiderShellRadius", 110, "Spider droid shell: blast radius (units)")
 Config.Register("droids", "spiderShellKnock", true, "Spider droid shell: can knock players down (only close to the impact, where the blast does weapons knockMin damage or more)")
-Config.Register("droids", "spiderShellSize", 2, "Spider droid shell: size of its look as a multiple of a B1 blaster bolt (it flies at the B1's bolt speed, boltSpeed)")
+Config.Register("droids", "spiderShellSize", 2, "Spider droid shell: size of its look as a multiple of a B1 blaster bolt (it flies at the B1's bolt speed, boltSpeed, times spiderShellSpeedMult)")
+Config.Register("droids", "spiderShellSpeedMult", 0.85, "Spider droid shell: its speed as a multiple of the B1's bolt speed (0.85 = 15% slower)")
 Config.Register("droids", "spiderShellSpread", 40, "Spider droid shell: miss distance per 1000 units of range")
 Config.Register("droids", "spiderShellMin", 350, "Spider droid: closer than this it backs off before firing (cornered: fires anyway)")
 Config.Register("droids", "spiderShellMax", 16, "Spider droid shells in flight at once, all spiders together")
+Config.Register("droids", "spiderHeadMult", 0.4, "Spider droid: damage taken from hits on its head (rockets always full; a blaster head hit's own weapons headMult is taken out first)")
+Config.Register("droids", "spiderHeadFwd", 0.4, "Spider droid: with no head hitbox hit, a hit further forward than this share of its hull's front half counts as its head")
+Config.Register("droids", "spiderBellyKill", true, "Spider droid: a frag grenade going off right under it kills it outright")
+Config.Register("droids", "spiderBellyRadius", 0.6, "Spider droid: under it = the grenade within this share of its hull half-width from its middle (horizontally)")
+Config.Register("droids", "spiderBellyHeight", 0.35, "Spider droid: under it = the grenade no higher than this share of its hull height above its feet")
 
 -- LM-432 crab droid (rhylib_crab).
 Config.Register("droids", "crabModel", "models/headcrabclassic.mdl", "LM-432 crab droid model (a placeholder until a crab droid model is picked; a missing one falls back to the headcrab)")
@@ -201,6 +225,42 @@ Config.Register("droids", "crabSideMult", 0.35, "Crab droid: damage taken from h
 Config.Register("droids", "crabFrontMult", 0.7, "Crab droid: damage taken from hits on its front or back")
 Config.Register("droids", "crabTopMult", 1.75, "Crab droid: damage taken from hits from above (its weak spot)")
 Config.Register("droids", "crabTopAngle", 35, "Crab droid: a hit counts as from above when it comes from at least this steep above its middle (degrees)")
+Config.Register("droids", "crabBellyKill", true, "Crab droid: a frag grenade going off right under it kills it outright (its armour never lowers that)")
+Config.Register("droids", "crabBellyRadius", 0.6, "Crab droid: under it = the grenade within this share of its hull half-width from its middle (horizontally)")
+Config.Register("droids", "crabBellyHeight", 0.35, "Crab droid: under it = the grenade no higher than this share of its hull height above its feet")
+
+-- Droideka (rhylib_droideka).
+Config.Register("droids", "droidekaModel", "models/crossline/player/droideka/cl_droideka.mdl", "Droideka model (a missing one falls back to the HL2 floor turret)")
+Config.Register("droids", "droidekaScale", 1, "Droideka: model size")
+Config.Register("droids", "droidekaHeight", 60, "Droideka: hull height (units), its eyes near the top")
+Config.Register("droids", "droidekaSeqRoll", "", "Droideka: rolling animation (sequence name; empty = found by itself; none = drawn as a ball)")
+Config.Register("droids", "droidekaSeqDeploy", "", "Droideka: unfolding animation (sequence name; empty = found by itself)")
+Config.Register("droids", "droidekaSeqIdle", "", "Droideka: deployed standing animation (sequence name; empty = found by itself)")
+Config.Register("droids", "droidekaSeqWalk", "", "Droideka: deployed crawling animation (sequence name; empty = found by itself)")
+Config.Register("droids", "droidekaBallModel", "models/hunter/misc/sphere075x075.mdl", "Droideka: ball drawn while rolling when the model has no rolling animation")
+Config.Register("droids", "droidekaBallRadius", 20, "Droideka: radius of that ball (units)")
+Config.Register("droids", "droidekaMuzzleLeft", "", "Droideka: model attachment the left arm fires from (empty or missing = the model's left hand, else droidekaMuzzleFwd / Side / Up)")
+Config.Register("droids", "droidekaMuzzleRight", "", "Droideka: model attachment the right arm fires from (empty or missing = the model's right hand, else droidekaMuzzleFwd / Side / Up)")
+Config.Register("droids", "droidekaMuzzleFwd", 20, "Droideka: bolts leave this far in front of its centre (units)")
+Config.Register("droids", "droidekaMuzzleSide", 12, "Droideka: each arm this far left / right of its centre (units)")
+Config.Register("droids", "droidekaMuzzleUp", 36, "Droideka: bolts leave this high above its feet (units)")
+Config.Register("droids", "droidekaHealth", 260, "Droideka: health (the same pool rolled and deployed)")
+Config.Register("droids", "droidekaSpeed", 340, "Droideka: rolling speed")
+Config.Register("droids", "droidekaWalkSpeed", 35, "Droideka: deployed crawling speed (side steps with the shield up)")
+Config.Register("droids", "droidekaRange", 2600, "How far a droideka sees and shoots")
+Config.Register("droids", "droidekaReaction", 0.6, "Seconds before a droideka starts firing at a new target")
+Config.Register("droids", "droidekaDamage", 12, "Droideka: blaster damage per bolt")
+Config.Register("droids", "droidekaRPM", 540, "Droideka: shots per minute within a burst, both arms together")
+Config.Register("droids", "droidekaSpread", 1.6, "Droideka: inaccuracy cone (degrees), more against moving targets")
+Config.Register("droids", "droidekaPause", 0.5, "Droideka: seconds between bursts")
+Config.Register("droids", "droidekaDeployRange", 1300, "Droideka: further than this from its target it rolls closer (to 0.75 x this, 0.45 x at aggression 4-5) before deploying")
+Config.Register("droids", "droidekaDeployTime", 1.2, "Droideka: seconds to deploy after it stops (no shield and no firing until then)")
+Config.Register("droids", "droidekaRepositionMin", 10, "Droideka: fewest seconds deployed in a fight before it rolls a few metres to a new spot")
+Config.Register("droids", "droidekaRepositionMax", 20, "Droideka: most seconds deployed in a fight before it rolls to a new spot (0 = never)")
+Config.Register("droids", "droidekaShieldScale", 0.69, "Droideka shield: bubble radius as a multiple of the model bounds' half-diagonal")
+Config.Register("droids", "droidekaShieldRadius", 0, "Droideka shield: bubble radius in units (0 = from the model, droidekaShieldScale)")
+Config.Register("droids", "droidekaInsideMult", 1.3, "Droideka: damage multiplier on hits from someone inside its shield while it is up")
+Config.Register("droids", "droidekaShieldDownTime", 5, "Droideka: seconds a droid popper's EMP keeps its shield down")
 
 Config.Register("droids", "heavyHealth", 340, "B1 heavy: health")
 Config.Register("droids", "heavySpeed", 140, "B1 heavy: run speed")
@@ -218,6 +278,32 @@ Config.Register("droids", "blackoutReaction", 2, "EOD Signal blackout: droids' r
 Config.Register("droids", "cmdPause", 0.6, "Commander boost: multiplier on the gap between shots and the breaks between runs (fires faster)")
 Config.Register("droids", "cmdDeathTime", 6, "B1 commander killed: seconds nearby droids are rattled (0 = off)")
 Config.Register("droids", "cmdDeathMult", 1.8, "B1 commander killed: aim cone multiplier while rattled")
+
+-- BX commando droids (entities/rhylib_bx_commando.lua).
+Config.Register("droids", "bxModel", "models/bx/npc_droid_cis_bx_h.mdl", "BX commando droid model (a missing one falls back to the B1's)")
+Config.Register("droids", "bxCaptainModel", "models/bx_captain/npc_droid_cis_bx_cpt_h.mdl", "BX commando captain model (a missing one falls back to the B1's)")
+Config.Register("droids", "bxTrainingModel", "models/bx_training/npc_droid_cis_bx_training_h.mdl", "BX training commando model (a missing one falls back to the B1's)")
+Config.Register("droids", "bxSeqIdle", "", "BX commandos: standing animation (sequence name; empty = found by itself)")
+Config.Register("droids", "bxSeqWalk", "", "BX commandos: walking animation (sequence name; empty = found by itself)")
+Config.Register("droids", "bxSeqRun", "", "BX commandos: running animation (sequence name; empty = found by itself)")
+Config.Register("droids", "bxSeqJump", "", "BX commandos: animation played during a leap (sequence name; empty = a jump activity if the model has one)")
+Config.Register("droids", "bxHealthMult", 2, "BX commando (and training commando): health as a multiple of b1Health")
+Config.Register("droids", "bxCaptainHealth", 800, "BX commando captain: health")
+Config.Register("droids", "bxSpeed", 240, "BX commandos: run speed")
+Config.Register("droids", "bxRange", 3000, "How far a BX commando sees and shoots")
+Config.Register("droids", "bxReaction", 0.45, "Seconds before a BX commando starts firing at a new target")
+Config.Register("droids", "bxDamage", 15, "BX commando: E-5 damage per bolt")
+Config.Register("droids", "bxCaptainDamage", 20, "BX commando captain: E-5 damage per bolt")
+Config.Register("droids", "bxRPM", 170, "BX commandos: shots per minute (semi)")
+Config.Register("droids", "bxSpread", 1.0, "BX commandos: inaccuracy cone (degrees), more against moving targets")
+Config.Register("droids", "bxFlankMin", 400, "BX commandos flanking: closest they take a spot round the target (units)")
+Config.Register("droids", "bxFlankMax", 950, "BX commandos flanking: furthest they take a spot round the target (units)")
+Config.Register("droids", "bxFlankRepick", 4, "BX commandos flanking: seconds between picking a new spot round the target")
+Config.Register("droids", "bxLeapChance", 0.3, "BX commandos: chance, each time one picks a flanking spot, to look for a roof or ledge to leap up onto instead")
+Config.Register("droids", "bxLeapCooldown", 18, "BX commandos: seconds between one commando's leaps")
+Config.Register("droids", "bxLeapMinHeight", 90, "BX commando leap: lowest spot above it that counts (units)")
+Config.Register("droids", "bxLeapMaxHeight", 320, "BX commando leap: highest spot above it it leaps to (units)")
+Config.Register("droids", "bxLeapRange", 650, "BX commando leap: furthest it leaps sideways (units)")
 
 Config.Register("droids", "moveSpread", 0.003, "Extra aim cone (degrees) per unit/s the target moves")
 Config.Register("droids", "flashSuppress", 3, "Flash charge: droid aim cone multiplier while dazzled")
@@ -384,6 +470,10 @@ D.B2T_MODEL = "models/aussiwozzi/cgi/b1droids/b2_battledroid_training.mdl"
       fallback    model when the row's model isn't installed (none: the B1's)
       labelZ      height of the stealth "?" / "!" over it (none: by big)
       commander   boosts its side within cmdRadius
+      leads       (commanders) a field name: boosts only kinds with that
+                  field set (bx_captain: "bx")
+      healthMult  config key multiplying health (bx: bxHealthMult)
+      bx          a BX commando (entities/rhylib_bx_commando.lua)
       medic       heals, treats and revives (clones)
       training    sim-only bolts and blasts, no kill credit
       side        "republic" = a clone (no side = droid)
@@ -434,9 +524,24 @@ D.KINDS.crab = { name = "LM-432 crab droid", modelCfg = "crabModel", fallback = 
     range = "crabRange", reaction = "crabReaction", damage = "crabDamage", rpm = "crabRPM", spread = "crabSpread", burst = { 1, 1 }, color = 2,
     big = true, sound = D.B2_SOUND, style = "suppress", category = "Rhy's Crab droids", labelZ = 76 }
 
+-- Droideka: its own entity (rhylib_droideka: rolled / deployed, shield
+-- bubble, two arm blasters in bursts of `burst` shots).
+D.DROIDEKA_FALLBACK = "models/combine_turrets/floor_turret.mdl"
+D.KINDS.droideka = { name = "Droideka", modelCfg = "droidekaModel", fallback = D.DROIDEKA_FALLBACK, health = "droidekaHealth", speed = "droidekaSpeed",
+    range = "droidekaRange", reaction = "droidekaReaction", damage = "droidekaDamage", rpm = "droidekaRPM", spread = "droidekaSpread", burst = { 6, 10 }, color = 2,
+    big = true, sound = D.B2_SOUND, pitch = 115, style = "suppress", category = "Rhy's Droidekas", labelZ = 80 }
+
 -- Training droids: yellow bolts (color 8), no kill credit.
 D.KINDS.b1t = variant("b1", "B1 training droid", D.B1T_MODEL, { training = true, color = 8 })
 D.KINDS.b2t = variant("b2", "B2 training droid", D.B2T_MODEL, { training = true, color = 8 })
+
+-- BX commando droids: models from config, the B1's as the fallback.
+D.KINDS.bx = { name = "BX commando droid", modelCfg = "bxModel", fallback = D.B1_MODEL, health = "b1Health", healthMult = "bxHealthMult", speed = "bxSpeed",
+    range = "bxRange", reaction = "bxReaction", damage = "bxDamage", rpm = "bxRPM", spread = "bxSpread", burst = { 2, 3 }, color = 2, gun = D.E5_MODEL,
+    nades = true, cover = true, style = "semi", bx = true, category = "Rhy's Commando droids" }
+D.KINDS.bx_captain = variant("bx", "BX commando captain", nil, { modelCfg = "bxCaptainModel", health = "bxCaptainHealth", healthMult = false,
+    damage = "bxCaptainDamage", commander = true, leads = "bx" })
+D.KINDS.bx_training = variant("bx", "BX training commando", nil, { modelCfg = "bxTrainingModel", training = true, color = 8, category = "Rhy's Training droids" })
 
 -- Clone troopers (side "republic"): rhylib_clone and its one-line
 -- subclasses. Models come from config (modelCfg); fallback = HL2's
@@ -490,6 +595,8 @@ D.CLASSES = { b1 =
 for _, v in ipairs({ "aat", "commander", "geonosis", "heavy", "marine", "security", "snow" }) do
     D.CLASSES["b1_" .. v] = "rhylib_b1_" .. v
 end
+D.CLASSES.droideka = "rhylib_droideka"
+D.CLASSES.bx, D.CLASSES.bx_captain, D.CLASSES.bx_training = "rhylib_bx_commando", "rhylib_bx_captain", "rhylib_bx_training"
 
 D.MODES = { "guard", "patrol", "attack", "roam" }   -- (index 1-4 on the wire, toolgun "New droids")
 D.MODE_NAMES = { guard = "Guard", patrol = "Patrol", attack = "Attack", follow = "Follow", roam = "Spread out", retreat = "Retreat", laststand = "Last stand" }
@@ -551,8 +658,8 @@ end)
 
 -- Droid and clone spawners (entities/rhylib_droid_spawner.lua, rhylib_clone_spawner.lua): what a new one starts with
 -- (admins change each one with E on it).
-Config.Register("droids", "spawnerPreset", "droid_small", "Droid spawner: preset squad a new spawner sends (droid_small, droid_medium, droid_large, droid_b2, droid_mortar, droid_spider, droid_crab)")
-Config.Meta("droids", "spawnerPreset", { options = { { "droid_small", "Small squad" }, { "droid_medium", "Medium squad" }, { "droid_large", "Large squad" }, { "droid_b2", "B2s" }, { "droid_mortar", "Mortars" }, { "droid_spider", "Spider squad" }, { "droid_crab", "Crab squad" } } })
+Config.Register("droids", "spawnerPreset", "droid_small", "Droid spawner: preset squad a new spawner sends (droid_small, droid_medium, droid_large, droid_b2, droid_mortar, droid_spider, droid_crab, droid_commando, droid_droideka, droid_company, droid_division)")
+Config.Meta("droids", "spawnerPreset", { options = { { "droid_small", "Small squad" }, { "droid_medium", "Medium squad" }, { "droid_large", "Large squad" }, { "droid_b2", "B2s" }, { "droid_mortar", "Mortars" }, { "droid_spider", "Spider squad" }, { "droid_crab", "Crab squad" }, { "droid_commando", "Commando squad (7)" }, { "droid_droideka", "Droideka pair" }, { "droid_company", "Droid company (33)" }, { "droid_division", "Droid division (66)" } } })
 Config.Register("droids", "cloneSpawnerPreset", "clone_squad", "Clone spawner: preset squad a new clone spawner sends (clone_squad, clone_company)")
 Config.Meta("droids", "cloneSpawnerPreset", { options = { { "clone_squad", "Clone squad (8)" }, { "clone_company", "Clone company (22)" } } })
 
@@ -595,6 +702,8 @@ local PAGE_SECTIONS = {
     { "B2 super battle droids", { "^b2" } },
     { "Spider droids", { "^spider" } },
     { "Crab droids", { "^crab" } },
+    { "Droidekas", { "^droideka" } },
+    { "Commando droids", { "^bx" } },
     { "Heavy & commander droids", { "^suppress", "^heavy", "^cmdHealth$", "^cmdRadius$", "^cmdSpread$", "^cmdReaction$", "^cmdPause$", "^cmdDeath", "^smoke" } },
     { "Cover & accuracy", { "^cover", "^blindSpread$", "^retreatFrac$", "^flash", "^settle", "^crowd" } },
     { "Retreat", { "^retreat", "^lastStand" } },

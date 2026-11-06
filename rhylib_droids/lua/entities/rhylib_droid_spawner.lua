@@ -74,7 +74,9 @@ local function presetSize(name)
     local Dr = D()
     local pr = Dr and Dr.PRESETS and Dr.PRESETS[name]
     local n = 0
-    for _, row in ipairs(pr and pr.rows or {}) do n = n + #row end
+    for _, row in ipairs(pr and pr.rows or {}) do
+        for _, kind in ipairs(row) do if kind ~= "" then n = n + 1 end end   -- ("" = an empty spot)
+    end
     return n
 end
 
