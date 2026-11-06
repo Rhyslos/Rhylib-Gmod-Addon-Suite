@@ -27,6 +27,9 @@
           a stun bolt hit a player (rhylib_mp decides what it does)
       Rhylib.Explosion(pos, reach, tier, attacker, inflictor, "rocket")
           a real (not training) rocket went off (rhylib_radio jammers)
+    Other addons told about every bolt fired (not training bolts or the
+    grapple hook): Rhylib.Droids.HearShot(owner, origin, stun) when
+    rhylib_droids is installed (stealth hearing).
     Other addons read during a hit: Rhylib.Skills.DamageMult (damage
     multiplier and crits), Rhylib.Weapons.ShieldBlocks (riot shields),
     Rhylib.Lying (hits on a lying player's ragdoll count for the player).
@@ -504,6 +507,10 @@ function Bolts.Fire(owner, weapon, origin, dir, damage, opts, hits)
     -- (dual pistols: which gun, as the fire anim; others can't see the clip)
     local left = weapon.GetFireModeName and weapon:GetFireModeName() == "dual" and weapon:Clip1() % 2 == 1
     sendShot(owner, opts and opts.color or weapon.BoltColor or 1, origin, dir, speed, left, ahead)
+    -- (unaware droids hear it: rhylib_droids stealth; stun and training
+    -- bolts and the grapple hook (onHit) are quiet)
+    local Dr = Rhylib.Droids
+    if Dr and Dr.HearShot and not (bolt.training or bolt.onHit) then Dr.HearShot(owner, origin, bolt.stun) end
 
     local comp = isPly and not hits
     local tr, group

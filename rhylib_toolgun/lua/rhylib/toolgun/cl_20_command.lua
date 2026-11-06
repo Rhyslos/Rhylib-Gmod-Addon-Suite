@@ -26,7 +26,10 @@
                       Patrol area, Patrol route, Roam, Remove, Split up,
                       Make one squad, Next formation, Retreat, Hunt,
                       Assault here (attack that spot; NPCs placed as
-                      ASSAULT go there too, a red ring marks it).
+                      ASSAULT go there too, a red ring marks it),
+                      Unaware (stealth) / Alert (droids only: whether
+                      they have to notice you first, rhylib_droids
+                      stealth).
     Selected NPCs get an outline (only for you). The HUD lists the
     controls and the selection. The selection is kept while you switch
     weapons; it drops NPCs that die.
@@ -48,7 +51,7 @@ local COL = Color(255, 210, 80)
 local COL_DIM = Color(220, 220, 220)
 
 local OP = { move = 1, attack = 2, aggro = 3, mode = 4, formation = 5, group = 6, split = 7, remove = 8,
-    assault = 9, spread = 10, defend = 11, area = 12, route = 13 }
+    assault = 9, spread = 10, defend = 11, area = 12, route = 13, alertness = 14 }
 
 Tool.cmdRadius = Tool.cmdRadius or 500   -- (units; Ctrl + wheel)
 Tool.route = Tool.route or {}            -- patrol route points (Shift + RMB)
@@ -331,6 +334,8 @@ function Tool.CommandWheel(code)
         { label = "Retreat", run = mode(5), sub = "Withdraw from the enemy", col = Color(255, 170, 60) },
         { label = "Hunt", run = mode(3), sub = "Hunt the nearest enemies", col = Color(255, 100, 80) },
         { label = "Assault here", run = atSpot(OP.assault), sub = "Attack that spot (waves)", col = COL_ASSAULT },
+        { label = "Unaware (stealth)", run = function() send(OP.alertness, function() net.WriteUInt(2, 2) end) end, sub = "Droids must notice you first", col = Color(133, 183, 235) },
+        { label = "Alert", run = function() send(OP.alertness, function() net.WriteUInt(1, 2) end) end, sub = "Droids see you at once (battle)", col = Color(239, 159, 39) },
     }, code)
 end
 

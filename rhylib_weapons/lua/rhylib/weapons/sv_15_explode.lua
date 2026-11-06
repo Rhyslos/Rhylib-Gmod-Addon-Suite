@@ -27,6 +27,9 @@
     Example (a rocket): W.Explode({ pos = at, radius = 220, damage = 150,
         attacker = owner, inflictor = gun, tier = 2, kind = "rocket",
         effectData = { normal = n, magnitude = 1, scale = 1 } })
+    Every real (not training) blast is also passed to
+    Rhylib.Droids.HearNoise(pos, "blast", attacker) when rhylib_droids is
+    installed (stealth hearing).
     Every site keeps its own numbers, effects and sounds and passes them in;
     extra effects (the HE charge's second effect, EMP rings) stay at the site.
 ]]
@@ -76,6 +79,9 @@ function W.Explode(o)
             hook.Run("Rhylib.Explosion", pos, o.reach or o.radius, o.tier, attacker, inflictor, o.kind)
         end
     end
+    -- (unaware droids hear it: rhylib_droids stealth)
+    local Dr = Rhylib.Droids
+    if Dr and Dr.HearNoise and not o.training then Dr.HearNoise(pos, "blast", attacker) end
     if o.shake then util.ScreenShake(pos, o.shake[1], o.shake[2], o.shake[3], o.shake[4]) end
     if o.decal then
         util.Decal("Scorch", pos + Vector(0, 0, 8), pos - Vector(0, 0, 40), o.decalFilter)

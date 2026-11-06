@@ -475,6 +475,7 @@ local PAGE_SECTIONS = {
     { "Clone medics", { "^ctMedic", "^ctDown", "^reviveShield" } },
     { "Clone tactics", { "^ctOdds", "^ctFallBackOdds$", "^ctChargeOdds$", "^ctCrouch", "^ctPopper" } },
     { "Clone troopers", { "^clone", "^ct", "^cmdFollowRadius$", "^cmdMaxFollowers$" } },
+    { "Stealth", { "^stealth" } },   -- (sh_50_stealth.lua)
 }
 
 Config.Describe("droids", { name = "Droids & clones", category = "NPCs" })

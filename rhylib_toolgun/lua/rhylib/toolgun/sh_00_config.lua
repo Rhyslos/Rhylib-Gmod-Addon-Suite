@@ -26,6 +26,7 @@
       follow = true       the clone follow tool
       perma = true        the Permanent tool (Rhylib.Perma)
       place = fn          own placing: fn(ply, tr, count, yaw) -> list of entities
+      conceal = radius    a rhylib_droids concealment area of that radius
       perm = "name"       limited access (see above)
       save                old console save command; kept but unused
     Entries whose class isn't installed are left out (orders, presets and
@@ -96,6 +97,10 @@ local ALL = {
     { id = "buildcrate", name = "Building supplies crate (logistics, full)", cat = "Base", class = "rhylib_build_crate" },
     { id = "sensor", name = "Sensor array beacon (logistics, full power)", cat = "Base", class = "rhylib_sensor_beacon" },
     { id = "resupply", name = "Armoury resupply crate (logistics: set down by an armoury)", cat = "Base", class = "rhylib_resupply_crate" },
+    -- Concealment areas (rhylib_droids stealth): count as foliage for unaware droids; staff see them with the toolgun.
+    { id = "conceal_s", name = "Concealment area (foliage), small: 2.5 m", cat = "Base", class = "rhylib_concealment", conceal = 128 },
+    { id = "conceal_m", name = "Concealment area (foliage), medium: 5 m", cat = "Base", class = "rhylib_concealment", conceal = 256 },
+    { id = "conceal_l", name = "Concealment area (foliage), large: 10 m", cat = "Base", class = "rhylib_concealment", conceal = 512 },
     { id = "intelpad", name = "Intel datapad (E with the toolgun: write its intel)", cat = "Base", class = "rhylib_intel_pad" },
     { id = "quartermaster", name = "Quartermaster (saved loadouts: players press E)", cat = "Base", class = "rhylib_quartermaster", save = "rhylib_quartermaster_save" },
     { id = "trainer", name = "Training instructor (basic training quiz)", cat = "Training", class = "rhylib_trainer", save = "rhylib_trainer_save" },

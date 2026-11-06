@@ -39,6 +39,8 @@
        13 ROUTE     UInt 4 n (2-12), n x Vector: patrol the points in a
                     loop, starting at the nearest (loose NPCs are made
                     into squads first).
+       14 ALERTNESS UInt 2 (1 alert, 2 unaware: stealth, sv_60_stealth):
+                    the selected droids (clones are always alert).
     Only Rhylib droids and clones count; a selection with both sides is
     split into each side's own squads. A reply notice says what happened.
 ]]
@@ -46,7 +48,7 @@
 local D = Rhylib.Droids
 
 local OPS = { "move", "attack", "aggro", "mode", "formation", "group", "split", "remove",
-    "assault", "spread", "defend", "area", "route" }
+    "assault", "spread", "defend", "area", "route", "alertness" }
 D.CMD_OPS = OPS
 local MODES = { "guard", "patrol", "attack", "roam", "retreat" }
 local MODE_SAY = { guard = "Hold", patrol = "Patrol", attack = "Hunt", roam = "Roam", retreat = "Retreat" }
@@ -398,6 +400,22 @@ local function run(ply, op, list, pl)
             start(d)
         end
         return string.format("%d on a %d point patrol route", n, #pts), "good"
+    elseif op == "alertness" then
+        if not D.SetAlertness then return "Stealth isn't loaded", "bad" end
+        local v = pl.v == 2 and "unaware" or "alert"
+        local done = 0
+        for _, d in ipairs(list) do
+            if D.SetAlertness(d, v) then done = done + 1 end
+        end
+        if done == 0 then return "Only droids can be unaware (clones are always alert)", "bad" end
+        local fighting = 0
+        if v == "unaware" then
+            for _, d in ipairs(list) do if d.alertness == "unaware" and not d.stealth then fighting = fighting + 1 end end
+        end
+        local msg = string.format("%d droid%s: %s", done, done == 1 and "" or "s", v == "unaware" and "Unaware (stealth)" or "Alert")
+        if fighting > 0 then msg = msg .. string.format(" (%d fighting: unaware once !alarm off)", fighting) end
+        if v == "unaware" and not D.StealthOn() then msg = msg .. " (stealth is switched off in Server settings)" end
+        return msg, "good"
     end
 end
 
@@ -424,6 +442,8 @@ Rhylib.Net.Receive("droids.cmd", function(ply)
         payload.v = net.ReadUInt(13)
     elseif op == "aggro" or op == "mode" then
         payload.v = net.ReadUInt(3)
+    elseif op == "alertness" then
+        payload.v = net.ReadUInt(2)
     elseif op == "assault" then
         payload.spot = net.ReadVector()
     elseif op == "spread" or op == "defend" or op == "area" then

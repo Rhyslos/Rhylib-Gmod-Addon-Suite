@@ -9,6 +9,7 @@
     never happens. NW2Int rhylib_heSynced on the planter = how many wait.
     Blast: util.BlastDamage heRadius / heDamage, and hook Rhylib.Explosion
     strength 3 (comms jammers, rhylib_radio) within heJammerReach.
+    Unaware droids hear the blast (Rhylib.Droids.HearNoise, rhylib_droids).
     Beeps once a second, faster over the last 5 s; a small readout above it
     shows the seconds left (or SYNC).
 ]]
@@ -115,6 +116,9 @@ if SERVER then
         util.Decal("Scorch", pos + Vector(0, 0, 8), pos - Vector(0, 0, 40), self)
         -- strength 3: the only thing that takes down large and map-wide jammers
         hook.Run("Rhylib.Explosion", pos, Config.Get("weapons", "heJammerReach") or 250, 3, attacker, self, "he")
+        -- (unaware droids hear it: rhylib_droids stealth)
+        local Dr = Rhylib.Droids
+        if Dr and Dr.HearNoise then Dr.HearNoise(pos, "blast", attacker) end
         self:Remove()
     end
 

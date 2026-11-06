@@ -44,11 +44,19 @@
       smoke      SuppressSmoke (firing into smoke near a commander)
       squad      InSquadFollow, FollowSquad, StepFormation, SquadLateral,
                  LeaderPace (squads: sv_40_squads.lua)
+      stealth    StealthLook, StealthStep, StealthWatch (unaware droids:
+                 sv_60_stealth.lua, sh_50_stealth.lua)
     The module loader only reads lua/rhylib/droids/*.lua, not brain/.
+
+    Stealth (opt-in): a droid set to Unaware (npc.stealth) runs
+    ENT:StealthLook inside ENT:Look instead of spotting at once, and
+    ENT:StealthStep (turn to a sound, suspicious, searching) right after
+    the fight job. Once alerted it is the normal brain again. Alert
+    droids (the default) never touch any of it.
 
     The brain is one coroutine, ENT:RunBehaviour: each loop picks one
     job in this order: revive (medics) > cover > fight (Look finds a
-    target -> Engage) > retreat > answer a call for help > reinforcement
+    target -> Engage) > stealth (unaware droids only) > retreat > answer a call for help > reinforcement
     steps > keep its squad slot (members) > fall back > chase the last seen spot > hold at a fight it
     was called to > attack mode > roam >
     back to home > artillery > idle / patrol / shuffle. Functions that
@@ -180,6 +188,11 @@ function ENT:Initialize()
     self.nextRocket = CurTime() + math.Rand(2, 5)
     self.anims = resolveAnims(self)
     self:StartActivity(self.anims.idle)
+    -- Alertness (sv_60_stealth): alert unless the server default says
+    -- unaware (the toolgun and Command mode set it after this). Clones
+    -- and training droids stay alert whatever the default.
+    self.alertness = "alert"
+    if not self.IsRhylibClone and not self.Training and D.SetAlertness and D.Cfg("stealthDefault") == "unaware" then D.SetAlertness(self, "unaware") end
 end
 
 if SERVER then
@@ -190,6 +203,8 @@ if SERVER then
         D.active[self] = nil
         if D.clones then D.clones[self] = nil end
         D.commanders[self] = nil
+        if D.stealthy then D.stealthy[self] = nil end
+        if D.alarms then D.alarms[self] = nil end
         self:LeaveCover()
     end
 
@@ -309,6 +324,12 @@ if SERVER then
     -- first, at most 4 traces, plus one rotating farther one). Every 0.3 s,
     -- 0.5 s while engaged.
     function ENT:Look()
+        -- Unaware (stealth, brain/stealth.lua): the meter instead; once
+        -- alerted (self.stealth cleared) the normal look below runs.
+        if self.stealth and D.StealthOn and D.StealthOn() then
+            self:StealthLook()
+            if self.stealth then return nil end
+        end
         local now = CurTime()
         if now < self.nextLook then return self.target end
         local k = self:Kind()
@@ -379,7 +400,8 @@ if SERVER then
             seen[best] = now
             -- Fresh contact: call roaming / patrolling groups over (sv_40_squads).
             -- (not while answering one: calls would chain across the map)
-            if not IsValid(cur) and D.CallHelp and not self:Retreating() and (self.helpUntil or 0) <= now then D.CallHelp(self, best) end
+            -- (alerted out of stealth: the call goes out after the radio delay, sv_60_stealth)
+            if not IsValid(cur) and D.CallHelp and not self:Retreating() and (self.helpUntil or 0) <= now and not self.alarmAt then D.CallHelp(self, best) end
             -- (answering a call: keep at it while there's fighting)
             if (self.helpUntil or 0) > now then self.helpUntil = math.max(self.helpUntil, now + 15) end
             self.target = best
@@ -398,6 +420,8 @@ if SERVER then
         self.woken = true   -- ends an idle wait early
         local att = dmg:GetAttacker()
         local foe = self:IsFoe(att)
+        -- (unaware: being shot always alerts; its call waits for the radio delay)
+        if foe and self.stealth and D.StealthAlert and D.StealthOn() then D.StealthAlert(self, att) end
         -- Clones that don't take cover (heavies): crouch where they stand.
         if foe and self.IsRhylibClone and not self:Kind().cover then self.crouchUntil = CurTime() + D.Cfg("ctCrouchTime") end
         if foe then
@@ -431,6 +455,8 @@ if SERVER then
             D.commanders[self] = nil
             D.Rattle(self)
         end
+        -- (unaware droids that see it go get suspicious: sv_60_stealth)
+        if not self.IsRhylibClone and D.StealthBody then D.StealthBody(self) end
         if self.IsRhylibClone then
             self:EmitSound("npc/combine_soldier/die" .. math.random(1, 3) .. ".wav", 75, math.random(98, 106))
         else
@@ -829,6 +855,8 @@ if SERVER then
                 -- (came out of cover: look again straight away)
             elseif self:Look() then
                 self:Engage()
+            elseif self.stealth and self:StealthStep() then
+                -- (unaware: turned to a sound, suspicious or searching: brain/stealth)
             elseif self:Retreating() and CurTime() - self:RetreatAlarm() < D.Cfg("retreatClear") then
                 -- Retreating with nobody in sight: keep getting away (last
                 -- stand: stay put and watch).
@@ -1045,7 +1073,7 @@ if SERVER then
     --------------------------------------------------------------------------
 
     local env = { D = D, alive = alive, valid = valid, lob = lob, ADVANCE_DIST = ADVANCE_DIST }
-    for _, part in ipairs({ "doors", "cover", "orders", "retreat", "artillery", "roam", "medic", "smoke", "squad" }) do
+    for _, part in ipairs({ "doors", "cover", "orders", "retreat", "artillery", "roam", "medic", "smoke", "squad", "stealth" }) do
         include("rhylib/droids/brain/" .. part .. ".lua")(ENT, env)
     end
 end

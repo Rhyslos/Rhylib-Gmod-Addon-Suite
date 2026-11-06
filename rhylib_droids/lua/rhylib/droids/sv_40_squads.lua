@@ -585,7 +585,8 @@ end
 -- (clones ctCallHelpers) NPCs are coming. Their leader runs to the
 -- caller, the group runs with it, and on arrival they go for the enemy.
 -- One call per squad (or lone NPC) every callCooldown (ctCallCooldown) s.
--- Called from ENT:Look. (D.CloneCall is the old name.)
+-- Unaware (stealth) droids that answer become alert (D.StealthAlert).
+-- Called from ENT:Look (or after the radio delay, sv_60_stealth). (D.CloneCall is the old name.)
 function D.CallHelp(caller, enemy)
     if not IsValid(caller) then return end
     local clone = caller.IsRhylibClone
@@ -621,6 +622,8 @@ function D.CallHelp(caller, enemy)
         for _, m in ipairs(lead.squad and lead.squad.list or { lead }) do
             m.helpUntil = now + 45
             m.woken, m.planAt = true, 0
+            -- (unaware droids answering a call are alert now: sv_60_stealth)
+            if m.stealth and D.StealthAlert and D.StealthOn() then D.StealthAlert(m, nil, nil, true) end
         end
         lead.redirect = true
     end

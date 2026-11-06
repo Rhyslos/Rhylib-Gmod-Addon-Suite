@@ -6,7 +6,9 @@
     thing), rhylib_tool_count (1-5), rhylib_tool_name (beacon/spawn point
     name), rhylib_tool_droidmode (1-5), rhylib_tool_custom
     (kind|name|skin|body|weapon|label), rhylib_tool_squadaggro (0-5:
-    aggression of newly placed squads, 0 = global), rhylib_tool_physgun_key (default
+    aggression of newly placed squads, 0 = global), rhylib_tool_alertness
+    (0-2: alertness of placed droids, 0 = the server default, 1 alert,
+    2 unaware = stealth), rhylib_tool_physgun_key (default
     t: physgun mode on / off, cl_30_grab.lua), Settings > Weapons.
     Console: rhylib_toolgun.
     The spawn window and its tab need rhylib_menus; without it R prints a
@@ -17,8 +19,11 @@
     In Command mode (cl_20_command.lua) R held is the order wheel instead.
     With a droid entry: the HUD shows PLACES AS <mode> big and coloured
     (GUARD, PATROL, ATTACK, ROAM, ASSAULT: to the side's assault point);
-    Shift + wheel changes the mode, Alt + wheel the new squad's aggression.
-    Droid labels add the squad number (S12) and its own aggression (A4).
+    Shift + wheel changes the mode, Alt + wheel the new squad's aggression,
+    Shift + Alt + wheel the alertness (Default / Alert / Unaware); the
+    spawn window's "Alertness" row sets it too.
+    Droid labels add the squad number (S12), its own aggression (A4) and
+    its stealth state (UNAWARE, SUSPICIOUS, SEARCHING, ALARM).
     The droid spawner also shows in the spawn window's NPCs tab ("Rhy's
     Droid spawner") and its Entities tile picks it for the toolgun; on all
     three, right-click > Change spawner settings (menus hook
@@ -33,6 +38,8 @@ local cvName = CreateClientConVar("rhylib_tool_name", "Range", true, false, "Too
 
 local cvMode = CreateClientConVar("rhylib_tool_droidmode", "1", true, false, "Toolgun: mode for placed droids (1 guard, 2 patrol, 3 attack, 4 roam, 5 assault: to the assault point set in Command mode)")
 local cvAggro = CreateClientConVar("rhylib_tool_squadaggro", "0", true, false, "Toolgun: aggression for newly placed squads (0 = the global level, 1-5)")
+local cvAlert = CreateClientConVar("rhylib_tool_alertness", "0", true, false, "Toolgun: alertness of placed droids (0 = the server default, 1 alert, 2 unaware: stealth)")
+local ALERT_NAMES = { [0] = "Default", "Alert", "Unaware" }
 local cvPhysKey = CreateClientConVar("rhylib_tool_physgun_key", "t", true, false, "Toolgun: key that switches physgun mode on and off")
 local cvCustom = CreateClientConVar("rhylib_tool_custom", "", true, false, "Toolgun: picked spawn-window thing (kind|name|skin|body|weapon|label)")
 -- The droid spawner's settings for the next one placed (right-click its tile: "Change spawner settings").
@@ -223,6 +230,34 @@ local function buildTab(body)
             b:SetWide(S(90))
             b:DockMargin(0, S(2), S(6), S(2))
         end
+
+        -- Third row: the alertness placed droids get (stealth).
+        local row3 = vgui.Create("DPanel", body)
+        row3:Dock(BOTTOM)
+        row3:SetTall(S(40))
+        row3:DockMargin(0, S(8), 0, 0)
+        row3.Paint = bottom.Paint
+        row3:DockPadding(S(8), S(4), S(8), S(4))
+        local lt = K.Label(row3, "Alertness", 13, 700, K.C.textDim)
+        lt:Dock(LEFT)
+        lt:SetWide(S(110))
+        lt:SetAutoStretchVertical(false)
+        lt:SetContentAlignment(4)
+        local TIPS = { [0] = "The server's default (Server settings > Droids & clones > Stealth)",
+            "Alert: sees you at once, all round (as always; for battles)",
+            "Unaware: stealth. Has to notice you first; suspicious before it fights; radios before help comes" }
+        for i = 0, 2 do
+            local b = K.Button(row3, i == 2 and "Unaware (stealth)" or ALERT_NAMES[i], function() RunConsoleCommand("rhylib_tool_alertness", tostring(i)) end,
+                { small = true, selected = function() return cvAlert:GetInt() == i end, tooltip = TIPS[i] })
+            b:Dock(LEFT)
+            b:SetWide(S(i == 2 and 140 or 80))
+            b:DockMargin(0, S(2), S(6), S(2))
+        end
+        local note = K.Label(row3, "Droids only (clones always see you). Command mode's order wheel changes placed ones.", 12, 500, K.C.textDim)
+        note:Dock(FILL)
+        note:DockMargin(S(12), 0, 0, 0)
+        note:SetAutoStretchVertical(false)
+        note:SetContentAlignment(4)
     end
 
     local inner = vgui.Create("DPanel", body)
@@ -402,6 +437,7 @@ function Tool.Click(wep, which)
     net.WriteString(e.named and cvName:GetString() or "")
     net.WriteUInt(math.Clamp(cvMode:GetInt(), 1, 5), 3)
     net.WriteUInt(math.Clamp(cvAggro:GetInt(), 0, 5), 3)
+    net.WriteUInt(math.Clamp(cvAlert:GetInt(), 0, 2), 2)
     net.WriteFloat(Tool.rot or 0)   -- (the preview's turn, cl_40_ghost)
     if e.spawner then
         net.WriteString(cvSpPreset:GetString())
@@ -415,6 +451,7 @@ end
 
 local COL = Color(255, 210, 80)
 local COL_RED = Color(255, 90, 80)
+local COL_UNAWARE = Color(133, 183, 235)
 
 -- Tool.DrawHUD(wep): the text under the crosshair (SWEP:DrawHUD calls it).
 local MODE_NAMES = { "GUARD", "PATROL", "ATTACK", "ROAM", "ASSAULT" }
@@ -438,8 +475,10 @@ function Tool.DrawHUD(wep)
         local D = Rhylib.Droids
         local yy = ScrH() * 0.5 - 70
         draw.SimpleTextOutlined("PLACES AS: " .. MODE_NAMES[m], Rhylib.UI.Font(22, 800), ScrW() * 0.5, yy, MODE_COLS[m], TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 2, color_black)
-        draw.SimpleTextOutlined("Squad aggression: " .. (a == 0 and "global" or (a .. " " .. (D.AGGRO_NAMES and D.AGGRO_NAMES[a] or ""))) .. "   ·   Shift + wheel: mode  ·  Alt + wheel: aggression",
-            Rhylib.UI.Font(13, 600), ScrW() * 0.5, yy + 2, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
+        local al = math.Clamp(cvAlert:GetInt(), 0, 2)
+        draw.SimpleTextOutlined("Squad aggression: " .. (a == 0 and "global" or (a .. " " .. (D.AGGRO_NAMES and D.AGGRO_NAMES[a] or ""))) .. "   ·   Alertness: " .. ALERT_NAMES[al]
+            .. "   ·   Shift + wheel: mode  ·  Alt + wheel: aggression  ·  Shift + Alt + wheel: alertness",
+            Rhylib.UI.Font(13, 600), ScrW() * 0.5, yy + 2, al == 2 and COL_UNAWARE or color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
     end
     local D = Rhylib.Droids
     if D and D.AGGRO_NAMES then
@@ -457,8 +496,8 @@ function Tool.DrawHUD(wep)
         .. (Rhylib.Droids and ("  ·  " .. string.upper(GetConVarString("rhylib_tool_command_key") or "x") .. ": command mode") or ""), Rhylib.UI.Font(13), ScrW() * 0.5, y + 42, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
 end
 
--- Shift + wheel: placing mode, Alt + wheel: new squads' aggression (with a
--- droid entry chosen, placing).
+-- Shift + wheel: placing mode, Alt + wheel: new squads' aggression,
+-- Shift + Alt + wheel: alertness (with a droid entry chosen, placing).
 Rhylib.Hook.Add("PlayerBindPress", "toolgun.modewheel", function(ply, bind, pressed)
     if not pressed or Tool.command then return end
     local up = string.find(bind, "invprev", 1, true)
@@ -469,11 +508,17 @@ Rhylib.Hook.Add("PlayerBindPress", "toolgun.modewheel", function(ply, bind, pres
     local e = Tool.Chosen()
     if not (e and (e.count or e.preset) and not e.custom) then return end
     local step = down and 1 or -1
-    if input.IsKeyDown(KEY_LSHIFT) or input.IsKeyDown(KEY_RSHIFT) then
+    local shift = input.IsKeyDown(KEY_LSHIFT) or input.IsKeyDown(KEY_RSHIFT)
+    local alt = input.IsKeyDown(KEY_LALT) or input.IsKeyDown(KEY_RALT)
+    if shift and alt then
+        RunConsoleCommand("rhylib_tool_alertness", tostring((math.Clamp(cvAlert:GetInt(), 0, 2) + step) % 3))
+        surface.PlaySound("buttons/lightswitch2.wav")
+        return true
+    elseif shift then
         RunConsoleCommand("rhylib_tool_droidmode", tostring((math.Clamp(cvMode:GetInt(), 1, 5) - 1 + step) % 5 + 1))
         surface.PlaySound("buttons/lightswitch2.wav")
         return true
-    elseif input.IsKeyDown(KEY_LALT) or input.IsKeyDown(KEY_RALT) then
+    elseif alt then
         RunConsoleCommand("rhylib_tool_squadaggro", tostring((math.Clamp(cvAggro:GetInt(), 0, 5) + step) % 6))
         surface.PlaySound("buttons/lightswitch2.wav")
         return true
@@ -577,6 +622,7 @@ end)
 local MODE_COL = { guard = Color(110, 170, 255), patrol = Color(120, 230, 140), attack = Color(255, 100, 80), follow = Color(240, 220, 120), roam = Color(200, 140, 255),
     retreat = Color(255, 170, 60), laststand = Color(255, 60, 60) }
 local MODE_LABEL = { laststand = "LAST STAND" }
+local SSTATE_LABEL = { "UNAWARE", "SUSPICIOUS", "SEARCHING", "ALARM" }
 local PICKED = Color(255, 255, 120)
 local droidList, droidListAt = {}, 0
 Rhylib.Hook.Add("HUDPaint", "toolgun.droidmodes", function()
@@ -603,6 +649,8 @@ Rhylib.Hook.Add("HUDPaint", "toolgun.droidmodes", function()
                 local sq, ag = d:GetNW2Int("rhylib_squad", 0), d:GetNW2Int("rhylib_saggro", 0)
                 if sq > 0 then label = label .. "  S" .. sq end
                 if ag > 0 then label = label .. "  A" .. ag end
+                local ss = d:GetNW2Int("rhylib_sstate", 0)   -- (rhylib_droids stealth)
+                if ss > 0 and SSTATE_LABEL[ss] then label = label .. "  " .. SSTATE_LABEL[ss] end
                 draw.SimpleTextOutlined(label, font, sp.x, sp.y, MODE_COL[mode] or color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, color_black)
                 -- (picked with the follow tool)
                 if d:GetNW2Entity("rhylib_pickBy") == ply then

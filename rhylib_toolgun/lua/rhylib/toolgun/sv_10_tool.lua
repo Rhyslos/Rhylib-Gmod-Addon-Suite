@@ -7,7 +7,9 @@
                    entries, else ""), UInt 3 droid mode (1 guard, 2 patrol,
                    3 attack, 4 roam, 5 assault: to the side's assault point,
                    rhylib_droids D.assault), UInt 3 aggression for new squads (0 =
-                   the global level, 1-5), Float turn (degrees added to
+                   the global level, 1-5), UInt 2 alertness of placed droids
+                   (0 = the server's stealthDefault, 1 alert, 2 unaware:
+                   rhylib_droids stealth), Float turn (degrees added to
                    the facing, from the placement preview); for the droid
                    spawner entry also String preset, UInt 3 mode (1 patrol,
                    2 roam, 3 attack, 4 guard), UInt 10 total, UInt 7 alive
@@ -160,6 +162,11 @@ local function place(ply, e, count, name, mode)
         elseif D.MakeSquad and #list > 1 then
             D.MakeSquad(list, { face = pyaw, aggro = Tool.PlaceAggro(ply), formation = "box", keep = true })
         end
+        -- (the picked alertness for the whole preset; none = the server default)
+        local alert = Tool.PlaceAlertness(ply)
+        if alert and D.SetAlertness then
+            for _, ent in ipairs(list) do D.SetAlertness(ent, alert) end
+        end
         if #list > 0 then
             undo.Create(e.name)
             for _, ent in ipairs(list) do
@@ -227,6 +234,7 @@ local function place(ply, e, count, name, mode)
             ent:SetAngles(Angle(0, yaw, 0))
             if e.named and ent.SetBeaconName then ent:SetBeaconName(name ~= "" and name or "Beacon") end
             if e.marker then ent.MarkerKind, ent.MarkerSide = e.marker, e.side end
+            if e.conceal then ent.ConcealRadius = e.conceal end   -- (rhylib_droids concealment area)
             ent:Spawn()
             ent:Activate()
             -- Sit on the surface: lift by how far the model reaches below its origin.
@@ -244,6 +252,8 @@ local function place(ply, e, count, name, mode)
             if IsValid(ent) and ent.StaffPlaced then ent:StaffPlaced(ply) end
             -- (droids: the picked mode, then the latest markers)
             if IsValid(ent) and droid and D.ToolPlaced then D.ToolPlaced(ent, mode, count == 1, Tool.PlaceAggro(ply)) end
+            -- (droids: the picked alertness; none picked = the server default they spawned with)
+            if IsValid(ent) and droid and D.SetAlertness and Tool.PlaceAlertness(ply) then D.SetAlertness(ent, Tool.PlaceAlertness(ply)) end
             if IsValid(ent) and droid then placedNpcs[#placedNpcs + 1] = ent end
             if IsValid(ent) then
                 ent.rhylibToolPlaced = true
@@ -273,6 +283,12 @@ function Tool.PlaceAggro(ply)
     return ply.rhylibPlaceAggro
 end
 
+-- Tool.PlaceAlertness(ply) -> "alert", "unaware" or nil (= the server's
+-- stealthDefault) for droids this GM places. From tool.place.
+function Tool.PlaceAlertness(ply)
+    return ply.rhylibPlaceAlert
+end
+
 -- The preview's turn (degrees) from the client: a real number, 0-360.
 local function turn(v)
     if not v or v ~= v or v == math.huge or v == -math.huge then return 0 end
@@ -286,6 +302,7 @@ Rhylib.Net.Receive("tool.place", function(ply)
     local mode = ({ "guard", "patrol", "attack", "roam", "assault" })[net.ReadUInt(3)] or "guard"
     local aggro = net.ReadUInt(3)
     ply.rhylibPlaceAggro = (aggro >= 1 and aggro <= 5) and aggro or nil
+    ply.rhylibPlaceAlert = ({ "alert", "unaware" })[net.ReadUInt(2)]
     ply.rhylibToolRot = turn(net.ReadFloat())
     local e = Tool.ById(id)
     if not e then return end
@@ -448,12 +465,15 @@ Rhylib.Net.Receive("tool.remove", function(ply)
             note(ply, "That's part of the permanent map setup: ask an admin", "bad")
             return
         end
-        -- Droid markers aren't solid: the nearest one to where you aim.
+        -- Droid markers and concealment areas aren't solid: the nearest
+        -- one to where you aim.
         if not e and tr.Hit then
             local best, bestD = nil, 80 * 80
-            for _, m in ipairs(ents.FindByClass("rhylib_droid_marker")) do
-                local d = m:GetPos():DistToSqr(tr.HitPos)
-                if d < bestD then best, bestD = m, d end
+            for _, cls in ipairs({ "rhylib_droid_marker", "rhylib_concealment" }) do
+                for _, m in ipairs(ents.FindByClass(cls)) do
+                    local d = m:GetPos():DistToSqr(tr.HitPos)
+                    if d < bestD then best, bestD = m, d end
+                end
             end
             if best then ent, e = best, { class = best:GetClass() } end
         end
