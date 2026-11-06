@@ -38,7 +38,9 @@
     Client only. Adds: Menus.AddPage, Menus.AddGroup, Menus.pages,
     Menus.groups, Menus.SECTIONS, Menus.PAGE_ALIAS, Menus.OpenPause,
     Menus.ClosePause, Menus.RefreshPause (also on a theme switch), Menus.PreviewHover, Menus.pause
-    (the open panel, a "RhylibPauseMenu"), Menus.lastPage, Menus.lastTab. Console command:
+    (the open panel, a "RhylibPauseMenu"), Menus.lastPage, Menus.lastTab.
+    Menus.hudPeek (set by Settings > HUD colours' Peek): the side bar and
+    page fade to about 8%, no dim or blur, and Esc goes back. Console command:
     rhylib_menu. Hook: OnPauseMenuShow "menus.pause" (decides what Esc does).
 ]]
 
@@ -485,6 +487,8 @@ function PANEL:Think()
     -- (dragging a preview row: the menu fades; a camera row fades it on
     -- hover too, so your trooper behind it shows)
     local want = ((hover and input.IsMouseDown(MOUSE_LEFT)) and 60) or (hover == "thirdperson" and 90) or 255
+    -- (peeking at the HUD, Settings > HUD colours: about 8%)
+    if Menus.hudPeek then want = 20 end
     for _, pnl in ipairs({ self.side, self.page }) do
         if IsValid(pnl) then
             local a = pnl:GetAlpha()
@@ -494,7 +498,7 @@ function PANEL:Think()
 end
 
 function PANEL:Paint(w, h)
-    if self.previewing then return end
+    if self.previewing or Menus.hudPeek then return end
     -- Dim and blur the game behind.
     Derma_DrawBackgroundBlur(self, self.opened)
     K.SetCol(C.dim)
@@ -547,7 +551,8 @@ end)
 -- Esc: our menu (or close what's open). Shift + Esc: Garry's Mod's menu.
 -- Returning false stops GMod's menu; returning nothing lets it open.
 -- Order: the Game menu button's pass, Shift, key rebinding (Esc cancels it),
--- model pick mode in the spawn window, any open Rhylib window (closers),
+-- model pick mode in the spawn window, a dropdown, peeking at the HUD
+-- (Menus.hudPeek: back to the menu), any open Rhylib window (closers),
 -- else our pause menu.
 Rhylib.Hook.Add("OnPauseMenuShow", "menus.pause", function()
     if Menus.passGameUI then
@@ -564,6 +569,11 @@ Rhylib.Hook.Add("OnPauseMenuShow", "menus.pause", function()
     -- Esc with a dropdown list (or colour mixer) open closes only that.
     if K.DropdownOpen and K.DropdownOpen() then
         if K.CloseDropdown then K.CloseDropdown() end
+        return false
+    end
+    -- Esc while peeking at the HUD (Settings > HUD colours): back to the menu.
+    if Menus.hudPeek and Menus.EndHudPeek then
+        Menus.EndHudPeek()
         return false
     end
     if Menus.CloseAll() then return false end

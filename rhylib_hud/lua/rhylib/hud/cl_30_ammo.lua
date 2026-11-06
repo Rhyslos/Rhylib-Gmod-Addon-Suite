@@ -16,6 +16,9 @@
         big shot count / magazine size        spare count + "magazines"
         Cell 73%                               1 spare      (cell weapons)
         cell bar                                             (cell weapons)
+
+    Colours are HUD.Colors' HUD colour tokens (Settings > HUD colours):
+    low ammo fuel (warn), empty bad (danger), the cell bar cell (selected).
 ]]
 
 local HUD = Rhylib.HUD
@@ -101,7 +104,7 @@ local function drawContent(ply, wep, x, y, w, sizes)
         local cells = ply:GetAmmoCount("rhylib_cell")
         HUD.Text(string.format("Cell %d%%", math.ceil(charge * 100)), 14, x, y + math.floor(4 * s), lowCell and C.bad or C.dim)
         HUD.Text(cells .. " spare", 14, right, y + math.floor(4 * s), C.dim, TEXT_ALIGN_RIGHT)
-        HUD.Bar(x, y + sizes.cell - math.floor(10 * s), w, math.floor(6 * s), charge, lowCell and C.bad or C.armor)
+        HUD.Bar(x, y + sizes.cell - math.floor(10 * s), w, math.floor(6 * s), charge, lowCell and C.bad or C.cell)
     end
 end
 

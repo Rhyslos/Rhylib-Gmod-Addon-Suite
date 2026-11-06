@@ -12,12 +12,15 @@
     respawn point (nearest in N s)", one card per beacon (number, name,
     NEAREST chip on the first, distance right; hover lights it), then
     Nearest. Clicking a card or Nearest picks and closes it.
+    HUD colours (Settings > HUD colours): training.sim is linked to key
+    sim (the bar, plate rule and beacon list's yellow).
 ]]
 
 local T = Rhylib.Training
 
 -- The training yellow (the HUD's sim health and hit markers use it too).
 local COL_SIM = Rhylib.UI.Col("training.sim", 255, 210, 60)
+Rhylib.UI.HudLink("sim", "training.sim")
 
 local shownAt = 0
 local lastHp

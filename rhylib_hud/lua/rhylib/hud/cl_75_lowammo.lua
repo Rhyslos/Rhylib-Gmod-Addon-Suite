@@ -7,14 +7,16 @@
     Not shown for the toolgun, or while looking through binoculars
     (rhylib_gear G.Looking). Red warnings pulse faster than amber ones.
     Client convar rhylib_lowammo (Settings > HUD, default on).
+    Colours are HUD colour tokens (Settings > HUD colours: Warning, Danger).
 ]]
 
 local HUD = Rhylib.HUD
 
 local cv = CreateClientConVar("rhylib_lowammo", "1", true, false, "Low ammo warning under the crosshair (0/1)")
 
-local AMBER = Color(255, 190, 60)
-local RED = Color(255, 80, 70)
+-- (HUD colour tokens: amber -> warn, red -> danger)
+local AMBER = Rhylib.UI.HudCol("warn", "hud.lowAmmoWarn", 255, 190, 60)
+local RED = Rhylib.UI.HudCol("danger", "hud.lowAmmoDanger", 255, 80, 70)
 local CELL_LOW = 0.15    -- (no spare cell)
 local CELL_NEAR = 0.05   -- (spare cells on you)
 local CELL_OVER = 0.15   -- (charged / overcharged shots drain fast)

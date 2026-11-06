@@ -907,9 +907,9 @@ local function buildMap(col)
             local iw = (it[2] > 0 and S(15) or 0) + tw
             if x > 0 and x + iw > w then x, y = 0, y + S(18) end
             if it[2] == 1 then diamond(x + S(5), y, S(5), R.COL.squad)
-            elseif it[2] == 2 then diamond(x + S(5), y, S(5), R.COL.hail)
+            elseif it[2] == 2 then diamond(x + S(5), y, S(5), R.COL.radarLeader)
             elseif it[2] == 3 then draw.RoundedBox(S(4), x + S(1), y - S(4), S(9), S(9), pingCol)
-            elseif it[2] == 4 then diamond(x + S(5), y, S(5), R.COL.ch1)
+            elseif it[2] == 4 then diamond(x + S(5), y, S(5), R.COL.radarFriend)
             end
             local tx = x + (it[2] > 0 and S(15) or 0)
             draw.SimpleText(it[1], f, tx, y, COL.dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)

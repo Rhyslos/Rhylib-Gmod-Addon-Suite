@@ -17,6 +17,8 @@
     R.radarExtras["skills.marks"]) for whoever got the marks (the marker
     and their squad): red squares, a commander as two upright bars, a B2
     as a half circle over a line. Not while your comms are jammed.
+    HUD colours (key enemy): tokens skills.mark, skills.markLock,
+    skills.ringLock, skills.radarMark. The white ring stays white.
     Client only. K.visorTarget = the ringed enemy this frame (sent with Q).
     Distances on the diamonds use 0.019 m per unit.
 ]]
@@ -26,8 +28,10 @@ local UI = Rhylib.UI
 
 K.clientMarks = K.clientMarks or {}   -- [entity index] = { [marker index] = { untilT, lock } } (like the server's)
 
-local COL = Color(242, 160, 60)
-local COL_LOCK = Color(235, 60, 50)
+-- HUD colour tokens (Settings > HUD colours, key enemy): marks, locks, the
+-- lock ring, radar marks; read when drawing.
+local COL = UI.HudCol("enemy", "skills.mark", 242, 160, 60)
+local COL_LOCK = UI.HudCol("enemy", "skills.markLock", 235, 60, 50)
 local COL_OUT = Color(0, 0, 0, 170)
 
 -- Without the skill, Q says once per session what it's for (it used to do
@@ -149,7 +153,7 @@ end)
 -- gaps) on the spotted enemy nearest the aim (within 6 degrees), which Q
 -- then locks; a red ring on every enemy you've locked, visor or not.
 local RING_COL = Color(245, 245, 245, 235)
-local RING_LOCK = Color(235, 60, 50, 240)
+local RING_LOCK = UI.HudCol("enemy", "skills.ringLock", 235, 60, 50, 240)
 local RING_OUT = Color(0, 0, 0, 120)
 local function arc(cx, cy, r, a0, a1, col)
     surface.SetDrawColor(col)
@@ -226,7 +230,7 @@ Rhylib.Hook.Add("HUDPaint", "skills.visorring", function()
 end)
 
 -- Marked enemies on the compass radar (see the header).
-local RADAR_RED = Color(235, 60, 50)
+local RADAR_RED = UI.HudCol("enemy", "skills.radarMark", 235, 60, 50)
 local RADAR_OUT = Color(0, 0, 0, 200)
 local DOME_SEG = 10
 local function dome(x, y, m, col)

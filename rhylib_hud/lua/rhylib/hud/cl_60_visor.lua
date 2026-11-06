@@ -23,6 +23,8 @@
     HUD.OpticsWeaponMode. Settings rows for the brow sliders at the end.
     With the "real" layout the helmet and bars are cl_62_realistic.lua's
     (this file's HUDPaint skips; VisorShellTris hands out its shell).
+    The bar colours are HUD colour tokens (Settings > HUD colours:
+    Armour, Health, Training health).
 ]]
 
 local HUD = Rhylib.HUD
@@ -32,12 +34,14 @@ local COL_SHELL = Color(12, 14, 16, 250)
 local COL_EDGE_DARK = Color(0, 0, 0, 230)
 local COL_EDGE_LIGHT = Color(170, 176, 180, 120)
 
-local COL_ARMOR_FILL = Color(60, 140, 255, 110)
-local COL_ARMOR_LINE = Color(90, 160, 255, 170)
-local COL_HEALTH_FILL = Color(230, 60, 50, 110)
-local COL_HEALTH_LINE = Color(240, 90, 80, 170)
-local COL_SIM_FILL = Color(240, 200, 50, 110)    -- (sim health, training guns)
-local COL_SIM_LINE = Color(250, 215, 90, 170)
+-- (HUD colour tokens: armour, health, sim; each keeps its own alpha)
+local UI = Rhylib.UI
+local COL_ARMOR_FILL = UI.HudCol("armour", "hud.visorArmourFill", 60, 140, 255, 110)
+local COL_ARMOR_LINE = UI.HudCol("armour", "hud.visorArmourLine", 90, 160, 255, 170)
+local COL_HEALTH_FILL = UI.HudCol("health", "hud.visorHealthFill", 230, 60, 50, 110)
+local COL_HEALTH_LINE = UI.HudCol("health", "hud.visorHealthLine", 240, 90, 80, 170)
+local COL_SIM_FILL = UI.HudCol("sim", "hud.visorSimFill", 240, 200, 50, 110)    -- (sim health, training guns)
+local COL_SIM_LINE = UI.HudCol("sim", "hud.visorSimLine", 250, 215, 90, 170)
 local COL_EMPTY_ALPHA = 45
 
 -- Shape, as shares of the screen (0..1). Mirrored left/right.

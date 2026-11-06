@@ -12,6 +12,10 @@
              saw you in the last half second, never ones that only heard
              you) and filling with its meter (same colours).
       none   nothing.
+    HUD colours (Settings > HUD colours): the meter's and arcs' amber is
+    token droids.stealthWarn (key warn), their red and SPOTTED
+    droids.stealthSpotted (key danger). The "?" / "!" over droids and the
+    staff cones keep their own colours.
     Over droids, for everyone who can see the droid (a trace to its head,
     never through walls) within about 40 m: an amber "?" while it is
     suspicious or searching, a red "!" just after it is alerted out of
@@ -68,13 +72,13 @@ Rhylib.Net.Receive("droids.smeter", function()
 end)
 
 -- Colours (the house tokens) and cached text colours whose alpha is set
--- before drawing.
-local C_PLATE = { 14, 16, 15 }
-local C_TRACK = { 42, 46, 43 }
-local C_TEXT = { 228, 227, 220 }
-local C_AMBER = { 239, 159, 39 }
-local C_RED = { 226, 75, 74 }
-local C_BLUE = { 133, 183, 235 }
+-- before drawing. C_AMBER / C_RED are HUD colour tokens, read when drawing.
+local C_PLATE = Color(14, 16, 15)
+local C_TRACK = Color(42, 46, 43)
+local C_TEXT = Color(228, 227, 220)
+local C_AMBER = UI.HudCol("warn", "droids.stealthWarn", 239, 159, 39)
+local C_RED = UI.HudCol("danger", "droids.stealthSpotted", 226, 75, 74)
+local T_SPOT = Color(226, 75, 74)   -- (SPOTTED: C_RED with its alpha)
 local T_RED = Color(226, 75, 74)
 local T_AMBER = Color(239, 159, 39)
 local T_DIM = Color(138, 140, 132)
@@ -82,7 +86,7 @@ local T_BLACK = Color(0, 0, 0)
 
 local function S(n) return math.Round(n * ScrH() / 1080) end
 
-local function setCol(c, a) surface.SetDrawColor(c[1], c[2], c[3], a) end
+local function setCol(c, a) surface.SetDrawColor(c.r, c.g, c.b, a) end
 
 -- The eye icon: polygons built once per screen size, round its centre.
 local eyeFor, eyeOuter, eyePupil = nil, nil, nil
@@ -151,8 +155,8 @@ local function drawMeter(now, spotted)
     setCol(col, fa)
     surface.DrawRect(bx, by, math.floor(bw * fill + 0.5), bh)
     if spotted then
-        T_RED.a, T_BLACK.a = a, a
-        draw.SimpleTextOutlined("SPOTTED", UI.Font(15, 800), ScrW() * 0.5, y - S(3), T_RED, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, T_BLACK)
+        T_SPOT.r, T_SPOT.g, T_SPOT.b, T_SPOT.a, T_BLACK.a = C_RED.r, C_RED.g, C_RED.b, a, a
+        draw.SimpleTextOutlined("SPOTTED", UI.Font(15, 800), ScrW() * 0.5, y - S(3), T_SPOT, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, T_BLACK)
     end
 end
 
@@ -181,8 +185,8 @@ local function drawArcs(now, spotted)
     end
     if spotted then
         local a = 255 * math.Clamp(1.6 - (now - spottedAt), 0, 1)
-        T_RED.a, T_BLACK.a = a, a
-        draw.SimpleTextOutlined("SPOTTED", UI.Font(15, 800), cx, cy + R + S(10), T_RED, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, T_BLACK)
+        T_SPOT.r, T_SPOT.g, T_SPOT.b, T_SPOT.a, T_BLACK.a = C_RED.r, C_RED.g, C_RED.b, a, a
+        draw.SimpleTextOutlined("SPOTTED", UI.Font(15, 800), cx, cy + R + S(10), T_SPOT, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, T_BLACK)
     end
 end
 

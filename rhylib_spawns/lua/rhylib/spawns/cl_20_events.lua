@@ -6,13 +6,17 @@
     clamped to the screen edge when off screen), and the staff edit menu
     for objective markers (net spawn.objedit / spawn.objset).
     HUDPaint "spawns.events".
+    HUD colours (Settings > HUD colours): the markers' gold is token
+    spawns.objective, key objective.
 ]]
 
 local S = Rhylib.Spawns
 S.objectives = S.objectives or {}
 
--- (the markers' gold and white are their gameplay look, not the theme)
-local GOLD, WHITE, SHADOW = Color(255, 200, 70), Color(235, 238, 240), Color(0, 0, 0, 200)
+-- (the markers' gold and white are their gameplay look, not the theme;
+-- the gold is a HUD colour token, key objective)
+local GOLD = Rhylib.UI.HudCol("objective", "spawns.objective", 255, 200, 70)
+local WHITE, SHADOW = Color(235, 238, 240), Color(0, 0, 0, 200)
 
 local function font(size, weight)
     return Rhylib.UI and Rhylib.UI.Font and Rhylib.UI.Font(size, weight) or "DermaDefaultBold"

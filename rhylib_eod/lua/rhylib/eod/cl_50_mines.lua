@@ -4,6 +4,9 @@
     and the mine scanner (beam, outlines, beeps, marking). Mines flagged
     with the scanner show as red triangles on everyone's compass radar
     (rhylib_radio R.radarExtras["eod.mines"]).
+    HUD colours (Settings > HUD colours, key enemy): tokens eod.mineRadar
+    (the radar triangles) and eod.onMine (the standing-on-a-mine texts).
+    The outlines, flags, scanner and mine window keep their own red.
 ]]
 
 -- Colours used while drawing (made once, not every frame).
@@ -23,6 +26,11 @@ local Net = Rhylib.Net
 local function K() return Rhylib.UI and Rhylib.UI.Kit end
 local OPAQUE = Color(14, 16, 15, 255)
 local RED = Color(255, 70, 60)
+-- HUD colour tokens (key enemy), read when drawing.
+local UI = Rhylib.UI
+local ONMINE = UI.HudCol("enemy", "eod.onMine", 255, 70, 60)
+local RADAR_MINE = UI.HudCol("enemy", "eod.mineRadar", 255, 70, 60)
+local onMineCol = Color(255, 70, 60)   -- (ONMINE with the pulsing alpha)
 
 -- [mine] = CurTime until which this client's scanner shows it (weak keys).
 E.mineSeen = E.mineSeen or setmetatable({}, { __mode = "k" })
@@ -264,7 +272,8 @@ Rhylib.Hook.Add("HUDPaint", "eod.onmine", function()
     local font = k and k.Font(26, 800) or "DermaLarge"
     if IsValid(m) then
         local a = 180 + 75 * math.abs(math.sin(CurTime() * 4))
-        draw.SimpleTextOutlined("YOU'RE STANDING ON A MINE", font, ScrW() / 2, ScrH() * 0.3, Color(255, 70, 60, a), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 2, COL_0_0_0_230)
+        onMineCol.r, onMineCol.g, onMineCol.b, onMineCol.a = ONMINE.r, ONMINE.g, ONMINE.b, a
+        draw.SimpleTextOutlined("YOU'RE STANDING ON A MINE", font, ScrW() / 2, ScrH() * 0.3, onMineCol, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 2, COL_0_0_0_230)
         draw.SimpleTextOutlined("Don't move. Don't jump. Call for EOD.", k and k.Font(16, 700) or "DermaDefaultBold", ScrW() / 2, ScrH() * 0.3 + 32, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, COL_0_0_0_230)
     end
     -- others stuck on mines
@@ -273,7 +282,7 @@ Rhylib.Hook.Add("HUDPaint", "eod.onmine", function()
         if p ~= ply and not p:IsDormant() and IsValid(p:GetNW2Entity("rhylib_onMine")) and p:GetPos():DistToSqr(ply:GetPos()) < 2500 * 2500 then
             local sc = (p:GetPos() + Vector(0, 0, 82)):ToScreen()
             if sc.visible then
-                draw.SimpleTextOutlined("ON A MINE", small, sc.x, sc.y, RED, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, COL_0_0_0_230)
+                draw.SimpleTextOutlined("ON A MINE", small, sc.x, sc.y, ONMINE, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, COL_0_0_0_230)
             end
         end
     end
@@ -481,7 +490,7 @@ local function radarMines(cx, cy, r, mp, fx, fy, k)
                 local x, y = cx + sx, cy + sy
                 surface.SetAlphaMultiplier(al)
                 triangle(x, y, m + 1.5, TRI_OUT)
-                triangle(x, y, m, RED)
+                triangle(x, y, m, RADAR_MINE)
                 surface.SetAlphaMultiplier(1)
             end
         end

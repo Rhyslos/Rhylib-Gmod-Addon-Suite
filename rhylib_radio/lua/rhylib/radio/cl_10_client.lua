@@ -33,16 +33,22 @@
 local R = Rhylib.Radio
 
 -- Fixed colours: local voice, squad, the default channel colours, hail
--- gold, muted/deafened red, radio off, not joined.
+-- gold, muted/deafened red, radio off, not joined; on the radar everyone
+-- outside your squad and your squad leader. squad, red, radarFriend and
+-- radarLeader are HUD colour tokens (Settings > HUD colours: keys squad,
+-- danger, friend, objective); read them when drawing.
+local UI = Rhylib.UI
 R.COL = {
     local_ = Color(233, 237, 239),
-    squad = Color(92, 214, 125),
+    squad = UI.HudCol("squad", "radio.squad", 92, 214, 125),
     ch1 = Color(79, 175, 255),
     ch2 = Color(180, 140, 255),
     hail = Color(242, 193, 78),
-    red = Color(229, 82, 75),
+    red = UI.HudCol("danger", "radio.muted", 229, 82, 75),
     off = Color(43, 48, 54),
     grey = Color(60, 67, 74),
+    radarFriend = UI.HudCol("friend", "radio.radarFriend", 79, 175, 255),
+    radarLeader = UI.HudCol("objective", "radio.radarLeader", 242, 193, 78),
 }
 -- Channel colour choices: { id (convar value), label, colour }.
 R.PALETTE = {

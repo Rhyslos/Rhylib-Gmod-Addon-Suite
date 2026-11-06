@@ -33,6 +33,14 @@
     The compass is to scale out to 60% of its rim; further out things slow
     down and settle on the rim (config radarEdgeAt), stay there dimmed until
     radarHoldTo times the range, then go (squad mates and pings stay).
+
+    HUD colours (Settings > HUD colours; tokens in R.COL, cl_10_client):
+    radio.squad (key squad: SQ square, squad voice, radar and markers),
+    radio.radarFriend (friend: everyone else on the radar),
+    radio.radarLeader (objective: your squad leader on the radar and
+    markers), radio.muted (danger: muted / deafened / jammed squares and
+    meters), radio.jam (danger: the JAMMED banner). The "you" arrow,
+    hails, channel colours and pings keep their own.
 ]]
 
 -- Plain white for untextured polygons (draw.NoTexture alone can leave
@@ -527,7 +535,8 @@ for i = 1, 32 do discPts[i] = { x = 0, y = 0 } end
 -- jump, with ghost copies and glitch bars) and a red JAMMED blinks 3
 -- times, then stays; leaving it a green UPLINK ACTIVE blinks 3 times.
 local BLINKS, BLINK = 3, 0.5
-local JAM_RED, UPLINK_GREEN = Color(235, 70, 60), Color(110, 220, 120)
+-- (JAM_RED: HUD colour token, key danger)
+local JAM_RED, UPLINK_GREEN = UI.HudCol("danger", "radio.jam", 235, 70, 60), Color(110, 220, 120)
 local function blinkOn(t) return (t % BLINK) < BLINK * 0.6 end
 
 local function drawBanner(cx, cy, r, lines, col)
@@ -704,8 +713,9 @@ local function drawCore(cx, cy, r, names)
     for _, fn in pairs(R.radarExtras) do fn(cx, cy, r, mp, fx, fy, k) end
     draw.NoTexture()
     local sq = R.SquadOf(me)
-    -- Everyone else (config showEveryone, radio.all): blue, only inside
-    -- the rim; squad mates are drawn after, in green.
+    -- Everyone else (config showEveryone, radio.all): blue (R.COL.radarFriend),
+    -- only inside the rim; squad mates are drawn after, in green, the
+    -- leader gold (R.COL.squad / radarLeader).
     if R.Cfg("showEveryone") then
         local now = CurTime()
         for idx, e in pairs(R.everyone) do
@@ -720,7 +730,7 @@ local function drawCore(cx, cy, r, names)
                     if sx then
                         local px, py = cx + sx, cy + sy
                         if edge then m = math.max(3, math.floor(r * 0.045)) end
-                        setCol(R.COL.ch1, (edge and 150 or 220) * al)
+                        setCol(R.COL.radarFriend, (edge and 150 or 220) * al)
                         surface.DrawPoly({ { x = px, y = py - m }, { x = px + m, y = py }, { x = px, y = py + m }, { x = px - m, y = py } })
                     end
                 end
@@ -737,7 +747,7 @@ local function drawCore(cx, cy, r, names)
                 local px, py = cx + sx, cy + sy
                 local m = math.max(3, math.floor(r * (edge and 0.045 or 0.065)))
                 draw.NoTexture()
-                setCol(R.IsLeader(p) and R.COL.hail or R.COL.squad, edge and 150 or 240)
+                setCol(R.IsLeader(p) and R.COL.radarLeader or R.COL.squad, edge and 150 or 240)
                 surface.DrawPoly({ { x = px, y = py - m }, { x = px + m, y = py }, { x = px, y = py + m }, { x = px - m, y = py } })
                 if names then
                     draw.SimpleText(p:Nick(), font, px + m + 3, py, Color(220, 225, 228, 220), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
@@ -801,7 +811,7 @@ local function drawMarkers(s)
                     local dist = eye:Distance(pos)
                     local a = dist < 120 and 90 or 220
                     local d = math.floor(6 * s)
-                    local col = R.IsLeader(p) and R.COL.hail or R.COL.squad
+                    local col = R.IsLeader(p) and R.COL.radarLeader or R.COL.squad
                     setCol(Color(0, 0, 0), a * 0.6)
                     surface.DrawPoly({ { x = sc.x, y = sc.y - d - 1 }, { x = sc.x + d + 1, y = sc.y }, { x = sc.x, y = sc.y + d + 1 }, { x = sc.x - d - 1, y = sc.y } })
                     setCol(col, a)

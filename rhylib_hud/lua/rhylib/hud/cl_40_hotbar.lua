@@ -29,6 +29,8 @@
     Client convar rhylib_hud_hotbar_fade (default 1, Settings): fade the
     bar when you're not switching.
     Shares HUD.HotbarRect with the stamina bar (cl_45_stamina.lua).
+    The held slot uses HUD.Colors.accent (HUD colour "Selected"); the
+    console's header labels follow "HUD text and lines" (hud.headText).
 ]]
 
 local HUD = Rhylib.HUD
@@ -315,7 +317,7 @@ local CELL_W = 100           -- cell width at 1080p (narrower if the cheek is in
 local COL_PLATE = Color(28, 32, 31, 236)     -- a little lighter than the helmet shell
 local COL_HEADER = Color(40, 45, 43, 250)
 local COL_DIVIDER = Color(170, 176, 180, 60)
-local COL_HEAD_TEXT = Color(165, 168, 160)
+local COL_HEAD_TEXT = UI.HudCol("text", "hud.headText", 165, 168, 160)
 
 --[[
     Smallest x for a plate from y0 to y1 that stays clear of the bars and

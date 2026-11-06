@@ -22,15 +22,18 @@
     test dummies).
     Nets: med.act (out: kind 4 bits, target index 13 bits). Notices:
     Rhylib.Notify (Med.ShowNote).
+    HUD colours (Settings > HUD colours, key critical): tokens med.down
+    (the downed plate, timer and bars), med.downMark (the marker over a
+    downed ally), med.urgent (the triage flash).
 ]]
 
 local Med = Rhylib.Medical
 local UI = Rhylib.UI
 local C = UI.Colors
 
-local COL_DOWN = Color(214, 70, 60)
+local COL_DOWN = UI.HudCol("critical", "med.down", 214, 70, 60)
 local COL_DIM = Color(0, 0, 0, 150)
-local COL_MARK = Color(230, 70, 60, 230)
+local COL_MARK = UI.HudCol("critical", "med.downMark", 230, 70, 60, 230)
 local COL_TRACK = Color(255, 255, 255, 28)
 local COL_BG = Color(14, 16, 15, 225)
 local COL_EDGE = Color(0, 0, 0, 230)
@@ -214,7 +217,7 @@ local function drawPrompt(ply)
     text(str, 14, W / 2, H * 0.5 + S(60), C.text)
 end
 
-local COL_URGENT = Color(235, 80, 70)
+local COL_URGENT = UI.HudCol("critical", "med.urgent", 235, 80, 70)
 
 local function drawMarkers(ply)
     local triage = Med.Skill(ply, "triage")

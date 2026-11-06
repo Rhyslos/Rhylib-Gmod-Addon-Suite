@@ -17,6 +17,8 @@
     drawn against 100. Cloaked staff (NW2Bool "rhylib_cloak",
     rhylib_admin) get no card and no icons. Typing also counts
     rhylib_chat's NW2Bool "rhylib_typing".
+    The card's bars use HUD.Colors' HUD colour tokens (Health, Health
+    critical, Armour); the voice / typing icons keep their own colours.
 ]]
 
 local HUD = Rhylib.HUD

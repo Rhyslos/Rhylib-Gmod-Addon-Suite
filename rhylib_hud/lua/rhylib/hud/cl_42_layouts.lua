@@ -20,6 +20,9 @@
     Both layouts span the same width as the health bars on the right
     cheek (HUD.VISOR_BAR_TO .. HUD.VISOR_BAR_FROM from cl_60_visor.lua)
     and write HUD.HotbarRect for the stamina bar.
+    Colours are HUD colour tokens (Settings > HUD colours): the lit round
+    ticks follow "HUD text and lines" (hud.tickOn), the rest comes from
+    HUD.Colors; the small group labels (COL_LABEL) stay as they are.
 ]]
 
 local HUD = Rhylib.HUD
@@ -29,7 +32,7 @@ local COL_PLATE = Color(28, 32, 31, 236)
 local COL_EDGE = Color(0, 0, 0, 215)
 local COL_HI = Color(200, 206, 210, 50)
 local COL_DIVIDER = Color(170, 176, 180, 60)
-local COL_TICK_ON = Color(210, 214, 206)
+local COL_TICK_ON = UI.HudCol("text", "hud.tickOn", 210, 214, 206)
 local COL_TICK_OFF = Color(255, 255, 255, 30)
 local COL_LABEL = Color(165, 168, 160)
 
@@ -296,7 +299,7 @@ local function drawF4(entries, active, alpha, s, ai)
         local ch = math.max(3, math.floor(5 * s))
         local cyb = level - above - math.floor(5 * s)
         local lowCell = ai.cell < (Rhylib.Config.Get("weapons", "lowCellThreshold") or 0.2)
-        HUD.Bar(X0, cyb - ch, X1 - X0, ch, ai.cell, lowCell and C.bad or C.armor)
+        HUD.Bar(X0, cyb - ch, X1 - X0, ch, ai.cell, lowCell and C.bad or C.cell)
         above = above + math.floor(5 * s) + ch
     end
 
@@ -493,7 +496,7 @@ local function drawF5(entries, active, alpha, s, ai)
     if ai.cell then
         local ch = math.max(3, math.floor(5 * s))
         local lowCell = ai.cell < (Rhylib.Config.Get("weapons", "lowCellThreshold") or 0.2)
-        HUD.Bar(ax0 + pad, tyb - math.floor(5 * s) - ch, span, ch, ai.cell, lowCell and C.bad or C.armor)
+        HUD.Bar(ax0 + pad, tyb - math.floor(5 * s) - ch, span, ch, ai.cell, lowCell and C.bad or C.cell)
     end
     for i = 1, N do
         local tx = ax0 + pad + (i - 1) * (tkw + tg)

@@ -289,18 +289,38 @@ end
 -- Tiles and catalogue tabs
 --------------------------------------------------------------------------
 
--- SP.Tile(parent, it): a square tile (104 px): icon (or initials) and name.
+-- SP.Tile(parent, it): a tile (SP.TILE_W x SP.TILE_H): icon (or initials) and a two-line name.
 -- it = { name, mat (Material), model (path: a 3D picture when there's no
 -- mat, and the hover preview), run() on click, menu(m) adds right-click
 -- options, spec (for "Spawn with Rhy's toolgun"), admin (ADMIN tag),
 -- selected() (accent outline), tip (tooltip), extra (shown in the preview,
 -- and searched) }. In pick mode a click hands the tile's model over instead.
 -- Returns the DButton (add it to a DIconLayout).
+-- Tile size (1080p units): big icons and two lines for the name, so a
+-- tile reads at a glance.
+SP.TILE_W, SP.TILE_H, SP.TILE_NAME = 148, 156, 40
+
+-- (a name on up to two lines that fit w: word wrap, the rest cut with …)
+local function twoLines(name, font, w)
+    surface.SetFont(font)
+    if surface.GetTextSize(name) <= w then return name, nil end
+    local words, a = string.Explode(" ", name), ""
+    local i = 1
+    while i <= #words do
+        local try = a == "" and words[i] or (a .. " " .. words[i])
+        if surface.GetTextSize(try) > w then break end
+        a = try
+        i = i + 1
+    end
+    if a == "" then return K.Fit(name, font, w), nil end
+    return a, K.Fit(table.concat(words, " ", i), font, w)
+end
+
 function SP.Tile(parent, it)
     local S = K.S
     local b = vgui.Create("DButton", parent)
     b:SetText("")
-    b:SetSize(S(104), S(104))
+    b:SetSize(S(SP.TILE_W), S(SP.TILE_H))
     if it.tip then b:SetTooltip(it.tip) end
     local name = L(it.name)
     local initials = string.upper(string.sub(name, 1, 2))
@@ -309,7 +329,8 @@ function SP.Tile(parent, it)
         local hov = self:IsHovered()
         K.SetCol(hov and C.rowHover or C.row)
         surface.DrawRect(0, 0, w, h)
-        local is = h - S(26)
+        local nh = S(SP.TILE_NAME)
+        local is = h - nh - S(2)
         -- (the icon's dark well)
         K.SetCol(C.bg)
         surface.DrawRect(S(4), S(4), w - S(8), is - S(4))
@@ -324,10 +345,17 @@ function SP.Tile(parent, it)
             draw.SimpleText(initials, K.Font(26, 700), w * 0.5, is * 0.5, C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         end
         K.SetCol(C.header)
-        surface.DrawRect(0, h - S(24), w, S(24))
+        surface.DrawRect(0, h - nh, w, nh)
         K.SetCol(sel and C.accent or C.edgeDark)
-        surface.DrawRect(0, h - S(24), w, sel and 2 or 1)
-        draw.SimpleText(K.Fit(name, K.Font(12, 600), w - S(10)), K.Font(12, 600), w * 0.5, h - S(12), C.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        surface.DrawRect(0, h - nh, w, sel and 2 or 1)
+        local f = K.Font(13, 600)
+        if self.nameW ~= w then self.nameW, self.l1, self.l2 = w, twoLines(name, f, w - S(10)) end
+        if self.l2 then
+            draw.SimpleText(self.l1, f, w * 0.5, h - nh * 0.72, C.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            draw.SimpleText(self.l2, f, w * 0.5, h - nh * 0.30, C.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        else
+            draw.SimpleText(self.l1, f, w * 0.5, h - nh * 0.5, C.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
         K.SetCol(sel and C.accent or (hov and C.edgeLight or C.edgeDark), (hov and not sel) and 140 or 255)
         surface.DrawOutlinedRect(0, 0, w, h, sel and 2 or 1)
         if not sel then
@@ -344,14 +372,14 @@ function SP.Tile(parent, it)
     -- spawn icon of it, made once and kept on disk like the Q menu's.
     if not it.mat and isstring(it.model) and it.model ~= "" then
         local pad = S(8)
-        local is = S(104) - S(26)
+        local is = S(SP.TILE_H) - S(SP.TILE_NAME) - S(2)
         local mi = vgui.Create("ModelImage", b)
         mi:SetMouseInputEnabled(false)
         util.PrecacheModel(it.model)   -- (loaded first, or its spawn icon comes out empty)
         mi:SetModel(it.model)
         mi:SetPos(pad, pad)
         mi:SetSize(is - pad * 2 + S(10), is - pad * 2)
-        mi:SetPos((S(104) - mi:GetWide()) * 0.5, pad)
+        mi:SetPos((S(SP.TILE_W) - mi:GetWide()) * 0.5, pad)
         b.modelPic = mi
     end
     function b:DoClick()
@@ -734,7 +762,7 @@ local function build()
     -- search box on the right.
     local bar = vgui.Create("DPanel", f)
     bar:Dock(TOP)
-    bar:SetTall(S(38))
+    bar:SetTall(S(48))
     bar:DockMargin(0, 0, 0, S(10))
     function bar:Paint(w, h)
         K.SetCol(C.header)
@@ -801,7 +829,7 @@ local function build()
                 K.SetCol(C.buttonHover, 120)
                 surface.DrawRect(0, 1, w, h - 2)
             end
-            local font = K.Font(13, 700)
+            local font = K.Font(16, 700)
             draw.SimpleText(K.Fit(self.caps, font, w - S(8)), font, w * 0.5, h * 0.5, (on or self:IsHovered()) and C.text or C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
             K.SetCol(C.edgeDark, 160)
             surface.DrawRect(w - 1, S(8), 1, h - S(16))
@@ -816,13 +844,13 @@ local function build()
     -- (tabs left to right; narrower when many don't fit beside the search)
     function bar:PerformLayout(w, h)
         local room = w - search:GetWide() - S(12)
-        surface.SetFont(K.Font(13, 700))
+        surface.SetFont(K.Font(16, 700))
         local widths, total = {}, 0
         for i, t in ipairs(tabs) do
             widths[i] = surface.GetTextSize(t.caps)
             total = total + widths[i]
         end
-        local pad = S(32)
+        local pad = S(40)
         if #tabs > 0 and total + pad * #tabs > room then pad = math.max(S(8), math.floor((room - total) / #tabs)) end
         local x = 0
         for i, t in ipairs(tabs) do

@@ -47,6 +47,13 @@
     (s = ScrH / 900); everything along the sides keeps to the screen
     edges, the chin parts to the middle.
 
+    Colours are HUD colour tokens (Settings > HUD colours): the white
+    lines, rim and text follow "HUD text and lines" (the static picture
+    is rebuilt on Rhylib.HudColoursChanged), the ladders Armour / Health
+    / Health critical / Training health, the mode in use, low stamina and
+    low ammo Warning, exhausted and empty Danger, a toggle that's on, the
+    cell and the BACKPACK group line Selected.
+
     Public: HUD.RealisticActive(), HUD.RealGeo(), HUD.RealCheekY(x, side),
     HUD.RealCheekX(y, side), HUD.RealChinX(y, side), HUD.RealShellTris(),
     HUD.DrawRealHotbar(entries, active, alpha) (called by
@@ -57,13 +64,16 @@ local HUD = Rhylib.HUD
 local UI = Rhylib.UI
 
 
-local INK = Color(232, 241, 247)
+-- HUD colour tokens (Settings > HUD colours): INK -> "HUD text and
+-- lines" (also baked into the static picture, rebuilt on a change),
+-- stamina low -> warn, exhausted -> danger, the mode in use -> warn.
+local INK = UI.HudCol("text", "hud.ink", 232, 241, 247)
 local COL_SHELL = Color(12, 14, 16, 250)
 local COL_EDGE_DARK = Color(0, 0, 0, 230)
 local COL_EDGE_LIGHT = Color(170, 176, 180, 120)
 local COL_EMPTY = Color(255, 255, 255, 34)
-local COL_LOW = Color(239, 159, 39)
-local COL_EXHAUSTED = Color(226, 75, 74)
+local COL_LOW = UI.HudCol("warn", "hud.staminaLow", 239, 159, 39)
+local COL_EXHAUSTED = UI.HudCol("danger", "hud.exhausted", 226, 75, 74)
 
 -- HUD.RealisticActive(): true while the visor shows with the "real" layout.
 function HUD.RealisticActive()
@@ -588,7 +598,7 @@ end
 -- Right cheek: weapon, fire modes, rounds (two looks: real and realalt)
 --------------------------------------------------------------------------
 
-local COL_MODE = Color(240, 166, 74)
+local COL_MODE = UI.HudCol("warn", "hud.fireMode", 240, 166, 74)
 local COL_DARK = Color(6, 7, 10)
 
 -- Short labels for the fire-mode squares.
@@ -699,7 +709,7 @@ local function drawModes(g, ai, wep)
             local m = armed and list[i]
             if m then
                 label = m.label
-                col = m.toggle and C.armor or COL_MODE
+                col = m.toggle and C.toggle or COL_MODE
                 lit = m.on and (m.toggle or not safe) or false
                 if m.on and not lit then dim = 120 end
             end
@@ -741,7 +751,7 @@ local function drawMirror(g, ai)
         surface.DrawPoly(q)
     end
     if hasClip and ai.cell then
-        setCol(C.armor, 230)
+        setCol(C.cell, 230)
         for i = 1, math.ceil(math.Clamp(ai.cell, 0, 1) * #d.cell) do surface.DrawPoly(d.cell[i]) end
     end
     if hasClip then
@@ -836,7 +846,7 @@ local function drawStrip(g, ai)
         local y, h = math.floor(772 * s), math.max(2, math.floor(3 * s))
         surface.SetDrawColor(255, 255, 255, 31)
         surface.DrawRect(math.floor(x0), y, math.floor(x1 - x0), h)
-        setCol(C.armor, 235)
+        setCol(C.cell, 235)
         surface.DrawRect(math.floor(x0), y, math.floor((x1 - x0) * math.Clamp(ai.cell, 0, 1)), h)
     end
 end
@@ -889,7 +899,7 @@ end
 -- The parts that never change (the shell, its edges, the rim, the line
 -- under it, the side details, the chin pillars) are drawn once per screen
 -- size into a render target and put on screen as one picture each frame.
--- Rebuilt on a new screen size and every few seconds. That keeps this
+-- Rebuilt on a new screen size, a HUD colour change and every few seconds. That keeps this
 -- HUD's draw calls low: hundreds of polygons a frame
 -- could overflow the engine's shared drawing buffer on heavy views
 -- (white text, stretched triangles for a frame).
@@ -976,6 +986,9 @@ end
 -- back (a render target can come back empty after alt-tab).
 local hadFocus = true
 Rhylib.Hook.Add("OnScreenSizeChanged", "hud.realistic.static", function() staticKey = nil end)
+-- (the picture bakes INK: rebuild it after a HUD colour change)
+Rhylib.Hook.Add("Rhylib.HudColoursChanged", "hud.realistic.static", function() staticKey = nil end)
+Rhylib.Hook.Add("Rhylib.ThemeChanged", "hud.realistic.static", function() staticKey = nil end)
 Rhylib.Hook.Add("Think", "hud.realistic.focus", function()
     local f = system.HasFocus()
     if f and not hadFocus then staticKey = nil end
@@ -1153,7 +1166,7 @@ local function stripHotbar(g, entries, active, alpha)
     local gx0, gx1, gk = nil, nil, nil
     local function flushGroup()
         if not gk then return end
-        local col = gk == 2 and C.armor or (gk == 3 and COL_MODE or INK)
+        local col = gk == 2 and C.toggle or (gk == 3 and COL_MODE or INK)
         setCol(col, alpha)
         surface.DrawRect(gx0, ly - 1, gx1 - gx0, math.max(2, math.floor(2 * s)))
         text(GROUP_NAMES[gk], 10, 500, gx0, ly - 3 * s, INK, alpha * 0.7, nil, TEXT_ALIGN_BOTTOM)

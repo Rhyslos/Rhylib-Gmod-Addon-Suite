@@ -14,6 +14,10 @@
     and all of them on net logi.clear (you stopped being a technician or
     officer).
 
+    HUD colours (Settings > HUD colours): logi.alert (the alert line's
+    edge, the compass arrows and rings) is linked to key enemy; the
+    beacon mark is logi.beaconRadar, key friend.
+
     The beacon's wheel (rhylib_menus, hook Rhylib.WheelEntityOptions):
     Put in a power cell, Pick up (net logi.beacon).
 ]]
@@ -45,11 +49,12 @@ local function compassDir(from, to)
     return DIRS[math.floor(((ang % 360) + 22.5) / 45) % 8 + 1]
 end
 
--- The alert line's plate (theme tokens; the compass marks below keep
--- their own red and blue).
+-- The alert line's plate (theme tokens). logi.alert is also the compass
+-- arrows' and rings' red, and a HUD colour (key enemy).
 local COL_BG = Rhylib.UI.Col("logi.alertBg", 30, 8, 6, 190)
 local COL_TEXT = Rhylib.UI.Col("logi.alertText", 255, 150, 120)
 local COL_EDGE = Rhylib.UI.Col("logi.alert", 255, 80, 60)
+Rhylib.UI.HudLink("enemy", "logi.alert")
 
 Rhylib.Hook.Add("HUDPaint", "logistics.sensors", function()
     if not next(L.alerts) then return end
@@ -97,10 +102,10 @@ local function addCompass()
             local px, py = right * k, -fwd * k
             local len = math.sqrt(px * px + py * py)
             local pulse = 0.55 + 0.45 * math.abs(math.sin(CurTime() * 4))
-            surface.SetDrawColor(255, 80, 60, 230 * pulse)
+            surface.SetDrawColor(COL_EDGE.r, COL_EDGE.g, COL_EDGE.b, 230 * pulse)
             if len < r * 0.92 then
                 local rr = math.max(4, math.floor(r * 0.12))
-                surface.DrawCircle(cx + px, cy + py, rr, 255, 80, 60, 230 * pulse)
+                surface.DrawCircle(cx + px, cy + py, rr, COL_EDGE.r, COL_EDGE.g, COL_EDGE.b, 230 * pulse)
             else
                 local ux, uy = px / math.max(len, 1), py / math.max(len, 1)
                 local tipx, tipy = cx + ux * (r - 2), cy + uy * (r - 2)
@@ -113,7 +118,8 @@ local function addCompass()
 end
 -- Every beacon on the compass for everyone: a blue dot with two radar
 -- waves over it (dimmer with no power), only when within the compass.
-local BLUE = Color(70, 150, 255)
+-- (a HUD colour token, key friend)
+local BLUE = Rhylib.UI.HudCol("friend", "logi.beaconRadar", 70, 150, 255)
 local function radarMark(x, y, s, a)
     surface.SetDrawColor(BLUE.r, BLUE.g, BLUE.b, a)
     surface.DrawRect(x - s * 0.3, y - s * 0.3 + s * 0.35, s * 0.6, s * 0.6)

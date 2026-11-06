@@ -3,7 +3,8 @@
     them too (medical, weapons, datapad, menus, radio, chat), always
     behind an "if HUD and HUD.X" check.
 
-    Adds: HUD.Colors, HUD.Style (house style colours), HUD.Scale,
+    Adds: HUD.Colors (the meaning colours are HUD colour tokens, see
+    Settings > HUD colours), HUD.Style (house style colours), HUD.Scale,
     HUD.SimHealth, HUD.HeaderH, HUD.Frame (the house-style plate),
     HUD.Bar, HUD.Panel, HUD.Text, HUD.Margins, HUD.Hidden and HUD.Plate
     (the third-person corner plates). No hooks.
@@ -14,16 +15,22 @@ local UI = Rhylib.UI
 
 -- Colours used across the HUD. text/dim/accent/bad come from
 -- Rhylib.UI.Colors. (rhylib_skills swaps accent to the order colour
--- while a command order is active.)
+-- while a command order is active.) The meaning colours are HUD colour
+-- tokens (Settings > HUD colours): health -> health, healthLow ->
+-- critical, sim / simLow -> sim, armor -> armour, fuel (low ammo) ->
+-- warn; toggle (a switched-on mode) and cell (power cell bars), armour
+-- blue by default, -> selected.
 HUD.Colors = {
     panel = Color(20, 22, 20, 170),
     track = Color(255, 255, 255, 28),
-    health = Color(214, 88, 76),
-    healthLow = Color(255, 60, 50),
-    sim = Color(240, 200, 60),
-    simLow = Color(255, 170, 40),
-    armor = Color(90, 150, 255),
-    fuel = Color(239, 159, 39),
+    health = UI.HudCol("health", "hud.health", 214, 88, 76),
+    healthLow = UI.HudCol("critical", "hud.healthLow", 255, 60, 50),
+    sim = UI.HudCol("sim", "hud.sim", 240, 200, 60),
+    simLow = UI.HudCol("sim", "hud.simLow", 255, 170, 40),
+    armor = UI.HudCol("armour", "hud.armour", 90, 150, 255),
+    toggle = UI.HudCol("selected", "hud.toggle", 90, 150, 255),
+    cell = UI.HudCol("selected", "hud.cell", 90, 150, 255),
+    fuel = UI.HudCol("warn", "hud.lowAmmo", 239, 159, 39),
     text = UI.Colors.text,
     dim = UI.Colors.textDim,
     accent = UI.Colors.accent,

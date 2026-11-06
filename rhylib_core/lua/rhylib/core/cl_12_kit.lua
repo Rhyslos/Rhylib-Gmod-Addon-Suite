@@ -71,7 +71,16 @@ local C = K.C
 -- textDim, accent, good, warn and bad start as the HUD's UI.Colors values
 -- but are their own tokens, so a theme recolours windows without the HUD.
 if UI.Col then
-    for k, col in pairs(C) do C[k] = UI.Col("kit." .. k, col.r, col.g, col.b, col.a) end
+    for k, col in pairs(C) do
+        -- (the HUD's ui.* tokens may already carry a player's HUD colour
+        -- pick: start from their defaults, not their live values)
+        local d = UI.tokenDefaults and UI.tokenDefaults["ui." .. k]
+        if d and UI.tokens["ui." .. k] == col then
+            C[k] = UI.Col("kit." .. k, d[1], d[2], d[3], d[4])
+        else
+            C[k] = UI.Col("kit." .. k, col.r, col.g, col.b, col.a)
+        end
+    end
 end
 
 -- K.Scale(): screen height / 1080. K.S(n): n pixels at 1080p, scaled to

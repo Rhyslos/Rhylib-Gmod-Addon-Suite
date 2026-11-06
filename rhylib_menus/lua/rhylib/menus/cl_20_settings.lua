@@ -23,8 +23,8 @@
     The order of sections is the order they were first added.
 
     The Settings page (one page, "settings"): a search box, the groups on
-    the left (Menus.SETTING_GROUPS: Theme, HUD, Crosshair, Weapons, Camera &
-    freelook, Radio, Audio, Weather, then other sections, Controls and
+    the left (Menus.SETTING_GROUPS: Theme, HUD, HUD colours, Crosshair,
+    Weapons, Camera & freelook, Radio, Audio, Weather, then other sections, Controls and
     Keyboard map) and the group's rows on the right. Menus.SettingGroup
     decides a row's group (st.group, else from its tab and id, else its
     section). A row changed from its convar's default has an accent edge
@@ -33,8 +33,10 @@
     ... }, get / set with Colors) is colour squares and a mixer.
     Menus.SettingsPageId(tab) returns "settings" (an old tab name picks
     the group); Menus.settingsGroup is the group it opens on.
-    Menus.SettingGroupTop(group, fn(sp)) puts something above a group's
-    rows (the crosshair's live preview). preview = true on a row: hovering
+    Menus.SettingGroupTop(group, fn(sp), opts) puts something above a group's
+    rows (the crosshair's live preview); opts.ownRows: fn draws the whole
+    group and its rows only show in search (HUD colours, cl_22_hudcolours.lua).
+    preview = true on a row: hovering
     or dragging it clears the menu so the HUD shows; preview =
     "thirdperson": also shows your third-person camera while you do.
     Client only.
@@ -166,7 +168,7 @@ end
 
 -- Groups on the Settings page, in this order; sections that fit none of
 -- them get a group of their own (before Controls).
-Menus.SETTING_GROUPS = { "Theme", "HUD", "Crosshair", "Weapons", "Camera & freelook", "Radio", "Audio", "Weather" }
+Menus.SETTING_GROUPS = { "Theme", "HUD", "HUD colours", "Crosshair", "Weapons", "Camera & freelook", "Radio", "Audio", "Weather" }
 local TAB_GROUP = { ["Camera & motion"] = "Camera & freelook", Audio = "Audio", Controls = "Controls", Layout = "Keyboard map" }
 
 -- Menus.SettingGroup(section, st): the group a setting shows under:
@@ -263,11 +265,16 @@ local function addRow(sp, st)
     return row
 end
 
--- Menus.SettingGroupTop(group, fn(sp)): something drawn above a group's
--- rows (a live preview). Same group again = replaced.
+-- Menus.SettingGroupTop(group, fn(sp), opts): something drawn above a
+-- group's rows (a live preview). Same group again = replaced. opts.ownRows:
+-- fn draws the whole group; its rows show only in search results.
 -- Example: Rhylib.Menus.SettingGroupTop("Crosshair", function(sp) ... end)
 Menus.settingGroupTop = Menus.settingGroupTop or {}
-function Menus.SettingGroupTop(group, fn) Menus.settingGroupTop[group] = fn end
+Menus.settingGroupOwn = Menus.settingGroupOwn or {}
+function Menus.SettingGroupTop(group, fn, opts)
+    Menus.settingGroupTop[group] = fn
+    Menus.settingGroupOwn[group] = opts and opts.ownRows or nil
+end
 
 -- Fills the page's right side with one group (or the search results).
 local function fillGroup(sp, rows, group, q)
@@ -303,6 +310,7 @@ local function fillGroup(sp, rows, group, q)
     if top then
         local ok, err = pcall(top, sp)
         if not ok then Rhylib.Error("menus", "settings top %s: %s", group, tostring(err)) end
+        if Menus.settingGroupOwn[group] then return end
     end
     -- (a group made of several sections keeps their headings)
     local secs, bySec = {}, {}

@@ -8,6 +8,7 @@
     With a training gun in hand the health row shows sim health in yellow
     (HUD.SimHealth). With rhylib_medical's simplified system on, health
     shows as a percent (Med.HealthPct). Health turns red under 30%.
+    Colours are HUD.Colors' HUD colour tokens (Settings > HUD colours).
 ]]
 
 local HUD = Rhylib.HUD

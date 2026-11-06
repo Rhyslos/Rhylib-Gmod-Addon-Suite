@@ -16,6 +16,8 @@
     rhylib_dmg_shake, rhylib_dmg_lowhp, rhylib_dmg_volume (0-1, scales
     every sound here), rhylib_dmg_ring (ear ringing on/off),
     rhylib_dmg_cracks (visor cracks). All default on (volume 1).
+    Marker, flash and pulse colours are HUD colour tokens (Settings > HUD
+    colours: Health, Armour, Training health, Health critical).
 ]]
 
 local HUD = Rhylib.HUD
@@ -37,9 +39,11 @@ local marks = {}          -- { t, from, col, size }
 local flash = { 0, 0, 0, 0 }   -- front, right, back, left (0-1)
 local flashCol = Color(200, 30, 20)
 
-local COL_HP = Color(235, 60, 45)
-local COL_ARMOUR = Color(110, 170, 255)
-local COL_SIM = Color(255, 205, 50)
+-- (HUD colour tokens: health, armour, sim; the low-health pulse critical)
+local UI = Rhylib.UI
+local COL_HP = UI.HudCol("health", "hud.dmgHealth", 235, 60, 45)
+local COL_ARMOUR = UI.HudCol("armour", "hud.dmgArmour", 110, 170, 255)
+local COL_SIM = UI.HudCol("sim", "hud.dmgSim", 255, 205, 50)
 
 local FLESH = { "physics/flesh/flesh_impact_bullet1.wav", "physics/flesh/flesh_impact_bullet2.wav",
     "physics/flesh/flesh_impact_bullet3.wav", "physics/flesh/flesh_impact_bullet4.wav", "physics/flesh/flesh_impact_bullet5.wav" }
@@ -154,7 +158,7 @@ local function edges(a, col, W, H)
 end
 
 local lowA = { 0, 0, 0, 0 }
-local COL_LOW = Color(170, 10, 10)
+local COL_LOW = UI.HudCol("critical", "hud.lowPulse", 170, 10, 10)
 
 -- The heartbeat file loops by itself: one sound, started and stopped
 -- (respawning, healing or turning it off stops it).

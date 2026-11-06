@@ -37,6 +37,13 @@
     Rhylib.UI.Kit.C (every window), "<addon>.<what>" for an addon's own
     colours. A window theme sets kit.* and the addons' window tokens and
     leaves ui.* alone, so the HUD keeps its look.
+
+    HUD colours (players recolour the HUD by meaning; see the section
+    below): UI.HUD_KEYS, UI.HUD_PRESETS, UI.HudCol(key, name, r, g, b, a),
+    UI.HudLink(key, name), UI.HudValue / HudShown / HudPreset / HudPicked,
+    UI.SetHudColour(key, col), UI.SetHudPreset(id); convars
+    rhylib_hudcol_preset and rhylib_hudcol_<key>; hook
+    Rhylib.HudColoursChanged().
 ]]
 
 Rhylib.UI = Rhylib.UI or {}
@@ -62,6 +69,10 @@ local function applyOne(name)
     else
         col.r, col.g, col.b, col.a = def[1], def[2], def[3], def[4]
     end
+    -- (a HUD colour the player picked: its colour, the token's own alpha)
+    local key = UI.hudLinks and UI.hudLinks[name]
+    local hv = key and UI.HudValue and UI.HudValue(key)
+    if hv then col.r, col.g, col.b = hv.r, hv.g, hv.b end
 end
 
 -- UI.Token(name, color): adopt an existing Color object as the token
@@ -158,6 +169,158 @@ UI.RegisterTheme("dark", { label = "Dark (default)", order = 0 })
 for k, col in pairs(UI.Colors) do
     UI.Colors[k] = UI.Token("ui." .. k, col)
 end
+
+--------------------------------------------------------------------------
+-- HUD colours (Settings > HUD colours): players recolour the HUD by
+-- meaning (health, armour, squad...), e.g. for colour blindness. Each
+-- meaning is a key; HUD code makes its colours with UI.HudCol(key, name,
+-- r, g, b, a) (a token linked to that key) or links a token it already
+-- has with UI.HudLink(key, name). With the Default preset and nothing
+-- picked every token keeps its own default (the HUD looks as it always
+-- did); otherwise every token of a key takes the key's colour (r, g, b;
+-- each keeps its own alpha). Convars (saved on the player's PC):
+-- rhylib_hudcol_preset (default / rg / by / hc) and rhylib_hudcol_<key>
+-- ("" = the preset's, else "rrggbb"). Hook Rhylib.HudColoursChanged()
+-- fires after a change (render targets that bake HUD colours rebuild).
+--------------------------------------------------------------------------
+
+-- { id, label, what it colours, default colour shown in Settings }
+UI.HUD_KEYS = {
+    { "text", "HUD text and lines", "Numbers, ticks, compass, the visor rim", Color(232, 241, 247) },
+    { "health", "Health", "Health bar and number", Color(214, 88, 76) },
+    { "critical", "Health critical", "Under 30%, the red pulse, downed timer", Color(255, 60, 50) },
+    { "armour", "Armour", "Armour bar and number", Color(90, 150, 255) },
+    { "warn", "Warning", "Low ammo, low stamina, mode in use", Color(239, 159, 39) },
+    { "danger", "Danger", "Empty, exhausted, spotted, jammed", Color(226, 75, 74) },
+    { "selected", "Selected", "The weapon in your hands, picked items", Color(133, 183, 235) },
+    { "squad", "Squad mates", "Radar, SQ square, squad voice", Color(92, 214, 125) },
+    { "friend", "Other friendlies", "Everyone else on the radar", Color(79, 175, 255) },
+    { "enemy", "Enemy marks", "Q-marks, flagged mines, sensor alerts", Color(235, 60, 50) },
+    { "objective", "Objectives and leader", "Objective markers, your squad leader", Color(255, 200, 70) },
+    { "sim", "Training health", "Sim health with a training gun", Color(240, 200, 60) },
+}
+UI.hudKeyIndex = {}
+for i, k in ipairs(UI.HUD_KEYS) do UI.hudKeyIndex[k[1]] = i end
+
+-- Presets: { id, label, { key = Color } } (Default changes nothing).
+UI.HUD_PRESETS = {
+    { "default", "Default", nil },
+    { "rg", "Red-green", { text = Color(255, 255, 255), health = Color(230, 159, 0), critical = Color(255, 90, 0), armour = Color(86, 180, 233),
+        warn = Color(240, 228, 66), danger = Color(213, 94, 0), selected = Color(154, 209, 245), squad = Color(86, 180, 233),
+        friend = Color(194, 204, 255), enemy = Color(255, 122, 26), objective = Color(240, 228, 66), sim = Color(240, 228, 66) } },
+    { "by", "Blue-yellow", { text = Color(255, 255, 255), health = Color(232, 71, 91), critical = Color(255, 42, 42), armour = Color(46, 196, 182),
+        warn = Color(255, 154, 162), danger = Color(215, 38, 61), selected = Color(94, 234, 212), squad = Color(163, 230, 53),
+        friend = Color(46, 196, 182), enemy = Color(255, 51, 102), objective = Color(255, 179, 193), sim = Color(255, 179, 193) } },
+    { "hc", "High contrast", { text = Color(255, 255, 255), health = Color(255, 64, 64), critical = Color(255, 0, 0), armour = Color(0, 183, 255),
+        warn = Color(255, 208, 0), danger = Color(255, 0, 0), selected = Color(0, 255, 255), squad = Color(0, 255, 102),
+        friend = Color(0, 183, 255), enemy = Color(255, 0, 170), objective = Color(255, 208, 0), sim = Color(255, 208, 0) } },
+}
+local presetById = {}
+for _, p in ipairs(UI.HUD_PRESETS) do presetById[p[1]] = p end
+
+UI.hudLinks = UI.hudLinks or {}   -- token name -> key
+UI.hudLinked = UI.hudLinked or {} -- key -> { token names }
+
+local cvPreset = CreateClientConVar("rhylib_hudcol_preset", "default", true, false, "HUD colour preset: default, rg (red-green), by (blue-yellow), hc (high contrast)")
+local cvKey = {}
+for _, k in ipairs(UI.HUD_KEYS) do
+    cvKey[k[1]] = CreateClientConVar("rhylib_hudcol_" .. k[1], "", true, false, "HUD colour for " .. k[2] .. ": rrggbb, or empty for the preset's")
+end
+
+local function parseHex(s)
+    s = string.gsub(tostring(s or ""), "[^%x]", "")
+    if #s ~= 6 then return nil end
+    return Color(tonumber(string.sub(s, 1, 2), 16), tonumber(string.sub(s, 3, 4), 16), tonumber(string.sub(s, 5, 6), 16))
+end
+local cache = {}  -- key -> Color or false (rebuilt on a change)
+local function rebuildCache()
+    local p = presetById[cvPreset:GetString()] or presetById.default
+    for _, k in ipairs(UI.HUD_KEYS) do
+        local id = k[1]
+        cache[id] = parseHex(cvKey[id]:GetString()) or (p[3] and p[3][id]) or false
+    end
+end
+rebuildCache()
+
+-- UI.HudValue(key): the colour the player's choice gives that key, or nil
+-- (Default preset, nothing picked: tokens keep their own colours).
+function UI.HudValue(key) return cache[key] or nil end
+
+-- UI.HudShown(key): the colour to show for a key in Settings (the
+-- picked / preset one, else the key's default).
+function UI.HudShown(key)
+    local v = cache[key]
+    if v then return v end
+    local i = UI.hudKeyIndex[key]
+    return i and UI.HUD_KEYS[i][4] or color_white
+end
+
+-- UI.HudPreset(): the current preset id. UI.HudPicked(key): true when the
+-- player picked that key's colour (not the preset's).
+function UI.HudPreset() return presetById[cvPreset:GetString()] and cvPreset:GetString() or "default" end
+function UI.HudPicked(key) return parseHex(cvKey[key] and cvKey[key]:GetString()) ~= nil end
+
+local function applyKey(key)
+    for _, name in ipairs(UI.hudLinked[key] or {}) do applyOne(name) end
+end
+local function applyAll()
+    rebuildCache()
+    for _, k in ipairs(UI.HUD_KEYS) do applyKey(k[1]) end
+    hook.Run("Rhylib.HudColoursChanged")
+end
+
+-- UI.HudLink(key, name): link an existing token to a HUD colour key.
+function UI.HudLink(key, name)
+    if not UI.hudKeyIndex[key] or not UI.tokens[name] then return end
+    if UI.hudLinks[name] == key then return end
+    UI.hudLinks[name] = key
+    local list = UI.hudLinked[key] or {}
+    UI.hudLinked[key] = list
+    list[#list + 1] = name
+    applyOne(name)
+end
+
+-- UI.HudCol(key, name, r, g, b, a): a token (UI.Col) linked to a HUD key:
+-- its default is the HUD's look today, the player's choice recolours it.
+-- Example: local COL_HP = Rhylib.UI.HudCol("health", "hud.health", 214, 88, 76)
+function UI.HudCol(key, name, r, g, b, a)
+    local col = UI.Col(name, r, g, b, a)
+    UI.HudLink(key, name)
+    return col
+end
+
+-- UI.SetHudColour(key, col): pick a colour for one key (nil = back to the
+-- preset's). UI.SetHudPreset(id): pick a preset (clears picked colours).
+function UI.SetHudColour(key, col)
+    if not cvKey[key] then return end
+    RunConsoleCommand("rhylib_hudcol_" .. key, col and string.format("%02x%02x%02x", col.r, col.g, col.b) or "")
+end
+function UI.SetHudPreset(id)
+    if not presetById[id] then return end
+    for _, k in ipairs(UI.HUD_KEYS) do
+        if cvKey[k[1]]:GetString() ~= "" then RunConsoleCommand("rhylib_hudcol_" .. k[1], "") end
+    end
+    RunConsoleCommand("rhylib_hudcol_preset", id)
+end
+
+-- (convars change a frame after RunConsoleCommand; a preset clears many
+-- at once: apply once, a frame later)
+local applyQueued = false
+local function queueApply()
+    if applyQueued then return end
+    applyQueued = true
+    timer.Simple(0, function() applyQueued = false applyAll() end)
+end
+cvars.AddChangeCallback("rhylib_hudcol_preset", queueApply, "rhylib.hudcol")
+for _, k in ipairs(UI.HUD_KEYS) do
+    cvars.AddChangeCallback("rhylib_hudcol_" .. k[1], queueApply, "rhylib.hudcol")
+end
+
+-- The shared palette's HUD meanings.
+UI.HudLink("text", "ui.text")
+UI.HudLink("warn", "ui.warn")
+UI.HudLink("danger", "ui.bad")
+UI.HudLink("selected", "ui.accent")
 
 cvars.AddChangeCallback("rhylib_theme", function(_, _, new)
     if new ~= UI.wantTheme then UI.SetTheme(new) end

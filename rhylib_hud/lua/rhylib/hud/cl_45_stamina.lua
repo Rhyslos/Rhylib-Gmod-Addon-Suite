@@ -13,6 +13,8 @@
 
     The visor strips use HUD.VisorStrip (cl_60_visor.lua); the radio's
     own voice meter sits under them (rhylib_radio cl_20_hud.lua).
+    Colours are HUD colour tokens (Settings > HUD colours): the fill
+    follows "HUD text and lines", low "Warning", exhausted "Danger".
 ]]
 
 -- Plain white for untextured polygons (draw.NoTexture alone can leave
@@ -20,11 +22,13 @@
 local WHITE_MAT = Material("vgui/white")
 
 local HUD = Rhylib.HUD
+local UI = Rhylib.UI
 
+-- (HUD colour tokens: fill -> text, low -> warn, exhausted -> danger)
 local COL_TRACK = Color(255, 255, 255, 22)
-local COL_FILL = Color(210, 214, 206)
-local COL_LOW = Color(239, 159, 39)
-local COL_EXHAUSTED = Color(226, 75, 74)
+local COL_FILL = UI.HudCol("text", "hud.staminaFill", 210, 214, 206)
+local COL_LOW = UI.HudCol("warn", "hud.staminaLow", 239, 159, 39)
+local COL_EXHAUSTED = UI.HudCol("danger", "hud.exhausted", 226, 75, 74)
 
 local fullSince = 0
 
