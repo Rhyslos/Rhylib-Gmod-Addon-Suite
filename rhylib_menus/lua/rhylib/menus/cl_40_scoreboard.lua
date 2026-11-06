@@ -71,9 +71,9 @@ local function battalions()
     return out
 end
 
-local STAFF_COL = Color(194, 123, 224)
-local ME_COL = Color(31, 42, 53)
-local CADET_COL = Color(169, 168, 160)
+local STAFF_COL = Rhylib.UI.Col("scoreboard.staff", 194, 123, 224)    -- the Staff group
+local ME_COL = Rhylib.UI.Col("scoreboard.me", 31, 42, 53)              -- your own row
+local CADET_COL = Rhylib.UI.Col("scoreboard.cadets", 169, 168, 160)   -- the Cadets group
 
 -- A staff job: one marked staff, or named like one.
 local function staffJob(p)
@@ -195,12 +195,11 @@ function PANEL:Rebuild()
         local gp = vgui.Create("DPanel", cols)
         gp.rows = #g.players
         local col, title = g.col, string.upper(g.title)
-        local tint = Color(col.r, col.g, col.b, 30)
         local n = #g.players
         function gp:Paint(w, h)
             -- the colour band: tint, a thick edge and a diamond
             local hh = s(HEAD_H)
-            K.SetCol(tint)
+            surface.SetDrawColor(col.r, col.g, col.b, 30)
             surface.DrawRect(0, 0, w, hh)
             K.SetCol(col)
             surface.DrawRect(0, 0, s(4), hh)

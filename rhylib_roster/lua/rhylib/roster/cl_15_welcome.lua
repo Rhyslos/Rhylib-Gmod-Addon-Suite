@@ -1,5 +1,5 @@
 --[[
-    "Getting started" card (client; needs rhylib_menus' Kit).
+    "Getting started" card (client; needs the UI kit, rhylib_core).
 
     Shown once after a new character is made (roster.created ok), and on
     the first spawn of a player who already has one but never saw it
@@ -7,6 +7,10 @@
     find on their own: controls page, inventory, interaction wheel,
     injuries, the pause menu, the armoury and how to get basic training.
     Keys are read from the players' own binds / Rhy's key settings.
+
+    Look: a plate with a short welcome, then one row per line (rows
+    alternate) with the key as a key cap in the accent colour (a small
+    diamond when there's no key), and Got it.
 
     R.ShowWelcome() opens it; console command `rhylib_welcome` too.
 ]]
@@ -55,28 +59,80 @@ function R.ShowWelcome()
     if not k or IsValid(panel) then return end
     cookie.Set("rhylib_welcome_seen", "1")
     local s = k.S
+    local C = k.C
+    local D = R.Draw
     local list = lines()
-    local w, rowH = s(560), s(30)
-    local h = s(30) + s(16) + #list * rowH + s(58)
+    local headH, rowH, keyW = s(36), s(36), s(118)
+    local w = math.min(ScrW() - s(40), s(660))
+    -- (long lines wrap onto a second line: worked out once here)
+    local textW = w - s(32) - keyW - s(10)
+    surface.SetFont(k.Font(14))
+    local listH = 0
+    for _, l in ipairs(list) do
+        l.parts = { l[2] }
+        if surface.GetTextSize(l[2]) > textW then
+            local first, rest = "", nil
+            for word in string.gmatch(l[2], "%S+") do
+                if rest then rest = rest .. " " .. word
+                else
+                    local try = first == "" and word or (first .. " " .. word)
+                    if surface.GetTextSize(try) > textW and first ~= "" then rest = word else first = try end
+                end
+            end
+            l.parts = { first, rest }
+        end
+        l.h = #l.parts > 1 and s(52) or rowH
+        listH = listH + l.h
+    end
+    local h = headH + s(58) + listH + s(66)
     panel = vgui.Create("EditablePanel")
     panel:SetSize(w, h)
     panel:Center()
     panel:MakePopup()
     panel:SetKeyboardInputEnabled(false)
     function panel:Paint(pw, ph)
-        k.Plate(0, 0, pw, ph, { title = "Getting started", sub = "Rhy's Clone Wars RP", ticks = "all" })
-        local y = s(30) + s(12)
-        for _, l in ipairs(list) do
+        k.Plate(0, 0, pw, ph, { title = "Getting started", sub = "Rhy's Clone Wars RP", ticks = "all", header = headH })
+        local x, y = s(16), headH + s(14)
+        draw.SimpleText("Welcome, trooper", k.Font(20, 800), x, y + s(10), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        draw.SimpleText("The keys you won't find on your own", k.Font(13), x, y + s(32), C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        y = headH + s(58)
+        local f = k.Font(14)
+        for i, l in ipairs(list) do
+            local rh = l.h
+            k.SetCol(i % 2 == 0 and C.rowAlt or C.row)
+            surface.DrawRect(x, y, pw - x * 2, rh)
+            local cy = y + rh * 0.5
             if l[1] ~= "" then
-                draw.SimpleText(l[1], k.Font(14, 700), s(18), y + rowH * 0.5, k.C.accent, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                -- (a key cap)
+                local kf = k.Font(12, 700)
+                surface.SetFont(kf)
+                local tw = surface.GetTextSize(l[1])
+                local cw, ch = math.min(keyW - s(16), tw + s(16)), s(22)
+                k.SetCol(C.header)
+                surface.DrawRect(x + s(10), cy - ch * 0.5, cw, ch)
+                k.SetCol(C.edgeDark)
+                surface.DrawOutlinedRect(x + s(10), cy - ch * 0.5, cw, ch)
+                k.SetCol(C.accent)
+                surface.DrawRect(x + s(10), cy + ch * 0.5 - 2, cw, 2)
+                draw.SimpleText(l[1], kf, x + s(10) + cw * 0.5, cy - 1, C.accent, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            elseif D and D.Diamond then
+                D.Diamond(x + s(20), cy, s(4), C.label)
             end
-            draw.SimpleText(l[2], k.Font(14), s(118), y + rowH * 0.5, k.C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-            y = y + rowH
+            if l.parts[2] then
+                draw.SimpleText(l.parts[1], f, x + keyW, cy - s(9), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                draw.SimpleText(k.Fit(l.parts[2], f, pw - x * 2 - keyW - s(10)), f, x + keyW, cy + s(9), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            else
+                draw.SimpleText(k.Fit(l[2], f, pw - x * 2 - keyW - s(10)), f, x + keyW, cy, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            end
+            y = y + rh
         end
+        k.SetCol(C.edgeDark)
+        surface.DrawOutlinedRect(x, headH + s(58), pw - x * 2, listH)
+        draw.SimpleText("Open it again any time: rhylib_welcome in the console", k.Font(12), x, ph - s(30), C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
     end
     local b = k.Button(panel, "Got it", function() if IsValid(panel) then panel:Remove() end end, { accent = true })
-    b:SetSize(s(140), s(34))
-    b:SetPos(w - s(140) - s(14), h - s(34) - s(12))
+    b:SetSize(s(150), s(36))
+    b:SetPos(w - s(150) - s(16), h - s(36) - s(12))
 end
 
 concommand.Add("rhylib_welcome", function() R.ShowWelcome() end)

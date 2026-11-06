@@ -54,35 +54,37 @@ T.tab = T.tab or "logs"
 
 function T.K() return Rhylib.UI and Rhylib.UI.Kit end
 local K = T.K
-T.OPAQUE = Color(5, 12, 13, 255)
+T.OPAQUE = Rhylib.UI.Col("datapad.termOpaque", 5, 12, 13, 255)
 function T.when(t) return t and t > 0 and os.date("%d %b %Y %H:%M", t) or "" end
 
 --------------------------------------------------------------------------
--- Colours (teal terminal; T.SetMedical swaps the accent to red)
+-- Colours (teal terminal; T.SetMedical swaps the accent to red). Theme
+-- tokens "datapad.term<Name>" (Rhylib.UI.Col), read when drawing.
 --------------------------------------------------------------------------
 
-local TEAL, TEAL_EDGE, TEAL_ON = Color(127, 216, 230), Color(31, 90, 98), Color(16, 51, 58)
-local RED, RED_EDGE, RED_ON = Color(226, 75, 74), Color(90, 42, 42), Color(58, 21, 22)
+local Col = Rhylib.UI.Col
+local TEAL, TEAL_EDGE, TEAL_ON = Col("datapad.termAccent", 127, 216, 230), Col("datapad.termAccentEdge", 31, 90, 98), Col("datapad.termAccentOn", 16, 51, 58)
+local RED, RED_EDGE, RED_ON = Col("datapad.termMedAccent", 226, 75, 74), Col("datapad.termMedAccentEdge", 90, 42, 42), Col("datapad.termMedAccentOn", 58, 21, 22)
 T.C = T.C or {}
 local C = T.C
-C.ground = Color(5, 12, 13)
-C.header = Color(10, 26, 29)
-C.bar = Color(7, 19, 21)
-C.card = Color(11, 29, 32)
-C.hover = Color(14, 38, 42)
-C.edge = Color(18, 53, 58)
-C.text = Color(228, 227, 220)
-C.body = Color(195, 217, 220)
-C.dim = Color(159, 199, 205)
-C.caps = Color(95, 154, 163)
-C.dark = Color(7, 18, 20)
-C.good = Color(151, 196, 89)
-C.warn = Color(239, 159, 39)
-C.bad = Color(226, 75, 74)
-C.dangerEdge = Color(90, 42, 42)
-C.dangerText = Color(240, 149, 149)
-C.dangerFill = Color(42, 18, 18)
-C.shine = Color(255, 255, 255, 30)
+C.ground = Col("datapad.termGround", 5, 12, 13)
+C.header = Col("datapad.termHeader", 10, 26, 29)
+C.bar = Col("datapad.termBar", 7, 19, 21)
+C.card = Col("datapad.termCard", 11, 29, 32)
+C.hover = Col("datapad.termHover", 14, 38, 42)
+C.edge = Col("datapad.termEdge", 18, 53, 58)
+C.text = Col("datapad.termText", 228, 227, 220)
+C.body = Col("datapad.termBody", 195, 217, 220)
+C.dim = Col("datapad.termDim", 159, 199, 205)
+C.caps = Col("datapad.termCaps", 95, 154, 163)
+C.dark = Col("datapad.termDark", 7, 18, 20)
+C.good = Col("datapad.termGood", 151, 196, 89)
+C.warn = Col("datapad.termWarn", 239, 159, 39)
+C.bad = Col("datapad.termBad", 226, 75, 74)
+C.dangerEdge = Col("datapad.termDangerEdge", 90, 42, 42)
+C.dangerText = Col("datapad.termDangerText", 240, 149, 149)
+C.dangerFill = Col("datapad.termDangerFill", 42, 18, 18)
+C.shine = Col("datapad.termShine", 255, 255, 255, 30)
 C.accent, C.accentEdge, C.accentOn = C.accent or TEAL, C.accentEdge or TEAL_EDGE, C.accentOn or TEAL_ON
 
 -- T.SetMedical(med): red accent for the holotable, teal otherwise.
@@ -93,9 +95,9 @@ end
 -- Kit widgets inside the window (text boxes, scroll bars, menus' parents)
 -- draw with these while the window paints; PaintOver puts the kit's back.
 local SKIN = {
-    bg = C.card, header = C.header, row = C.bar, rowAlt = Color(9, 24, 27), rowHover = TEAL_ON,
-    edgeDark = C.edge, edgeLight = Color(127, 216, 230, 22), tick = C.caps, label = C.caps,
-    button = C.card, buttonHover = TEAL_ON, buttonDown = Color(20, 66, 74), textDim = C.dim,
+    bg = C.card, header = C.header, row = C.bar, rowAlt = Col("datapad.termRowAlt", 9, 24, 27), rowHover = TEAL_ON,
+    edgeDark = C.edge, edgeLight = Col("datapad.termEdgeLight", 127, 216, 230, 22), tick = C.caps, label = C.caps,
+    button = C.card, buttonHover = TEAL_ON, buttonDown = Col("datapad.termButtonDown", 20, 66, 74), textDim = C.dim,
 }
 local saved, swapped = {}, false
 local function skinOn()
@@ -603,7 +605,7 @@ local function buildHeader(parent, pad)
     local s = k.S
     local tm = T.term
     local bnCol = (not tm.med and D.BnColor(tm.bn)) or C.accent
-    local badgeBg = Color(bnCol.r * 0.18, bnCol.g * 0.18, bnCol.b * 0.18, 255)
+    local badgeBg = Color(0, 0, 0)   -- (bnCol darkened: worked out when drawn)
     local tag = tm.med and "MED" or (tm.bn ~= "" and prefix(tm.bn) or "--")
     local name = string.upper(tm.med and "Medical holotable" or (tm.bn ~= "" and tm.bn or "Battalion computer"))
     local bits = { tm.med and "MEDICAL HOLOTABLE · MEDICAL RECORDS" or "BATTALION COMPUTER" }
@@ -611,7 +613,6 @@ local function buildHeader(parent, pad)
     local on = T.OnlineCount()
     if on then bits[#bits + 1] = on .. (on == 1 and " MEMBER ONLINE" or " MEMBERS ONLINE") end
     local capsLine = table.concat(bits, "  ·  ")
-    local fBadge, fName, fCaps = k.Font(14, 700), k.Font(26, 800), k.Font(12, 500)
 
     local h = vgui.Create("DPanel", parent)
     h:Dock(TOP)
@@ -624,14 +625,15 @@ local function buildHeader(parent, pad)
         surface.DrawRect(0, hh - 1, w, 1)
         local bs = s(40)
         local by = math.floor((hh - bs) * 0.5)
+        badgeBg.r, badgeBg.g, badgeBg.b = bnCol.r * 0.18, bnCol.g * 0.18, bnCol.b * 0.18
         setCol(badgeBg)
         surface.DrawRect(pad, by, bs, bs)
         setCol(bnCol)
         surface.DrawOutlinedRect(pad, by, bs, bs)
-        draw.SimpleText(tag, fBadge, pad + bs * 0.5, by + bs * 0.5, bnCol, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText(tag, k.Font(14, 700), pad + bs * 0.5, by + bs * 0.5, bnCol, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         local x = pad + bs + s(16)
-        draw.SimpleText(name, fName, x, hh * 0.5 + s(3), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_BOTTOM)
-        draw.SimpleText(capsLine, fCaps, x, hh * 0.5 + s(6), C.caps, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+        draw.SimpleText(name, k.Font(26, 800), x, hh * 0.5 + s(3), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_BOTTOM)
+        draw.SimpleText(capsLine, k.Font(12, 500), x, hh * 0.5 + s(6), C.caps, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
     end
 
     local close = T.Btn(h, "", function() if IsValid(T.panel) then T.panel:Remove() end end, { quiet = true, tooltip = "Close" })
@@ -875,4 +877,9 @@ Rhylib.Net.Receive("dp.term", function()
         if def.onTerm then def.onTerm(t) end
     end
     open()
+end)
+
+-- A theme switch may change the font: build the open window again.
+Rhylib.Hook.Add("Rhylib.ThemeChanged", "datapad.term", function()
+    if IsValid(T.panel) then T.Build() end
 end)

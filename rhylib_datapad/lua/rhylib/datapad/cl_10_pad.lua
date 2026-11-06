@@ -42,22 +42,29 @@ local D = Rhylib.Datapad
 local function K() return Rhylib.UI and Rhylib.UI.Kit end
 local function when(t) return t and t > 0 and os.date("%d %b %H:%M", t) or "" end
 
--- Screen colours.
-local COL = {
-    bezel = Color(35, 38, 42), bezelEdge = Color(58, 63, 69), notch = Color(21, 23, 26),
-    screen = Color(7, 18, 20), screenEdge = Color(14, 42, 46), bar = Color(10, 26, 29), edge = Color(18, 53, 58),
-    card = Color(11, 29, 32), hover = Color(14, 38, 42), sel = Color(16, 51, 58),
-    accent = Color(127, 216, 230), accentHi = Color(184, 238, 246), dim = Color(159, 199, 205), label = Color(95, 154, 163),
-    btnEdge = Color(31, 90, 98), text = Color(228, 227, 220), dark = Color(7, 18, 20),
-    good = Color(151, 196, 89), amber = Color(239, 159, 39), amberHi = Color(246, 190, 100), amberEdge = Color(107, 82, 32),
-    dangerEdge = Color(90, 42, 42), dangerText = Color(240, 149, 149), dangerHover = Color(40, 18, 18),
-}
+-- Screen colours: theme tokens "datapad.<key>" (Rhylib.UI.Col), read when drawing.
+local COL = {}
+do
+    local def = {
+        bezel = { 35, 38, 42 }, bezelEdge = { 58, 63, 69 }, notch = { 21, 23, 26 },
+        screen = { 7, 18, 20 }, screenEdge = { 14, 42, 46 }, bar = { 10, 26, 29 }, edge = { 18, 53, 58 },
+        card = { 11, 29, 32 }, hover = { 14, 38, 42 }, sel = { 16, 51, 58 },
+        accent = { 127, 216, 230 }, accentHi = { 184, 238, 246 }, dim = { 159, 199, 205 }, label = { 95, 154, 163 },
+        btnEdge = { 31, 90, 98 }, text = { 228, 227, 220 }, dark = { 7, 18, 20 },
+        good = { 151, 196, 89 }, amber = { 239, 159, 39 }, amberHi = { 246, 190, 100 }, amberEdge = { 107, 82, 32 },
+        dangerEdge = { 90, 42, 42 }, dangerText = { 240, 149, 149 }, dangerHover = { 40, 18, 18 },
+        -- (kit colours of the screen, below)
+        rowAlt = { 13, 34, 37 }, rowHover = { 16, 44, 49 }, edgeLight = { 127, 216, 230, 20 },
+        tick = { 95, 154, 163, 150 }, buttonHover = { 16, 44, 49 },
+    }
+    for key, v in pairs(def) do COL[key] = Rhylib.UI.Col("datapad." .. key, v[1], v[2], v[3], v[4]) end
+end
 
 -- Kit colours swapped in while the window paints (put back in PaintOver).
 local PAD = {
-    bg = COL.screen, header = COL.bar, row = COL.card, rowAlt = Color(13, 34, 37), rowHover = Color(16, 44, 49),
-    edgeDark = COL.edge, edgeLight = Color(127, 216, 230, 20), tick = Color(95, 154, 163, 150), label = COL.label,
-    button = COL.card, buttonHover = Color(16, 44, 49), buttonDown = COL.sel, textDim = COL.dim, accent = COL.accent,
+    bg = COL.screen, header = COL.bar, row = COL.card, rowAlt = COL.rowAlt, rowHover = COL.rowHover,
+    edgeDark = COL.edge, edgeLight = COL.edgeLight, tick = COL.tick, label = COL.label,
+    button = COL.card, buttonHover = COL.buttonHover, buttonDown = COL.sel, textDim = COL.dim, accent = COL.accent,
 }
 local saved, swapped = {}, false
 local function swapIn()
@@ -1121,7 +1128,7 @@ local function callButton(parent, i, def)
     local k = K()
     local s = k.S
     local col = callCol(i)
-    local tint = Color(math.floor(col.r * 0.17 + 4), math.floor(col.g * 0.17 + 8), math.floor(col.b * 0.17 + 9))
+    local tint = Color(0, 0, 0)   -- (the call colour, darkened: worked out when drawn)
     local name = def.name or "Call"
     local reach = def.items and "Pick what you need, then send" or (CALL_REACH[def.to] or "Everyone")
     local tag = def.accept and "ACCEPT FIRST" or "SENDS POSITION"
@@ -1146,6 +1153,7 @@ local function callButton(parent, i, def)
         surface.DrawOutlinedRect(0, 0, w, h)
         local sz = s(48)
         local ix, iy = s(16), math.floor((h - sz) * 0.5)
+        tint.r, tint.g, tint.b = math.floor(col.r * 0.17 + 4), math.floor(col.g * 0.17 + 8), math.floor(col.b * 0.17 + 9)
         k.SetCol(tint, a)
         surface.DrawRect(ix, iy, sz, sz)
         k.SetCol(col, a)
@@ -1927,4 +1935,12 @@ Rhylib.Net.Receive("dp.mcur", function()
     view.misAsked = nil
     if not m then view.misDraft = nil end
     if IsValid(panel) and tab == "mission" then buildTab() end
+end)
+
+-- A theme switch may change the font: build the open window's strip and tab again.
+Rhylib.Hook.Add("Rhylib.ThemeChanged", "datapad.pad", function()
+    if IsValid(panel) and IsValid(content) then
+        buildNav()
+        buildTab()
+    end
 end)

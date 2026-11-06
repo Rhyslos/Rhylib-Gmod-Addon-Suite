@@ -176,6 +176,8 @@ local function canUndo(me, set, n)
 end
 
 local EXCLUDED_ALPHA = 0.3   -- (how faint a ruled-out skill is drawn)
+-- The "Command order" line in the side panel (theme token).
+local COL_ORDER_NOTE = Rhylib.UI.Col("skills.orderNote", 236, 196, 70)
 
 --------------------------------------------------------------------------
 -- Glyphs: shapes in a 0-1 box. R = rect, P = convex polygon, C = disc,
@@ -685,7 +687,7 @@ local function build(page)
         y = y + S(26)
         -- Command orders: a small yellow line above the text, not a repeat inside it.
         if n.exclusive == "command" then
-            draw.SimpleText("Command order (you can only pick one)", Kit.Font(13, 700), pad, y, Color(236, 196, 70), TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+            draw.SimpleText("Command order (you can only pick one)", Kit.Font(13, 700), pad, y, COL_ORDER_NOTE, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
             y = y + S(20)
         end
         for _, l in ipairs(wrap(n.desc or "", Kit.Font(14), w - pad * 2, 8)) do

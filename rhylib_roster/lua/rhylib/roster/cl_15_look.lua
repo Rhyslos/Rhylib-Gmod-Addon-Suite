@@ -1,7 +1,10 @@
 --[[
     Looks: hair, facial hair, hair colour and skin (R.HAIR / R.FHAIR /
     R.HAIR_COLOURS / R.SKINS), picked in the character creator or later
-    with !look / rhylib_look. A preview shows a clone with the helmet off.
+    with !look / rhylib_look. A preview stage shows a clone with the helmet
+    off (dark box, soft accent glow, corner ticks); each look is a row with
+    its place in the list ("3 / 12"), < and > and the name between them (a
+    click lists every option; hair colours with a swatch).
     rhylib_gear puts hair and skin on the model (hair hidden under a helmet).
 
     Hair colour: each model has one hair material (e.g. "ct_trp/hair");
@@ -9,9 +12,10 @@
     ($color2, values above 1 lighten), so nothing new is downloaded.
     NW2Int rhylib_haircol (0 = the model's own). (A client-only swap was
     tried first: the server's networked materials undid it.)
-    Client only. Adds: R.ApplyHairColour, R.LookPreview, R.LookStepper,
-    R.LookControls, R.WriteLook, R.OpenLook, console rhylib_look, the
-    pause menu page Character > Appearance.
+    Client only. Adds: R.ApplyHairColour, R.LookPreview, R.LookStage,
+    R.LookStepper, R.LookControls, R.WriteLook, R.OpenLook, console
+    rhylib_look, the pause menu page Trooper > Appearance (stage on the
+    left, the rows and Save on the right).
 ]]
 
 local R = Rhylib.Roster
@@ -131,6 +135,16 @@ end)
 -- Preview and controls
 --------------------------------------------------------------------------
 
+-- Theme tokens (dark defaults; roster.stage is made in cl_10_creator.lua).
+local COL_STAGE = Rhylib.UI.Col("roster.stage", 18, 21, 20, 255)
+
+-- What each hair colour roughly looks like (the swatch beside its name).
+-- Real hair colours, not theme colours.
+local HAIR_SWATCH = {
+    [1] = Color(35, 30, 28), [2] = Color(70, 48, 34), [3] = Color(115, 80, 50), [4] = Color(140, 62, 34),
+    [5] = Color(210, 175, 110), [6] = Color(150, 150, 150), [7] = Color(225, 225, 222),
+}
+
 -- R.LookPreview(parent, getLook): a DModelPanel showing the look (helmet
 -- off), slowly turning. getLook() returns { hair, fhair, hcol, skin } and
 -- is read every frame, so changes show at once. Returns the panel.
@@ -151,9 +165,11 @@ function R.LookPreview(parent, getLook)
         mdl:SetCamPos(pos + Vector(40, 0, 2))
     end
     local lastCol
+    local ang = Angle(0, 0, 0)
     function mdl:LayoutEntity(e)
         local look = getLook()
-        e:SetAngles(Angle(0, 20 + math.sin(RealTime() * 0.6) * 30, 0))
+        ang.y = 20 + math.sin(RealTime() * 0.6) * 30
+        e:SetAngles(ang)
         local id, i = optionOf(e, "helmet", "trooper_head")
         if id and i and e:GetBodygroup(id) ~= i then e:SetBodygroup(id, i) end
         for _, pair in ipairs({ { "hair", look.hair }, { "fhair", look.fhair } }) do
@@ -169,27 +185,110 @@ function R.LookPreview(parent, getLook)
     return mdl
 end
 
+-- R.LookStage(parent, getLook, caption): the preview in a stage box (dark,
+-- a soft glow in the accent, corner ticks, "PREVIEW" and caption on top).
+-- Returns the box (size / dock it yourself); box.model is the DModelPanel.
+function R.LookStage(parent, getLook, caption)
+    local k = K()
+    local s = k.S
+    local C = k.C
+    local D = R.Draw
+    local box = vgui.Create("DPanel", parent)
+    function box:Paint(w, h)
+        k.SetCol(COL_STAGE)
+        surface.DrawRect(0, 0, w, h)
+        if D and D.Glow then D.Glow(0, 0, w, h, C.accent, 34) end
+        k.SetCol(C.edgeDark)
+        surface.DrawOutlinedRect(0, 0, w, h)
+        k.SetCol(C.edgeLight)
+        surface.DrawLine(1, 1, w - 1, 1)
+        k.Ticks(0, 0, w, h, true)
+        k.Caps("Preview", s(14), s(18))
+        if caption then draw.SimpleText(caption, k.Font(12), w - s(14), s(18), C.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER) end
+    end
+    box.model = R.LookPreview(box, getLook)
+    box.model:Dock(FILL)
+    box.model:DockMargin(1, s(34), 1, 1)
+    return box
+end
+
 -- R.LookStepper(parent, title, list, get, set): a row with < name > to step
 -- through a list of { value, label }; get() returns the current value,
--- set(v) stores a new one. Returns the row (not docked).
+-- set(v) stores a new one. A click on the name lists them all. Returns
+-- the row (not docked).
 function R.LookStepper(parent, title, list, get, set)
     local k = K()
-    local row = k.Row(parent, title)
-    row.right:SetWide(k.S(260))
+    local s = k.S
+    local C = k.C
+    local swatch = list == R.HAIR_COLOURS
+    local row = vgui.Create("DPanel", parent)
+    row:SetTall(s(44))
+    row:DockPadding(s(12), s(7), s(8), s(7))
     local function idx()
         for i, o in ipairs(list) do if o[1] == get() then return i end end
         return 1
     end
-    local prev = k.Button(row.right, "<", function() set(list[(idx() - 2) % #list + 1][1]) end, { small = true })
+    function row:Paint(w, h)
+        k.SetCol(self:IsHovered() and C.rowAlt or C.row)
+        surface.DrawRect(0, 0, w, h)
+        k.SetCol(C.edgeDark)
+        surface.DrawOutlinedRect(0, 0, w, h)
+        local f = k.Font(14, 600)
+        draw.SimpleText(title, f, s(12), h * 0.5, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        surface.SetFont(f)
+        local tw = surface.GetTextSize(title)
+        local i = idx()
+        if self.cntIdx ~= i then self.cntIdx, self.cntText = i, i .. " / " .. #list end
+        draw.SimpleText(self.cntText, k.Font(11, 700), s(12) + tw + s(10), h * 0.5, C.label, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    end
+    local right = vgui.Create("DPanel", row)
+    right:Dock(RIGHT)
+    right:SetWide(s(250))
+    right.Paint = nil
+    local prev = k.Button(right, "<", function() set(list[(idx() - 2) % #list + 1][1]) end, { small = true })
     prev:Dock(LEFT)
-    prev:SetWide(k.S(34))
-    local nextB = k.Button(row.right, ">", function() set(list[idx() % #list + 1][1]) end, { small = true })
+    prev:SetWide(s(34))
+    local nextB = k.Button(right, ">", function() set(list[idx() % #list + 1][1]) end, { small = true })
     nextB:Dock(RIGHT)
-    nextB:SetWide(k.S(34))
-    local name = vgui.Create("DPanel", row.right)
+    nextB:SetWide(s(34))
+    local name = vgui.Create("DButton", right)
+    name:SetText("")
     name:Dock(FILL)
+    name:DockMargin(s(4), 0, s(4), 0)
+    name:SetTooltip("Pick from the list")
     function name:Paint(w, h)
-        draw.SimpleText(list[idx()][2], k.Font(14, 700), w * 0.5, h * 0.5, k.C.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        k.SetCol(C.bg)
+        surface.DrawRect(0, 0, w, h)
+        k.SetCol(self:IsHovered() and C.accent or C.edgeDark)
+        surface.DrawOutlinedRect(0, 0, w, h)
+        local o = list[idx()]
+        local f = k.Font(14, 700)
+        local label = k.Fit(o[2], f, w - s(swatch and 36 or 12))
+        if swatch then
+            surface.SetFont(f)
+            local tw = surface.GetTextSize(label)
+            local sz = s(12)
+            local x = math.floor((w - tw - sz - s(8)) * 0.5)
+            local sc = HAIR_SWATCH[o[1]]
+            if sc then
+                surface.SetDrawColor(sc.r, sc.g, sc.b, 255)
+                surface.DrawRect(x, math.floor((h - sz) * 0.5), sz, sz)
+                k.SetCol(C.edgeLight)
+                surface.DrawOutlinedRect(x, math.floor((h - sz) * 0.5), sz, sz)
+            elseif R.Draw and R.Draw.Dashed then
+                R.Draw.Dashed(x, math.floor((h - sz) * 0.5), sz, sz, C.tick)
+            end
+            draw.SimpleText(label, f, x + sz + s(8), h * 0.5, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        else
+            draw.SimpleText(label, f, w * 0.5, h * 0.5, C.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
+        return true
+    end
+    function name:DoClick()
+        surface.PlaySound("ui/buttonclick.wav")
+        local m = (R.Draw and R.Draw.Menu) and R.Draw.Menu() or k.Menu()
+        for _, o in ipairs(list) do m:AddOption(o[2], function() set(o[1]) end) end
+        m:Open()
     end
     return row
 end
@@ -205,7 +304,7 @@ function R.LookControls(parent, look)
     for _, r in ipairs(rows) do
         local row = R.LookStepper(parent, r[1], r[2], function() return look[r[3]] end, function(v) look[r[3]] = v end)
         row:Dock(TOP)
-        row:DockMargin(0, 0, 0, k.S(6))
+        row:DockMargin(0, 0, 0, k.S(4))
     end
 end
 
@@ -219,6 +318,21 @@ function R.WriteLook(look)
     net.WriteUInt(look.skin or 0, 4)
 end
 
+local function myLook()
+    local me = LocalPlayer()
+    return { hair = me:GetNW2String("rhylib_hair", "hair_reg"), fhair = me:GetNW2String("rhylib_fhair", ""),
+        hcol = me:GetNW2Int("rhylib_haircol", 0), skin = me:GetNW2Int("rhylib_skin", 0) }
+end
+
+-- The dim note under the rows.
+local function helmetNote(parent)
+    local k = K()
+    local l = k.Label(parent, "Hair and facial hair are hidden while you wear a helmet.", 12, 400, k.C.textDim)
+    l:Dock(TOP)
+    l:DockMargin(0, k.S(6), 0, 0)
+    return l
+end
+
 -- R.OpenLook(): the "Your looks" window (also console rhylib_look and /look).
 local lookWin
 function R.OpenLook()
@@ -226,41 +340,50 @@ function R.OpenLook()
     if not k then return end
     if IsValid(lookWin) then lookWin:Remove() end
     local s = k.S
-    local me = LocalPlayer()
-    local look = { hair = me:GetNW2String("rhylib_hair", "hair_reg"), fhair = me:GetNW2String("rhylib_fhair", ""),
-        hcol = me:GetNW2Int("rhylib_haircol", 0), skin = me:GetNW2Int("rhylib_skin", 0) }
+    local UI = Rhylib.UI
+    local look = myLook()
     local f = vgui.Create("EditablePanel")
     lookWin = f
-    Rhylib.Menus.prompts[f] = true
-    f.OnRemove = function(self) Rhylib.Menus.prompts[self] = nil end
-    f:SetSize(s(640), s(380))
+    UI.prompts[f] = true
+    f.OnRemove = function(self) UI.prompts[self] = nil end
+    f:SetSize(math.min(ScrW() - s(40), s(860)), math.min(ScrH() - s(40), s(540)))
     f:Center()
     f:MakePopup()
-    f:DockPadding(s(14), s(48), s(14), s(14))
+    local headH = s(36)
+    f:DockPadding(s(16), headH + s(16), s(16), s(16))
     function f:Paint(w, h)
-        k.Plate(0, 0, w, h, { title = "Your looks", sub = "Shown with the helmet off", ticks = "all", header = s(36) })
+        k.Plate(0, 0, w, h, { title = "Your looks", sub = R.FullName and R.FullName(LocalPlayer()) or nil, ticks = "all", header = headH })
     end
-    local prev = R.LookPreview(f, function() return look end)
+    local prev = R.LookStage(f, function() return look end, "Helmet off")
     prev:Dock(LEFT)
-    prev:SetWide(s(230))
-    prev:DockMargin(0, 0, s(12), 0)
-    R.LookControls(f, look)
-    local save = k.Button(f, "Save", function()
+    prev:SetWide(math.floor(f:GetWide() * 0.4))
+    prev:DockMargin(0, 0, s(18), 0)
+    local bar = vgui.Create("DPanel", f)
+    bar:Dock(BOTTOM)
+    bar:SetTall(s(38))
+    bar.Paint = nil
+    local save = k.Button(bar, "Save", function()
         Rhylib.Net.Start("roster.look")
         R.WriteLook(look)
         net.SendToServer()
         f:Remove()
     end, { accent = true })
-    save:Dock(BOTTOM)
-    save:SetTall(s(36))
-    local close = k.Button(f, "Cancel", function() f:Remove() end)
-    close:Dock(BOTTOM)
-    close:DockMargin(0, 0, 0, s(6))
+    save:Dock(RIGHT)
+    save:SetWide(s(150))
+    local close = k.Button(bar, "Cancel", function() f:Remove() end)
+    close:Dock(RIGHT)
+    close:SetWide(s(120))
+    close:DockMargin(0, 0, s(8), 0)
+    local h = k.Heading(f, "Looks")
+    h:Dock(TOP)
+    h:DockMargin(0, 0, 0, s(8))
+    R.LookControls(f, look)
+    helmetNote(f)
 end
 
 concommand.Add("rhylib_look", function() R.OpenLook() end)
 
--- The same as a pause menu page: Character > Appearance.
+-- The same as a pause menu page: Trooper > Appearance.
 local function addLookPage()
     local Menus = Rhylib.Menus
     if not (Menus and Menus.AddPage and K()) then return end
@@ -272,24 +395,28 @@ local function addLookPage()
         build = function(page)
             local k = K()
             local s = k.S
-            local me = LocalPlayer()
             Menus.pages.looks.sub = "Shown with the helmet off"
-            local look = { hair = me:GetNW2String("rhylib_hair", "hair_reg"), fhair = me:GetNW2String("rhylib_fhair", ""),
-                hcol = me:GetNW2Int("rhylib_haircol", 0), skin = me:GetNW2Int("rhylib_skin", 0) }
-            local prev = R.LookPreview(page, function() return look end)
+            local look = myLook()
+            -- (the page is 980 px wide at most; on 4:3 much less)
+            local pw = page:GetWide() - s(32)
+            local prev = R.LookStage(page, function() return look end, R.FullName and R.FullName(LocalPlayer()) or nil)
             prev:Dock(LEFT)
-            prev:SetWide(s(300))
-            prev:DockMargin(0, 0, s(16), 0)
+            prev:SetWide(math.max(s(220), math.min(s(380), math.floor(pw * 0.42))))
+            prev:DockMargin(0, 0, s(18), 0)
+            local h = k.Heading(page, "Looks")
+            h:Dock(TOP)
+            h:DockMargin(0, 0, 0, s(8))
             R.LookControls(page, look)
             local save = k.Button(page, "Save", function()
                 Rhylib.Net.Start("roster.look")
                 R.WriteLook(look)
                 net.SendToServer()
-                notification.AddLegacy("Looks saved", NOTIFY_GENERIC, 2)
+                Rhylib.Notify(nil, "Looks saved", "good", "Roster")
             end, { accent = true })
             save:Dock(TOP)
-            save:SetTall(s(36))
+            save:SetTall(s(38))
             save:DockMargin(0, s(10), 0, 0)
+            helmetNote(page)
         end,
     })
 end

@@ -43,15 +43,19 @@ local UI = Rhylib.UI
 
 -- (Q.win: the open window { frame, npc, body, data, busy, popup }; kept on refresh)
 
-local C_WIN, C_SIDE, C_CARD, C_INSET = Color(14, 16, 15), Color(18, 20, 19), Color(22, 25, 23), Color(14, 16, 15)
-local C_TILE, C_EDGE, C_BLACK = Color(26, 30, 27), Color(42, 45, 41), Color(0, 0, 0)
-local C_TEXT, C_DIM, C_LABEL, C_OFF = Color(228, 227, 220), Color(169, 168, 160), Color(138, 140, 132), Color(111, 116, 109)
-local C_BLUE, C_AMBER, C_RED, C_GREEN, C_PURPLE = Color(133, 183, 235), Color(239, 159, 39), Color(226, 75, 74), Color(151, 196, 89), Color(164, 110, 224)
-local C_PURPLE_BG, C_DARK, C_DIS_BG = Color(29, 20, 40), Color(20, 20, 19), Color(35, 38, 42)
-local C_DANGER_EDGE, C_DANGER_TXT = Color(90, 42, 42), Color(240, 149, 149)
-local C_BAN_BG, C_BAN_EDGE, C_BAN_ICON = Color(36, 19, 19), Color(107, 42, 42), Color(240, 128, 110)
-local C_BAN_TITLE, C_BAN_TEXT, C_CHIP_BG = Color(246, 194, 184), Color(224, 176, 166), Color(22, 11, 11)
-local C_EMPTY_ICON, C_OVERLAY, C_HOVER = Color(58, 64, 59), Color(7, 8, 7, 215), Color(255, 255, 255, 22)
+-- Colours: theme tokens (Rhylib.UI.Col), read when drawing.
+local KC = UI.Kit.C
+local Col = UI.Col
+local C_WIN, C_SIDE, C_CARD, C_INSET = Col("armoury.win", 14, 16, 15), Col("armoury.side", 18, 20, 19), Col("armoury.card", 22, 25, 23), Col("armoury.inset", 14, 16, 15)
+local C_TILE, C_EDGE, C_BLACK = Col("armoury.tile", 26, 30, 27), Col("armoury.edge", 42, 45, 41), Col("armoury.outline", 0, 0, 0)
+local C_TEXT, C_DIM, C_LABEL, C_OFF = KC.text, KC.textDim, Col("armoury.label", 138, 140, 132), Col("armoury.off", 111, 116, 109)
+local C_BLUE, C_AMBER, C_RED, C_GREEN, C_PURPLE = KC.accent, KC.warn, KC.bad, KC.good, Col("armoury.qm", 164, 110, 224)
+local C_GRENADE = Col("inv.kindGrenade", 164, 110, 224)
+local C_PURPLE_BG, C_DARK, C_DIS_BG = Col("armoury.qmBg", 29, 20, 40), Col("armoury.onLight", 20, 20, 19), Col("armoury.disabledBg", 35, 38, 42)
+local C_DANGER_EDGE, C_DANGER_TXT = Col("armoury.dangerEdge", 90, 42, 42), Col("armoury.dangerText", 240, 149, 149)
+local C_BAN_BG, C_BAN_EDGE, C_BAN_ICON = Col("armoury.banBg", 36, 19, 19), Col("armoury.banEdge", 107, 42, 42), Col("armoury.banIcon", 240, 128, 110)
+local C_BAN_TITLE, C_BAN_TEXT, C_CHIP_BG = Col("armoury.banTitle", 246, 194, 184), Col("armoury.banText", 224, 176, 166), Col("armoury.banChipBg", 22, 11, 11)
+local C_EMPTY_ICON, C_OVERLAY, C_HOVER = Col("armoury.emptyIcon", 58, 64, 59), Col("armoury.overlay", 7, 8, 7, 215), Col("armoury.hover", 255, 255, 255, 22)
 
 local ICONS = {
     qm_crate = { { 3, 7, 12, 3, 21, 7, 21, 17, 12, 21, 3, 17, closed = true }, { 3, 7, 12, 11, 21, 7 }, { 12, 11, 12, 21 } },
@@ -81,7 +85,7 @@ end
 local function kindCol(def)
     if not def then return C_LABEL end
     local It = Rhylib.Items
-    if It and It.GroupOf and It.GroupOf(def) == "grenade" then return C_PURPLE end
+    if It and It.GroupOf and It.GroupOf(def) == "grenade" then return C_GRENADE end
     local Inv = Rhylib.Inventory
     local cc = Inv and Inv.CATEGORY_COLORS and (Inv.CATEGORY_COLORS[def.category] or Inv.CATEGORY_COLORS.misc)
     return cc and cc.stripe or C_LABEL
@@ -856,7 +860,7 @@ end
 -- time and duration the server sent once
 --------------------------------------------------------------------------
 
-local C_BAR_BG = Color(11, 12, 11)
+local C_BAR_BG = Col("armoury.barBg", 11, 12, 11)
 
 local function closeHand()
     local w = Q.win
@@ -1058,3 +1062,9 @@ Q.UIH = {
         TEXT = C_TEXT, DIM = C_DIM, LABEL = C_LABEL, OFF = C_OFF, BLUE = C_BLUE, AMBER = C_AMBER, RED = C_RED,
         GREEN = C_GREEN, PURPLE = C_PURPLE, HOVER = C_HOVER },
 }
+
+-- A theme switch may change the font: build the open window's content again.
+Rhylib.Hook.Add("Rhylib.ThemeChanged", "armoury.qm", function()
+    local w = Q.win
+    if w and IsValid(w.frame) and w.data and IsValid(w.left) and IsValid(w.right) then fill(w) end
+end)

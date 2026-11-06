@@ -192,8 +192,14 @@ Rhylib.Hook.Add("PostDrawTranslucentRenderables", "logistics.ghost", function(de
     end
 end)
 
--- The HUD while a build tool is out.
-local WHITE, DIM, BLUE, AMBER, RED, SHADOW = Color(235, 238, 240), Color(170, 180, 186), Color(110, 190, 255), Color(255, 200, 100), Color(255, 90, 80), Color(0, 0, 0, 180)
+-- The HUD while a build tool is out: outlined lines (theme text colours)
+-- and the aimed structure's bar on a small kit plate (blue: hologram
+-- progress, the hologram's colour; health white / amber / red).
+local UIC = Rhylib.UI.Col
+local KC = Rhylib.UI.Kit.C
+local WHITE, DIM, AMBER, RED = KC.text, KC.textDim, KC.warn, KC.bad
+local SHADOW = UIC("logi.hudShadow", 0, 0, 0, 180)
+local BLUE = UIC("logi.holo", 110, 190, 255)
 
 function L.DrawBuildHUD(tool)
     local me = LocalPlayer()
@@ -233,11 +239,14 @@ function L.DrawBuildHUD(tool)
         col = BLUE
         text = name .. "  ·  " .. math.floor(frac * 100) .. "% built  ·  hold LMB"
     end
-    surface.SetDrawColor(0, 0, 0, 170)
-    surface.DrawRect(bx - 1, by - 1, w + 2, h + 2)
+    local K = Rhylib.UI.Kit
+    local pad = 3
+    K.Plate(bx - pad, by - pad, w + pad * 2, h + pad * 2, { alpha = 220 })
+    K.SetCol(K.C.row)
+    surface.DrawRect(bx, by, w, h)
     surface.SetDrawColor(col.r, col.g, col.b, 230)
     surface.DrawRect(bx, by, w * math.Clamp(frac, 0, 1), h)
-    draw.SimpleTextOutlined(text, fs, x, by - 12, WHITE, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, SHADOW)
+    draw.SimpleTextOutlined(text, fs, x, by - 14, WHITE, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, SHADOW)
 end
 
 -- Console rhylib_tool_tune: line up the E-tool / repair tool in your hands

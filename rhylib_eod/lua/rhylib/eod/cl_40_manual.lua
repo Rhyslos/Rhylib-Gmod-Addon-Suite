@@ -12,22 +12,14 @@
     the game.
 ]]
 
--- Colours used while drawing (made once, not every frame).
-local COL_110_150_255 = Color(110, 150, 255)
-local COL_14_16_15 = Color(14, 16, 15)
-local COL_170_120_235 = Color(170, 120, 235)
-local COL_200_200_205 = Color(200, 200, 205)
-local COL_220_60_60 = Color(220, 60, 60)
-local COL_235_90_80 = Color(235, 90, 80)
-local COL_240_140_50 = Color(240, 140, 50)
-local COL_245_200_60 = Color(245, 200, 60)
-local COL_245_217_10 = Color(245, 217, 10)
-local COL_30_34_32 = Color(30, 34, 32)
-local COL_60_210_220 = Color(60, 210, 220)
-local COL_60_60_66 = Color(60, 60, 66)
-local COL_70_190_120 = Color(70, 190, 120)
-local COL_80_160_255 = Color(80, 160, 255)
-local COL_90_170_255 = Color(90, 170, 255)
+-- Colours used while drawing (made once, not every frame). The page's own
+-- colours are theme tokens (Rhylib.UI.Col); the probe chips and the chip /
+-- switch pictures show the bomb's own colours and stay literal.
+local Col = Rhylib.UI.Col
+local COL_BADGE_TEXT = Col("eod.manBadgeText", 14, 16, 15)
+local COL_RANK_OFF = Col("eod.manRankOff", 60, 60, 66)
+local COL_SWITCH = Color(30, 34, 32)
+local COL_REPUBLIC = Color(80, 160, 255)
 
 local E = Rhylib.EOD
 
@@ -38,17 +30,17 @@ end
 
 -- Section colours.
 local COL = {
-    start = COL_90_170_255,
-    order = COL_70_190_120,
-    tools = COL_200_200_205,
-    probe = COL_245_200_60,
-    guard = COL_235_90_80,
-    mods = COL_170_120_235,
-    chip = COL_60_210_220,
-    device = COL_110_150_255,
-    mines = COL_240_140_50,
-    train = COL_245_217_10,
-    boom = COL_220_60_60,
+    start = Col("eod.manStart", 90, 170, 255),
+    order = Col("eod.manOrder", 70, 190, 120),
+    tools = Col("eod.manTools", 200, 200, 205),
+    probe = Col("eod.manProbe", 245, 200, 60),
+    guard = Col("eod.manGuard", 235, 90, 80),
+    mods = Col("eod.manMods", 170, 120, 235),
+    chip = Col("eod.manChip", 60, 210, 220),
+    device = Col("eod.manDevice", 110, 150, 255),
+    mines = Col("eod.manMines", 240, 140, 50),
+    train = Col("eod.manTrain", 245, 217, 10),
+    boom = Col("eod.manBoom", 220, 60, 60),
 }
 
 local RED, AMBER, GREEN = Color(229, 72, 77), Color(245, 170, 40), Color(70, 190, 100)
@@ -91,10 +83,12 @@ local function build(content, k)
         surface.SetFont(font)
         return (surface.GetTextSize(text)) + s(12)
     end
+    local chipBg = Color(0, 0, 0)
     local function drawChip(text, col, x, y, h, font)
         font = font or k.Font(12, 800)
         local w = chipW(text, font)
-        draw.RoundedBox(s(3), x, y, w, h, Color(col.r * 0.25, col.g * 0.25, col.b * 0.25, 255))
+        chipBg.r, chipBg.g, chipBg.b, chipBg.a = col.r * 0.25, col.g * 0.25, col.b * 0.25, 255
+        draw.RoundedBox(s(3), x, y, w, h, chipBg)
         surface.SetDrawColor(col.r, col.g, col.b, 200)
         surface.DrawOutlinedRect(x, y, w, h, 1)
         draw.SimpleText(text, font, x + w / 2, y + h / 2, col, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
@@ -182,7 +176,7 @@ local function build(content, k)
             left = function(w, h)
                 local r = s(11)
                 draw.RoundedBox(r, s(12), s(17) - r, r * 2, r * 2, col)
-                draw.SimpleText(tostring(n), k.Font(13, 800), s(12) + r, s(17), COL_14_16_15, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                draw.SimpleText(tostring(n), k.Font(13, 800), s(12) + r, s(17), COL_BADGE_TEXT, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
             end,
         })
     end
@@ -346,7 +340,7 @@ local function build(content, k)
             draw.SimpleText(rk, k.Font(12, 700), x, s(15), C.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
             x = x - tw - s(8)
             for i = 3, 1, -1 do
-                local c = i <= m.rank and COL.mods or COL_60_60_66
+                local c = i <= m.rank and COL.mods or COL_RANK_OFF
                 draw.RoundedBox(s(2), x - s(8), s(11), s(8), s(8), c)
                 x = x - s(11)
             end
@@ -393,7 +387,7 @@ local function build(content, k)
             for j = 1, #c[2] do
                 local on = string.sub(c[2], j, j) == "1"
                 local swx = sx + (j - 1) * s(26)
-                draw.RoundedBox(s(3), swx, cy + s(6), s(18), s(32), COL_30_34_32)
+                draw.RoundedBox(s(3), swx, cy + s(6), s(18), s(32), COL_SWITCH)
                 draw.RoundedBox(s(2), swx + s(3), on and cy + s(9) or cy + s(23), s(12), s(12), on and COL.chip or GREY)
             end
             if cw > s(300) then draw.SimpleText(c[2], k.Font(13, 700), cx + cw - s(10), cy + ch / 2, C.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER) end
@@ -432,7 +426,7 @@ local function build(content, k)
     row({ leftW = s(110), text = "Grenades and other blasts set mines off from a distance, and so does shooting one you can see. Mines close together set each other off.", strip = COL.mines,
         left = function(w, h) drawChip("CLEARING", COL.mines, s(10), math.min(h / 2, s(15)) - s(10), s(20)) end })
     row({ leftW = s(110), text = "Blue outline = one of ours (Republic mines skill). Only droids set them off and the blast only hurts droids: walk over them. Whoever planted one picks it up with E.", strip = COL.mines,
-        left = function(w, h) drawChip("REPUBLIC", COL_80_160_255, s(10), math.min(h / 2, s(15)) - s(10), s(20)) end })
+        left = function(w, h) drawChip("REPUBLIC", COL_REPUBLIC, s(10), math.min(h / 2, s(15)) - s(10), s(20)) end })
 
     -- 10. Training ---------------------------------------------------------------------
 
@@ -490,7 +484,7 @@ Rhylib.After("datapad", register)
 
 -- Learn page topics (rhylib_menus): the bomb manual (Bomb manual skill),
 -- mines and training bombs (everyone).
-local LEARN_RED, LEARN_ORANGE, LEARN_YELLOW = Color(226, 75, 74), Color(247, 107, 21), Color(245, 217, 10)
+local LEARN_RED, LEARN_ORANGE, LEARN_YELLOW = Col("eod.learnBomb", 226, 75, 74), Col("eod.learnMines", 247, 107, 21), Col("eod.learnTraining", 245, 217, 10)
 Rhylib.After("menus", function()
     local M = Rhylib.Menus
     if not (M and M.AddLearn) then return end

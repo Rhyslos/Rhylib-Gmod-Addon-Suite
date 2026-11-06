@@ -23,7 +23,7 @@
     The order of sections is the order they were first added.
 
     The Settings page (one page, "settings"): a search box, the groups on
-    the left (Menus.SETTING_GROUPS: HUD, Crosshair, Weapons, Camera &
+    the left (Menus.SETTING_GROUPS: Theme, HUD, Crosshair, Weapons, Camera &
     freelook, Radio, Audio, Weather, then other sections, Controls and
     Keyboard map) and the group's rows on the right. Menus.SettingGroup
     decides a row's group (st.group, else from its tab and id, else its
@@ -166,7 +166,7 @@ end
 
 -- Groups on the Settings page, in this order; sections that fit none of
 -- them get a group of their own (before Controls).
-Menus.SETTING_GROUPS = { "HUD", "Crosshair", "Weapons", "Camera & freelook", "Radio", "Audio", "Weather" }
+Menus.SETTING_GROUPS = { "Theme", "HUD", "Crosshair", "Weapons", "Camera & freelook", "Radio", "Audio", "Weather" }
 local TAB_GROUP = { ["Camera & motion"] = "Camera & freelook", Audio = "Audio", Controls = "Controls", Layout = "Keyboard map" }
 
 -- Menus.SettingGroup(section, st): the group a setting shows under:
@@ -512,3 +512,20 @@ Menus.AddSetting("Inventory", {
 -- convar exists, i.e. that addon is installed).
 Menus.AddSetting("HUD", { id = "hud.visor", order = 38, title = "Helmet visor",
     desc = "The clone helmet visor around the first-person HUD (rhylib_hud_visor)", kind = "toggle", convar = "rhylib_hud_visor" })
+
+-- Theme (Rhylib.UI themes, cl_11_theme.lua in core): one row listing the
+-- registered themes; picking one switches every window at once.
+local function themeOptions()
+    local out = {}
+    for _, t in ipairs(Rhylib.UI.Themes and Rhylib.UI.Themes() or {}) do out[#out + 1] = { t.id, t.label } end
+    return out
+end
+local function addThemeRow()
+    if not Rhylib.UI.Themes then return end
+    Menus.AddSetting("Theme", { id = "ui.theme", order = 10, group = "Theme",
+        title = "Theme", desc = "The look of every Rhy's window and menu (the HUD keeps its own look)",
+        kind = "choice", convar = "rhylib_theme", options = themeOptions(), wide = 520 })
+end
+addThemeRow()
+-- (themes registered by addons that load later show up once everything is in)
+Rhylib.Hook.Add("InitPostEntity", "menus.themeRow", addThemeRow)

@@ -23,9 +23,11 @@ local keyVar = CreateClientConVar("rhylib_call_key", "j", true, false, "Key that
 D.calls = D.calls or {}   -- [id] = { id, kind, caller, name, born, items, role, showPos, pos, resp = {names}, seen }
 local sent = {}           -- [kind] = RealTime of our last call
 
+-- (theme tokens, read when drawing)
 local KIND_COL = {
-    mp = Color(164, 110, 224), medic = Color(226, 75, 74), reinf = Color(133, 183, 235), supply = Color(151, 196, 89),
-    eod = Color(239, 159, 39),
+    mp = UI.Col("datapad.callMp", 164, 110, 224), medic = UI.Col("datapad.callMedic", 226, 75, 74),
+    reinf = UI.Col("datapad.callReinf", 133, 183, 235), supply = UI.Col("datapad.callSupply", 151, 196, 89),
+    eod = UI.Col("datapad.callEod", 239, 159, 39),
 }
 
 local function S(n) return math.floor(n * ScrH() / 1080 + 0.5) end
@@ -181,8 +183,9 @@ end)
 -- HUD
 --------------------------------------------------------------------------
 
-local COL_BG = Color(14, 16, 15, 235)
-local COL_EDGE = Color(0, 0, 0, 230)
+local COL_BG = UI.Col("datapad.callCardBg", 14, 16, 15, 235)
+local COL_EDGE = UI.Col("datapad.callEdge", 0, 0, 0, 230)
+local COL_MARK_SHADOW = UI.Col("datapad.markerShadow", 0, 0, 0, 200)
 
 local function card(x, y, w, h, col, title, lines)
     local HUD = Rhylib.HUD
@@ -216,7 +219,7 @@ local function drawMarker(c, eye)
     local col = colOf(c)
     local r = S(9)
     draw.NoTexture()
-    surface.SetDrawColor(0, 0, 0, 200)
+    surface.SetDrawColor(COL_MARK_SHADOW)
     surface.DrawPoly({ { x = x, y = y - r - 2 }, { x = x + r + 2, y = y }, { x = x, y = y + r + 2 }, { x = x - r - 2, y = y } })
     local pulse = 0.75 + 0.25 * math.sin(RealTime() * 5)
     surface.SetDrawColor(col.r, col.g, col.b, 255 * pulse)

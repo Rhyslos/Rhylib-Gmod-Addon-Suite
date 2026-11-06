@@ -37,7 +37,7 @@
 
     Client only. Adds: Menus.AddPage, Menus.AddGroup, Menus.pages,
     Menus.groups, Menus.SECTIONS, Menus.PAGE_ALIAS, Menus.OpenPause,
-    Menus.ClosePause, Menus.RefreshPause, Menus.PreviewHover, Menus.pause
+    Menus.ClosePause, Menus.RefreshPause (also on a theme switch), Menus.PreviewHover, Menus.pause
     (the open panel, a "RhylibPauseMenu"), Menus.lastPage, Menus.lastTab. Console command:
     rhylib_menu. Hook: OnPauseMenuShow "menus.pause" (decides what Esc does).
 ]]
@@ -526,6 +526,13 @@ function Menus.RefreshPause()
         Menus.pause:ShowPage(Menus.pause.pageId)
     end
 end
+
+-- A theme switch: build the open page again (pages cache fonts and labels
+-- when built; the side bar reads its colours when drawn). Next frame, so a
+-- switch made from the Settings page finishes its click first.
+Rhylib.Hook.Add("Rhylib.ThemeChanged", "menus.pause.theme", function()
+    timer.Simple(0, Menus.RefreshPause)
+end)
 
 Menus.RegisterCloser("pause", Menus.ClosePause)
 Menus.RegisterCloser("inventory", function()

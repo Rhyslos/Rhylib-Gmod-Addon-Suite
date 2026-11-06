@@ -557,7 +557,7 @@ end
 
 Rhylib.Net.Receive("dp.uprompt", function()
     local kind, bn, by = net.ReadUInt(2), net.ReadString(), net.ReadString()
-    local tag = Color(120, 200, 255)
+    local tag = Rhylib.UI.Col("datapad.chatTag", 120, 200, 255)
     if kind == 0 then
         chat.AddText(tag, "[" .. bn .. "] ", color_white, "Check your application status at the battalion computer.")
     elseif kind == 1 then

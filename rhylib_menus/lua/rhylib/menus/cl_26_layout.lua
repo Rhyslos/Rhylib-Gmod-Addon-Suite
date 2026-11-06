@@ -45,10 +45,12 @@ local SHORT = {
 }
 
 -- Section colours, handed out in order.
-local PALETTE = {
-    Color(90, 160, 235), Color(235, 150, 60), Color(110, 200, 120), Color(225, 90, 90), Color(180, 120, 230),
-    Color(80, 200, 200), Color(230, 200, 70), Color(235, 120, 180), Color(150, 170, 110), Color(160, 160, 175),
-}
+-- (theme tokens "layout.section1" .. "layout.section10")
+local PALETTE = {}
+for i, v in ipairs({
+    { 90, 160, 235 }, { 235, 150, 60 }, { 110, 200, 120 }, { 225, 90, 90 }, { 180, 120, 230 },
+    { 80, 200, 200 }, { 230, 200, 70 }, { 235, 120, 180 }, { 150, 170, 110 }, { 160, 160, 175 },
+}) do PALETTE[i] = Rhylib.UI.Col("layout.section" .. i, v[1], v[2], v[3]) end
 
 -- Friendly names for game binds (dim labels on keys Rhylib doesn't use).
 local GAME = {
@@ -391,7 +393,9 @@ local function build(page)
     end
 
     function board:Think()
-        if RealTime() > (L.nextRefresh or 0) then
+        -- (key colours are worked out per layout: redo them after a theme switch)
+        if RealTime() > (L.nextRefresh or 0) or L.stamp ~= (Rhylib.UI.themeStamp or 0) then
+            L.stamp = Rhylib.UI.themeStamp or 0
             refresh()
             self:InvalidateLayout(true)
         end

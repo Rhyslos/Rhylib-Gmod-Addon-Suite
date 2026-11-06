@@ -6,7 +6,7 @@
     Topics register themselves (client):
         Rhylib.Menus.AddLearn("medical", {
             title = "Medical: wounds & revives", group = "fighting", order = 20,
-            col = Color(226, 75, 74),          -- the diamond and header strip
+            col = Rhylib.UI.Col("x.medical", 226, 75, 74), -- diamond and header strip
             needs = "medical",                 -- module id(s): hidden without them
             visible = function() return true end,    -- optional
             lock = function() return "Needs ..." end, -- optional: listed with a
@@ -52,9 +52,10 @@ function Menus.AddLearn(id, t)
     Menus.learn[id] = t
 end
 
-local NOTE_BG, NOTE_EDGE, NOTE_TEXT = Color(36, 33, 15), Color(245, 217, 10), Color(240, 231, 180)
+local Col = Rhylib.UI.Col
+local NOTE_BG, NOTE_EDGE, NOTE_TEXT = Col("learn.noteBg", 36, 33, 15), Col("learn.noteEdge", 245, 217, 10), Col("learn.noteText", 240, 231, 180)
 local DIAMOND = { {}, {}, {}, {} }   -- (one vertex table, filled per row)
-local CLEAR, ROW_TEXT, BADGE_TEXT = Color(0, 0, 0, 0), Color(201, 200, 192), Color(20, 20, 19)
+local CLEAR, ROW_TEXT, BADGE_TEXT = Col("learn.topicRow", 0, 0, 0, 0), Col("learn.topicText", 201, 200, 192), Col("learn.badgeText", 20, 20, 19)
 
 local function txt(v) if isfunction(v) then local ok, r = pcall(v) return ok and tostring(r or "") or "" end return v or "" end
 
@@ -320,7 +321,9 @@ concommand.Add("rhylib_learn", function(_, _, args) Menus.OpenLearn(args[1]) end
 -- General topics
 --------------------------------------------------------------------------
 
-local BLUE, AMBER, RED, GREEN, PURPLE, CYAN = Color(133, 183, 235), Color(239, 159, 39), Color(226, 75, 74), Color(151, 196, 89), Color(164, 110, 224), Color(60, 210, 220)
+-- Topic colours (theme tokens).
+local BLUE, AMBER, RED = Col("learn.basics", 133, 183, 235), Col("learn.weapons", 239, 159, 39), Col("learn.medical", 226, 75, 74)
+local GREEN, PURPLE, CYAN = Col("learn.radio", 151, 196, 89), Col("learn.base", 164, 110, 224), Col("learn.class", 60, 210, 220)
 
 Menus.AddLearn("start", { title = "Getting started", group = "basics", order = 10, col = BLUE,
     sub = "Your first minutes on the server",

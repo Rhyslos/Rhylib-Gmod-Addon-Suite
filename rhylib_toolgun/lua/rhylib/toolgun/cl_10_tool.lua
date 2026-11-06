@@ -28,9 +28,32 @@
     Droid spawner") and its Entities tile picks it for the toolgun; on all
     three, right-click > Change spawner settings (menus hook
     Rhylib.SpawnTabItems).
+    Look: the Rhy's tab's placing controls are one plate under the tiles,
+    a row each with a caps caption (New droids: the five modes in their
+    colours; Aggression 1-5; Alertness, Unaware in blue; Droids at once,
+    Beacon name, Re-save). The HUD lines under and over the crosshair sit
+    on small dark plates with a coloured left edge. Colours are theme
+    tokens "toolgun.*" (cl_11_theme.lua).
 ]]
 
 local Tool = Rhylib.Tool
+local UI = Rhylib.UI
+
+-- Theme tokens (cl_11_theme.lua). COL: the toolgun's hint yellow (HUD
+-- line, aim ring, chat prefix). MODE_COLS: placing modes (PLACES AS, the
+-- New droids buttons, droid labels).
+local COL = UI.Col("toolgun.hint", 255, 210, 80)
+local COL_UNAWARE = UI.Col("toolgun.unaware", 133, 183, 235)
+local COL_PERMA = UI.Col("toolgun.perma", 255, 150, 40)
+local COL_AIM = UI.Col("toolgun.aim", 110, 200, 255)
+local PICKED = UI.Col("toolgun.picked", 255, 255, 120)
+local MODE_COL = {
+    guard = UI.Col("toolgun.modeGuard", 110, 170, 255), patrol = UI.Col("toolgun.modePatrol", 120, 230, 140),
+    attack = UI.Col("toolgun.modeAttack", 255, 100, 80), roam = UI.Col("toolgun.modeRoam", 200, 140, 255),
+    assault = UI.Col("toolgun.modeAssault", 255, 60, 40), follow = UI.Col("toolgun.modeFollow", 240, 220, 120),
+    retreat = UI.Col("toolgun.modeRetreat", 255, 170, 60), laststand = UI.Col("toolgun.modeLastStand", 255, 60, 60),
+}
+local MODE_COLS = { MODE_COL.guard, MODE_COL.patrol, MODE_COL.attack, MODE_COL.roam, MODE_COL.assault }
 
 local cvEntry = CreateClientConVar("rhylib_tool_entry", "b1", true, false, "Toolgun: chosen entry id")
 local cvCount = CreateClientConVar("rhylib_tool_count", "1", true, false, "Toolgun: how many droids at once (1-5)")
@@ -145,36 +168,130 @@ local function buildTab(body)
     local M = Rhylib.Menus
     local K, SP = M.Kit, M.Spawn
     local S = K.S
+    local C = K.C
 
-    local bottom = vgui.Create("DPanel", body)
-    bottom:Dock(BOTTOM)
-    bottom:SetTall(S(40))
-    bottom:DockMargin(0, S(8), 0, 0)
-    function bottom:Paint(w, h)
-        surface.SetDrawColor(K.C.row)
+    -- The placing controls: one plate at the bottom, a row each
+    -- (caps caption on the left, buttons sharing the width).
+    local ctl = vgui.Create("DPanel", body)
+    ctl:Dock(BOTTOM)
+    ctl:DockMargin(0, S(8), 0, 0)
+    ctl:DockPadding(1, S(2), 1, S(2))
+    function ctl:Paint(w, h)
+        K.SetCol(C.header)
         surface.DrawRect(0, 0, w, h)
-        surface.SetDrawColor(K.C.edgeDark)
+        K.SetCol(C.edgeDark)
         surface.DrawOutlinedRect(0, 0, w, h)
+        K.SetCol(C.edgeLight)
+        surface.DrawLine(1, 1, w - 1, 1)
+        K.Ticks(0, 0, w, h)
     end
-    bottom:DockPadding(S(8), S(4), S(8), S(4))
-    local lbl = K.Label(bottom, "Droids at once", 13, 700, K.C.textDim)
-    lbl:Dock(LEFT)
-    lbl:SetWide(S(110))
-    lbl:SetAutoStretchVertical(false)
-    lbl:SetContentAlignment(4)
-    for _, n in ipairs({ 1, 3, 5 }) do
-        local b = K.Button(bottom, tostring(n), function() RunConsoleCommand("rhylib_tool_count", tostring(n)) end,
-            { small = true, selected = function() return cvCount:GetInt() == n end })
-        b:Dock(LEFT)
-        b:SetWide(S(42))
-        b:DockMargin(0, S(2), S(6), S(2))
+    local rows = 0
+    local function ctlRow(caption, sub)
+        rows = rows + 1
+        local first = rows == 1
+        local cap = string.upper(caption)
+        local r = vgui.Create("DPanel", ctl)
+        r:Dock(TOP)
+        r:SetTall(S(40))
+        r:DockPadding(S(176), S(6), S(10), S(6))
+        function r:Paint(w, h)
+            if not first then
+                K.SetCol(C.edgeDark)
+                surface.DrawRect(S(8), 0, w - S(16), 1)
+            end
+            draw.SimpleText(cap, K.Font(12, 700), S(14), sub and h * 0.36 or h * 0.5, C.label, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            if sub then draw.SimpleText(K.Fit(sub, K.Font(11), S(156)), K.Font(11), S(14), h * 0.70, C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER) end
+        end
+        return r
     end
-    local lbl2 = K.Label(bottom, "Beacon name", 13, 700, K.C.textDim)
-    lbl2:Dock(LEFT)
-    lbl2:SetWide(S(110))
-    lbl2:DockMargin(S(18), 0, 0, 0)
-    lbl2:SetAutoStretchVertical(false)
-    lbl2:SetContentAlignment(4)
+    -- Buttons sharing a panel's width evenly; list = { { text, fn, opts }, ... }.
+    local function seg(parent, list, dock, wide)
+        local p = vgui.Create("DPanel", parent)
+        p.Paint = nil
+        p:Dock(dock or FILL)
+        if wide then p:SetWide(wide) end
+        for _, b in ipairs(list) do
+            local o = b[3] or {}
+            o.small = true
+            K.Button(p, b[1], b[2], o)
+        end
+        function p:PerformLayout(w, h)
+            local kids = self:GetChildren()
+            local gap = S(5)
+            local bw = (w - gap * (#kids - 1)) / math.max(1, #kids)
+            for i, c in ipairs(kids) do
+                c:SetPos(math.floor((i - 1) * (bw + gap)), math.floor((h - c:GetTall()) * 0.5))
+                c:SetWide(math.floor(bw))
+            end
+        end
+        return p
+    end
+    -- A caps caption inside a row (left of a control).
+    local function capLabel(parent, text, wide)
+        local caps = string.upper(text)
+        local l = vgui.Create("DPanel", parent)
+        l:Dock(LEFT)
+        l:SetWide(wide)
+        function l:Paint(w, h) draw.SimpleText(caps, K.Font(12, 700), w - S(10), h * 0.5, C.label, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER) end
+        return l
+    end
+
+    -- (only with rhylib_droids: its buttons send droid messages)
+    if Rhylib.Droids and Tool.FullAccess(LocalPlayer()) then
+        -- The mode placed droids get.
+        local list = {}
+        for i, m in ipairs({ "Guard", "Patrol", "Attack", "Roam", "Assault" }) do
+            list[i] = { m, function() RunConsoleCommand("rhylib_tool_droidmode", tostring(i)) end,
+                { col = MODE_COLS[i], selected = function() return cvMode:GetInt() == i end,
+                  tooltip = i == 4 and "Placed NPCs roam the map in twos (spread out)"
+                      or i == 5 and "Placed NPCs attack the assault point (Command mode: Assault here), only them"
+                      or "Mode of the droids you place (markers you placed earlier still win)" } }
+        end
+        seg(ctlRow("New droids", "Places as · Shift + wheel"), list)
+
+        -- The live aggression of every droid.
+        local AGGRO = (Rhylib.Droids and Rhylib.Droids.AGGRO_NAMES) or { "Retreat", "Fall back", "Moderate", "March", "Charge" }
+        list = {}
+        for i = 1, 5 do
+            list[i] = { i .. " " .. AGGRO[i], function()
+                Rhylib.Net.Start("droids.aggro")
+                net.WriteUInt(i, 3)
+                net.SendToServer()
+            end, { selected = function() return GetGlobal2Int("rhylib_droidAggro", 3) == i end,
+                   tooltip = "Every droid at once, live: 1 retreats (gets away, last stand if cornered), 2 falls back to the fallback marker / its post ... 5 charges" } }
+        end
+        seg(ctlRow("Aggression", "Every droid, live"), list)
+
+        -- The alertness placed droids get (stealth).
+        local TIPS = { [0] = "The server's default (Server settings > Droids & clones > Stealth)",
+            "Alert: sees you at once, all round (as always; for battles)",
+            "Unaware: stealth. Has to notice you first; suspicious before it fights; radios before help comes" }
+        list = {}
+        for i = 0, 2 do
+            list[i + 1] = { i == 2 and "Unaware (stealth)" or ALERT_NAMES[i], function() RunConsoleCommand("rhylib_tool_alertness", tostring(i)) end,
+                { col = i == 2 and COL_UNAWARE or nil, selected = function() return cvAlert:GetInt() == i end, tooltip = TIPS[i] } }
+        end
+        local r3 = ctlRow("Alertness", "Droids you place · Shift + Alt + wheel")
+        seg(r3, list, LEFT, S(420))
+        local note = vgui.Create("DPanel", r3)
+        note:Dock(FILL)
+        note:DockMargin(S(12), 0, 0, 0)
+        local NOTE = "Droids only (clones always see you). Command mode's order wheel changes placed ones."
+        function note:Paint(w, h)
+            local f = K.Font(12, 500)
+            draw.SimpleText(K.Fit(NOTE, f, w), f, 0, h * 0.5, C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        end
+    end
+
+    -- Count, beacon name, re-save.
+    local bottom = ctlRow("Droids at once", "Entries with a count")
+    local counts = {}
+    for i, n in ipairs({ 1, 3, 5 }) do
+        counts[i] = { tostring(n), function() RunConsoleCommand("rhylib_tool_count", tostring(n)) end,
+            { selected = function() return cvCount:GetInt() == n end } }
+    end
+    seg(bottom, counts, LEFT, S(156))
+    capLabel(bottom, "Beacon name", S(130))
     local te = K.TextEntry(bottom, "e.g. Range, Killhouse A")
     te:Dock(LEFT)
     te:SetWide(S(240))
@@ -183,82 +300,11 @@ local function buildTab(body)
     local save = K.Button(bottom, "Re-save permanent things", function()
         Rhylib.Net.Start("tool.save")
         net.SendToServer()
-    end, { tooltip = "Placing doesn't save anything: use the Permanent tool (Staff tools). This saves every permanent thing again where it stands now." })
+    end, { small = true, tooltip = "Placing doesn't save anything: use the Permanent tool (Staff tools). This saves every permanent thing again where it stands now." })
     save:Dock(RIGHT)
-    save:SetWide(S(220))
+    save:SetWide(S(230))
     if not Tool.FullAccess(LocalPlayer()) then save:SetVisible(false) end
-
-    -- (only with rhylib_droids: its buttons send droid messages)
-    if Rhylib.Droids and Tool.FullAccess(LocalPlayer()) then
-        -- Second row: the mode placed droids get, and the live aggression.
-        local row2 = vgui.Create("DPanel", body)
-        row2:Dock(BOTTOM)
-        row2:SetTall(S(40))
-        row2:DockMargin(0, S(8), 0, 0)
-        row2.Paint = bottom.Paint
-        row2:DockPadding(S(8), S(4), S(8), S(4))
-        local lm = K.Label(row2, "New droids", 13, 700, K.C.textDim)
-        lm:Dock(LEFT)
-        lm:SetWide(S(110))
-        lm:SetAutoStretchVertical(false)
-        lm:SetContentAlignment(4)
-        for i, m in ipairs({ "Guard", "Patrol", "Attack", "Roam", "Assault" }) do
-            local b = K.Button(row2, m, function() RunConsoleCommand("rhylib_tool_droidmode", tostring(i)) end,
-                { small = true, selected = function() return cvMode:GetInt() == i end,
-                  tooltip = i == 4 and "Placed NPCs roam the map in twos (spread out)"
-                      or i == 5 and "Placed NPCs attack the assault point (Command mode: Assault here), only them"
-                      or "Mode of the droids you place (markers you placed earlier still win)" })
-            b:Dock(LEFT)
-            b:SetWide(S(66))
-            b:DockMargin(0, S(2), S(6), S(2))
-        end
-        local la = K.Label(row2, "Aggression", 13, 700, K.C.textDim)
-        la:Dock(LEFT)
-        la:SetWide(S(100))
-        la:DockMargin(S(18), 0, 0, 0)
-        la:SetAutoStretchVertical(false)
-        la:SetContentAlignment(4)
-        local AGGRO = (Rhylib.Droids and Rhylib.Droids.AGGRO_NAMES) or { "Retreat", "Fall back", "Moderate", "March", "Charge" }
-        for i = 1, 5 do
-            local b = K.Button(row2, i .. " " .. AGGRO[i], function()
-                Rhylib.Net.Start("droids.aggro")
-                net.WriteUInt(i, 3)
-                net.SendToServer()
-            end, { small = true, selected = function() return GetGlobal2Int("rhylib_droidAggro", 3) == i end,
-                   tooltip = "Every droid at once, live: 1 retreats (gets away, last stand if cornered), 2 falls back to the fallback marker / its post ... 5 charges" })
-            b:Dock(LEFT)
-            b:SetWide(S(90))
-            b:DockMargin(0, S(2), S(6), S(2))
-        end
-
-        -- Third row: the alertness placed droids get (stealth).
-        local row3 = vgui.Create("DPanel", body)
-        row3:Dock(BOTTOM)
-        row3:SetTall(S(40))
-        row3:DockMargin(0, S(8), 0, 0)
-        row3.Paint = bottom.Paint
-        row3:DockPadding(S(8), S(4), S(8), S(4))
-        local lt = K.Label(row3, "Alertness", 13, 700, K.C.textDim)
-        lt:Dock(LEFT)
-        lt:SetWide(S(110))
-        lt:SetAutoStretchVertical(false)
-        lt:SetContentAlignment(4)
-        local TIPS = { [0] = "The server's default (Server settings > Droids & clones > Stealth)",
-            "Alert: sees you at once, all round (as always; for battles)",
-            "Unaware: stealth. Has to notice you first; suspicious before it fights; radios before help comes" }
-        for i = 0, 2 do
-            local b = K.Button(row3, i == 2 and "Unaware (stealth)" or ALERT_NAMES[i], function() RunConsoleCommand("rhylib_tool_alertness", tostring(i)) end,
-                { small = true, selected = function() return cvAlert:GetInt() == i end, tooltip = TIPS[i] })
-            b:Dock(LEFT)
-            b:SetWide(S(i == 2 and 140 or 80))
-            b:DockMargin(0, S(2), S(6), S(2))
-        end
-        local note = K.Label(row3, "Droids only (clones always see you). Command mode's order wheel changes placed ones.", 12, 500, K.C.textDim)
-        note:Dock(FILL)
-        note:DockMargin(S(12), 0, 0, 0)
-        note:SetAutoStretchVertical(false)
-        note:SetContentAlignment(4)
-    end
+    ctl:SetTall(rows * S(40) + S(4))
 
     local inner = vgui.Create("DPanel", body)
     inner:Dock(FILL)
@@ -305,9 +351,9 @@ local function pickForTool(spec)
     local tg = me:GetWeapon("rhylib_toolgun")
     if IsValid(tg) then
         if me:GetActiveWeapon() ~= tg then input.SelectWeapon(tg) end
-        chat.AddText(Color(255, 210, 80), "[Toolgun] ", color_white, "LMB spawns " .. (spec.label or spec.name) .. " where you aim.")
+        chat.AddText(COL, "[Toolgun] ", color_white, "LMB spawns " .. (spec.label or spec.name) .. " where you aim.")
     else
-        chat.AddText(Color(255, 210, 80), "[Toolgun] ", color_white, "Picked " .. (spec.label or spec.name) .. ". Get the toolgun with !toolgun to spawn it.")
+        chat.AddText(COL, "[Toolgun] ", color_white, "Picked " .. (spec.label or spec.name) .. ". Get the toolgun with !toolgun to spawn it.")
     end
 end
 
@@ -341,7 +387,7 @@ local function onR(code)
     local M = Rhylib.Menus
     local SP = M and M.Spawn
     if not SP then
-        chat.AddText(Color(255, 200, 80), "[Toolgun] needs rhylib_menus for the spawn window. rhylib_tool_entry <id> picks one.")
+        chat.AddText(COL, "[Toolgun] needs rhylib_menus for the spawn window. rhylib_tool_entry <id> picks one.")
         return
     end
     local now = RealTime()
@@ -449,13 +495,33 @@ function Tool.Click(wep, which)
     net.SendToServer()
 end
 
-local COL = Color(255, 210, 80)
-local COL_RED = Color(255, 90, 80)
-local COL_UNAWARE = Color(133, 183, 235)
+-- A HUD line on a small plate (the kit's dark plate, a coloured left
+-- edge): centred on cx, its top at y (its bottom when up). Returns its height.
+local function hudLine(text, font, cx, y, col, edge, up)
+    local K = UI.Kit
+    local C = K.C
+    surface.SetFont(font)
+    local tw, th = surface.GetTextSize(text)
+    local w, h = tw + K.S(22), th + K.S(6)
+    local x = math.floor(cx - w * 0.5)
+    if up then y = y - h end
+    K.SetCol(C.bg, 215)
+    surface.DrawRect(x, y, w, h)
+    K.SetCol(C.edgeDark)
+    surface.DrawOutlinedRect(x, y, w, h)
+    K.SetCol(C.edgeLight)
+    surface.DrawLine(x + 1, y + 1, x + w - 1, y + 1)
+    if edge then
+        K.SetCol(edge)
+        surface.DrawRect(x + 1, y + 1, K.S(3), h - 2)
+    end
+    draw.SimpleText(text, font, x + w * 0.5 + (edge and K.S(1) or 0), y + h * 0.5, col, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    return h
+end
 
 -- Tool.DrawHUD(wep): the text under the crosshair (SWEP:DrawHUD calls it).
 local MODE_NAMES = { "GUARD", "PATROL", "ATTACK", "ROAM", "ASSAULT" }
-local MODE_COLS = { Color(110, 170, 255), Color(120, 230, 140), Color(255, 100, 80), Color(200, 140, 255), Color(255, 60, 40) }
+local KEYS_PLACING = "Shift + wheel: mode  ·  Alt + wheel: aggression  ·  Shift + Alt + wheel: alertness"
 
 function Tool.DrawHUD(wep)
     if Tool.PhysOnLocal and Tool.PhysOnLocal() and Tool.DrawPhysHUD then return Tool.DrawPhysHUD() end
@@ -465,6 +531,9 @@ function Tool.DrawHUD(wep)
     local ply = LocalPlayer()
     local tr = ply:GetEyeTrace()
     if e.perma then return Tool.DrawPermaHUD() end
+    local C = UI.Kit.C
+    local S = UI.Kit.S
+    local cx = ScrW() * 0.5
     local text = e.order and e.name or ((e.custom and "Spawn: " or "Place: ") .. e.name)
     if e.count and cvCount:GetInt() > 1 then text = text .. " ×" .. cvCount:GetInt() end
     -- Droids and presets: what they'll do, big and coloured (Shift + wheel
@@ -473,27 +542,27 @@ function Tool.DrawHUD(wep)
         local m = math.Clamp(cvMode:GetInt(), 1, 5)
         local a = math.Clamp(cvAggro:GetInt(), 0, 5)
         local D = Rhylib.Droids
-        local yy = ScrH() * 0.5 - 70
-        draw.SimpleTextOutlined("PLACES AS: " .. MODE_NAMES[m], Rhylib.UI.Font(22, 800), ScrW() * 0.5, yy, MODE_COLS[m], TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 2, color_black)
+        local yy = ScrH() * 0.5 - S(66)
         local al = math.Clamp(cvAlert:GetInt(), 0, 2)
-        draw.SimpleTextOutlined("Squad aggression: " .. (a == 0 and "global" or (a .. " " .. (D.AGGRO_NAMES and D.AGGRO_NAMES[a] or ""))) .. "   ·   Alertness: " .. ALERT_NAMES[al]
-            .. "   ·   Shift + wheel: mode  ·  Alt + wheel: aggression  ·  Shift + Alt + wheel: alertness",
-            Rhylib.UI.Font(13, 600), ScrW() * 0.5, yy + 2, al == 2 and COL_UNAWARE or color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
+        local hk = hudLine(KEYS_PLACING, UI.Font(12, 500), cx, yy, C.textDim, nil, true)
+        local hs = hudLine("Squad aggression: " .. (a == 0 and "global" or (a .. " " .. (D.AGGRO_NAMES and D.AGGRO_NAMES[a] or ""))) .. "   ·   Alertness: " .. ALERT_NAMES[al],
+            UI.Font(13, 600), cx, yy - hk - S(2), al == 2 and COL_UNAWARE or C.text, al == 2 and COL_UNAWARE or nil, true)
+        hudLine("PLACES AS: " .. MODE_NAMES[m], UI.Font(22, 800), cx, yy - hk - hs - S(4), MODE_COLS[m], MODE_COLS[m], true)
     end
+    if e.named then text = text .. "  \"" .. cvName:GetString() .. "\"" end
+    local y = ScrH() * 0.5 + S(40)
+    y = y + hudLine(text, UI.Font(16, 700), cx, y, COL, COL) + S(3)
+    local ent = tr.Entity
+    if IsValid(ent) and not ent:IsPlayer() and (ent.IsRhylibDroid or ent.IsRhylibClone or Tool.ByClass(ent:GetClass()) or ent:GetNW2Bool("rhylib_toolSpawned")) then
+        y = y + hudLine("RMB: remove " .. (ent.PrintName or ent:GetClass()), UI.Font(14, 700), cx, y, C.bad, C.bad) + S(3)
+    end
+    y = y + hudLine("R: spawn window  ·  hold R: peek  ·  R twice: old Q menu  ·  " .. string.upper(cvPhysKey:GetString()) .. ": physgun  ·  hold E: modes"
+        .. (Rhylib.Droids and ("  ·  " .. string.upper(GetConVarString("rhylib_tool_command_key") or "x") .. ": command mode") or ""), UI.Font(13), cx, y, C.textDim) + S(3)
     local D = Rhylib.Droids
     if D and D.AGGRO_NAMES then
         local a = D.Aggro()
-        draw.SimpleTextOutlined("Droid aggression " .. a .. ": " .. D.AGGRO_NAMES[a], Rhylib.UI.Font(13), ScrW() * 0.5, ScrH() * 0.5 + 102, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
+        hudLine("Droid aggression " .. a .. ": " .. D.AGGRO_NAMES[a], UI.Font(13), cx, math.max(y, ScrH() * 0.5 + S(102)), C.text)
     end
-    if e.named then text = text .. "  \"" .. cvName:GetString() .. "\"" end
-    local y = ScrH() * 0.5 + 40
-    draw.SimpleTextOutlined(text, Rhylib.UI.Font(16, 700), ScrW() * 0.5, y, COL, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
-    local ent = tr.Entity
-    if IsValid(ent) and not ent:IsPlayer() and (ent.IsRhylibDroid or ent.IsRhylibClone or Tool.ByClass(ent:GetClass()) or ent:GetNW2Bool("rhylib_toolSpawned")) then
-        draw.SimpleTextOutlined("RMB: remove " .. (ent.PrintName or ent:GetClass()), Rhylib.UI.Font(14, 700), ScrW() * 0.5, y + 22, COL_RED, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
-    end
-    draw.SimpleTextOutlined("R: spawn window  ·  hold R: peek  ·  R twice: old Q menu  ·  " .. string.upper(cvPhysKey:GetString()) .. ": physgun  ·  hold E: modes"
-        .. (Rhylib.Droids and ("  ·  " .. string.upper(GetConVarString("rhylib_tool_command_key") or "x") .. ": command mode") or ""), Rhylib.UI.Font(13), ScrW() * 0.5, y + 42, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
 end
 
 -- Shift + wheel: placing mode, Alt + wheel: new squads' aggression,
@@ -535,8 +604,6 @@ addPhysSetting()
 Rhylib.Hook.Add("InitPostEntity", "toolgun.physsetting", addPhysSetting)
 
 -- The Permanent tool: what you aim at and whether it's kept.
-local COL_PERMA = Color(255, 150, 40)
-local COL_AIM = Color(110, 200, 255)
 -- The aimed thing, worked out once a frame (HUD and outlines both ask).
 local aimFrame, aimEnt = -1, nil
 local function permaAimed(ply)
@@ -547,19 +614,21 @@ end
 
 function Tool.DrawPermaHUD()
     local ply = LocalPlayer()
-    local y = ScrH() * 0.5 + 40
-    draw.SimpleTextOutlined("Permanent tool", Rhylib.UI.Font(16, 700), ScrW() * 0.5, y, COL, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
+    local C = UI.Kit.C
+    local S = UI.Kit.S
+    local cx = ScrW() * 0.5
+    local y = ScrH() * 0.5 + S(40)
+    y = y + hudLine("Permanent tool", UI.Font(16, 700), cx, y, COL, COL) + S(3)
     local ent = permaAimed(ply)
     local P = Rhylib.Perma
     if IsValid(ent) then
         local name = ent.PrintName and ent.PrintName ~= "" and ent.PrintName or ent:GetClass()
         local kept = P and P.Is(ent)
-        draw.SimpleTextOutlined(name .. (kept and " · permanent" or " · not saved"), Rhylib.UI.Font(14, 700), ScrW() * 0.5, y + 22,
-            kept and COL_PERMA or COL_AIM, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
-        draw.SimpleTextOutlined(kept and "LMB: save where it is now  ·  RMB: stop keeping it" or "LMB: make it permanent",
-            Rhylib.UI.Font(13), ScrW() * 0.5, y + 42, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
+        local col = kept and COL_PERMA or COL_AIM
+        y = y + hudLine(name .. (kept and " · permanent" or " · not saved"), UI.Font(14, 700), cx, y, col, col) + S(3)
+        hudLine(kept and "LMB: save where it is now  ·  RMB: stop keeping it" or "LMB: make it permanent", UI.Font(13), cx, y, C.textDim)
     else
-        draw.SimpleTextOutlined("Aim at something: orange outline = permanent", Rhylib.UI.Font(13), ScrW() * 0.5, y + 22, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
+        hudLine("Aim at something: orange outline = permanent", UI.Font(13), cx, y, C.textDim)
     end
 end
 
@@ -599,6 +668,7 @@ end)
 
 -- Where it will go: a ring on the aimed surface.
 local RING = Material("effects/select_ring")
+local ringCol = Color(0, 0, 0)   -- (the brush area: COL at a lower alpha, set while drawing)
 Rhylib.Hook.Add("PostDrawTranslucentRenderables", "toolgun.aim", function(depth, sky)
     if depth or sky then return end
     local ply = LocalPlayer()
@@ -613,17 +683,15 @@ Rhylib.Hook.Add("PostDrawTranslucentRenderables", "toolgun.aim", function(depth,
     local D = Rhylib.Droids
     if e and (e.order or e.follow) and D then
         local r = D.Cfg("brushRadius") or 400
-        render.DrawQuadEasy(tr.HitPos + tr.HitNormal * 2, tr.HitNormal, r * 2, r * 2, ColorAlpha(COL, 90), 0)
+        ringCol.r, ringCol.g, ringCol.b, ringCol.a = COL.r, COL.g, COL.b, 90
+        render.DrawQuadEasy(tr.HitPos + tr.HitNormal * 2, tr.HitNormal, r * 2, r * 2, ringCol, 0)
     end
 end)
 
 -- With the toolgun out: each droid's mode over its head (staff only see
 -- this, since only they hold the toolgun).
-local MODE_COL = { guard = Color(110, 170, 255), patrol = Color(120, 230, 140), attack = Color(255, 100, 80), follow = Color(240, 220, 120), roam = Color(200, 140, 255),
-    retreat = Color(255, 170, 60), laststand = Color(255, 60, 60) }
 local MODE_LABEL = { laststand = "LAST STAND" }
 local SSTATE_LABEL = { "UNAWARE", "SUSPICIOUS", "SEARCHING", "ALARM" }
-local PICKED = Color(255, 255, 120)
 local droidList, droidListAt = {}, 0
 Rhylib.Hook.Add("HUDPaint", "toolgun.droidmodes", function()
     local ply = LocalPlayer()
@@ -639,6 +707,7 @@ Rhylib.Hook.Add("HUDPaint", "toolgun.droidmodes", function()
     end
     local eye = EyePos()
     local font = Rhylib.UI.Font(13, 700)
+    local C = UI.Kit.C
     for _, d in ipairs(droidList) do
         if IsValid(d) and d:GetPos():DistToSqr(eye) < 2000 * 2000 then
             local mode = d:GetNW2String("rhylib_dmode", "guard")
@@ -651,10 +720,10 @@ Rhylib.Hook.Add("HUDPaint", "toolgun.droidmodes", function()
                 if ag > 0 then label = label .. "  A" .. ag end
                 local ss = d:GetNW2Int("rhylib_sstate", 0)   -- (rhylib_droids stealth)
                 if ss > 0 and SSTATE_LABEL[ss] then label = label .. "  " .. SSTATE_LABEL[ss] end
-                draw.SimpleTextOutlined(label, font, sp.x, sp.y, MODE_COL[mode] or color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, color_black)
+                draw.SimpleTextOutlined(label, font, sp.x, sp.y, MODE_COL[mode] or C.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, C.edgeDark)
                 -- (picked with the follow tool)
                 if d:GetNW2Entity("rhylib_pickBy") == ply then
-                    draw.SimpleTextOutlined("PICKED", font, sp.x, sp.y - 14, PICKED, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, color_black)
+                    draw.SimpleTextOutlined("PICKED", font, sp.x, sp.y - 14, PICKED, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, C.edgeDark)
                 end
             end
         end

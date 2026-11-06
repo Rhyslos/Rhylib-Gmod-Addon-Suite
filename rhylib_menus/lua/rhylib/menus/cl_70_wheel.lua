@@ -50,6 +50,10 @@
 
     Menus.WheelProgress(text, secs) shows a short progress bar under the
     crosshair (for timed actions the server finishes, like cuffing).
+
+    Colours: the UI.Colors tokens plus theme tokens "wheel.deadzone",
+    "wheel.pick", "wheel.hint", "wheel.hintOutline", "wheel.progressBack",
+    "wheel.progressText".
 ]]
 
 local Menus = Rhylib.Menus
@@ -278,8 +282,13 @@ function W.PickOption(s)
     return best
 end
 
-local COL_DEAD = Color(0, 0, 0, 140)
-local COL_PICK = Color(60, 72, 88, 235)
+-- (theme tokens; the dark values are the wheel's look)
+local COL_DEAD = UI.Col("wheel.deadzone", 0, 0, 0, 140)
+local COL_PICK = UI.Col("wheel.pick", 60, 72, 88, 235)
+local COL_HINT = UI.Col("wheel.hint", 235, 235, 235, 200)
+local COL_HINT_EDGE = UI.Col("wheel.hintOutline", 0, 0, 0, 160)
+local COL_PROG_BACK = UI.Col("wheel.progressBack", 0, 0, 0, 180)
+local COL_PROG_TEXT = UI.Col("wheel.progressText", 255, 255, 255, 255)
 
 -- "Hold E · interact" under the crosshair (standing players only; downed
 -- bodies have medical's own prompt).
@@ -298,7 +307,7 @@ local function drawHint()
     if not hint.show or W.pending then return end
     local s = ScrH() / 1080
     draw.SimpleTextOutlined("Hold " .. hint.key .. " · interact", UI.Font(14, 600), ScrW() * 0.5, ScrH() * 0.5 + 46 * s,
-        Color(235, 235, 235, 200), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, Color(0, 0, 0, 160))
+        COL_HINT, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, COL_HINT_EDGE)
 end
 
 Rhylib.Hook.Add("HUDPaint", "menus.wheel", function()
@@ -358,7 +367,8 @@ Rhylib.Hook.Add("HUDPaint", "menus.wheel", function()
         end
         if o.col then
             -- (colour-coded option: a wider strip in its colour, faded when unavailable)
-            surface.SetDrawColor(o.disabled and ColorAlpha(o.col, 70) or o.col)
+            local oc = o.col
+            if o.disabled then surface.SetDrawColor(oc.r, oc.g, oc.b, 70) else surface.SetDrawColor(oc) end
             surface.DrawRect(bx + 1, by + 1, math.max(4, math.floor(6 * s)), h - 2)
         else
             surface.SetDrawColor(o.disabled and UI.Colors.bad or (isPick and UI.Colors.accent or UI.Colors.border))
@@ -398,9 +408,9 @@ Rhylib.Hook.Add("HUDPaint", "menus.wheel.progress", function()
     local f = math.Clamp((now - p.from) / (p.to - p.from), 0, 1)
     local w, h = 260 * s, 6 * s
     local x, y = (ScrW() - w) * 0.5, ScrH() * 0.56
-    surface.SetDrawColor(0, 0, 0, 180)
+    surface.SetDrawColor(COL_PROG_BACK)
     surface.DrawRect(x - 1, y - 1, w + 2, h + 2)
     surface.SetDrawColor(UI.Colors.accent)
     surface.DrawRect(x, y, w * f, h)
-    draw.SimpleText(string.upper(p.text), UI.Font(13, 700), ScrW() * 0.5, y - 12 * s, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    draw.SimpleText(string.upper(p.text), UI.Font(13, 700), ScrW() * 0.5, y - 12 * s, COL_PROG_TEXT, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 end)

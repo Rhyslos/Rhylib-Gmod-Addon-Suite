@@ -159,15 +159,18 @@ end
 -- Look shared by Jobs and Shop: colours and small drawing helpers
 --------------------------------------------------------------------------
 
+-- Theme tokens "f4.<key>"; the ones that are the kit's text / state
+-- colours use the kit tokens.
+local Col = Rhylib.UI.Col
 local T = {
-    inset = Color(14, 16, 15), side = Color(18, 20, 19), card = Color(22, 25, 23),
-    tile = Color(26, 30, 27), sel = Color(27, 37, 48), selEdge = Color(47, 58, 68),
-    edge = Color(42, 45, 41), faint = Color(31, 35, 32), black = Color(0, 0, 0),
-    text = Color(228, 227, 220), text2 = Color(201, 200, 192), dim = Color(169, 168, 160),
-    label = Color(138, 140, 132), off = Color(111, 116, 109),
-    blue = Color(133, 183, 235), amber = Color(239, 159, 39), red = Color(226, 75, 74), green = Color(151, 196, 89),
-    dark = Color(20, 20, 19), lockSub = Color(200, 176, 122), lockIcon = Color(58, 64, 59),
-    noteText = Color(232, 207, 154), badText = Color(240, 149, 149),
+    inset = Col("f4.inset", 14, 16, 15), side = Col("f4.side", 18, 20, 19), card = Col("f4.card", 22, 25, 23),
+    tile = Col("f4.tile", 26, 30, 27), sel = Col("f4.sel", 27, 37, 48), selEdge = Col("f4.selEdge", 47, 58, 68),
+    edge = Col("f4.edge", 42, 45, 41), faint = Col("f4.faint", 31, 35, 32), black = Col("f4.black", 0, 0, 0),
+    text = C.text, text2 = Col("f4.text2", 201, 200, 192), dim = C.textDim,
+    label = Col("f4.label", 138, 140, 132), off = Col("f4.off", 111, 116, 109),
+    blue = C.accent, amber = C.warn, red = C.bad, green = C.good,
+    dark = Col("f4.dark", 20, 20, 19), lockSub = Col("f4.lockSub", 200, 176, 122), lockIcon = Col("f4.lockIcon", 58, 64, 59),
+    noteText = Col("f4.noteText", 232, 207, 154), badText = Col("f4.badText", 240, 149, 149),
 }
 local GRAD_L, GRAD_R = Material("vgui/gradient-l"), Material("vgui/gradient-r")
 local INF = "∞"
@@ -250,8 +253,20 @@ local function textOn(col)
 end
 
 -- A colour a little of col mixed into the card colour (a picked row).
+-- Worked out again when drawn after a theme switch (mixNow).
+local function mixNow(c)
+    local stamp = Rhylib.UI.themeStamp or 0
+    if c.mixStamp ~= stamp then
+        c.mixStamp = stamp
+        local col, f, card = c.mixCol, c.mixF, T.card
+        c.r, c.g, c.b = card.r + (col.r - card.r) * f, card.g + (col.g - card.g) * f, card.b + (col.b - card.b) * f
+    end
+    return c
+end
 local function mix(col, f)
-    return Color(T.card.r + (col.r - T.card.r) * f, T.card.g + (col.g - T.card.g) * f, T.card.b + (col.b - T.card.b) * f)
+    local c = Color(0, 0, 0)
+    c.mixCol, c.mixF = col, f
+    return mixNow(c)
 end
 
 -- "Only jobs I can take" style check box. get() -> bool, set(bool).
@@ -380,7 +395,7 @@ end
 -- The common row look: fill, edges, the icon square. Returns the text x.
 local function paintRow(w, h, picked, mine, hovered, col, pickedBg)
     local s = K.S
-    K.SetCol(picked and pickedBg or (mine and T.sel or (hovered and T.tile or T.card)))
+    K.SetCol(picked and mixNow(pickedBg) or (mine and T.sel or (hovered and T.tile or T.card)))
     surface.DrawRect(0, 0, w, h)
     K.SetCol(picked and col or (mine and T.selEdge or T.faint))
     surface.DrawOutlinedRect(0, 0, w, h)

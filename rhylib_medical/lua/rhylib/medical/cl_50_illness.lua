@@ -9,7 +9,16 @@
     (rhylib_menus; test dummies get draw blood and give medicine standing
     up, through WheelEntityOptions), Rhylib.ItemMenu (rhylib_inventory
     right-click).
-    The windows need rhylib_menus' Kit; without it they don't open.
+    The windows use the UI kit (rhylib_core) and close on Esc (UI.prompts).
+    Look: plates with a red top edge (token "med.illness"). Analyser: your
+    samples as rows (state strip: grey not analysed, blue analysing with a
+    progress line, green analysed; Analyse right), a dashed box when you
+    carry none. Test strip: the assay readout (control and test channels,
+    flow and time bars, DEVELOPING / DEVELOPED chip), the colour key, next
+    steps. Dose: medicine buttons, a box with your sample's dose, units
+    (bar + typed box), Cancel / Give. Illness guide: numbered step cards
+    and the strip colour key, drawn with the kit colours read while
+    painting (so the datapad's screen colours and teal accent show).
 ]]
 
 local Med = Rhylib.Medical
@@ -18,6 +27,44 @@ local function K() return Rhylib.UI and Rhylib.UI.Kit end
 local function Inv() return Rhylib.Inventory end
 -- (item uid size; rhylib_inventory may be missing: the illness flow then does nothing)
 local function uidBits() return Rhylib.Items and Rhylib.Items.UID_BITS or 16 end
+
+local UI = Rhylib.UI
+-- Theme tokens (cl_11_theme.lua): the windows' red top edge and the test
+-- strip's empty channel track and unlit segments.
+local COL_MED = UI.Col("med.illness", 226, 75, 74)
+local COL_TRACK = UI.Col("med.stripTrack", 8, 9, 9, 255)
+local COL_OFF = UI.Col("med.stripOff", 30, 33, 31, 255)
+
+-- A dashed outline (empty slots), drawn in a Paint.
+local function dashed(Kit, x, y, w, h, col)
+    Kit.SetCol(col)
+    local dash, gap = Kit.S(6), Kit.S(4)
+    for i = x, x + w - 1, dash + gap do
+        local l = math.min(dash, x + w - i)
+        surface.DrawRect(i, y, l, 1)
+        surface.DrawRect(i, y + h - 1, l, 1)
+    end
+    for j = y, y + h - 1, dash + gap do
+        local l = math.min(dash, y + h - j)
+        surface.DrawRect(x, j, 1, l)
+        surface.DrawRect(x + w - 1, j, 1, l)
+    end
+end
+
+-- A small caps chip (text already upper case), left edge at x, centred on y.
+local function chip(Kit, text, x, y, col, right)
+    local f = Kit.Font(11, 700)
+    surface.SetFont(f)
+    local tw = surface.GetTextSize(text)
+    local w, h = tw + Kit.S(14), Kit.S(20)
+    if right then x = x - w end
+    Kit.SetCol(col, 40)
+    surface.DrawRect(x, y - h * 0.5, w, h)
+    Kit.SetCol(col, 170)
+    surface.DrawOutlinedRect(x, y - h * 0.5, w, h)
+    draw.SimpleText(text, f, x + w * 0.5, y, col, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    return w
+end
 
 local function carried(id)
     local I = Inv()
@@ -121,41 +168,94 @@ local function openAnalyser(ent)
     if not Kit then return end
     if IsValid(anWin) then anWin:Remove() end
     local S = Kit.S
+    local C = Kit.C
     local f = vgui.Create("EditablePanel")
     anWin = f
-    Rhylib.Menus.prompts[f] = true   -- (Esc closes it)
-    f.OnRemove = function(self) Rhylib.Menus.prompts[self] = nil end
-    f:SetSize(S(460), S(360))
+    UI.prompts[f] = true   -- (Esc closes it)
+    f.OnRemove = function(self) UI.prompts[self] = nil end
+    f:SetSize(math.min(ScrW() - S(40), S(580)), math.min(ScrH() - S(40), S(440)))
     f:Center()
     f:MakePopup()
     f:SetKeyboardInputEnabled(false)
-    f:DockPadding(S(12), S(48), S(12), S(12))
+    f:DockPadding(S(14), S(52), S(14), S(14))
+    f.count, f.done = 0, 0
     function f:Paint(w, h)
-        Kit.Plate(0, 0, w, h, { title = "Blood analyser", sub = "Chemistry bench", ticks = "all", header = S(34) })
+        Kit.Plate(0, 0, w, h, { title = "Blood analyser", ticks = "all", header = S(38), rule = COL_MED })
+        draw.SimpleText("Chemistry bench", Kit.Font(13), w - S(110), S(19), C.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+    end
+    local x = Kit.Button(f, "Close", function() f:Remove() end, { small = true })
+    x:SetSize(S(90), S(26))
+    x:SetPos(f:GetWide() - S(98), S(6))
+
+    local head = vgui.Create("DPanel", f)
+    head:Dock(TOP)
+    head:SetTall(S(30))
+    head:DockMargin(0, 0, 0, S(6))
+    function head:Paint(w, hh)
+        Kit.Caps("Your blood samples", 0, hh * 0.5)
+        draw.SimpleText(f.count .. " carried · " .. f.done .. " analysed", Kit.Font(13), w, hh * 0.5, C.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+        Kit.SetCol(C.edgeLight)
+        surface.DrawRect(0, hh - 1, w, 1)
     end
     local sc = Kit.Scroll(f)
     sc:Dock(FILL)
-    local shown
     local function fill()
         sc:Clear()
         local list = samples()
-        shown = #list
+        f.count, f.done = #list, 0
         if #list == 0 then
-            local l = Kit.Label(sc, "You carry no blood samples. Draw blood from a patient on a med sofa (interaction wheel).", 14, nil, Kit.C.textDim)
-            l:Dock(TOP)
+            local e = vgui.Create("DPanel", sc)
+            e:Dock(TOP)
+            e:SetTall(S(96))
+            e:DockMargin(0, S(4), S(10), 0)
+            function e:Paint(w, h)
+                dashed(Kit, 0, 0, w, h, C.tick)
+                draw.SimpleText("You carry no blood samples", Kit.Font(15, 700), w * 0.5, h * 0.4, C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                draw.SimpleText("Draw blood from a patient on a med sofa (interaction wheel).", Kit.Font(13), w * 0.5, h * 0.64, C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            end
         end
-        for _, o in ipairs(list) do
-            local row = Kit.Row(sc, (o.data and o.data.note) or "Blood sample")
-            row:Dock(TOP)
-            row:DockMargin(0, 0, S(6), S(4))
-            row.right:SetWide(S(110))
+        for i, o in ipairs(list) do
             local uid = o.uid
             local done = analysed(o)
+            if done then f.done = f.done + 1 end
+            local note = (o.data and o.data.note) or "Blood sample"
+            local alt = i % 2 == 0
             local function running()
                 local t = Med.scanning[uid]
                 return t and RealTime() < t + 1 and t or nil
             end
-            local b = Kit.Button(row.right, function()
+            local row = vgui.Create("DPanel", sc)
+            row:Dock(TOP)
+            row:SetTall(S(54))
+            row:DockMargin(0, 0, S(10), S(2))
+            row:DockPadding(0, S(12), S(10), S(12))
+            function row:Paint(w, h)
+                local t = running()
+                Kit.SetCol(self:IsHovered() and C.rowHover or (alt and C.rowAlt or C.row))
+                surface.DrawRect(0, 0, w, h)
+                Kit.SetCol(C.edgeDark)
+                surface.DrawOutlinedRect(0, 0, w, h)
+                local col = done and C.good or (t and C.accent or C.label)
+                Kit.SetCol(col)
+                surface.DrawRect(0, 0, S(3), h)
+                local tf = Kit.Font(14, 700)
+                draw.SimpleText(Kit.Fit(note, tf, w - S(160)), tf, S(14), h * 0.36, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                local state = done and "ANALYSED" or (t and "ANALYSING" or "NOT ANALYSED YET")
+                draw.SimpleText(state, Kit.Font(11, 700), S(14), h * 0.72, col, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                if t and not done then
+                    local dur = math.max(0.1, Med.Cfg("scanTime") * (chemist(LocalPlayer()) and 0.5 or 1))
+                    local frac = math.Clamp(1 - (t - RealTime()) / dur, 0, 1)
+                    Kit.SetCol(C.button)
+                    surface.DrawRect(S(3), h - S(4), w - S(4), S(3))
+                    Kit.SetCol(C.accent)
+                    surface.DrawRect(S(3), h - S(4), math.floor((w - S(4)) * frac), S(3))
+                end
+            end
+            local right = vgui.Create("DPanel", row)
+            right:Dock(RIGHT)
+            right:SetWide(S(120))
+            right.Paint = nil
+            local b = Kit.Button(right, function()
                 if done then return "Done" end
                 local t = running()
                 return t and (math.max(0, math.ceil(t - RealTime())) .. " s") or "Analyse"
@@ -255,7 +355,6 @@ end)
 -- lights on every test and a test channel that lights in the kind's colour.
 local casWin
 local SEGS = 16
-local COL_TRACK, COL_OFF = Color(8, 9, 9, 255), Color(30, 33, 31, 255)
 
 -- A segmented channel; a = 0-1 how lit, col its colour.
 local function channel(Kit, x, y, w, h, col, a)
@@ -291,16 +390,20 @@ local function openCassette(info)
     local C = Kit.C
     local f = vgui.Create("EditablePanel")
     casWin = f
-    Rhylib.Menus.prompts[f] = true
-    f.OnRemove = function(self) Rhylib.Menus.prompts[self] = nil end
-    f:SetSize(S(560), S(312))
+    UI.prompts[f] = true
+    f.OnRemove = function(self) UI.prompts[self] = nil end
+    f:SetSize(math.min(ScrW() - S(40), S(580)), S(330))
     f:Center()
     f:MakePopup()
     f:SetKeyboardInputEnabled(false)
     local got = RealTime()
     local k = Med.ILL[info.kind]
+    local x = Kit.Button(f, "Close", function() f:Remove() end, { small = true })
+    x:SetSize(S(90), S(26))
+    x:SetPos(f:GetWide() - S(98), S(6))
     function f:Paint(w, h)
-        local top = Kit.Plate(0, 0, w, h, { title = "Test strip", sub = info.who, ticks = "all", header = S(34) })
+        local top = Kit.Plate(0, 0, w, h, { title = "Test strip", ticks = "all", header = S(38), rule = COL_MED })
+        draw.SimpleText(Kit.Fit(info.who or "", Kit.Font(13), w * 0.4), Kit.Font(13), w - S(110), S(19), C.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
         local elapsed = info.elapsed + (RealTime() - got)
         local done = elapsed >= info.dev
 
@@ -312,11 +415,13 @@ local function openCassette(info)
         surface.DrawOutlinedRect(px, py, pw, ph)
         Kit.SetCol(C.edgeLight)
         surface.DrawLine(px + 1, py + 1, px + pw - 1, py + 1)
-        Kit.Caps("Assay", px + S(12), py + S(16), C.label)
-        draw.SimpleText(done and "DEVELOPED" or "DEVELOPING", Kit.Font(12, 700), px + pw - S(12), py + S(16),
-            done and C.text or C.accent, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+        Kit.SetCol(done and C.text or C.accent)
+        surface.DrawRect(px, py, S(3), ph)
+        Kit.Ticks(px, py, pw, ph)
+        Kit.Caps("Assay", px + S(14), py + S(16), C.label)
+        chip(Kit, done and "DEVELOPED" or "DEVELOPING", px + pw - S(10), py + S(16), done and C.text or C.accent, true)
 
-        local lx, tx, tw, th = px + S(12), px + S(92), pw - S(104), S(18)
+        local lx, tx, tw, th = px + S(14), px + S(92), pw - S(104), S(18)
         -- Control: lights after a few seconds on every test.
         local cA = math.Clamp((elapsed - 5) / 5, 0, 1)
         Kit.Caps("Control", lx, py + S(52), C.textDim)
@@ -365,8 +470,9 @@ local function openCassette(info)
         local ny = py + ph + S(16)
         Kit.SetCol(C.edgeLight)
         surface.DrawRect(px, ny, w - px * 2, 1)
-        draw.SimpleText("While it develops: write the patient's record on your datapad.", Kit.Font(13), px, ny + S(12), C.textDim)
-        draw.SimpleText("Then bring this strip and the sample to the analyser for the dose.", Kit.Font(13), px, ny + S(32), C.textDim)
+        Kit.Caps("Next", px, ny + S(20), C.label)
+        draw.SimpleText("While it develops: write the patient's record on your datapad.", Kit.Font(13), px + S(52), ny + S(12), C.textDim)
+        draw.SimpleText("Then bring this strip and the sample to the analyser for the dose.", Kit.Font(13), px + S(52), ny + S(32), C.textDim)
     end
 end
 
@@ -393,13 +499,14 @@ local function openDose(t)
     local Kit = K()
     if not Kit then return end
     local S = Kit.S
+    local C = Kit.C
     local f = vgui.Create("EditablePanel")
-    Rhylib.Menus.prompts[f] = true
-    f.OnRemove = function(self) Rhylib.Menus.prompts[self] = nil end
-    f:SetSize(S(420), S(250))
+    UI.prompts[f] = true
+    f.OnRemove = function(self) UI.prompts[self] = nil end
+    f:SetSize(math.min(ScrW() - S(40), S(500)), S(340))
     f:Center()
     f:MakePopup()
-    f:DockPadding(S(12), S(48), S(12), S(12))
+    f:DockPadding(S(14), S(52), S(14), S(14))
     local pick, units = nil, 1
     -- Your newest analysed sample from this patient fills in the dose; the
     -- medicine is your call (the strip's colour).
@@ -415,32 +522,78 @@ local function openDose(t)
         end
     end
     function f:Paint(w, h)
-        Kit.Plate(0, 0, w, h, { title = "Give medicine", sub = IsValid(t) and t:Nick() or nil, ticks = "all", header = S(34) })
+        Kit.Plate(0, 0, w, h, { title = "Give medicine", sub = who ~= "" and who or nil, ticks = "all", header = S(38), rule = COL_MED })
     end
     function f:Think()
         if not IsValid(t) or t:GetPos():DistToSqr(LocalPlayer():GetPos()) > 200 * 200 then self:Remove() end
     end
+    local function caps(text)
+        local p = vgui.Create("DPanel", f)
+        p:Dock(TOP)
+        p:SetTall(S(24))
+        function p:Paint(w, h) Kit.Caps(text, 0, h * 0.5) end
+        return p
+    end
+    caps("Medicine")
     local row = vgui.Create("DPanel", f)
     row:Dock(TOP)
     row:SetTall(S(34))
     row.Paint = nil
+    local nMed = 0
     for i, m in ipairs(Med.MEDICINES) do
         local have = carried(m[1])
         if have > 0 then
             pick = pick or i
-            local b = Kit.Button(row, m[2] .. " (" .. have .. ")", function() pick = i end, { small = true, selected = function() return pick == i end })
-            b:Dock(LEFT)
-            b:SetWide(S(128))
-            b:DockMargin(0, 0, S(6), 0)
+            nMed = nMed + 1
+            Kit.Button(row, m[2] .. " (" .. have .. ")", function() pick = i end, { small = true, selected = function() return pick == i end, tooltip = m[3] })
         end
     end
-    local lab = Kit.Label(f, info and ("From your sample: " .. info) or "Units: analyse a blood sample first to know the dose", 13, nil, Kit.C.textDim)
-    lab:Dock(TOP)
-    lab:DockMargin(0, S(12), 0, S(4))
-    local sl = Kit.Slider(f, 1, 40, 0, function() return units end, function(v) units = math.Clamp(math.floor(tonumber(v) or 1), 1, 40) end)
-    sl:Dock(TOP)
-    sl:SetTall(S(34))
-    local give = Kit.Button(f, "Give", function()
+    function row:PerformLayout(w, h)
+        local kids = self:GetChildren()
+        local gap = S(6)
+        local bw = (w - gap * (#kids - 1)) / math.max(1, #kids)
+        for i, b in ipairs(kids) do
+            b:SetPos(math.floor((i - 1) * (bw + gap)), 0)
+            b:SetSize(math.floor(bw), h)
+        end
+    end
+    if nMed == 0 then
+        function row:Paint(w, h)
+            dashed(Kit, 0, 0, w, h, C.tick)
+            draw.SimpleText("You carry no medicine", Kit.Font(13), w * 0.5, h * 0.5, C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
+    end
+    -- What your sample says (or that there's none)
+    local box = vgui.Create("DPanel", f)
+    box:Dock(TOP)
+    box:SetTall(S(54))
+    box:DockMargin(0, S(12), 0, S(10))
+    local boxText = info or "Units: analyse a blood sample first to know the dose"
+    function box:Paint(w, h)
+        Kit.SetCol(C.row)
+        surface.DrawRect(0, 0, w, h)
+        Kit.SetCol(C.edgeDark)
+        surface.DrawOutlinedRect(0, 0, w, h)
+        Kit.SetCol(info and C.good or C.warn)
+        surface.DrawRect(0, 0, S(3), h)
+        Kit.Caps(info and "From your sample" or "No analysed sample", S(14), h * 0.32, info and C.good or C.warn)
+        local bf = Kit.Font(13)
+        draw.SimpleText(Kit.Fit(boxText, bf, w - S(28)), bf, S(14), h * 0.68, info and C.text or C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    end
+    caps("Units")
+    local ur = vgui.Create("DPanel", f)
+    ur:Dock(TOP)
+    ur:SetTall(S(38))
+    ur.Paint = nil
+    local num = Kit.Number(ur, { min = 1, max = 40, unit = "units" }, function() return units end,
+        function(v) units = math.Clamp(math.floor(tonumber(v) or 1), 1, 40) end)
+    num:Dock(FILL)
+
+    local bar = vgui.Create("DPanel", f)
+    bar:Dock(BOTTOM)
+    bar:SetTall(S(34))
+    bar.Paint = nil
+    local give = Kit.Button(bar, function() return pick and ("Give " .. units .. " units") or "Give" end, function()
         if not (pick and IsValid(t)) then return end
         local m = Med.MEDICINES[pick]
         if carried(m[1]) < units then
@@ -454,9 +607,13 @@ local function openDose(t)
         net.SendToServer()
         progress("Giving " .. units .. " units of " .. m[2], Med.Cfg("doseTime"))
         f:Remove()
-    end, { accent = true })
-    give:Dock(BOTTOM)
-    give:SetTall(S(34))
+    end, { accent = true, enabled = function() return pick ~= nil end })
+    give:Dock(RIGHT)
+    give:SetWide(S(200))
+    local cancel = Kit.Button(bar, "Cancel", function() f:Remove() end)
+    cancel:Dock(RIGHT)
+    cancel:SetWide(S(110))
+    cancel:DockMargin(0, 0, S(8), 0)
 end
 
 --------------------------------------------------------------------------
@@ -531,6 +688,75 @@ local GUIDE = {
     { "Careful", "Too little and the illness keeps growing; too much is an overdose (blurred vision, lost health, twice over and they go down); the wrong medicine makes them sick. Samples and strips spoil after a while." },
 }
 
+-- Text cut into lines that fit w pixels (by words).
+local function wrapLines(text, font, w)
+    surface.SetFont(font)
+    local lines, cur = {}, ""
+    for word in string.gmatch(text, "%S+") do
+        local try = cur == "" and word or (cur .. " " .. word)
+        if cur ~= "" and surface.GetTextSize(try) > w then
+            lines[#lines + 1] = cur
+            cur = word
+        else
+            cur = try
+        end
+    end
+    if cur ~= "" then lines[#lines + 1] = cur end
+    return lines
+end
+
+-- One step card: a number badge ("!" for the warning), the title and the
+-- wrapped text. Colours are read from k.C while painting, so the datapad's
+-- teal screen colours (and its K.Tint accent) show on it.
+local function guideCard(k, parent, title, body, warn)
+    local s = k.S
+    local num, name = string.match(title, "^(%d+)%.%s*(.+)$")
+    local badge = num or "!"
+    name = string.upper(name or title)
+    local p = vgui.Create("DPanel", parent)
+    p:Dock(TOP)
+    p:DockMargin(0, 0, s(10), s(6))
+    p.lines = {}
+    function p:PerformLayout(w)
+        local font = k.Font(14)
+        self.font = font
+        self.lines = wrapLines(body, font, math.max(s(60), w - s(78)))
+        local _, lh = surface.GetTextSize("Ag")
+        self.lh = lh + s(2)
+        local want = s(40) + #self.lines * self.lh + s(10)
+        if self:GetTall() ~= want then self:SetTall(want) end
+    end
+    function p:Paint(w, h)
+        local C = k.C
+        if self.font ~= k.Font(14) then self:InvalidateLayout() end
+        local col = warn and C.warn or C.accent
+        k.SetCol(C.row)
+        surface.DrawRect(0, 0, w, h)
+        k.SetCol(C.edgeDark)
+        surface.DrawOutlinedRect(0, 0, w, h)
+        k.SetCol(C.edgeLight)
+        surface.DrawLine(1, 1, w - 1, 1)
+        k.SetCol(col)
+        surface.DrawRect(0, 0, s(3), h)
+        -- badge
+        local bs = s(32)
+        local bx, by = s(16), s(10)
+        k.SetCol(col, 34)
+        surface.DrawRect(bx, by, bs, bs)
+        k.SetCol(col, 200)
+        surface.DrawOutlinedRect(bx, by, bs, bs)
+        draw.SimpleText(badge, k.Font(16, 800), bx + bs * 0.5, by + bs * 0.5, col, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        local tx = s(64)
+        draw.SimpleText(name, k.Font(14, 700), tx, s(22), warn and C.warn or C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        local y = s(38)
+        for i = 1, #self.lines do
+            draw.SimpleText(self.lines[i], self.font, tx, y, C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+            y = y + self.lh
+        end
+    end
+    return p
+end
+
 local function addGuideTab()
     local D = Rhylib.Datapad
     if not (D and D.AddTab) then return end
@@ -544,16 +770,39 @@ local function addGuideTab()
             sp:Dock(FILL)
             local h = k.Heading(sp, "Treating an illness")
             h:Dock(TOP)
-            h:DockMargin(0, 0, s(8), s(6))
+            h:DockMargin(0, 0, s(10), s(4))
+            local intro = vgui.Create("DPanel", sp)
+            intro:Dock(TOP)
+            intro:SetTall(s(26))
+            intro:DockMargin(0, 0, s(10), s(6))
+            function intro:Paint(w, hh)
+                draw.SimpleText(k.Fit("From a sick patient to the right dose, in five steps.", k.Font(13), w), k.Font(13), 0, hh * 0.5, k.C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            end
             for _, g in ipairs(GUIDE) do
-                local t = k.Label(sp, g[1], 15, 700, k.C.text)
-                t:Dock(TOP)
-                t:DockMargin(0, s(4), s(8), s(2))
-                local l = k.Label(sp, g[2], 14, nil, k.C.textDim)
-                l:Dock(TOP)
-                l:SetWrap(true)
-                l:SetAutoStretchVertical(true)
-                l:DockMargin(0, 0, s(8), s(6))
+                guideCard(k, sp, g[1], g[2], not string.match(g[1], "^%d"))
+            end
+            -- The strip colour key (the same as on the test strip window)
+            local key = vgui.Create("DPanel", sp)
+            key:Dock(TOP)
+            key:SetTall(s(40) + #Med.ILL * s(22))
+            key:DockMargin(0, s(4), s(10), s(6))
+            function key:Paint(w, hh)
+                local C = k.C
+                k.SetCol(C.header)
+                surface.DrawRect(0, 0, w, hh)
+                k.SetCol(C.edgeDark)
+                surface.DrawOutlinedRect(0, 0, w, hh)
+                k.Ticks(0, 0, w, hh)
+                k.Caps("Test channel colour", s(16), s(18))
+                for i = 1, #Med.ILL do
+                    local kk = Med.ILL[i]
+                    local y = s(34) + (i - 1) * s(22)
+                    k.SetCol(kk.col)
+                    surface.DrawRect(s(16), y + s(3), s(12), s(12))
+                    k.SetCol(C.edgeDark)
+                    surface.DrawOutlinedRect(s(16), y + s(3), s(12), s(12))
+                    draw.SimpleText(kk.colour .. " · " .. kk.name, k.Font(13), s(36), y, C.textDim)
+                end
             end
         end,
     })

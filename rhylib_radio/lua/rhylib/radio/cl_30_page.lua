@@ -33,21 +33,41 @@ local MODE_TEXT = { [0] = "open", [1] = "password", [2] = "battalion" }
 
 local function K() return Rhylib.UI.Kit end
 
--- Board colours.
-local COL = {
-    inset = Color(14, 16, 15), side = Color(18, 20, 19), card = Color(22, 25, 23), tile = Color(26, 30, 27),
-    sel = Color(27, 37, 48), talkCard = Color(22, 28, 25),
-    edge = Color(42, 45, 41), edgeHover = Color(70, 75, 68), faint = Color(31, 35, 32), black = Color(0, 0, 0),
-    text = Color(228, 227, 220), dim = Color(169, 168, 160), label = Color(138, 140, 132), off = Color(111, 116, 109),
-    dark = Color(20, 20, 19),
-    blue = Color(133, 183, 235), amber = Color(239, 159, 39), red = Color(226, 75, 74), green = Color(151, 196, 89),
-    purple = Color(164, 110, 224),
-    dangerEdge = Color(90, 42, 42), dangerText = Color(240, 149, 149),
-    onBg = Color(20, 32, 23), onEdge = Color(45, 74, 42),
-    warnBg = Color(32, 26, 14), warnEdge = Color(107, 82, 32),
-    badBg = Color(34, 18, 18),
-    hailBg = Color(29, 26, 18), hailEdge = Color(107, 82, 32), hailDim = Color(200, 176, 122), hailText = Color(232, 207, 154),
-}
+-- Board colours: theme tokens "radio.<key>" (Rhylib.UI.Col), and the kit's
+-- own for text / accent / state; read when drawing.
+local COL = {}
+do
+    local KC = Rhylib.UI.Kit.C
+    COL.text, COL.dim, COL.blue, COL.amber, COL.red, COL.green = KC.text, KC.textDim, KC.accent, KC.warn, KC.bad, KC.good
+    local def = {
+        inset = { 14, 16, 15 },
+        side = { 18, 20, 19 },
+        card = { 22, 25, 23 },
+        tile = { 26, 30, 27 },
+        sel = { 27, 37, 48 },
+        talkCard = { 22, 28, 25 },
+        edge = { 42, 45, 41 },
+        edgeHover = { 70, 75, 68 },
+        faint = { 31, 35, 32 },
+        black = { 0, 0, 0 },
+        label = { 138, 140, 132 },
+        off = { 111, 116, 109 },
+        dark = { 20, 20, 19 },
+        purple = { 164, 110, 224 },
+        dangerEdge = { 90, 42, 42 },
+        dangerText = { 240, 149, 149 },
+        onBg = { 20, 32, 23 },
+        onEdge = { 45, 74, 42 },
+        warnBg = { 32, 26, 14 },
+        warnEdge = { 107, 82, 32 },
+        badBg = { 34, 18, 18 },
+        hailBg = { 29, 26, 18 },
+        hailEdge = { 107, 82, 32 },
+        hailDim = { 200, 176, 122 },
+        hailText = { 232, 207, 154 },
+    }
+    for key, v in pairs(def) do COL[key] = Rhylib.UI.Col("radio." .. key, v[1], v[2], v[3], v[4]) end
+end
 local MODE_COL = { [0] = COL.blue, [1] = COL.amber, [2] = COL.purple }
 
 local DIA = { { x = 0, y = 0 }, { x = 0, y = 0 }, { x = 0, y = 0 }, { x = 0, y = 0 } }
@@ -85,7 +105,7 @@ local function btn(parent, text, fn, o)
     b:SetTall(S(o.h or 34))
     b.label, b.o = text, o
     if o.tooltip then b:SetTooltip(o.tooltip) end
-    local fontN, fontB = Kit.Font(13, 500), Kit.Font(13, 700)
+    local fontB = Kit.Font(13, 700)
     if o.wide then
         b:SetWide(o.wide)
     elseif not o.dots then
@@ -128,7 +148,7 @@ local function btn(parent, text, fn, o)
             local d = math.max(2, S(3))
             for i = -1, 1 do surface.SetDrawColor(tc.r, tc.g, tc.b, 255) surface.DrawRect(w * 0.5 + i * d * 2 - d * 0.5, h * 0.5 - d * 0.5, d, d) end
         else
-            draw.SimpleText(pick(self.label), (lit or kind == "primary") and fontB or fontN, w * 0.5, h * 0.5, tc, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            draw.SimpleText(pick(self.label), Kit.Font(13, (lit or kind == "primary") and 700 or 500), w * 0.5, h * 0.5, tc, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         end
         return true
     end

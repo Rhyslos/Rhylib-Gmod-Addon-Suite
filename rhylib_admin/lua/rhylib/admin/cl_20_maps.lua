@@ -151,8 +151,7 @@ function Admin.MapPicker(done)
         end
         if shown == 0 then
             local l = grid:Add("DLabel")
-            l:SetFont(K.Font(14))
-            l:SetTextColor(C.textDim)
+            K.ThemedText(l, C.textDim, 14)
             l:SetText(#maps == 0 and "Loading maps..." or "No map matches \"" .. q .. "\"")
             l:SizeToContents()
         end

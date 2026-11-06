@@ -44,37 +44,40 @@ local UI = Rhylib.UI
 
 local keyVar = CreateClientConVar("rhylib_medical_key", "h", true, false, "Key that opens the injury menu")
 
-local COL_PAGE = Color(11, 12, 11)
-local COL_BG = Color(14, 16, 15, 250)
-local COL_SIDE = Color(18, 20, 19)
-local COL_CARD = Color(22, 25, 23)
-local COL_SEL = Color(27, 37, 48)
-local COL_EDGE = Color(0, 0, 0, 255)
-local COL_BORDER = Color(42, 45, 41)
-local COL_TEXT = Color(228, 227, 220)
-local COL_DIM = Color(169, 168, 160)
-local COL_SOFT = Color(214, 213, 206)
-local COL_LABEL = Color(138, 140, 132)
-local COL_BLUE = Color(133, 183, 235)
-local COL_RED = Color(226, 75, 74)
-local COL_RED_TEXT = Color(240, 149, 149)
-local COL_AMBER = Color(239, 159, 39)
-local COL_GREY_BAR = Color(201, 200, 192)
-local COL_FINE = Color(226, 228, 222)
-local COL_HURT = Color(214, 48, 40)
-local COL_OUTLINE = Color(0, 0, 0, 220)
-local COL_BURN = Color(232, 132, 48)
+-- Colours: theme tokens, read when drawing (damage states too).
+local C = UI.Kit.C
+local Col = UI.Col
+local COL_PAGE = Col("med.page", 11, 12, 11)
+local COL_BG = Col("med.bg", 14, 16, 15, 250)
+local COL_SIDE = Col("med.side", 18, 20, 19)
+local COL_CARD = Col("med.card", 22, 25, 23)
+local COL_SEL = Col("med.select", 27, 37, 48)
+local COL_EDGE = Col("med.edge", 0, 0, 0, 255)
+local COL_BORDER = Col("med.border", 42, 45, 41)
+local COL_TEXT = C.text
+local COL_DIM = C.textDim
+local COL_SOFT = Col("med.soft", 214, 213, 206)
+local COL_LABEL = Col("med.label", 138, 140, 132)
+local COL_BLUE = C.accent
+local COL_RED = C.bad
+local COL_RED_TEXT = Col("med.badText", 240, 149, 149)
+local COL_AMBER = C.warn
+local COL_GREY_BAR = Col("med.barLight", 201, 200, 192)
+local COL_FINE = Col("med.partFine", 226, 228, 222)
+local COL_HURT = Col("med.partHurt", 214, 48, 40)
+local COL_OUTLINE = Col("med.partOutline", 0, 0, 0, 220)
+local COL_BURN = Col("med.burn", 232, 132, 48)
 local COL_DROP = COL_BLUE
-local COL_ICON_BG = Color(42, 18, 20)
-local COL_HINT_BG = Color(29, 26, 18)
-local COL_HINT_EDGE = Color(74, 60, 28)
-local COL_HINT_TEXT = Color(232, 207, 154)
+local COL_ICON_BG = Col("med.kitOnBg", 42, 18, 20)
+local COL_HINT_BG = Col("med.hintBg", 29, 26, 18)
+local COL_HINT_EDGE = Col("med.hintEdge", 74, 60, 28)
+local COL_HINT_TEXT = Col("med.hintText", 232, 207, 154)
 
 local TAGS = {
-    { key = "bleed2", text = "HEAVY BLEEDING", col = Color(226, 60, 50) },
-    { key = "bleed1", text = "BLEEDING", col = Color(240, 128, 110) },
-    { key = "limp", text = "LIMPING", col = Color(239, 199, 89) },
-    { key = "frac", text = "FRACTURE", col = Color(239, 199, 89) },
+    { key = "bleed2", text = "HEAVY BLEEDING", col = Col("med.bleedHeavy", 226, 60, 50) },
+    { key = "bleed1", text = "BLEEDING", col = Col("med.bleed", 240, 128, 110) },
+    { key = "limp", text = "LIMPING", col = Col("med.limp", 239, 199, 89) },
+    { key = "frac", text = "FRACTURE", col = Col("med.fracture", 239, 199, 89) },
     { key = "burn", text = "BURNS", col = COL_BURN },
 }
 
@@ -129,9 +132,9 @@ end
 
 -- Illness by stage (cl_50_illness.lua Med.IllSigns), drawn on the head.
 local ILL_TAGS = {
-    { key = "ill1", text = "UNWELL", col = Color(170, 200, 120) },
-    { key = "ill2", text = "ILL", col = Color(190, 210, 90) },
-    { key = "ill3", text = "SEVERELY ILL", col = Color(214, 225, 60) },
+    { key = "ill1", text = "UNWELL", col = Col("med.ill1", 170, 200, 120) },
+    { key = "ill2", text = "ILL", col = Col("med.ill2", 190, 210, 90) },
+    { key = "ill3", text = "SEVERELY ILL", col = Col("med.ill3", 214, 225, 60) },
 }
 
 -- Cuts a reused array down to n entries.

@@ -15,13 +15,13 @@
 local Admin = Rhylib.Admin
 local UI = Rhylib.UI
 
-local GOLD = Color(230, 170, 70)
-local TEXT = Color(228, 227, 220)
-local DIM = Color(169, 168, 160)
-local WARN = Color(239, 159, 39)
-local BG = Color(14, 16, 15, 235)
-local EDGE = Color(0, 0, 0, 230)
-local HI = Color(170, 176, 180, 70)
+-- The banner (drawn over the menus too): theme tokens "calls.<what>".
+local GOLD = UI.Col("calls.gold", 230, 170, 70)
+local TEXT = UI.Col("calls.text", 228, 227, 220)
+local DIM = UI.Col("calls.dim", 169, 168, 160)
+local BG = UI.Col("calls.bg", 14, 16, 15, 235)
+local EDGE = UI.Col("calls.edge", 0, 0, 0, 230)
+local HI = UI.Col("calls.hi", 170, 176, 180, 70)
 
 local BANNER_TIME = 8
 local UP_TIME = 4
@@ -177,7 +177,11 @@ local function fit(text, font, maxW)
     return text .. "…"
 end
 
--- Same look as the HUD's visor tiles (rhylib_hud cl_42_layouts.lua).
+-- Same look as the HUD's visor tiles (rhylib_hud cl_42_layouts.lua): HUD
+-- drawing, so plain colours (not theme tokens) like the HUD.
+local HUD_GOLD = Color(230, 170, 70)
+local HUD_TEXT = Color(228, 227, 220)
+local WARN = Color(239, 159, 39)
 local COL_PLATE = Color(28, 32, 31, 236)
 local COL_EDGE = Color(0, 0, 0, 215)
 local COL_HI2 = Color(200, 206, 210, 50)
@@ -185,7 +189,7 @@ local COL_LABEL = Color(165, 168, 160)
 local COL_TRACK = Color(255, 255, 255, 30)
 
 local function timeColor(c)
-    if c.left > 60 then return TEXT end
+    if c.left > 60 then return HUD_TEXT end
     -- Last minute: amber, pulsing.
     local p = 0.6 + 0.4 * math.abs(math.sin(RealTime() * 3))
     col.r, col.g, col.b, col.a = WARN.r, WARN.g, WARN.b, 255 * p
@@ -194,7 +198,7 @@ end
 
 local function lineColor(c)
     if c.left <= 60 then return WARN end
-    return GOLD
+    return HUD_GOLD
 end
 
 

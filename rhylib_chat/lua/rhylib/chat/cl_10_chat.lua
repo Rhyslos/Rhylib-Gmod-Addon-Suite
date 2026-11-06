@@ -70,29 +70,45 @@ end
 local MAX_LINES = 150              -- history kept; the oldest line goes first
 local SHOW_TIME = 12               -- seconds a message stays when the chat is closed
 
--- Same look as the HUD's corner plates.
-local COL_BG = Color(14, 16, 15, 238)
-local COL_HEADER = Color(22, 25, 23, 255)
-local COL_EDGE_DARK = Color(0, 0, 0, 230)
-local COL_EDGE_LIGHT = Color(170, 176, 180, 70)
-local COL_TICK = Color(170, 176, 180, 150)
-local COL_INPUT = Color(8, 9, 8, 255)
-local COL_INPUT_EDGE = Color(58, 62, 58, 255)
-local COL_TEXT = Color(228, 227, 220)
-local COL_DIM = Color(140, 142, 136)
-local COL_SYSTEM = Color(170, 176, 180)
-local COL_ROW = Color(20, 22, 21, 250)
-local COL_ROW_PICK = Color(38, 50, 64, 255)
-local COL_ROW_LINE = Color(40, 44, 40, 255)
-local COL_DIM2 = Color(109, 111, 104)
-local COL_SEP = Color(26, 29, 27, 255)
-local COL_FEED = Color(10, 12, 11, 170)
-local COL_B_BG = Color(14, 16, 15, 240)
-local COL_A_BG = Color(12, 14, 13, 222)
-local COL_B_EDGE = Color(42, 45, 41, 255)
-local COL_WHITE = Color(255, 255, 255)
-local COL_ACCENT = Color(133, 183, 235)
-local COL_DARK = Color(20, 20, 19)
+-- The window, the closed feed, the lists and the event banner draw with
+-- theme tokens (kit tokens where the colour is the kit's, else "chat.<what>").
+local KC = UI.Kit.C
+local Col = UI.Col
+local COL_BG = Col("chat.bg", 14, 16, 15, 238)
+local COL_HEADER = KC.header
+local COL_EDGE_DARK = KC.edgeDark
+local COL_EDGE_LIGHT = KC.edgeLight
+local COL_TICK = KC.tick
+local COL_INPUT = Col("chat.input", 8, 9, 8, 255)
+local COL_INPUT_EDGE = Col("chat.inputEdge", 58, 62, 58, 255)
+local COL_TEXT = KC.text
+local COL_DIM = KC.label
+local COL_SYSTEM = Col("chat.system", 170, 176, 180)
+local COL_ROW = Col("chat.row", 20, 22, 21, 250)
+local COL_ROW_PICK = KC.buttonHover
+local COL_ROW_LINE = Col("chat.rowLine", 40, 44, 40, 255)
+local COL_DIM2 = Col("chat.dim2", 109, 111, 104)
+local COL_SEP = Col("chat.sep", 26, 29, 27, 255)
+local COL_FEED = Col("chat.feed", 10, 12, 11, 170)
+local COL_B_BG = Col("chat.commsBg", 14, 16, 15, 240)
+local COL_A_BG = Col("chat.tabsBg", 12, 14, 13, 222)
+local COL_B_EDGE = Col("chat.edge", 42, 45, 41, 255)
+local COL_WHITE = Col("chat.chipOn", 255, 255, 255)
+local COL_ACCENT = KC.accent
+local COL_DARK = Col("chat.onColour", 20, 20, 19)   -- (text on a channel-coloured pill / button)
+local COL_HIGHLIGHT = Col("chat.highlight", 70, 100, 140)
+local COL_LIMIT = KC.bad
+
+-- The helmet-visor frame is part of the HUD (same look as the HUD's
+-- corner plates): plain colours, not theme tokens.
+local VIS_BG = Color(14, 16, 15, 238)
+local VIS_HEADER = Color(22, 25, 23, 255)
+local VIS_EDGE_DARK = Color(0, 0, 0, 230)
+local VIS_EDGE_LIGHT = Color(170, 176, 180, 70)
+local VIS_INPUT = Color(8, 9, 8, 255)
+local VIS_INPUT_EDGE = Color(58, 62, 58, 255)
+local VIS_DIM = Color(140, 142, 136)
+local VIS_PICK = Color(38, 50, 64, 255)
 
 -- The channel plain text goes to: Chat.current, else config chat
 -- defaultChannel, else Public.
@@ -448,11 +464,12 @@ local function metrics(visor)
     local H = ScrH()
     local key = (visor and "v" or "t") .. st
     local c = metricsCache[key]
-    if c and c.H == H then return c end
+    local stamp = UI.themeStamp or 0
+    if c and c.H == H and c.stamp == stamp then return c end
     local s = H / 1080
     local function S(n) return math.floor(n * s + 0.5) end
     c = {
-        H = H, s = s, st = st, visor = visor,
+        H = H, s = s, st = st, visor = visor, stamp = stamp,
         font = UI.Font(visor and 16 or 17),
         small = UI.Font(visor and 14 or 15),
         nameF = UI.Font(16, 700), labelF = UI.Font(12, 700), chipF = UI.Font(13, 700), timeF = UI.Font(13),
@@ -610,7 +627,7 @@ local function pill(ch, x, y, h, font, alpha)
     surface.DrawRect(x, y, w, h)
     surface.SetFont(font)
     local tw, th = surface.GetTextSize(name)
-    drawCol.r, drawCol.g, drawCol.b, drawCol.a = 20, 20, 19, alpha
+    drawCol.r, drawCol.g, drawCol.b, drawCol.a = COL_DARK.r, COL_DARK.g, COL_DARK.b, alpha
     surface.SetTextColor(drawCol)
     surface.SetTextPos(x + math.floor((w - tw) * 0.5), y + math.floor((h - th) * 0.5))
     surface.DrawText(name)
@@ -889,32 +906,32 @@ local function drawFrame(ox, oy, sx, sy, w, h, visor, m, L, mx, my, hint, menuOp
         end
         for i = #pts + 1, #localPts do localPts[i] = nil end
         draw.NoTexture()
-        surface.SetDrawColor(COL_BG)
+        surface.SetDrawColor(VIS_BG)
         surface.DrawPoly(localPts)
-        surface.SetDrawColor(COL_EDGE_DARK)
+        surface.SetDrawColor(VIS_EDGE_DARK)
         for i = 1, #localPts do
             local a, b = localPts[i], localPts[i % #localPts + 1]
             surface.DrawLine(a.x, a.y, b.x, b.y)
         end
-        surface.SetDrawColor(COL_EDGE_LIGHT)
+        surface.SetDrawColor(VIS_EDGE_LIGHT)
         for i = 1, #top - 1 do
             surface.DrawLine(top[i][1] - sx + ox, top[i][2] - sy + oy + 1, top[i + 1][1] - sx + ox, top[i + 1][2] - sy + oy + 1)
         end
         local r = L.input
         local iw = math.min(r.w, math.floor(Chat.VisorEdgeX(sy + r.y) - sx) - m.pad - math.floor(6 * s))
-        surface.SetDrawColor(COL_INPUT)
+        surface.SetDrawColor(VIS_INPUT)
         surface.DrawRect(ox + r.x, oy + r.y, iw, r.h)
-        surface.SetDrawColor(COL_INPUT_EDGE)
+        surface.SetDrawColor(VIS_INPUT_EDGE)
         surface.DrawOutlinedRect(ox + r.x, oy + r.y, iw, r.h)
         local c = L.chan
         local hover = menuOpen or (mx and inRect(c, mx, my))
-        surface.SetDrawColor(hover and COL_ROW_PICK or COL_HEADER)
+        surface.SetDrawColor(hover and VIS_PICK or VIS_HEADER)
         surface.DrawRect(ox + c.x, oy + c.y, c.w, c.h)
         setCol(ch.color)
         surface.DrawRect(ox + c.x, oy + c.y, 3, c.h)
         draw.SimpleText(ch.name, UI.Font(13, 700), ox + c.x + (c.w - math.floor(10 * s)) * 0.5 + 2, oy + c.y + c.h * 0.5, ch.color, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         if Kit and Kit.Arrow then Kit.Arrow(ox + c.x + c.w - math.floor(8 * s), oy + c.y + c.h * 0.5, math.floor(7 * s), "down", ch.color) end
-        if hint then draw.SimpleText(hint, m.font, ox + L.entry.x, oy + r.y + r.h * 0.5, COL_DIM, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER) end
+        if hint then draw.SimpleText(hint, m.font, ox + L.entry.x, oy + r.y + r.h * 0.5, VIS_DIM, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER) end
         return
     end
 
@@ -1204,10 +1221,10 @@ function PANEL:Init()
     local entry = vgui.Create("DTextEntry", self)
     entry:SetTextColor(COL_TEXT)
     entry:SetCursorColor(COL_TEXT)
-    entry:SetHighlightColor(Color(70, 100, 140))
+    entry:SetHighlightColor(COL_HIGHLIGHT)
     entry:SetPaintBackground(false)
     entry.Paint = function(e, w, h)
-        e:DrawTextEntryText(COL_TEXT, Color(70, 100, 140), COL_TEXT)
+        e:DrawTextEntryText(COL_TEXT, COL_HIGHLIGHT, COL_TEXT)
         local len = #e:GetValue()
         if len == 0 then
             local ch = currentChannel()
@@ -1216,7 +1233,7 @@ function PANEL:Init()
             if sq and sq.name then to = "squad " .. sq.name end
             draw.SimpleText("Message " .. to .. "…", self.m.font, 2, h * 0.5, COL_DIM, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
         elseif len > maxLength() - 40 then
-            draw.SimpleText(len .. "/" .. maxLength(), UI.Font(12), w - 4, h * 0.5, len >= maxLength() and Color(226, 75, 74) or COL_DIM,
+            draw.SimpleText(len .. "/" .. maxLength(), UI.Font(12), w - 4, h * 0.5, len >= maxLength() and COL_LIMIT or COL_DIM,
                 TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
         end
     end
@@ -1332,7 +1349,7 @@ end
 function PANEL:Think()
     local x, y, w, h, visor = Chat.Rect()
     local px, py = self:GetPos()
-    if visor ~= self.visor or x ~= px or y ~= py or w ~= self:GetWide() or h ~= self:GetTall() or style() ~= self.st or ScrH() ~= self.m.H then self:Layout() end
+    if visor ~= self.visor or x ~= px or y ~= py or w ~= self:GetWide() or h ~= self:GetTall() or style() ~= self.st or ScrH() ~= self.m.H or self.m.stamp ~= (UI.themeStamp or 0) then self:Layout() end
 end
 
 -- Rows of a pop-up list (suggestions or channels), in panel coordinates:
@@ -1522,7 +1539,7 @@ end)
 
 local EVENT_TIME = 9
 local event
-local COL_EVENT = Color(255, 205, 80)
+local COL_EVENT = Col("chat.event", 255, 205, 80)
 
 -- Chat.ShowEvent(by, text): shows the gold Event banner at the top centre
 -- for EVENT_TIME seconds (replaces any banner showing). Client only.

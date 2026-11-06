@@ -70,7 +70,8 @@ Net.Receive("roster.jobmsg", function()
     local ok, text = net.ReadBool(), net.ReadString()
     busyUntil = 0
     J.msg = { ok = ok, text = text }
-    chat.AddText(ok and Color(120, 210, 140) or Color(230, 110, 90), "[Jobs] ", Color(230, 230, 230), text)
+    local UC = Rhylib.UI.Colors
+    chat.AddText(ok and UC.good or UC.bad, "[Jobs] ", UC.text, text)
     if ok then view = { kind = "list" } end
     redraw()
 end)
@@ -123,9 +124,10 @@ local function fromHex(s)
     return { tonumber(r, 16), tonumber(g, 16), tonumber(b, 16) }
 end
 
+-- Job colours to pick from (job data, not theme colours).
 local PALETTE = {
-    { 230, 130, 40 }, { 85, 150, 70 }, { 125, 140, 160 }, { 200, 50, 50 }, { 60, 110, 200 }, { 150, 155, 160 },
-    { 120, 170, 120 }, { 210, 190, 70 }, { 140, 90, 190 }, { 60, 170, 170 }, { 220, 220, 220 }, { 90, 90, 95 },
+    Color(230, 130, 40), Color(85, 150, 70), Color(125, 140, 160), Color(200, 50, 50), Color(60, 110, 200), Color(150, 155, 160),
+    Color(120, 170, 120), Color(210, 190, 70), Color(140, 90, 190), Color(60, 170, 170), Color(220, 220, 220), Color(90, 90, 95),
 }
 
 local function teamOf(job)
@@ -142,29 +144,29 @@ function J.PickModel(cb)
     local k = K()
     if not k then return end
     local s = k.S
-    local Menus = Rhylib.Menus
+    local C = k.C
+    local UI = Rhylib.UI
     local f = vgui.Create("EditablePanel")
-    Menus.prompts[f] = true
-    f.OnRemove = function(self) Menus.prompts[self] = nil end
-    f:SetSize(math.min(ScrW() - s(80), s(900)), math.min(ScrH() - s(80), s(640)))
+    UI.prompts[f] = true
+    f.OnRemove = function(self) UI.prompts[self] = nil end
+    f:SetSize(math.min(ScrW() - s(80), s(940)), math.min(ScrH() - s(80), s(680)))
     f:Center()
     f:MakePopup()
     f:DoModal()
-    f:DockPadding(s(14), s(42), s(14), s(14))
-    function f:Paint(w, h) k.Plate(0, 0, w, h, { title = "Pick a player model", ticks = "all" }) end
+    local headH = s(36)
+    f:DockPadding(s(14), headH + s(12), s(14), s(14))
+    f.sub = ""
+    function f:Paint(w, h) k.Plate(0, 0, w, h, { title = "Pick a player model", sub = self.sub, ticks = "all", header = headH }) end
 
     local top = vgui.Create("DPanel", f)
     top:Dock(TOP)
-    top:SetTall(s(30))
-    top:DockMargin(0, 0, 0, s(8))
+    top:SetTall(s(38))
+    top:DockMargin(0, 0, 0, s(10))
     top.Paint = nil
-    local close = k.Button(top, "Close", function() f:Remove() end, { small = true })
+    local close = k.Button(top, "Close", function() f:Remove() end)
     close:Dock(RIGHT)
-    close:SetWide(s(100))
-    local search = k.TextEntry(top, "Search names and paths")
-    search:Dock(FILL)
-    search:DockMargin(0, 0, s(8), 0)
-    search:SetUpdateOnType(true)
+    close:SetWide(s(110))
+    close:DockMargin(s(8), s(2), 0, s(2))
 
     local list = {}
     for name, mdl in pairs(player_manager.AllValidModels()) do list[#list + 1] = { name = name, mdl = mdl } end
@@ -174,8 +176,10 @@ function J.PickModel(cb)
     sp:Dock(FILL)
     local grid = vgui.Create("DIconLayout", sp)
     grid:Dock(TOP)
-    grid:SetSpaceX(s(6))
-    grid:SetSpaceY(s(6))
+    grid:DockMargin(0, 0, s(10), 0)
+    grid:SetSpaceX(s(8))
+    grid:SetSpaceY(s(8))
+    local TW, TH = s(104), s(128)
     local function fill(q)
         grid:Clear()
         q = string.lower(q or "")
@@ -184,18 +188,41 @@ function J.PickModel(cb)
             if q == "" or string.find(string.lower(it.name), q, 1, true) or string.find(string.lower(it.mdl), q, 1, true) then
                 n = n + 1
                 if n > 300 then break end
-                local icon = grid:Add("SpawnIcon")
-                icon:SetSize(s(72), s(72))
+                -- (a card: the model's icon, its name under it)
+                local card = grid:Add("DButton")
+                card:SetText("")
+                card:SetSize(TW, TH)
+                card:SetTooltip(it.name .. "\n" .. it.mdl)
+                function card:Paint(w, h)
+                    local ih = h - s(26)
+                    k.SetCol(self:IsHovered() and C.rowHover or C.row)
+                    surface.DrawRect(0, 0, w, h)
+                    k.SetCol(C.header)
+                    surface.DrawRect(0, ih, w, h - ih)
+                    draw.SimpleText(k.Fit(it.name, k.Font(12, 600), w - s(10)), k.Font(12, 600), w * 0.5, ih + (h - ih) * 0.5, C.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                    return true
+                end
+                function card:PaintOver(w, h)
+                    k.SetCol(self:IsHovered() and C.accent or C.edgeDark)
+                    surface.DrawOutlinedRect(0, 0, w, h)
+                end
+                local icon = vgui.Create("SpawnIcon", card)
+                icon:SetPos(math.floor((TW - s(88)) / 2), s(6))
+                icon:SetSize(s(88), s(88))
                 icon:SetModel(it.mdl)
-                icon:SetTooltip(it.name .. "\n" .. it.mdl)
-                icon.DoClick = function()
+                icon:SetMouseInputEnabled(false)
+                card.DoClick = function()
+                    surface.PlaySound("ui/buttonclick.wav")
                     f:Remove()
                     cb(it.mdl)
                 end
             end
         end
+        f.sub = (n > 300 and "300+" or tostring(n)) .. " of " .. #list .. " models"
+        grid:Layout()
     end
-    function search:OnValueChange(v) fill(v) end
+    local search = k.Search(top, "Search names and paths", fill)
+    search:Dock(FILL)
     fill("")
     search:RequestFocus()
 end
@@ -209,9 +236,9 @@ local function statusLine(parent)
     local m = J.msg
     local busy = isBusy()
     if busy or m then
-        local l = k.Label(parent, busy and "Saving…" or m.text, 13, 600, busy and k.C.textDim or (m.ok and k.C.good or k.C.bad))
-        l:Dock(TOP)
-        l:DockMargin(0, 0, 0, k.S(6))
+        local b = R.Draw.Banner(parent, busy and "Saving…" or m.text, busy and "dim" or (m.ok and "good" or "bad"))
+        b:Dock(TOP)
+        b:DockMargin(0, 0, 0, k.S(8))
     end
 end
 
@@ -228,16 +255,52 @@ local function jobLine(job, t)
     return table.concat(bits, "  ·  ")
 end
 
+-- A top bar (34 px) with an optional caps line and a big title drawn
+-- between the buttons (title() or a string).
+local function topBar(page, caps, title)
+    local k = K()
+    local s = k.S
+    local top = vgui.Create("DPanel", page)
+    top:Dock(TOP)
+    top:SetTall(s(44))
+    top:DockMargin(0, 0, 0, s(10))
+    top:DockPadding(0, s(5), 0, s(5))
+    function top:Paint(w, h)
+        if not title then return end
+        local x = self.textX or 0
+        local t = isfunction(title) and title() or title
+        if caps then
+            k.Caps(caps, x, h * 0.28)
+            draw.SimpleText(k.Fit(t, k.Font(18, 800), w - x - (self.textR or 0)), k.Font(18, 800), x, h * 0.68, k.C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        else
+            draw.SimpleText(k.Fit(t, k.Font(18, 800), w - x - (self.textR or 0)), k.Font(18, 800), x, h * 0.5, k.C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        end
+    end
+    return top
+end
+
+-- Tag chips on a job row: { text, kind } (kind -> colour at paint time).
+local function tagCol(kind)
+    local C = K().C
+    if kind == "warn" then return C.warn elseif kind == "bad" then return C.bad
+    elseif kind == "accent" then return C.accent end
+    return C.label
+end
+
 local function buildList(page)
     local k = K()
     local s = k.S
     local C = k.C
+    local D = R.Draw
 
-    local top = vgui.Create("DPanel", page)
-    top:Dock(TOP)
-    top:SetTall(s(34))
-    top:DockMargin(0, 0, 0, s(8))
-    top.Paint = nil
+    local nJobs, nCats = 0, 0
+    for _, cat in ipairs(DarkRP.getCategories().jobs or {}) do
+        if #(cat.members or {}) > 0 then nCats = nCats + 1 nJobs = nJobs + #cat.members end
+    end
+    local top = topBar(page, nil, nil)
+    function top:PaintOver(w, h)
+        draw.SimpleText(nJobs .. " jobs  ·  " .. nCats .. " categories", k.Font(13), w, h * 0.5, C.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+    end
     local nb = k.Button(top, "New job", function()
         local cats = catNames()
         view = { kind = "edit", isNew = true, form = {
@@ -277,53 +340,72 @@ local function buildList(page)
     -- Saved jobs DarkRP refused (e.g. a jobs.lua job took their command).
     local broken = istable(J.state.broken) and J.state.broken or {}
     if #broken > 0 then
-        local h = k.Heading(sp, "Saved jobs that couldn't be made", C.bad)
+        local h = D.Band(sp, "Saved jobs that couldn't be made", C.bad, function() return #broken .. " to fix" end)
         h:Dock(TOP)
-        h:DockMargin(0, s(6), s(8), s(4))
-        for _, b in ipairs(broken) do
-            local r = k.Row(sp, tostring(b.name), "/" .. tostring(b.cmd) .. "  ·  see the server console for why; delete it and make it again")
+        h:DockMargin(0, s(6), s(8), 0)
+        for i, b in ipairs(broken) do
+            local r = vgui.Create("DPanel", sp)
             r:Dock(TOP)
-            r:DockMargin(0, 0, s(8), s(3))
-            r.right:SetWide(s(96))
-            local del = k.Button(r.right, "Delete", function() send(OP_DELETE, { cmd = b.cmd }) end, { small = true, danger = true })
-            del:Dock(FILL)
-            del:DockMargin(0, s(7), 0, s(7))
+            r:SetTall(s(48))
+            r:DockMargin(0, 0, s(8), 0)
+            r:DockPadding(s(12), s(11), s(12), s(11))
+            local sub = "/" .. tostring(b.cmd) .. "  ·  see the server console for why; delete it and make it again"
+            function r:Paint(w, h)
+                k.SetCol(i % 2 == 0 and C.rowAlt or C.row)
+                surface.DrawRect(0, 0, w, h)
+                k.SetCol(C.bad, 20)
+                surface.DrawRect(0, 0, w, h)
+                k.SetCol(C.edgeDark)
+                surface.DrawRect(0, h - 1, w, 1)
+                k.SetCol(C.bad)
+                surface.DrawRect(0, 0, s(4), h)
+                draw.SimpleText(tostring(b.name), k.Font(14, 700), s(16), h * 0.33, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                draw.SimpleText(k.Fit(sub, k.Font(12), w - s(140)), k.Font(12), s(16), h * 0.70, C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            end
+            local del = k.Button(r, "Delete", function() send(OP_DELETE, { cmd = b.cmd }) end, { small = true, danger = true })
+            del:Dock(RIGHT)
+            del:SetWide(s(96))
         end
     end
 
     for _, cat in ipairs(DarkRP.getCategories().jobs or {}) do
         local members = cat.members or {}
         if #members > 0 then
-            local h = k.Heading(sp, cat.name, cat.color)
+            local count = #members .. " job" .. (#members == 1 and "" or "s")
+            local h = D.Band(sp, cat.name, IsColor(cat.color) and cat.color or nil, function() return count end)
             h:Dock(TOP)
-            h:DockMargin(0, s(6), s(8), s(4))
-            for _, job in ipairs(members) do
+            h:DockMargin(0, s(10), s(8), 0)
+            for i, job in ipairs(members) do
                 local t = teamOf(job)
                 if t then
                     local info = J.Info(t)
                     local r = vgui.Create("DPanel", sp)
                     r:Dock(TOP)
-                    r:SetTall(s(52))
-                    r:DockMargin(0, 0, s(8), s(3))
-                    r:DockPadding(s(12), s(10), s(12), s(10))
-                    local tags = {}
-                    tags[#tags + 1] = info.made and "MADE IN GAME" or "JOBS.LUA"
-                    if info.edited then tags[#tags + 1] = "EDITED" end
-                    if info.dead then tags[#tags + 1] = "DELETED" elseif info.off then tags[#tags + 1] = "OFF" end
-                    local tagText = table.concat(tags, "  ·  ")
+                    r:SetTall(s(54))
+                    r:DockMargin(0, 0, s(8), 0)
+                    r:DockPadding(s(12), s(14), s(12), s(14))
+                    local tags = { { info.made and "MADE IN GAME" or "JOBS.LUA", info.made and "accent" or "dim" } }
+                    if info.edited then tags[#tags + 1] = { "EDITED", "accent" } end
+                    if info.dead then tags[#tags + 1] = { "DELETED", "bad" } elseif info.off then tags[#tags + 1] = { "OFF", "warn" } end
+                    local nButtons = 2 + ((info.made or info.edited) and 1 or 0)
                     function r:Paint(w, h)
-                        k.SetCol(self:IsHovered() and C.rowAlt or C.row)
+                        k.SetCol(self:IsHovered() and C.rowHover or (i % 2 == 0 and C.rowAlt or C.row))
                         surface.DrawRect(0, 0, w, h)
                         k.SetCol(C.edgeDark)
-                        surface.DrawOutlinedRect(0, 0, w, h)
+                        surface.DrawRect(0, h - 1, w, 1)
                         k.SetCol(job.color or C.accent, info.off and 90 or 255)
-                        surface.DrawRect(1, 1, s(5), h - 2)
-                        local tc = info.off and C.textDim or C.text
-                        draw.SimpleText(job.name or "?", k.Font(14, 600), s(16), h * 0.34, tc, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-                        surface.SetFont(k.Font(14, 600))
-                        local nw = surface.GetTextSize(job.name or "?")
-                        draw.SimpleText(tagText, k.Font(11, 700), s(16) + nw + s(10), h * 0.34, (info.off or info.dead) and C.warn or C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-                        draw.SimpleText(k.Fit(jobLine(job, t), k.Font(12), w - s(420)), k.Font(12), s(16), h * 0.70, C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                        surface.DrawRect(0, 0, s(4), h)
+                        local tc = (info.off or info.dead) and C.textDim or C.text
+                        local nf = k.Font(15, 700)
+                        local room = w - nButtons * s(102) - s(30)
+                        local name = k.Fit(job.name or "?", nf, room * 0.5)
+                        draw.SimpleText(name, nf, s(16), h * 0.33, tc, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                        surface.SetFont(nf)
+                        local x = s(16) + surface.GetTextSize(name) + s(10)
+                        for _, tg in ipairs(tags) do
+                            x = x + D.Chip(tg[1], x, h * 0.33, tagCol(tg[2])) + s(4)
+                        end
+                        draw.SimpleText(k.Fit(jobLine(job, t), k.Font(12), room), k.Font(12), s(16), h * 0.72, C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
                     end
                     local function btn(text, fn, opts)
                         local b = k.Button(r, text, fn, opts)
@@ -335,12 +417,12 @@ local function buildList(page)
                     local cmd = job.command
                     if info.made then
                         btn("Delete", function()
-                            Derma_Query("Delete " .. job.name .. "? It's hidden at once and gone after the next map change. Players on it go to their home job.",
-                                "Delete job", "Delete", function() send(OP_DELETE, { cmd = cmd }) end, "Cancel")
+                            D.Confirm("Delete job", "Delete " .. job.name .. "? It's hidden at once and gone after the next map change. Players on it go to their home job.",
+                                "Delete", function() send(OP_DELETE, { cmd = cmd }) end, true)
                         end, { small = true, danger = true, enabled = not info.dead })
                     elseif info.edited then
                         btn("Reset", function()
-                            Derma_Query("Put " .. job.name .. " back to its jobs.lua version?", "Reset job", "Reset", function() send(OP_RESET, { cmd = cmd }) end, "Cancel")
+                            D.Confirm("Reset job", "Put " .. job.name .. " back to its jobs.lua version?", "Reset", function() send(OP_RESET, { cmd = cmd }) end)
                         end, { small = true })
                     end
                     btn(info.off and "Switch on" or "Switch off", function() send(OP_OFF, { cmd = cmd, off = not info.off }) end,
@@ -415,55 +497,56 @@ local function formRows(sp, form)
 
     -- A dropdown: options() -> list of { value, label }; extra = { label, fn }
     -- added at the bottom (e.g. "New category…").
+    local EXTRA = {}   -- (the value of the extra entry: never a real value)
     function rows.pick(title, desc, keyName, options, extra, w)
         local r = rows.row(title, desc, w or 260)
-        local function label()
-            for _, o in ipairs(options()) do if o[1] == form[keyName] then return o[2] end end
-            return form[keyName] ~= nil and tostring(form[keyName]) or "None"
+        local function list()
+            local out = {}
+            for _, o in ipairs(options()) do out[#out + 1] = o end
+            if extra then out[#out + 1] = { EXTRA, extra[1] } end
+            return out
         end
-        local b = k.Button(r.right, function() return label() .. "  ▾" end, function()
-            local m = k.Menu()
-            for _, o in ipairs(options()) do m:AddOption(o[2], function() form[keyName] = o[1] end) end
-            if extra then
-                m:AddSpacer()
-                m:AddOption(extra[1], extra[2])
-            end
-            m:Open()
-        end, { small = true, align = "left" })
-        b:Dock(FILL)
-        centre(b, r, s(26))
+        local dd = k.Dropdown(r.right, list, function() return form[keyName] end, function(v)
+            if v == EXTRA then extra[2]() else form[keyName] = v end
+        end, { placeholder = "None", width = s(w or 260) })
+        dd:Dock(FILL)
+        centre(dd, r, s(34))
     end
 
+    -- The colour: swatches (the last one a mixer), a #rrggbb box and the
+    -- colour itself.
     function rows.colour(title, desc, keyName)
-        local r = rows.row(title, desc, 260)
+        local r = rows.row(title, desc, 600)
+        local cur = Color(150, 155, 160)
+        local function sync()
+            local c = form[keyName] or { 150, 155, 160 }
+            cur.r, cur.g, cur.b = c[1] or 0, c[2] or 0, c[3] or 0
+        end
+        sync()
+        local e
         local sw = vgui.Create("DPanel", r.right)
-        sw:Dock(LEFT)
+        sw:Dock(RIGHT)
         sw:SetWide(s(30))
-        sw:DockMargin(0, s(4), s(8), s(4))
+        sw:DockMargin(s(8), s(4), 0, s(4))
         function sw:Paint(w, h)
-            local c = form[keyName] or { 0, 0, 0 }
-            surface.SetDrawColor(c[1], c[2], c[3], 255)
+            surface.SetDrawColor(cur.r, cur.g, cur.b, 255)
             surface.DrawRect(0, 0, w, h)
             k.SetCol(k.C.edgeDark)
             surface.DrawOutlinedRect(0, 0, w, h)
         end
-        local pal = k.Button(r.right, "▾", function()
-            local m = k.Menu()
-            for _, c in ipairs(PALETTE) do
-                local o = m:AddOption(hex(c), function() form[keyName] = table.Copy(c) if IsValid(r.entry) then r.entry:SetText(hex(c)) end end)
-                o.PaintOver = function(_, w, h) surface.SetDrawColor(c[1], c[2], c[3], 255) surface.DrawRect(w - h, 2, h - 4, h - 4) end
-            end
-            m:Open()
-        end, { small = true })
-        pal:Dock(RIGHT)
-        pal:SetWide(s(40))
-        pal:DockMargin(s(6), s(4), 0, s(4))
-        local e = k.TextEntry(r.right, "#rrggbb")
-        e:Dock(FILL)
-        e:DockMargin(0, s(1), 0, s(1))
+        e = k.TextEntry(r.right, "#rrggbb")
+        e:Dock(RIGHT)
+        e:SetWide(s(100))
+        e:DockMargin(s(8), s(5), 0, s(5))
         e:SetText(hex(form[keyName] or { 150, 155, 160 }))
         e:SetUpdateOnType(true)
-        function e:OnValueChange(v) local c = fromHex(v) if c then form[keyName] = c end end
+        function e:OnValueChange(v) local c = fromHex(v) if c then form[keyName] = c sync() end end
+        local pal = k.Swatches(r.right, PALETTE, function() return cur end, function(c)
+            form[keyName] = { c.r, c.g, c.b }
+            sync()
+            if IsValid(e) then e:SetText(hex(form[keyName])) end
+        end)
+        pal:Dock(FILL)
         r.entry = e
     end
 
@@ -504,11 +587,8 @@ local function buildEdit(page)
     local form = view.form
     local isNew = view.isNew
 
-    local top = vgui.Create("DPanel", page)
-    top:Dock(TOP)
-    top:SetTall(s(34))
-    top:DockMargin(0, 0, 0, s(8))
-    top.Paint = nil
+    local top = topBar(page, isNew and "Job editor" or "Editing", function() return isNew and "New job" or tostring(form.name) end)
+    top.textX, top.textR = s(116), s(156)
     local back = k.Button(top, "Back", function() view = { kind = "list" } J.msg = nil redraw() end)
     back:Dock(LEFT)
     back:SetWide(s(100))
@@ -523,11 +603,6 @@ local function buildEdit(page)
     end, { accent = true, enabled = function() return not isBusy() end })
     save:Dock(RIGHT)
     save:SetWide(s(140))
-    local title = vgui.Create("DPanel", top)
-    title:Dock(FILL)
-    function title:Paint(w, h)
-        draw.SimpleText(isNew and "New job" or ("Editing " .. tostring(form.name)), k.Font(16, 700), s(12), h * 0.5, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-    end
     statusLine(page)
 
     local sp = k.Scroll(page)
@@ -571,6 +646,7 @@ local function buildEdit(page)
         k.SetCol(C.edgeDark)
         surface.DrawOutlinedRect(0, 0, w, h)
         draw.SimpleText("Description", k.Font(14, 500), s(12), s(13), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        draw.SimpleText("Shown in the F4 job list", k.Font(12), w - s(12), s(13), C.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
     end
     local de = k.TextEntry(dr, "What the job is for")
     de:Dock(FILL)
@@ -666,11 +742,8 @@ local function buildBattalion(page)
     local C = k.C
     local form = view.form
 
-    local top = vgui.Create("DPanel", page)
-    top:Dock(TOP)
-    top:SetTall(s(34))
-    top:DockMargin(0, 0, 0, s(8))
-    top.Paint = nil
+    local top = topBar(page, "Job editor", "New battalion")
+    top.textX, top.textR = s(116), s(186)
     local back = k.Button(top, "Back", function() view = { kind = "list" } J.msg = nil redraw() end)
     back:Dock(LEFT)
     back:SetWide(s(100))
@@ -680,11 +753,6 @@ local function buildBattalion(page)
     end, { accent = true, enabled = function() return not isBusy() end })
     save:Dock(RIGHT)
     save:SetWide(s(170))
-    local title = vgui.Create("DPanel", top)
-    title:Dock(FILL)
-    function title:Paint(w, h)
-        draw.SimpleText("New battalion", k.Font(16, 700), s(12), h * 0.5, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-    end
     local note = k.Label(page, "Makes a category and five jobs: Clone Trooper (PVT), Medic (PVT, max 6), Sergeant (SGT, max 6), Officer (LT, max 4) and Commander (CMD, max 1), like battalion() in jobs.lua. Edit each job afterwards to change limits, ranks or pay.", 13, 400, C.textDim)
     note:Dock(TOP)
     note:DockMargin(0, 0, 0, s(8))

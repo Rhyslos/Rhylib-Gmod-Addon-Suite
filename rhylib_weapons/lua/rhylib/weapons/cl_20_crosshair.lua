@@ -445,6 +445,10 @@ end, function(kind)
     if snd and IsValid(me) then me:EmitSound(snd[1], 0, snd[2], snd[3], CHAN_STATIC) end  -- level 0: not positional
 end)
 
+-- The preview box's sky-to-ground backdrop (theme tokens).
+local COL_PREVIEW_SKY = Rhylib.UI.Col("crosshair.previewSky", 86, 99, 110)
+local COL_PREVIEW_GROUND = Rhylib.UI.Col("crosshair.previewGround", 42, 44, 37)
+
 -- In the settings menu (rhylib_menus).
 Rhylib.Hook.Add("InitPostEntity", "weapons.hitsound.setting", function()
     local Menus = Rhylib.Menus
@@ -457,7 +461,7 @@ Rhylib.Hook.Add("InitPostEntity", "weapons.hitsound.setting", function()
                 box:Dock(TOP)
                 box:SetTall(K.S(170))
                 box:DockMargin(0, 0, K.S(10), K.S(8))
-                local bg1, bg2 = Color(86, 99, 110), Color(42, 44, 37)
+                local bg1, bg2 = COL_PREVIEW_SKY, COL_PREVIEW_GROUND
                 function box:Paint(w, h)
                     -- (a sky-to-ground backdrop, so light and dark colours both show)
                     for i = 0, 7 do

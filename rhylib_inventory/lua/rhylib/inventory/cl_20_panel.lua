@@ -102,35 +102,37 @@ local sizeVar = CreateClientConVar("rhylib_inventory_cellsize", "100", true, fal
 local CATEGORY_COLORS = Inv.CATEGORY_COLORS
 local Icons = Inv.Icons
 
--- Colours (the house style).
-local C_PAGE = Color(11, 12, 11, 250)
-local C_INSET = Color(14, 16, 15)
-local C_SIDE = Color(18, 20, 19)
-local C_CARD = Color(22, 25, 23)
-local C_TILE = Color(26, 30, 27)
-local C_EDGE = Color(0, 0, 0)
-local C_BORDER = Color(42, 45, 41)
-local C_BORDER2 = Color(47, 51, 46)
-local C_FAINT = Color(31, 35, 32)
-local C_MODEL = Color(22, 27, 24)
-local C_TEXT = Color(228, 227, 220)
-local C_DIM = Color(169, 168, 160)
-local C_LABEL = Color(138, 140, 132)
-local C_OFF = Color(111, 116, 109)
-local C_TABTEXT = Color(201, 200, 192)
-local C_DARK = Color(20, 20, 19)
-local C_BLUE = Color(133, 183, 235)
-local C_AMBER = Color(239, 159, 39)
-local C_RED = Color(226, 75, 74)
-local C_GREEN = Color(151, 196, 89)
-local C_PURPLE = Color(164, 110, 224)
-local C_GREYBAR = Color(58, 64, 59)
-local C_DANGER_EDGE = Color(90, 42, 42)
-local C_DANGER_TEXT = Color(240, 149, 149)
-local C_HOVER_EDGE = Color(74, 80, 74)
-local C_TEXT_EDGE = Color(0, 0, 0, 200)
-local C_NOTE = Color(239, 159, 39)
-local C_QUICK_BACK = Color(0, 0, 0, 170)
+-- Colours (the house style): theme tokens, read when drawing.
+local C = UI.Kit.C
+local Col = UI.Col
+local C_PAGE = Col("inv.page", 11, 12, 11, 250)
+local C_INSET = Col("inv.inset", 14, 16, 15)
+local C_SIDE = Col("inv.side", 18, 20, 19)
+local C_CARD = Col("inv.card", 22, 25, 23)
+local C_TILE = Col("inv.tile", 26, 30, 27)
+local C_EDGE = Col("inv.edge", 0, 0, 0)
+local C_BORDER = Col("inv.border", 42, 45, 41)
+local C_BORDER2 = Col("inv.tileEdge", 47, 51, 46)
+local C_FAINT = Col("inv.faint", 31, 35, 32)
+local C_MODEL = Col("inv.model", 22, 27, 24)
+local C_TEXT = C.text
+local C_DIM = C.textDim
+local C_LABEL = Col("inv.label", 138, 140, 132)
+local C_OFF = Col("inv.off", 111, 116, 109)
+local C_TABTEXT = Col("inv.tabText", 201, 200, 192)
+local C_DARK = Col("inv.onLight", 20, 20, 19)
+local C_BLUE = C.accent
+local C_AMBER = C.warn
+local C_RED = C.bad
+local C_GREEN = C.good
+local C_PURPLE = Col("inv.kindGrenade", 164, 110, 224)
+local C_GREYBAR = Col("inv.barOff", 58, 64, 59)
+local C_DANGER_EDGE = Col("inv.dangerEdge", 90, 42, 42)
+local C_DANGER_TEXT = Col("inv.dangerText", 240, 149, 149)
+local C_HOVER_EDGE = Col("inv.hoverEdge", 74, 80, 74)
+local C_TEXT_EDGE = Col("inv.textShadow", 0, 0, 0, 200)
+local C_NOTE = Color(239, 159, 39)   -- (C.warn with a fading alpha, set when drawn)
+local C_QUICK_BACK = C.dim
 
 local scratch = Color(0, 0, 0)
 -- surface.SetDrawColor with an extra alpha, without a new Color.
@@ -1696,7 +1698,8 @@ function PANEL:PaintFooter(pw, ph)
     draw.SimpleText(fitText("Drag to move · Ctrl+drag takes one · R turns · Right-click for options (storage: quick take) · Drag out to drop",
         hf, pw - self.hotbarX - self.pad), hf, self.hotbarX, y, C_LABEL, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
     if not Inv.note or RealTime() - (Inv.noteTime or 0) > 3 then return end
-    C_NOTE.a = math.Clamp((3 - (RealTime() - Inv.noteTime)) * 255, 0, 255)
+    C_NOTE.r, C_NOTE.g, C_NOTE.b = C.warn.r, C.warn.g, C.warn.b
+    C_NOTE.a = math.Clamp((3 - (RealTime() - Inv.noteTime)) * 255, 0, 255) * (C.warn.a or 255) / 255
     local nf = self:Font(13, 500)
     surface.SetFont(nf)
     local tw = surface.GetTextSize(Inv.note)
@@ -2311,6 +2314,11 @@ function Inv.Toggle()
 end
 
 concommand.Add("rhylib_inventory", Inv.Toggle)
+
+-- A theme may change the font: lay the open window out again.
+Rhylib.Hook.Add("Rhylib.ThemeChanged", "inventory.panel", function()
+    if IsValid(Inv.panel) then Inv.panel:Relayout() end
+end)
 
 local keyWasDown = false
 Rhylib.Hook.Add("Think", "inventory.key", function()

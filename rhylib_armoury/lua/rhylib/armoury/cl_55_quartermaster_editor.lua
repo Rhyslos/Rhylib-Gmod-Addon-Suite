@@ -34,10 +34,13 @@ local UI = Rhylib.UI
 
 -- (Q.editor: the open editor { frame, npc, slot, V, shelves, drag, ... })
 
-local C_SHELF, C_TILE_EDGE, C_CELL, C_CELL_EDGE = Color(26, 30, 27), Color(47, 51, 46), Color(14, 16, 15), Color(31, 35, 32)
-local C_LOCK, C_FAINT, C_BAD_DROP = Color(200, 176, 122), Color(92, 97, 91), Color(226, 75, 74, 40)
-local C_OK_DROP, C_TAB_ON, C_TAB_TEXT = Color(133, 183, 235, 30), Color(228, 227, 220), Color(201, 200, 192)
-local C_DARK = Color(20, 20, 19)
+-- Colours: theme tokens (Rhylib.UI.Col), read when drawing; the window's
+-- shared ones come from the quartermaster (H().C).
+local Col = UI.Col
+local C_SHELF, C_TILE_EDGE, C_CELL, C_CELL_EDGE = Col("armoury.shelf", 26, 30, 27), Col("armoury.tileEdge", 47, 51, 46), Col("armoury.cell", 14, 16, 15), Col("armoury.cellEdge", 31, 35, 32)
+local C_LOCK, C_FAINT, C_BAD_DROP = Col("armoury.lock", 200, 176, 122), Col("armoury.faint", 92, 97, 91), Col("armoury.dropBad", 226, 75, 74, 40)
+local C_OK_DROP, C_TAB_ON, C_TAB_TEXT = Col("armoury.dropOk", 133, 183, 235, 30), Col("armoury.tabOn", 228, 227, 220), Col("armoury.tabText", 201, 200, 192)
+local C_DARK = Col("armoury.onLight", 20, 20, 19)
 
 local GRID_TITLES = {}
 local function gridTitle(cid)

@@ -45,9 +45,11 @@ local function compassDir(from, to)
     return DIRS[math.floor(((ang % 360) + 22.5) / 45) % 8 + 1]
 end
 
-local COL_BG = Color(30, 8, 6, 190)
-local COL_TEXT = Color(255, 150, 120)
-local COL_EDGE = Color(255, 80, 60)
+-- The alert line's plate (theme tokens; the compass marks below keep
+-- their own red and blue).
+local COL_BG = Rhylib.UI.Col("logi.alertBg", 30, 8, 6, 190)
+local COL_TEXT = Rhylib.UI.Col("logi.alertText", 255, 150, 120)
+local COL_EDGE = Rhylib.UI.Col("logi.alert", 255, 80, 60)
 
 Rhylib.Hook.Add("HUDPaint", "logistics.sensors", function()
     if not next(L.alerts) then return end
@@ -70,6 +72,8 @@ Rhylib.Hook.Add("HUDPaint", "logistics.sensors", function()
         local pad = math.floor(6 * s)
         local pulse = 0.6 + 0.4 * math.abs(math.sin((CurTime() - a.at) * 3))
         draw.RoundedBox(0, x - pad, y - pad * 0.5, tw + pad * 2, th + pad, COL_BG)
+        surface.SetDrawColor(Rhylib.UI.Kit.C.edgeDark)
+        surface.DrawOutlinedRect(x - pad, y - pad * 0.5, tw + pad * 2, th + pad)
         surface.SetDrawColor(COL_EDGE.r, COL_EDGE.g, COL_EDGE.b, 255 * pulse)
         surface.DrawRect(x - pad, y - pad * 0.5, math.max(2, math.floor(3 * s)), th + pad)
         draw.SimpleText(text, font, x, y, COL_TEXT)

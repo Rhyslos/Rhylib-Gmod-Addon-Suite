@@ -26,6 +26,11 @@ UI.Colors = {
     bad = Color(226, 75, 74),
 }
 
+-- (a Lua refresh of this file: keep the theme's shared tokens, cl_11_theme.lua)
+if UI.tokens then
+    for k in pairs(UI.Colors) do UI.Colors[k] = UI.tokens["ui." .. k] or UI.Colors[k] end
+end
+
 -- fonts[weight][size] = font name. A lookup costs two table reads, with
 -- no string building, so it is safe to call every frame.
 UI.fonts = UI.fonts or {}
@@ -44,9 +49,11 @@ function UI.Font(size, weight)
     local name = byWeight[size]
     if name then return name end
 
-    name = "Rhylib." .. size .. "." .. weight
+    -- (the theme picks the family; cl_11_theme.lua empties UI.fonts on a change)
+    local family = UI.Family and UI.Family() or "Roboto"
+    name = family == "Roboto" and ("Rhylib." .. size .. "." .. weight) or ("Rhylib." .. family .. "." .. size .. "." .. weight)
     surface.CreateFont(name, {
-        font = "Roboto",
+        font = family,
         size = math.Round(size * ScrH() / 1080),
         weight = weight,
         extended = true,

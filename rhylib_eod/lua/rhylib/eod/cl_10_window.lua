@@ -31,15 +31,19 @@
     Needs Rhy's Core's UI kit (Rhylib.UI.Kit) for the window.
 ]]
 
--- Colours used while drawing (made once, not every frame).
+-- Colours used while drawing (made once, not every frame). The bomb itself
+-- (board, parts, wires, the tilt level, gas) keeps literal colours; the
+-- window's own colours are theme tokens (Rhylib.UI.Col), read when drawing.
+local Col = Rhylib.UI.Col
 local COL_0_0_0_220 = Color(0, 0, 0, 220)
-local COL_0_0_0_230 = Color(0, 0, 0, 230)
-local COL_0_0_0_255 = Color(0, 0, 0, 255)
+local COL_TIP_EDGE = Col("eod.tipEdge", 0, 0, 0, 230)
+local COL_TIP_TEXT = Col("eod.tipText", 255, 255, 255)
+local COL_OVERLAY = Col("eod.overlayDim", 0, 0, 0, 255)
 local COL_110_190_255 = Color(110, 190, 255)
 local COL_120_126_132 = Color(120, 126, 132)
-local COL_130_255_160 = Color(130, 255, 160)
+local COL_PROBE_TEXT = Col("eod.probeText", 130, 255, 160)
 local COL_138_147_156 = Color(138, 147, 156)
-local COL_140_140_140 = Color(140, 140, 140)
+local COL_TIMER_IDLE = Col("eod.timerIdle", 140, 140, 140)
 local COL_140_165_150 = Color(140, 165, 150)
 local COL_143_154_164 = Color(143, 154, 164)
 local COL_150_160_168 = Color(150, 160, 168)
@@ -48,42 +52,45 @@ local COL_15_26_20 = Color(15, 26, 20)
 local COL_160_110_210 = Color(160, 110, 210)
 local COL_170_178_186 = Color(170, 178, 186)
 local COL_17_17_17 = Color(17, 17, 17)
-local COL_200_120_60 = Color(200, 120, 60)
+local COL_TIMER_WAIT = Col("eod.timerWait", 200, 120, 60)
 local COL_200_206_210 = Color(200, 206, 210)
 local COL_207_214_220 = Color(207, 214, 220)
 local COL_207_227_212 = Color(207, 227, 212)
 local COL_220_226_230 = Color(220, 226, 230)
 local COL_220_232_224 = Color(220, 232, 224)
 local COL_220_235_225 = Color(220, 235, 225)
-local COL_235_70_60 = Color(235, 70, 60)
+local COL_TIMER_RUN = Col("eod.timerRun", 235, 70, 60)
 local COL_255_110_80 = Color(255, 110, 80)
 local COL_255_120_110 = Color(255, 120, 110)
 local COL_255_170_60 = Color(255, 170, 60)
 local COL_255_200_90 = Color(255, 200, 90)
 local COL_255_209_102 = Color(255, 209, 102)
-local COL_255_255_255 = Color(255, 255, 255)
+local COL_LIQUID_NEEDLE = Col("eod.liquidNeedle", 255, 255, 255)
 local COL_255_255_255_120 = Color(255, 255, 255, 120)
 local COL_255_60_50 = Color(255, 60, 50)
-local COL_255_90_80 = Color(255, 90, 80)
+local COL_TIMER_LOW = Col("eod.timerLow", 255, 90, 80)
 local COL_40_46_52 = Color(40, 46, 52)
 local COL_43_49_56_115 = Color(43, 49, 56, 115)
 local COL_43_49_56_255 = Color(43, 49, 56, 255)
 local COL_58_64_72 = Color(58, 64, 72)
 local COL_60_64_70 = Color(60, 64, 70)
 local COL_61_90_71 = Color(61, 90, 71)
-local COL_70_167_88_160 = Color(70, 167, 88, 160)
+local COL_LIQUID_BAND = Col("eod.liquidBand", 70, 167, 88, 160)
 local COL_70_20_20 = Color(70, 20, 20)
 local COL_70_220_110 = Color(70, 220, 110)
-local COL_80_220_120 = Color(80, 220, 120)
+local COL_TIMER_SAFE = Col("eod.timerSafe", 80, 220, 120)
 local COL_89_99_109 = Color(89, 99, 109)
-local COL_8_8_8_255 = Color(8, 8, 8, 255)
+local COL_DISPLAY = Col("eod.displayBg", 8, 8, 8, 255)
+local COL_ON_HINT = Col("eod.onHint", 17, 17, 17)
+local COL_AIM_HINT = Col("eod.aimHint", 255, 209, 102)
+local COL_AIM_EDGE = Col("eod.aimHintEdge", 0, 0, 0, 220)
 local COL_90_100_110 = Color(90, 100, 110)
 
 local E = Rhylib.EOD
 local Net = Rhylib.Net
 
 local function K() return Rhylib.UI and Rhylib.UI.Kit end
-local OPAQUE = Color(14, 16, 15, 255)
+local OPAQUE = Col("eod.windowBg", 14, 16, 15, 255)
 local BOARD_BG = Color(14, 27, 20, 255)
 local PART_BG = Color(22, 38, 29, 255)
 local PART_EDGE = Color(96, 128, 108, 255)
@@ -498,9 +505,9 @@ local PART_STRIP = {
 local WIRE_EDGE = Color(4, 8, 6, 255)
 local COPPER = Color(214, 142, 68)
 local PLUG, PLUG_EDGE = Color(43, 47, 51), Color(10, 12, 13)
-local HINT = Color(245, 217, 10)
-local HINT_SOFT = Color(245, 217, 10, 70)
-local TUT_NOW_BG, HINT_BG, HINT_TEXT = Color(36, 33, 15), Color(36, 33, 15, 255), Color(240, 231, 180)
+local HINT = Col("eod.hint", 245, 217, 10)
+local HINT_SOFT = Col("eod.hintSoft", 245, 217, 10, 70)
+local TUT_NOW_BG, HINT_BG, HINT_TEXT = Col("eod.stepNowBg", 36, 33, 15), Col("eod.hintBg", 36, 33, 15, 255), Col("eod.hintText", 240, 231, 180)
 
 local function circle(x, y, r, col)
     draw.RoundedBox(math.floor(r), x - r, y - r, r * 2, r * 2, col)
@@ -551,14 +558,14 @@ end
 local function timerText(v)
     local t = v.timer
     if not t then return nil end
-    if v.safe or v.done then return "SAFE", COL_80_220_120 end
-    if v.tutorial and not (t.ends and t.ends > 0) then return "NO COUNTDOWN", COL_140_140_140 end
+    if v.safe or v.done then return "SAFE", COL_TIMER_SAFE end
+    if v.tutorial and not (t.ends and t.ends > 0) then return "NO COUNTDOWN", COL_TIMER_IDLE end
     if t.ends and t.ends > 0 then
         local left = math.max(0, t.ends - CurTime())
-        return string.FormattedTime(left, "%02i:%02i"), left < 15 and COL_255_90_80 or COL_235_70_60
+        return string.FormattedTime(left, "%02i:%02i"), left < 15 and COL_TIMER_LOW or COL_TIMER_RUN
     end
-    if t.stopped then return string.FormattedTime(t.left or 0, "%02i:%02i") .. "  STOPPED", COL_140_140_140 end
-    return string.FormattedTime(t.left or t.secs or 0, "%02i:%02i") .. "  WAITING", COL_200_120_60
+    if t.stopped then return string.FormattedTime(t.left or 0, "%02i:%02i") .. "  STOPPED", COL_TIMER_IDLE end
+    return string.FormattedTime(t.left or t.secs or 0, "%02i:%02i") .. "  WAITING", COL_TIMER_WAIT
 end
 
 --------------------------------------------------------------------------
@@ -854,7 +861,7 @@ local function boardPanel(parent, k)
             local mx, my = self:CursorPos()
             local wd = v.wires[hov.i]
             local txt = nameOf(wd.c) .. " wire" .. (wd.cut and " (cut)" or "") .. (wd.arm and " · armoured" or "")
-            draw.SimpleTextOutlined(txt, k.Font(13, 700), mx + s(14), my + s(6), color_white, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP, 1, COL_0_0_0_230)
+            draw.SimpleTextOutlined(txt, k.Font(13, 700), mx + s(14), my + s(6), COL_TIP_TEXT, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP, 1, COL_TIP_EDGE)
         end
     end
     return p
@@ -967,7 +974,7 @@ local function buildLeft(win, k)
 
     if v.timer then
         custom(sp, k, s(46), function(_, w, h)
-            k.Plate(0, 0, w, h, { bg = COL_8_8_8_255 })
+            k.Plate(0, 0, w, h, { bg = COL_DISPLAY })
             local txt, col = timerText(W() and W().v or v)
             draw.SimpleText("TIMER", k.Font(12, 700), s(10), h / 2, C.label, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
             draw.SimpleText(txt or "", k.Font(24, 800), w - s(10), h / 2, col or C.text, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
@@ -1005,14 +1012,14 @@ local function buildLeft(win, k)
                 if state == "done" then
                     draw.RoundedBox(r, cx - r, cy - r, r * 2, r * 2, C.good)
                     -- (a tick, drawn: not every font has the glyph)
-                    surface.SetDrawColor(COL_17_17_17)
+                    surface.SetDrawColor(COL_ON_HINT)
                     for o = -1, 1 do
                         surface.DrawLine(cx - r * 0.45, cy + o, cx - r * 0.1, cy + r * 0.35 + o)
                         surface.DrawLine(cx - r * 0.1, cy + r * 0.35 + o, cx + r * 0.5, cy - r * 0.35 + o)
                     end
                 elseif cur then
                     draw.RoundedBox(r, cx - r, cy - r, r * 2, r * 2, HINT)
-                    draw.SimpleText(tostring(n), k.Font(12, 800), cx, cy, COL_17_17_17, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                    draw.SimpleText(tostring(n), k.Font(12, 800), cx, cy, COL_ON_HINT, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
                 else
                     k.SetCol(C.edgeLight)
                     surface.DrawOutlinedRect(cx - r, cy - r, r * 2, r * 2, 1)
@@ -1142,10 +1149,10 @@ local function buildLeft(win, k)
             local l = win2.v.liquid
             k.SetCol(C.row)
             surface.DrawRect(0, 0, w, h)
-            k.SetCol(COL_70_167_88_160)
+            k.SetCol(COL_LIQUID_BAND)
             surface.DrawRect(w * l.band / 100, 1, w * 14 / 100, h - 2)
             local n = E.LiquidNeedle(l, CurTime())
-            k.SetCol(COL_255_255_255)
+            k.SetCol(COL_LIQUID_NEEDLE)
             surface.DrawRect(w * n / 100 - 1, 0, 3, h)
             k.SetCol(C.edgeDark)
             surface.DrawOutlinedRect(0, 0, w, h)
@@ -1236,7 +1243,7 @@ local function overlay(win, k, kind, a, b, c)
     ov:SetPos(0, 0)
     local bad = kind == "fail"
     function ov:Paint(w, h)
-        k.SetCol(COL_0_0_0_255, 215)
+        k.SetCol(COL_OVERLAY, 215)
         surface.DrawRect(0, 0, w, h)
         local pw, ph = s(560), s(250)
         local x, y = (w - pw) / 2, (h - ph) / 2
@@ -1360,12 +1367,12 @@ local function openWindow(bomb)
     read:SetTall(s(30))
     read:DockMargin(0, 0, 0, s(6))
     function read:Paint(w, h)
-        k.SetCol(COL_8_8_8_255)
+        k.SetCol(COL_DISPLAY)
         surface.DrawRect(0, 0, w, h)
         k.SetCol(C.edgeDark)
         surface.DrawOutlinedRect(0, 0, w, h)
         draw.SimpleText("PROBE", k.Font(12, 700), s(10), h / 2, C.label, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-        draw.SimpleText(win.lastRead or "—", k.Font(15, 700), s(70), h / 2, COL_130_255_160, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        draw.SimpleText(win.lastRead or "—", k.Font(15, 700), s(70), h / 2, COL_PROBE_TEXT, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
     end
 
     -- log
@@ -1621,7 +1628,7 @@ Rhylib.Hook.Add("HUDPaint", "eod.hint", function()
     else
         txt = "Interference device  ·  E: settings"
     end
-    draw.SimpleTextOutlined(txt, font, ScrW() / 2, ScrH() * 0.58, COL_255_209_102, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, COL_0_0_0_220)
+    draw.SimpleTextOutlined(txt, font, ScrW() / 2, ScrH() * 0.58, COL_AIM_HINT, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, COL_AIM_EDGE)
 end)
 
 -- Menu closer (Rhylib.UI.CloseAll: Esc / pause and other menus opening

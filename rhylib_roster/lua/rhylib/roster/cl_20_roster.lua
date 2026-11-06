@@ -9,6 +9,12 @@
     roster.data (see R.SendRoster in sv_10_roster.lua), sends roster.act.
     Every action is checked again on the server; the buttons here only
     hide what you aren't allowed to do.
+    Look: a card on top (your name, rank chip, where you stand; members /
+    online numbers on the right), admins' battalion dropdown, an amber
+    basic training box for cadets, then bands (diamond, name, counts) over
+    alternating rows: members (online dot, rank chip, name, rank · last
+    seen · note, Manage menu), CTs to add, cadets, the roster log. Removing
+    and passing ask first (R.Draw.Confirm).
 ]]
 
 local R = Rhylib.Roster
@@ -55,34 +61,107 @@ local function seenText(m)
     return "seen " .. math.floor(d / 86400) .. " d ago"
 end
 
+-- The battalion's colour: its jobs' colour (game data), or nil.
+local function bnColour(bn)
+    if bn == "" then return nil end
+    for _, j in pairs(RPExtraTeams or {}) do
+        if j.battalion == bn and IsColor(j.color) then return j.color end
+    end
+end
+
+-- A list row: alternating fill, hover, edges. Returns the panel (docked TOP).
+local function listRow(parent, i, tall)
+    local k = K()
+    local s = k.S
+    local r = vgui.Create("DPanel", parent)
+    r:Dock(TOP)
+    r:SetTall(tall or s(48))
+    r:DockMargin(0, 0, s(8), 0)
+    local pad = math.max(0, math.floor((r:GetTall() - s(26)) / 2))
+    r:DockPadding(s(12), pad, s(12), pad)
+    r.alt = i % 2 == 0
+    function r:Paint(w, h)
+        local C = k.C
+        k.SetCol(self:IsHovered() and C.rowHover or (self.alt and C.rowAlt or C.row))
+        surface.DrawRect(0, 0, w, h)
+        k.SetCol(C.edgeDark)
+        surface.DrawRect(0, h - 1, w, 1)
+        if self.PaintRow then self:PaintRow(w, h) end
+    end
+    return r
+end
+
 local function build(page)
     local k = K()
     local s = k.S
+    local C = k.C
+    local D = R.Draw
     local me = R.Get(LocalPlayer())
 
     if not data then
-        local l = k.Label(page, "Loading…", 14, 400, k.C.textDim)
+        local l = k.Label(page, "Loading…", 14, 400, C.textDim)
         l:Dock(TOP)
         request()
         return
     end
 
-    -- You.
+    local bnCol = bnColour(data.bn)
+    local online = 0
+    for _, m in ipairs(data.members) do if m.on then online = online + 1 end end
+
+    -- You: a card with your name, where you stand, and the battalion's numbers.
     local you = vgui.Create("DPanel", page)
     you:Dock(TOP)
-    you:SetTall(s(58))
+    you:SetTall(s(84))
     you:DockMargin(0, 0, 0, s(10))
+    local myLine
+    if not me.has then myLine = "No character yet"
+    elseif me.bn ~= "" then myLine = R.RankName(me.rank) .. " in the " .. me.bn
+    elseif me.trained then myLine = "Clone trooper, not in a battalion yet"
+    else myLine = "Cadet: waiting for basic training" end
+    local chip = (me.has and me.bn ~= "" and R.RankPrefix(me.rank)) or (me.trained and "CT") or (me.has and "CADET") or nil
+    local myBnCol = bnColour(me.bn)
+    local function stateCol() return (me.has and not me.trained) and C.warn or (myBnCol or C.accent) end
+    local bnText = data.bn ~= "" and string.upper(data.bn) or nil
+    local nMembers, nOnline = tostring(#data.members), tostring(online)
     function you:Paint(w, h)
-        k.SetCol(k.C.row)
+        local sc = stateCol()
+        k.SetCol(C.row)
         surface.DrawRect(0, 0, w, h)
+        k.SetCol(sc, 22)
+        surface.DrawRect(0, 0, w, h)
+        k.SetCol(sc)
+        surface.DrawRect(0, 0, s(4), h)
+        k.SetCol(C.edgeDark)
+        surface.DrawOutlinedRect(0, 0, w, h)
+        k.SetCol(C.edgeLight)
+        surface.DrawLine(1, 1, w - 1, 1)
+        k.Ticks(0, 0, w, h, false)
+        local isz = s(40)
+        k.SetCol(C.header)
+        surface.DrawRect(s(18), (h - isz) * 0.5, isz, isz)
+        k.SetCol(C.edgeDark)
+        surface.DrawOutlinedRect(s(18), (h - isz) * 0.5, isz, isz)
+        k.Icon("battalion", s(18) + s(8), (h - isz) * 0.5 + s(8), isz - s(16), sc)
+        local x = s(18) + isz + s(14)
         local name = R.FullName(LocalPlayer()) or LocalPlayer():Nick()
-        draw.SimpleText(name, k.Font(18, 700), s(12), h * 0.36, k.C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-        local line
-        if not me.has then line = "No character yet"
-        elseif me.bn ~= "" then line = R.RankName(me.rank) .. " in the " .. me.bn
-        elseif me.trained then line = "Clone trooper, not in a battalion yet"
-        else line = "Cadet: waiting for basic training" end
-        draw.SimpleText(line, k.Font(13), s(12), h * 0.72, k.C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        local statW = data.bn ~= "" and s(220) or 0
+        draw.SimpleText(k.Fit(name, k.Font(22, 800), w - x - statW - s(90)), k.Font(22, 800), x, h * 0.38, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        surface.SetFont(k.Font(22, 800))
+        local nw = math.min(surface.GetTextSize(name), w - x - statW - s(90))
+        if chip and D then D.Chip(chip, x + nw + s(10), h * 0.38, sc) end
+        draw.SimpleText(myLine, k.Font(13), x, h * 0.70, C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        -- (the battalion's numbers, right-aligned)
+        if data.bn ~= "" then
+            local rx = w - s(18)
+            draw.SimpleText(nOnline, k.Font(24, 800), rx, h * 0.42, C.good, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+            k.Caps("Online", rx, h * 0.74, C.label, TEXT_ALIGN_RIGHT)
+            rx = rx - s(90)
+            draw.SimpleText(nMembers, k.Font(24, 800), rx, h * 0.42, C.text, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+            k.Caps("Members", rx, h * 0.74, C.label, TEXT_ALIGN_RIGHT)
+            k.SetCol(C.edgeLight)
+            surface.DrawRect(w - statW - s(4), s(14), 1, h - s(28))
+        end
     end
 
     -- Admins: which battalion to look at.
@@ -90,65 +169,108 @@ local function build(page)
         local row = k.Row(page, "Battalion", "Admins can manage any battalion")
         row:Dock(TOP)
         row:DockMargin(0, 0, 0, s(8))
-        row.right:SetWide(s(220))
-        local b = k.Button(row.right, (data.bn ~= "" and data.bn or "Pick one") .. " ▾", function()
-            local m = k.Menu()
-            for _, bn in ipairs(battalions()) do
-                m:AddOption(bn, function()
-                    adminBn = bn
-                    data = nil
-                    request()
-                end)
-            end
-            m:Open()
-        end, { small = true })
-        b:Dock(FILL)
+        row.right:SetWide(s(260))
+        local function opts()
+            local out = {}
+            for _, bn in ipairs(battalions()) do out[#out + 1] = { bn, bn } end
+            return out
+        end
+        local dd = k.Dropdown(row.right, opts(), function() return data and data.bn or adminBn end, function(bn)
+            adminBn = bn
+            data = nil
+            request()
+        end, { placeholder = "Pick one", width = s(260) })
+        dd:Dock(FILL)
     end
 
     local sp = k.Scroll(page)
     sp:Dock(FILL)
-    local function heading(text)
-        local h = k.Heading(sp, text)
-        h:Dock(TOP)
-        h:DockMargin(0, s(6), s(8), s(4))
+    local function band(text, col, right)
+        local b = D.Band(sp, text, col, right and function() return right end or nil)
+        b:Dock(TOP)
+        b:DockMargin(0, s(10), s(8), 0)
     end
     local function note(text)
-        local l = k.Label(sp, text, 13, 400, k.C.textDim)
+        local l = k.Label(sp, text, 13, 400, C.textDim)
         l:Dock(TOP)
-        l:DockMargin(0, 0, s(8), s(4))
+        l:DockMargin(s(4), s(6), s(8), s(6))
+    end
+    local function rowButton(r, text, fn, opts, w)
+        local b = k.Button(r, text, fn, opts)
+        b:Dock(RIGHT)
+        b:SetWide(s(w or 120))
+        b:DockMargin(s(6), 0, 0, 0)
+        return b
     end
 
     -- A cadet can ask for an instructor (roster.trainreq); the quiz is at
     -- a training instructor NPC (E on him, sh_60_quiz.lua).
     if me.has and not me.trained then
-        if R.Cfg("quiz") then
-            note("Know how to play? Find a training instructor and press E on him to take the basic training quiz.")
+        local box = vgui.Create("DPanel", sp)
+        box:Dock(TOP)
+        box:DockMargin(0, 0, s(8), s(4))
+        box:DockPadding(s(18), s(32), s(14), s(12))
+        function box:Paint(w, h)
+            k.SetCol(C.row)
+            surface.DrawRect(0, 0, w, h)
+            k.SetCol(C.warn, 20)
+            surface.DrawRect(0, 0, w, h)
+            k.SetCol(C.warn)
+            surface.DrawRect(0, 0, s(3), h)
+            k.SetCol(C.edgeDark)
+            surface.DrawOutlinedRect(0, 0, w, h)
+            D.Diamond(s(22), s(18), s(4), C.warn)
+            k.Caps("Basic training", s(32), s(18), C.warn)
         end
-        local b = k.Button(sp, "Request basic training", function()
+        local b = k.Button(box, "Request basic training", function()
             Rhylib.Net.Start("roster.trainreq")
             net.SendToServer()
         end, { accent = true, tooltip = "Tells every Sergeant or higher online that you're waiting" })
-        b:Dock(TOP)
-        b:DockMargin(0, 0, s(8), s(8))
+        b:Dock(RIGHT)
+        b:SetWide(s(230))
+        b:DockMargin(s(12), 0, 0, 0)
+        local text = R.Cfg("quiz") and "Know how to play? Find a training instructor and press E on him to take the basic training quiz. Or ask for an instructor to come and train you."
+            or "An instructor (a Sergeant or higher) passes you through basic training."
+        local l = k.Label(box, text, 13, 400, C.text)
+        l:Dock(TOP)
+        function box:PerformLayout()
+            local want = math.max(s(34), l:GetTall()) + s(44)
+            if self:GetTall() ~= want then self:SetTall(want) end
+        end
     end
 
     -- Members.
     if data.bn == "" then
         note(data.admin and "Pick a battalion above." or "You're not in a battalion. A Sergeant or higher of a battalion can add you once you're a clone trooper.")
     else
-        heading(data.bn .. " — " .. #data.members .. " member" .. (#data.members == 1 and "" or "s"))
+        band(data.bn, bnCol, #data.members .. " member" .. (#data.members == 1 and "" or "s") .. "  ·  " .. online .. " online")
         local limit = data.limit   -- you can give ranks below this
         local nRanks = #R.Ranks()
-        for _, m in ipairs(data.members) do
-            local r = k.Row(sp, m.name, R.RankName(m.r) .. "  ·  " .. seenText(m) .. (m.note ~= "" and ("  ·  " .. m.note) or ""))
-            r:Dock(TOP)
-            r:DockMargin(0, 0, s(8), s(3))
+        for i, m in ipairs(data.members) do
+            local r = listRow(sp, i, s(50))
+            local prefix = R.RankPrefix(m.r) or "—"
+            local sub = R.RankName(m.r) .. "  ·  " .. seenText(m) .. (m.note ~= "" and ("  ·  " .. m.note) or "")
             local canAct = data.manager and m.r < limit and (data.admin or m.id ~= LocalPlayer():SteamID64())
+            function r:PaintRow(w, h)
+                local cy = h * 0.5
+                -- (online dot)
+                draw.RoundedBox(s(4), s(14), cy - s(4), s(8), s(8), m.on and C.good or C.tick)
+                -- (rank chip in a fixed column)
+                local cx = s(32)
+                k.SetCol(C.header)
+                surface.DrawRect(cx, cy - s(11), s(52), s(22))
+                k.SetCol(bnCol or C.accent, 160)
+                surface.DrawOutlinedRect(cx, cy - s(11), s(52), s(22))
+                draw.SimpleText(prefix, k.Font(12, 700), cx + s(26), cy, C.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                local x = cx + s(66)
+                local room = w - x - (canAct and s(150) or s(12))
+                draw.SimpleText(k.Fit(m.name, k.Font(15, 700), room), k.Font(15, 700), x, h * 0.34, m.on and C.text or C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                draw.SimpleText(k.Fit(sub, k.Font(12), room), k.Font(12), x, h * 0.70, C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            end
             if canAct then
                 -- Manage: a small menu with what you're allowed to do.
-                r.right:SetWide(s(120))
-                local b = k.Button(r.right, "Manage ▾", function()
-                    local menu = k.Menu()
+                local b = rowButton(r, "Manage", function()
+                    local menu = D.Menu()
                     local up, down = m.r + 1, m.r - 1
                     local o = menu:AddOption("Promote to " .. R.RankName(up), function() act(ACT_RANK, m.id, up) end)
                     if not (up < limit and up <= nRanks) then o:SetEnabled(false) end
@@ -156,21 +278,18 @@ local function build(page)
                     if down < 1 then o:SetEnabled(false) end
                     -- Any rank at once (below yours).
                     local subMenu = menu:AddSubMenu("Set rank")
-                    for i = 1, nRanks do
-                        if i < limit and i ~= m.r then
-                            subMenu:AddOption(R.RankName(i), function() act(ACT_RANK, m.id, i) end)
+                    for ri = 1, nRanks do
+                        if ri < limit and ri ~= m.r then
+                            subMenu:AddOption(R.RankName(ri), function() act(ACT_RANK, m.id, ri) end)
                         end
                     end
                     menu:AddSpacer()
                     menu:AddOption("Remove from the " .. data.bn, function()
-                        Derma_Query("Remove " .. m.name .. " from the " .. data.bn .. "?", "Remove member", "Remove", function() act(ACT_REMOVE, m.id) end, "Cancel")
+                        D.Confirm("Remove member", "Remove " .. m.name .. " from the " .. data.bn .. "?", "Remove", function() act(ACT_REMOVE, m.id) end, true)
                     end)
                     menu:Open()
-                end, { small = true })
-                b:Dock(FILL)
-                b:DockMargin(0, s(6), 0, s(6))
-            else
-                r.right:SetWide(0)
+                end, { small = true, align = "left" }, 130)
+                function b:PaintOver(w, h) k.Arrow(w - s(14), h * 0.5, s(8), "down", C.textDim) end
             end
         end
         if #data.members == 0 then note("Nobody yet.") end
@@ -179,40 +298,42 @@ local function build(page)
     -- Officers: people waiting.
     if data.manager then
         if data.bn ~= "" and #data.cts > 0 then
-            heading("Clone troopers to add")
+            band("Clone troopers to add", C.accent, #data.cts .. " waiting")
             note("Adding someone from another battalion moves them here as PVT.")
-            for _, p in ipairs(data.cts) do
-                local r = k.Row(sp, p.name)
-                r:Dock(TOP)
-                r:DockMargin(0, 0, s(8), s(3))
-                r.right:SetWide(s(170))
-                local b = k.Button(r.right, "Add to " .. data.bn, function() act(ACT_ADD, p.id) end, { small = true, accent = true })
-                b:Dock(FILL)
-                b:DockMargin(0, s(6), 0, s(6))
+            for i, p in ipairs(data.cts) do
+                local r = listRow(sp, i, s(44))
+                function r:PaintRow(w, h)
+                    draw.SimpleText(k.Fit(p.name, k.Font(15, 700), w - s(240)), k.Font(15, 700), s(14), h * 0.5, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                end
+                rowButton(r, "Add to " .. data.bn, function() act(ACT_ADD, p.id) end, { small = true, accent = true }, 190)
             end
         end
         if #data.cadets > 0 then
-            heading("Cadets")
-            for _, p in ipairs(data.cadets) do
-                local r = k.Row(sp, p.name)
-                r:Dock(TOP)
-                r:DockMargin(0, 0, s(8), s(3))
-                r.right:SetWide(s(190))
-                local b = k.Button(r.right, "Pass basic training", function()
-                    Derma_Query(p.name .. " passed basic training and becomes a clone trooper?", "Basic training", "Pass", function() act(ACT_TRAIN, p.id) end, "Cancel")
-                end, { small = true, accent = true })
-                b:Dock(FILL)
-                b:DockMargin(0, s(6), 0, s(6))
+            band("Cadets", C.warn, #data.cadets .. " waiting for basic training")
+            for i, p in ipairs(data.cadets) do
+                local r = listRow(sp, i, s(44))
+                function r:PaintRow(w, h)
+                    D.Chip("CADET", s(14), h * 0.5, C.warn)
+                    draw.SimpleText(k.Fit(p.name, k.Font(15, 700), w - s(320)), k.Font(15, 700), s(80), h * 0.5, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                end
+                rowButton(r, "Pass basic training", function()
+                    D.Confirm("Basic training", p.name .. " passed basic training and becomes a clone trooper?", "Pass", function() act(ACT_TRAIN, p.id) end)
+                end, { small = true, accent = true }, 200)
             end
         end
     end
 
     -- Log.
     if data.bn ~= "" then
-        heading("Roster log")
+        band("Roster log", C.label, #data.log > 0 and (#data.log .. " entries") or nil)
         if #data.log == 0 then note("Nothing yet.") end
-        for _, e in ipairs(data.log) do
-            note(os.date("%d %b %H:%M", e.t) .. "   " .. e.txt)
+        for i, e in ipairs(data.log) do
+            local when = string.upper(os.date("%d %b %H:%M", e.t))
+            local r = listRow(sp, i, s(32))
+            function r:PaintRow(w, h)
+                draw.SimpleText(when, k.Font(11, 700), s(14), h * 0.5, C.label, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                draw.SimpleText(k.Fit(e.txt, k.Font(13), w - s(150)), k.Font(13), s(130), h * 0.5, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            end
         end
     end
 end

@@ -4,14 +4,20 @@
     HUD's health bar turns yellow and shows it) and the respawn beacon list.
     The list needs the UI kit (Rhylib.UI.Kit); without it the client picks
     the nearest beacon as soon as it may.
+
+    Sim health bar: a small plate under the crosshair, caps SIMULATION and
+    the number (ELIMINATED in yellow when out), a yellow bar.
+    Beacon list: a plate with a yellow rule (ELIMINATED, by whom), the
+    wait as a yellow bar with "Back in the simulation in N s" / "Pick a
+    respawn point (nearest in N s)", one card per beacon (number, name,
+    NEAREST chip on the first, distance right; hover lights it), then
+    Nearest. Clicking a card or Nearest picks and closes it.
 ]]
 
 local T = Rhylib.Training
 
-local COL_SIM = Color(255, 210, 60)
-local COL_BACK = Color(0, 0, 0, 170)
-local COL_DIM = Color(255, 210, 60, 60)
-local COL_TEXT = Color(255, 236, 180)
+-- The training yellow (the HUD's sim health and hit markers use it too).
+local COL_SIM = Rhylib.UI.Col("training.sim", 255, 210, 60)
 
 local shownAt = 0
 local lastHp
@@ -31,17 +37,27 @@ Rhylib.Hook.Add("HUDPaint", "training.bar", function()
     -- A training gun in hand: the HUD's own health bar shows it (rhylib_hud).
     local HUD = Rhylib.HUD
     if not out and HUD and HUD.SimHealth and HUD.SimHealth(ply) then return end
-    local S = function(n) return math.floor(n * ScrH() / 1080 + 0.5) end
-    local w, h = S(240), S(8)
-    local x, y = ScrW() * 0.5 - w * 0.5, ScrH() * 0.5 + S(120)
-    surface.SetDrawColor(COL_BACK)
-    surface.DrawRect(x - 1, y - 1, w + 2, h + 2)
-    surface.SetDrawColor(COL_DIM)
+    local K = Rhylib.UI.Kit
+    if not K then return end
+    local C = K.C
+    local S = K.S
+    local w, h = S(260), S(8)
+    local pw, ph = w + S(20), S(42)
+    local x, y = math.floor(ScrW() * 0.5 - w * 0.5), math.floor(ScrH() * 0.5 + S(120))
+    local px, py = x - S(10), y - S(28)
+    K.Plate(px, py, pw, ph, { alpha = 235 })
+    K.SetCol(COL_SIM)
+    surface.DrawRect(px + 1, py + 1, S(3), ph - 2)
+    if out then
+        K.Caps("Eliminated (simulation)", x, py + S(12), COL_SIM)
+    else
+        K.Caps("Simulation", x, py + S(12), C.label)
+        draw.SimpleText(hp, K.Font(14, 700), x + w, py + S(12), C.text, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+    end
+    K.SetCol(COL_SIM, 50)
     surface.DrawRect(x, y, w, h)
-    surface.SetDrawColor(COL_SIM)
-    surface.DrawRect(x, y, w * math.Clamp(hp / max, 0, 1), h)
-    local label = out and "ELIMINATED (SIMULATION)" or ("SIMULATION  " .. hp)
-    draw.SimpleTextOutlined(label, Rhylib.UI.Font(14, 700), ScrW() * 0.5, y - S(4), COL_TEXT, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM, 1, color_black)
+    K.SetCol(COL_SIM)
+    surface.DrawRect(x, y, math.floor(w * math.Clamp(hp / max, 0, 1)), h)
 end)
 
 --------------------------------------------------------------------------
@@ -69,22 +85,32 @@ local function open(by, readyAt, autoAt, list)
         timer.Simple(math.max(0, readyAt - CurTime()), function() pick(nil) end)
         return
     end
-    local S = K.S
+    local C, S = K.C, K.S
     local f = vgui.Create("EditablePanel")
     win = f
     local rows = math.min(#list, 8)
-    f:SetSize(S(380), S(96) + math.max(rows, 1) * S(38) + S(44))
+    local CARD = S(44)
+    local total = math.max(0.01, readyAt - CurTime())
+    f:SetSize(S(400), S(118) + math.max(rows, 1) * (CARD + S(4)) + S(44))
     f:SetPos(ScrW() * 0.5 - f:GetWide() * 0.5, ScrH() * 0.62 - f:GetTall() * 0.5)
     f:MakePopup()
     f:SetKeyboardInputEnabled(false)
-    f:DockPadding(S(12), S(80), S(12), S(12))
+    f:DockPadding(S(12), S(104), S(12), S(12))
+    local byText = by ~= "" and ("by " .. by) or nil
     function f:Paint(w, h)
-        K.Plate(0, 0, w, h, { title = "Eliminated", sub = by ~= "" and ("by " .. by) or nil, ticks = "all", header = S(34), rule = COL_SIM })
+        K.Plate(0, 0, w, h, { title = "Eliminated", sub = byText, ticks = "all", header = S(38), rule = COL_SIM })
         local left = math.max(0, math.ceil(autoAt - CurTime()))
         local wait = readyAt - CurTime()
         local msg = wait > 0 and string.format("Back in the simulation in %.0f s. Pick where:", math.ceil(wait))
             or ("Pick a respawn point (nearest in " .. left .. " s)")
-        draw.SimpleText(msg, K.Font(14), S(12), S(56), K.C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        draw.SimpleText(msg, K.Font(14, 600), S(12), S(58), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        -- (the wait as a bar: fills up until you may get back in)
+        local bw, by2 = w - S(24), S(74)
+        K.SetCol(C.row)
+        surface.DrawRect(S(12), by2, bw, S(6))
+        K.SetCol(COL_SIM, wait > 0 and 200 or 255)
+        surface.DrawRect(S(12), by2, math.floor(bw * math.Clamp(1 - wait / total, 0, 1)), S(6))
+        K.Caps(wait > 0 and "Waiting" or "Ready", S(12), S(92), wait > 0 and C.label or COL_SIM)
     end
     function f:Think()
         if not T.Out(LocalPlayer()) and CurTime() > readyAt + 1 then close() end
@@ -96,12 +122,51 @@ local function open(by, readyAt, autoAt, list)
         b:Dock(TOP)
     end
     for i, row in ipairs(list) do
-        local b = K.Button(sc, row.name .. "  ·  " .. row.dist .. " m", function() pick(row.idx) close() end, { accent = i == 1, align = "left" })
+        local b = vgui.Create("DButton", sc)
+        b:SetText("")
+        b:SetTall(CARD)
         b:Dock(TOP)
-        b:DockMargin(0, 0, 0, S(4))
+        b:DockMargin(0, 0, S(8), S(4))
+        local key, dist, nearest = tostring(i), row.dist .. " m", i == 1
+        function b:Paint(w, h)
+            local hov = self:IsHovered()
+            K.SetCol(hov and C.rowHover or (i % 2 == 0 and C.rowAlt or C.row))
+            surface.DrawRect(0, 0, w, h)
+            K.SetCol(hov and C.accent or C.edgeDark)
+            surface.DrawOutlinedRect(0, 0, w, h)
+            K.SetCol(nearest and COL_SIM or C.tick, nearest and 255 or 120)
+            surface.DrawRect(0, 0, S(3), h)
+            local cy = h * 0.5
+            local kb = S(22)
+            K.SetCol(C.header)
+            surface.DrawRect(S(12), cy - kb * 0.5, kb, kb)
+            K.SetCol(C.edgeLight)
+            surface.DrawOutlinedRect(S(12), cy - kb * 0.5, kb, kb)
+            draw.SimpleText(key, K.Font(13, 700), S(12) + kb * 0.5, cy, C.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            draw.SimpleText(dist, K.Font(14, 700), w - S(12), cy, C.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+            local nf = K.Font(15, 700)
+            local name = K.Fit(row.name, nf, w - S(46) - S(70) - (nearest and S(76) or 0))
+            draw.SimpleText(name, nf, S(46), cy, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            if nearest then
+                surface.SetFont(nf)
+                local cx, cw, ch = S(46) + surface.GetTextSize(name) + S(8), S(64), S(16)
+                K.SetCol(COL_SIM, 35)
+                surface.DrawRect(cx, cy - ch * 0.5, cw, ch)
+                K.SetCol(COL_SIM, 150)
+                surface.DrawOutlinedRect(cx, cy - ch * 0.5, cw, ch)
+                draw.SimpleText("NEAREST", K.Font(10, 700), cx + cw * 0.5, cy, COL_SIM, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            end
+            return true
+        end
+        function b:DoClick()
+            surface.PlaySound("ui/buttonclick.wav")
+            pick(row.idx)
+            close()
+        end
     end
     local n = K.Button(f, "Nearest", function() pick(nil) close() end)
     n:Dock(BOTTOM)
+    n:DockMargin(0, S(8), 0, 0)
 end
 
 Rhylib.Net.Receive("train.out", function()

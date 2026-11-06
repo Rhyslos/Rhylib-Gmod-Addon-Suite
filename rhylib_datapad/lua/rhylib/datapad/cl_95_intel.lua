@@ -22,15 +22,18 @@ local UI = Rhylib.UI
 
 -- (D.intelWin: the open window { frame, pad, view, ... }; kept on refresh)
 
-local OPAQUE = Color(14, 16, 15, 255)
-local SCOPE_BG, GRID = Color(7, 16, 12), Color(18, 38, 27)
-local BAND, BAND_EDGE = Color(239, 159, 39, 46), Color(239, 159, 39, 150)
-local LIVE, LIVE_GLOW = Color(133, 183, 235), Color(133, 183, 235, 60)
-local LOCKED_COL, LOCK_BG = Color(151, 196, 89), Color(11, 12, 11)
-local KNOB_RIM, KNOB_FACE, KNOB_MARK = Color(58, 61, 57), Color(38, 43, 40), Color(133, 183, 235)
-local TEXT_DIM, TEXT, AMBER = Color(169, 168, 160), Color(228, 227, 220), Color(239, 159, 39)
-local OVERLAY = Color(14, 16, 15, 225)
-local LOCKED_BAND, PIP_DONE, PIP_NOW, CARET, RX_TEXT = Color(151, 196, 89, 40), Color(26, 42, 23), Color(48, 64, 90), Color(70, 100, 140), Color(95, 138, 112)
+-- Colours: theme tokens (Rhylib.UI.Col), read when drawing.
+local Col, KC = UI.Col, UI.Kit.C
+local OPAQUE = Col("datapad.intelWin", 14, 16, 15, 255)
+local SCOPE_BG, GRID = Col("datapad.intelScope", 7, 16, 12), Col("datapad.intelGrid", 18, 38, 27)
+local BAND, BAND_EDGE = Col("datapad.intelBand", 239, 159, 39, 46), Col("datapad.intelBandEdge", 239, 159, 39, 150)
+local LIVE, LIVE_GLOW = Col("datapad.intelSignal", 133, 183, 235), Col("datapad.intelSignalGlow", 133, 183, 235, 60)
+local LOCKED_COL, LOCK_BG = Col("datapad.intelLocked", 151, 196, 89), Col("datapad.intelLockBg", 11, 12, 11)
+local KNOB_RIM, KNOB_FACE, KNOB_MARK = Col("datapad.intelKnobRim", 58, 61, 57), Col("datapad.intelKnobFace", 38, 43, 40), Col("datapad.intelKnobMark", 133, 183, 235)
+local TEXT_DIM, TEXT, AMBER = KC.textDim, KC.text, KC.warn
+local OVERLAY = Col("datapad.intelOverlay", 14, 16, 15, 225)
+local LOCKED_BAND, PIP_DONE, PIP_NOW = Col("datapad.intelLockedBand", 151, 196, 89, 40), Col("datapad.intelPipDone", 26, 42, 23), Col("datapad.intelPipNow", 48, 64, 90)
+local CARET, RX_TEXT = Col("datapad.intelCaret", 70, 100, 140), Col("datapad.intelRxText", 95, 138, 112)
 
 local F_MIN, F_MAX, A_MIN, A_MAX = 1, 4, 0.25, 1
 local F_LO, F_HI, A_LO, A_HI = 0, 5, 0, 1.4   -- (how far the knobs turn: past the targets, so drift can always be caught)
@@ -390,11 +393,17 @@ local function openSetup(pad, k, title, text, by, only, cracked)
     local cnt = k.Label(f, "", 12, 400, TEXT_DIM)
     cnt:Dock(TOP)
     cnt:DockMargin(0, 0, 0, s(8))
-    local lastLen
+    local lastLen, lastStamp
     function cnt:Think()
         local n = utf8.len(tx:GetValue() or "") or #(tx:GetValue() or "")
-        if n == lastLen then return end
-        lastLen = n
+        local stamp = UI.themeStamp or 0
+        if n == lastLen and stamp == lastStamp then return end
+        -- (after a theme switch: the colour and fonts again)
+        if lastStamp and stamp ~= lastStamp then
+            self:SetFont(k.Font(12, 400))
+            if IsValid(tx) then tx:SetFont(k.Font(14)) end
+        end
+        lastLen, lastStamp = n, stamp
         local max = D.Cfg("intelTextMax")
         self:SetText(n .. " / " .. max .. (n > max and " · the end will be cut" or ""))
         self:SetTextColor(n > max and AMBER or TEXT_DIM)

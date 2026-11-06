@@ -1,10 +1,25 @@
 --[[
     Spawn window (Menus.Spawn): our restyled Q menu, opened from the
     toolgun's R (rhylib_toolgun). Tabs: other addons' first (the toolgun
-    adds "Rhylib"), then Props (spawnlists), Entities, Weapons, NPCs,
+    adds "Rhy's"), then Props (spawnlists), Entities, Weapons, NPCs,
     Vehicles and Tools (with the tool's own settings panel). Everything
     spawns through the normal sandbox commands, so the server's spawn
     rights still apply.
+
+    Look (the house style): one plate with corner ticks, "SPAWN" and the
+    key hints on its header (pick mode: "PICK A MODEL", an amber rule and
+    an accent outline); a tab strip under it (caps tabs, the shown one
+    with an accent underline; they narrow when there are many) with the
+    search box on its right. Each tab: a side column plate (categories /
+    the props tree / the tool list as rows alternating C.row / C.rowAlt,
+    counts right-aligned, the picked row with an accent bar, folders with
+    a drawn arrow) and a content plate whose header names what's shown
+    and how many. Tiles are cards: the icon on a dark well, the name on a
+    header strip, hover C.rowHover, picked = accent edge, ADMIN as an
+    amber chip. Spawnlist headers are bands with a diamond; empty results
+    a dashed box. The hover preview is a ticked plate.
+    The Tools tab hosts sandbox's own control panels (DForm): they keep
+    the default skin inside our plate.
 
     Kept between openings (hidden, not removed), so tabs, scroll and the
     chosen tool stay. The mouse is free but the keyboard stays with the
@@ -13,7 +28,7 @@
     Menus.Spawn.AddTab(id, { title, order, build(body), onShow(body),
         search(body, text) }) adds a tab; Open / Close / IsOpen.
       title   tab button text        order   left to right (low first;
-                                             Rhylib 0, Props 10, Entities 20,
+                                             Rhy's 0, Props 10, Entities 20,
                                              Weapons 30, NPCs 40, Vehicles 50,
                                              Tools 60)
       build   fills body the first time the tab is shown (errors are caught
@@ -26,12 +41,14 @@
     categories + tiles tab), SP.Preview (hover preview), SP.ModelOf,
     SP.AddToolOption / SP.PickForTool (set by rhylib_toolgun),
     SP.PickModel / SP.TakePick (pick mode for the Server settings page),
-    SP.NpcWeapon, SP.IconMat, SP.L, SP.BG.
+    SP.NpcWeapon, SP.IconMat, SP.L, SP.BG (the window's background token).
 
     Hook Rhylib.SpawnTabItems(tabId, items) runs each time the Entities
     ("entities") or NPCs ("npcs") tab builds its tiles: add items or change
     them (fields as SP.Tile: cat, name, extra, tip, mat, model, run, menu,
     spec, admin, selected). rhylib_toolgun puts the droid spawner there.
+
+    Colours: kit tokens (K.C) and "spawn.bg" (the window's background).
 
     Client only. Spawning uses the sandbox commands gm_spawn, gm_spawnsent,
     gm_giveswep, gm_spawnswep, gmod_spawnnpc and gm_spawnvehicle.
@@ -74,8 +91,192 @@ local function iconMat(paths)
 end
 SP.IconMat = iconMat
 
--- The window's background: solid dark grey (not see-through, close to the rest of the UI).
-SP.BG = Color(44, 47, 49, 255)
+-- The window's background (a theme token): the house dark, near solid.
+SP.BG = Rhylib.UI.Col("spawn.bg", 14, 16, 15, 250)
+
+--------------------------------------------------------------------------
+-- Drawing helpers (house look)
+--------------------------------------------------------------------------
+
+local GRAD_L = Material("vgui/gradient-l")
+
+-- (one vertex table, filled per draw: no tables made in Paint)
+local DIA = { {}, {}, {}, {} }
+local function diamond(cx, cy, r, col)
+    DIA[1].x, DIA[1].y = cx, cy - r
+    DIA[2].x, DIA[2].y = cx + r, cy
+    DIA[3].x, DIA[3].y = cx, cy + r
+    DIA[4].x, DIA[4].y = cx - r, cy
+    draw.NoTexture()
+    K.SetCol(col)
+    surface.DrawPoly(DIA)
+end
+
+-- A dashed outline (empty results).
+local function dashed(x, y, w, h, col, a)
+    local d, g = K.S(6), K.S(4)
+    K.SetCol(col, a)
+    for i = x, x + w - 1, d + g do
+        local l = math.min(d, x + w - i)
+        surface.DrawRect(i, y, l, 1)
+        surface.DrawRect(i, y + h - 1, l, 1)
+    end
+    for j = y, y + h - 1, d + g do
+        local l = math.min(d, y + h - j)
+        surface.DrawRect(x, j, 1, l)
+        surface.DrawRect(x + w - 1, j, 1, l)
+    end
+end
+
+-- A chip: caps text (give it upper case) on a pill tinted in col; x is
+-- its right edge, y its centre.
+local function chipRight(text, x, y, col)
+    local S = K.S
+    local f = K.Font(10, 700)
+    surface.SetFont(f)
+    local w, h = surface.GetTextSize(text) + S(10), S(15)
+    K.SetCol(C.bg, 220)
+    surface.DrawRect(x - w, y - h * 0.5, w, h)
+    K.SetCol(col, 45)
+    surface.DrawRect(x - w, y - h * 0.5, w, h)
+    K.SetCol(col, 160)
+    surface.DrawOutlinedRect(x - w, y - h * 0.5, w, h)
+    draw.SimpleText(text, f, x - w * 0.5, y, col, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+end
+
+-- A plate column (side list / content): K.Plate with a header that reads
+-- getTitle() / getSub() when drawn. Children dock inside under the header.
+local COL_HEAD = 30
+local function column(parent, getTitle, getSub)
+    local S = K.S
+    local p = vgui.Create("DPanel", parent)
+    p:DockPadding(1, S(COL_HEAD) + 1, 1, 1)
+    function p:Paint(w, h)
+        local sub = getSub and getSub() or nil
+        if sub then sub = K.Fit(sub, K.Font(13), math.max(S(40), w * 0.5)) end
+        K.Plate(0, 0, w, h, { bg = C.bg, title = getTitle(), sub = sub, header = S(COL_HEAD) })
+    end
+    return p
+end
+
+-- A row of a side list (categories, the props tree, tools). opts: text,
+-- count (dim, right-aligned), depth (indent), arrow() -> "right" / "down"
+-- / nil, selected() -> bool, group (a bold band row with a diamond), alt
+-- (the darker of the alternating rows), fn (click). Returns the DButton.
+local function sideRow(parent, opts)
+    local S = K.S
+    local b = vgui.Create("DButton", parent)
+    b:SetText("")
+    b:SetTall(opts.group and S(32) or S(28))
+    local caps = opts.group and isstring(opts.text) and string.upper(opts.text) or nil
+    function b:Paint(w, h)
+        local sel = opts.selected and opts.selected()
+        local hov = self:IsHovered()
+        local x = S(10) + S(14) * (opts.depth or 0)
+        if opts.group then
+            K.SetCol(hov and C.rowHover or C.header)
+            surface.DrawRect(0, 0, w, h)
+            K.SetCol(C.accent, 40)
+            surface.SetMaterial(GRAD_L)
+            surface.DrawTexturedRect(0, 0, w * 0.7, h)
+            K.SetCol(C.accent)
+            surface.DrawRect(0, 0, S(3), h)
+        else
+            K.SetCol(sel and C.buttonDown or (hov and C.rowHover or (opts.alt and C.rowAlt or C.row)))
+            surface.DrawRect(0, 0, w, h)
+            if sel then
+                K.SetCol(C.accent)
+                surface.DrawRect(0, 0, S(3), h)
+            end
+        end
+        local ar = opts.arrow and opts.arrow()
+        if ar then
+            K.Arrow(x + S(4), h * 0.5, S(8), ar, (sel or hov) and C.text or C.textDim)
+            x = x + S(14)
+        elseif opts.group then
+            diamond(x + S(4), h * 0.5, S(4), C.accent)
+            x = x + S(14)
+        end
+        local right = w - S(10)
+        if opts.count then
+            local f = K.Font(11, 700)
+            draw.SimpleText(opts.count, f, right, h * 0.5, sel and C.text or C.textDim, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+            surface.SetFont(f)
+            right = right - surface.GetTextSize(opts.count) - S(8)
+        end
+        local text = isfunction(opts.text) and opts.text() or opts.text
+        local f = opts.group and K.Font(13, 700) or K.Font(13, sel and 700 or 500)
+        if caps then text = caps end
+        draw.SimpleText(K.Fit(text, f, right - x), f, x, h * 0.5, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        K.SetCol(C.edgeDark, 160)
+        surface.DrawRect(0, h - 1, w, 1)
+        return true
+    end
+    function b:DoClick()
+        surface.PlaySound("ui/buttonclick.wav")
+        if opts.fn then opts.fn() end
+    end
+    return b
+end
+
+-- A non-clickable caps line in a side list (a tool category).
+local function sideCaps(parent, text)
+    local S = K.S
+    local p = vgui.Create("DPanel", parent)
+    p:SetTall(S(24))
+    local t = string.upper(text)
+    function p:Paint(w, h)
+        K.Caps(K.Fit(t, K.Font(12, 700), w - S(16)), S(10), h * 0.5 + S(2))
+    end
+    return p
+end
+
+-- Panels on their own line in a DIconLayout keep its width.
+local function fullLine(p, layout)
+    p.OwnLine = true
+    p:SetWide(math.max(1, layout:GetWide()))
+    function p:Think()
+        local lw = layout:GetWide()
+        if lw > 0 and self:GetWide() ~= lw then self:SetWide(lw) end
+    end
+end
+
+-- A band (spawnlist header) on its own line: diamond, caps text, rule.
+local function bandLine(layout, text)
+    local S = K.S
+    local h = vgui.Create("DPanel", layout)
+    fullLine(h, layout)
+    h:SetTall(S(30))
+    local t = string.upper(text or "")
+    function h:Paint(w, hh)
+        K.SetCol(C.accent, 30)
+        surface.SetMaterial(GRAD_L)
+        surface.DrawTexturedRect(0, S(2), w * 0.6, hh - S(6))
+        K.SetCol(C.accent)
+        surface.DrawRect(0, S(2), S(3), hh - S(6))
+        diamond(S(16), hh * 0.5 - S(1), S(5), C.accent)
+        draw.SimpleText(K.Fit(t, K.Font(13, 700), w - S(40)), K.Font(13, 700), S(28), hh * 0.5 - S(1), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        K.SetCol(C.accent, 90)
+        surface.DrawRect(0, hh - S(4), w, 1)
+    end
+    return h
+end
+
+-- An empty-result box on its own line: dashed outline, dim text.
+local function emptyLine(layout, text)
+    local S = K.S
+    local p = vgui.Create("DPanel", layout)
+    fullLine(p, layout)
+    p:SetTall(S(64))
+    function p:Paint(w, h)
+        K.SetCol(C.row, 120)
+        surface.DrawRect(0, 0, w, h)
+        dashed(0, 0, w, h, C.edgeLight, 200)
+        local f = K.Font(14)
+        draw.SimpleText(K.Fit(text, f, w - S(24)), f, w * 0.5, h * 0.5, C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+    return p
+end
 
 -- SP.AddTab(id, def): adds or replaces a tab (see the header).
 function SP.AddTab(id, def)
@@ -105,9 +306,13 @@ function SP.Tile(parent, it)
     local initials = string.upper(string.sub(name, 1, 2))
     function b:Paint(w, h)
         local sel = it.selected and it.selected()
-        surface.SetDrawColor(self:IsHovered() and C.rowHover or C.row)
+        local hov = self:IsHovered()
+        K.SetCol(hov and C.rowHover or C.row)
         surface.DrawRect(0, 0, w, h)
         local is = h - S(26)
+        -- (the icon's dark well)
+        K.SetCol(C.bg)
+        surface.DrawRect(S(4), S(4), w - S(8), is - S(4))
         if it.mat then
             surface.SetDrawColor(255, 255, 255, 255)
             surface.SetMaterial(it.mat)
@@ -118,15 +323,22 @@ function SP.Tile(parent, it)
         else
             draw.SimpleText(initials, K.Font(26, 700), w * 0.5, is * 0.5, C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         end
-        if it.admin then
-            draw.SimpleText("ADMIN", K.Font(10, 700), w - S(4), S(3), C.warn, TEXT_ALIGN_RIGHT, TEXT_ALIGN_TOP)
-        end
-        surface.SetDrawColor(C.header)
+        K.SetCol(C.header)
         surface.DrawRect(0, h - S(24), w, S(24))
-        draw.SimpleText(K.Fit(name, K.Font(12, 600), w - S(8)), K.Font(12, 600), w * 0.5, h - S(12), C.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-        surface.SetDrawColor(sel and C.accent or C.edgeDark)
+        K.SetCol(sel and C.accent or C.edgeDark)
+        surface.DrawRect(0, h - S(24), w, sel and 2 or 1)
+        draw.SimpleText(K.Fit(name, K.Font(12, 600), w - S(10)), K.Font(12, 600), w * 0.5, h - S(12), C.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        K.SetCol(sel and C.accent or (hov and C.edgeLight or C.edgeDark), (hov and not sel) and 140 or 255)
         surface.DrawOutlinedRect(0, 0, w, h, sel and 2 or 1)
+        if not sel then
+            K.SetCol(C.edgeLight)
+            surface.DrawLine(1, 1, w - 1, 1)
+        end
         return true
+    end
+    -- (drawn over the 3D picture child too)
+    if it.admin then
+        function b:PaintOver(w, h) chipRight("ADMIN", w - K.S(5), K.S(12), C.warn) end
     end
     -- No icon image but a model (our own toolgun entries): the engine's
     -- spawn icon of it, made once and kept on disk like the Q menu's.
@@ -195,8 +407,13 @@ function SP.ModelTile(parent, model, skin, body, run)
         m:Open()
     end
     function ic:PaintOver(w, h)
-        surface.SetDrawColor(self:IsHovered() and C.accent or C.edgeDark)
-        surface.DrawOutlinedRect(0, 0, w, h)
+        local hov = self:IsHovered()
+        K.SetCol(hov and C.accent or C.edgeDark)
+        surface.DrawOutlinedRect(0, 0, w, h, hov and 2 or 1)
+        if not hov then
+            K.SetCol(C.edgeLight)
+            surface.DrawLine(1, 1, w - 1, 1)
+        end
     end
     local entered = ic.OnCursorEntered
     function ic:OnCursorEntered(...)
@@ -267,7 +484,7 @@ local function previewPanel()
     p.mdl = mdl
     function p:Paint(w, h)
         K.Plate(0, 0, w, h, { bg = SP.BG, ticks = "all" })
-        surface.SetDrawColor(C.row)
+        K.SetCol(C.bg)
         surface.DrawRect(S(6), S(6), view, view)
         local info = self.info
         if not info then return end
@@ -278,9 +495,11 @@ local function previewPanel()
         elseif not info.model then
             draw.SimpleText("No preview", K.Font(16, 600), S(6) + view * 0.5, S(6) + view * 0.5, C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         end
-        draw.SimpleText(K.Fit(info.title or "", K.Font(14, 700), w - S(16)), K.Font(14, 700), S(10), S(6) + view + S(16), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        K.SetCol(C.accent, 180)
+        surface.DrawRect(S(6), S(6) + view + S(1), view, 2)
+        draw.SimpleText(K.Fit(info.title or "", K.Font(14, 700), w - S(16)), K.Font(14, 700), S(10), S(6) + view + S(18), C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
         if info.sub then
-            draw.SimpleText(K.Fit(info.sub, K.Font(12), w - S(16)), K.Font(12), S(10), S(6) + view + S(36), C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            draw.SimpleText(K.Fit(info.sub, K.Font(12), w - S(16)), K.Font(12), S(10), S(6) + view + S(37), C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
         end
     end
     function p:PaintOver(w, h)
@@ -386,20 +605,32 @@ function SP.CatalogueTab(getItems, catOrder)
             table.sort(cats[c], function(a, b) return lower(a.name) < lower(b.name) end)
         end
 
-        local side = K.Scroll(body)
-        side:Dock(LEFT)
-        side:SetWide(S(220))
-        side:DockMargin(0, 0, S(10), 0)
-        local grid = K.Scroll(body)
+        local chosen = order[1]
+        local query = ""
+        local subText = ""   -- (the content header's count, made in fill)
+        local catCount = tostring(#order)
+
+        local sideCol = column(body, function() return "Categories" end, function() return catCount end)
+        sideCol:Dock(LEFT)
+        sideCol:SetWide(S(240))
+        sideCol:DockMargin(0, 0, S(10), 0)
+        local side = K.Scroll(sideCol)
+        side:Dock(FILL)
+        side:DockMargin(S(4), S(4), S(2), S(4))
+        local gridCol = column(body, function()
+            if query ~= "" then return "Search" end
+            return chosen or "Nothing installed"
+        end, function() return subText end)
+        gridCol:Dock(FILL)
+        local grid = K.Scroll(gridCol)
         grid:Dock(FILL)
+        grid:DockMargin(S(8), S(8), S(2), S(8))
         local layout = vgui.Create("DIconLayout", grid)
         layout:Dock(TOP)
         layout:SetSpaceX(S(6))
         layout:SetSpaceY(S(6))
         layout:DockMargin(0, 0, S(8), 0)
 
-        local chosen = order[1]
-        local query = ""
         local function fill()
             layout:Clear()
             local n = 0
@@ -414,21 +645,23 @@ function SP.CatalogueTab(getItems, catOrder)
                     end
                 end
             end
+            if query ~= "" then subText = n .. (n == 1 and " match" or " matches")
+            else subText = n .. (n == 1 and " item" or " items") end
             if n == 0 then
-                local l = K.Label(layout, query ~= "" and "Nothing matches." or "Nothing here.", 14, nil, C.textDim)
-                l:SetWide(S(300))
-                layout:Add(l)
+                layout:Add(emptyLine(layout, query ~= "" and "Nothing matches." or "Nothing here."))
             end
             layout:InvalidateLayout(true)
             grid:GetVBar():SetScroll(0)
         end
-        for _, c in ipairs(order) do
-            local b = K.Button(side, c .. "  (" .. #cats[c] .. ")", function()
-                chosen = c
-                fill()
-            end, { align = "left", small = true, selected = function() return query == "" and chosen == c end })
+        for i, c in ipairs(order) do
+            local b = sideRow(side, { text = c, count = tostring(#cats[c]), alt = i % 2 == 0,
+                selected = function() return query == "" and chosen == c end,
+                fn = function()
+                    chosen = c
+                    fill()
+                end })
             b:Dock(TOP)
-            b:DockMargin(0, 0, S(8), S(3))
+            b:DockMargin(0, 0, S(8), 0)
         end
         if #order == 0 then K.Label(side, "Nothing installed.", 13, nil, C.textDim):Dock(TOP) end
         body.search = function(q)
@@ -483,8 +716,8 @@ local function build()
     f.bodies = {}
     function f:Paint(w, h)
         if SP.pick then
-            K.Plate(0, 0, w, h, { bg = SP.BG, title = "Pick a model", sub = "For " .. (SP.pick.label or "the setting") .. " · click any model or entity · Esc: cancel", ticks = "all", header = S(34) })
-            surface.SetDrawColor(C.accent)
+            K.Plate(0, 0, w, h, { bg = SP.BG, title = "Pick a model", sub = "For " .. (SP.pick.label or "the setting") .. " · click any model or entity · Esc: cancel", ticks = "all", header = S(34), rule = C.warn })
+            K.SetCol(C.accent)
             surface.DrawOutlinedRect(0, 0, w, h, 2)
             return
         end
@@ -497,15 +730,31 @@ local function build()
         self:SetKeyboardInputEnabled(false)
     end
 
+    -- The tab strip: caps tabs (accent underline on the shown one), the
+    -- search box on the right.
     local bar = vgui.Create("DPanel", f)
     bar:Dock(TOP)
-    bar:SetTall(S(32))
+    bar:SetTall(S(38))
     bar:DockMargin(0, 0, 0, S(10))
-    bar.Paint = nil
-    local search = K.TextEntry(bar, "Search this tab...")
+    function bar:Paint(w, h)
+        K.SetCol(C.header)
+        surface.DrawRect(0, 0, w, h)
+        K.SetCol(C.edgeDark)
+        surface.DrawOutlinedRect(0, 0, w, h)
+        K.SetCol(C.edgeLight)
+        surface.DrawLine(1, 1, w - 1, 1)
+    end
+    local search
+    search = K.Search(bar, "Search this tab...", function(v)
+        local body = f.bodies[f.tabId]
+        local def = SP.tabs[f.tabId]
+        if not (IsValid(body) and def and def.search) then return end
+        if v == (body.lastSearch or "") then return end
+        body.lastSearch = v
+        def.search(body, v)
+    end)
     search:Dock(RIGHT)
-    search:SetWide(S(280))
-    search:SetUpdateOnType(true)
+    search:SetWide(S(300))
     f.searchBox = search
 
     local content = vgui.Create("DPanel", f)
@@ -535,22 +784,54 @@ local function build()
     end
     f.ShowTab = show
 
-    function search:OnValueChange(v)
-        local body = f.bodies[f.tabId]
-        local def = SP.tabs[f.tabId]
-        if not (IsValid(body) and def and def.search) then return end
-        if v == (body.lastSearch or "") then return end
-        body.lastSearch = v
-        def.search(body, v)
-    end
-
+    local tabs = {}
     for _, def in ipairs(sortedTabs()) do
+        local t = vgui.Create("DButton", bar)
+        t:SetText("")
+        t.caps = string.upper(def.title or def.id)
+        local id = def.id
+        function t:Paint(w, h)
+            local on = f.tabId == id
+            if on then
+                K.SetCol(C.buttonDown, 140)
+                surface.DrawRect(0, 1, w, h - 2)
+                K.SetCol(C.accent)
+                surface.DrawRect(S(4), h - S(3), w - S(8), S(3))
+            elseif self:IsHovered() then
+                K.SetCol(C.buttonHover, 120)
+                surface.DrawRect(0, 1, w, h - 2)
+            end
+            local font = K.Font(13, 700)
+            draw.SimpleText(K.Fit(self.caps, font, w - S(8)), font, w * 0.5, h * 0.5, (on or self:IsHovered()) and C.text or C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            K.SetCol(C.edgeDark, 160)
+            surface.DrawRect(w - 1, S(8), 1, h - S(16))
+            return true
+        end
+        function t:DoClick()
+            surface.PlaySound("ui/buttonclick.wav")
+            show(id)
+        end
+        tabs[#tabs + 1] = t
+    end
+    -- (tabs left to right; narrower when many don't fit beside the search)
+    function bar:PerformLayout(w, h)
+        local room = w - search:GetWide() - S(12)
         surface.SetFont(K.Font(13, 700))
-        local b = K.Button(bar, def.title, function() show(def.id) end,
-            { selected = function() return f.tabId == def.id end })
-        b:Dock(LEFT)
-        b:SetWide(surface.GetTextSize(string.upper(def.title)) + S(36))
-        b:DockMargin(0, 0, S(4), 0)
+        local widths, total = {}, 0
+        for i, t in ipairs(tabs) do
+            widths[i] = surface.GetTextSize(t.caps)
+            total = total + widths[i]
+        end
+        local pad = S(32)
+        if #tabs > 0 and total + pad * #tabs > room then pad = math.max(S(8), math.floor((room - total) / #tabs)) end
+        local x = 0
+        for i, t in ipairs(tabs) do
+            local tw = widths[i] + pad
+            if total + pad * #tabs > room then tw = math.floor(room / #tabs) end
+            t:SetPos(x, 0)
+            t:SetSize(tw, h)
+            x = x + tw
+        end
     end
     SP.dirty = false
     show((SP.lastTab and SP.tabs[SP.lastTab]) and SP.lastTab or sortedTabs()[1].id)
@@ -820,7 +1101,7 @@ local function addonNodes()
         if a.mounted and (tonumber(a.models) or 0) > 0 and a.title then
             local title = a.title
             out[#out + 1] = {
-                id = "w:" .. tostring(a.wsid or title), label = title .. "  (" .. a.models .. ")", search = true,
+                id = "w:" .. tostring(a.wsid or title), label = title, count = tostring(a.models), search = true,
                 models = function() return findModels("models/", title, nil, MAX_TILES * 4) end,
             }
         end
@@ -832,7 +1113,7 @@ local function addonNodes()
         local _, md = file.Find(base .. "models", "MOD")
         if md and #md > 0 then
             out[#out + 1] = {
-                id = "l:" .. d, label = d .. "  (local)", search = true,
+                id = "l:" .. d, label = d, count = "LOCAL", search = true,
                 models = function()
                     local list = findModels(base .. "models/", "MOD", nil, MAX_TILES * 4)
                     -- (spawn by the game path, not the addon's folder)
@@ -864,20 +1145,30 @@ SP.AddTab("props", {
             end },
         }
 
-        local side = K.Scroll(body)
-        side:Dock(LEFT)
-        side:SetWide(S(260))
-        side:DockMargin(0, 0, S(10), 0)
-        local grid = K.Scroll(body)
+        local chosen = slNodes[1]
+        local query = ""
+        local subText = ""   -- (the content header's count, made in fill)
+
+        local sideCol = column(body, function() return "Browse" end)
+        sideCol:Dock(LEFT)
+        sideCol:SetWide(S(270))
+        sideCol:DockMargin(0, 0, S(10), 0)
+        local side = K.Scroll(sideCol)
+        side:Dock(FILL)
+        side:DockMargin(S(4), S(4), S(2), S(4))
+        local gridCol = column(body, function()
+            if query ~= "" then return "Search" end
+            return chosen and chosen.label or "Props"
+        end, function() return subText end)
+        gridCol:Dock(FILL)
+        local grid = K.Scroll(gridCol)
         grid:Dock(FILL)
+        grid:DockMargin(S(8), S(8), S(2), S(8))
         local layout = vgui.Create("DIconLayout", grid)
         layout:Dock(TOP)
         layout:SetSpaceX(S(4))
         layout:SetSpaceY(S(4))
         layout:DockMargin(0, 0, S(8), 0)
-
-        local chosen = slNodes[1]
-        local query = ""
 
         local function kidsOf(node)
             if isfunction(node.kids) then
@@ -893,21 +1184,10 @@ SP.AddTab("props", {
         end
 
         local function note(text)
-            local l = K.Label(layout, text, 14, nil, C.textDim)
-            l.OwnLine = true
-            l:SetWide(K.S(700))
-            layout:Add(l)
+            layout:Add(emptyLine(layout, text))
         end
         local function header(text)
-            local h = vgui.Create("DPanel", layout)
-            h.OwnLine = true
-            h:SetTall(S(26))
-            function h:Paint(w, hh)
-                draw.SimpleText(string.upper(text), K.Font(13, 700), 0, hh * 0.5, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-                surface.SetDrawColor(C.accent.r, C.accent.g, C.accent.b, 100)
-                surface.DrawRect(0, hh - 2, w, 1)
-            end
-            layout:Add(h)
+            layout:Add(bandLine(layout, text))
         end
         local function modelTile(model, skin, bg)
             layout:Add(SP.ModelTile(layout, model, skin, bg, function()
@@ -984,39 +1264,45 @@ SP.AddTab("props", {
                 n = addModels(list, n)
                 if n == 0 then note(chosen.kids and "No models in this folder: open a folder below it." or "No models found.") end
             end
+            subText = n .. (n == 1 and " model" or " models") .. (n >= MAX_TILES and (" (first " .. MAX_TILES .. ")") or "")
             if n >= MAX_TILES then note("Showing the first " .. MAX_TILES .. ". Search to narrow it down.") end
             layout:InvalidateLayout(true)
             grid:GetVBar():SetScroll(0)
         end
 
         local buildSide
+        local rowN = 0
         local function addRow(node, depth)
             local hasKids = istable(node.kids) and #node.kids > 0
                 or (isfunction(node.kids) and (node.kidsCache == nil or #node.kidsCache > 0))
-            local isOpen = open[node.id]
-            local label = node.label
-            if hasKids then label = (isOpen and "−  " or "+  ") .. label end
-            local b = K.Button(side, label, function()
-                -- (a click opens a closed node; clicking the shown one again closes it)
-                if hasKids and (chosen == node or not open[node.id] or not (node.sl or node.models)) then
-                    open[node.id] = not open[node.id]
-                end
-                if node.sl or node.models then
-                    chosen = node
-                    if query == "" then fill() end
-                end
-                if hasKids then buildSide() end
-            end, { align = "left", small = not node.group, accent = node.group,
-                selected = function() return query == "" and chosen == node end })
+            rowN = rowN + 1
+            local b = sideRow(side, {
+                text = node.label, count = node.count, depth = node.group and 0 or depth,
+                group = node.group, alt = rowN % 2 == 0,
+                arrow = hasKids and function() return open[node.id] and "down" or "right" end or nil,
+                selected = function() return query == "" and chosen == node end,
+                fn = function()
+                    -- (a click opens a closed node; clicking the shown one again closes it)
+                    if hasKids and (chosen == node or not open[node.id] or not (node.sl or node.models)) then
+                        open[node.id] = not open[node.id]
+                    end
+                    if node.sl or node.models then
+                        chosen = node
+                        if query == "" then fill() end
+                    end
+                    if hasKids then buildSide() end
+                end,
+            })
             b:Dock(TOP)
-            b:DockMargin(S(12) * depth, node.group and S(6) or 0, S(8), S(3))
-            if hasKids and isOpen then
+            b:DockMargin(0, node.group and depth == 0 and rowN > 1 and S(6) or 0, S(8), 0)
+            if hasKids and open[node.id] then
                 for _, k in ipairs(kidsOf(node) or {}) do addRow(k, depth + 1) end
             end
         end
         buildSide = function()
             local y = side:GetVBar():GetScroll()
             side:Clear()
+            rowN = 0
             for _, node in ipairs(tree) do addRow(node, 0) end
             side:InvalidateLayout(true)
             timer.Simple(0, function() if IsValid(side) then side:GetVBar():SetScroll(y) end end)
@@ -1040,26 +1326,34 @@ SP.AddTab("tools", {
     title = "Tools", order = 60,
     build = function(body)
         local S = K.S
-        local side = K.Scroll(body)
-        side:Dock(LEFT)
-        side:SetWide(S(260))
-        side:DockMargin(0, 0, S(10), 0)
-        local right = vgui.Create("DPanel", body)
+        local pickedName, pickedText
+        local sideCol = column(body, function() return "Tools" end)
+        sideCol:Dock(LEFT)
+        sideCol:SetWide(S(270))
+        sideCol:DockMargin(0, 0, S(10), 0)
+        local side = K.Scroll(sideCol)
+        side:Dock(FILL)
+        side:DockMargin(S(4), S(4), S(2), S(4))
+        -- (sandbox's own settings panel keeps its default look inside this plate)
+        local right = column(body, function() return "Tool settings" end, function() return pickedText end)
         right:Dock(FILL)
-        function right:Paint(w, h)
-            surface.SetDrawColor(C.row)
-            surface.DrawRect(0, 0, w, h)
-            surface.SetDrawColor(C.edgeDark)
-            surface.DrawOutlinedRect(0, 0, w, h)
-        end
-        right:DockPadding(S(8), S(8), S(8), S(8))
         local panelScroll = K.Scroll(right)
         panelScroll:Dock(FILL)
+        panelScroll:DockMargin(S(8), S(8), S(2), S(8))
         body.panelScroll = panelScroll
-        local hint = K.Label(panelScroll, "Pick a tool on the left. Its settings show here, like in the Q menu.", 14, nil, C.textDim)
+        local hint = vgui.Create("DPanel", panelScroll)
+        hint:SetTall(S(64))
+        hint:DockMargin(0, 0, S(8), 0)
+        function hint:Paint(w, h)
+            K.SetCol(C.row, 120)
+            surface.DrawRect(0, 0, w, h)
+            dashed(0, 0, w, h, C.edgeLight, 200)
+            local f = K.Font(14)
+            draw.SimpleText(K.Fit("Pick a tool on the left. Its settings show here, like in the Q menu.", f, w - S(24)), f, w * 0.5, h * 0.5, C.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
         hint:Dock(TOP)
 
-        local current, pickedName
+        local current
         local function attach(cp)
             if not IsValid(cp) then return end
             -- (hand the old one back, as the Q menu does, so it isn't removed)
@@ -1072,6 +1366,7 @@ SP.AddTab("tools", {
             hint:SetVisible(false)
             if cp:GetParent() ~= panelScroll:GetCanvas() then panelScroll:AddItem(cp) end
             cp:Dock(TOP)
+            cp:DockMargin(0, 0, S(8), 0)
             cp:SetVisible(true)
             current = cp
         end
@@ -1079,6 +1374,7 @@ SP.AddTab("tools", {
 
         local function pick(item)
             pickedName = item.ItemName
+            pickedText = L(item.Text or item.ItemName)
             if item.Command and item.Command ~= "" then LocalPlayer():ConCommand(item.Command) end
             if not (controlpanel and controlpanel.Get) then return end
             local ok, cp = pcall(controlpanel.Get, item.ItemName)
@@ -1091,22 +1387,23 @@ SP.AddTab("tools", {
 
         local rows = {}
         local okT, tabs = pcall(spawnmenu.GetTools)
-        for _, t in ipairs(okT and tabs or {}) do
-            local h = K.Heading(side, L(t.Label or t.Name or "Tools"))
+        for ti, t in ipairs(okT and tabs or {}) do
+            local h = sideRow(side, { text = L(t.Label or t.Name or "Tools"), group = true })
+            h:SetMouseInputEnabled(false)
             h:Dock(TOP)
-            h:DockMargin(0, S(6), S(8), S(4))
+            h:DockMargin(0, ti > 1 and S(6) or 0, S(8), 0)
             rows[#rows + 1] = { head = h }
             for _, cat in ipairs(t.Items or {}) do
-                local cl = K.Label(side, string.upper(L(cat.Text or cat.ItemName or "")), 12, 700, C.label)
+                local cl = sideCaps(side, L(cat.Text or cat.ItemName or ""))
                 cl:Dock(TOP)
-                cl:DockMargin(S(2), S(6), S(8), S(2))
+                cl:DockMargin(0, S(4), S(8), 0)
                 rows[#rows + 1] = { head = cl }
                 local items = {}
                 for _, item in ipairs(cat) do items[#items + 1] = item end
                 table.sort(items, function(a, b) return lower(a.Text) < lower(b.Text) end)
-                for _, item in ipairs(items) do
+                for i, item in ipairs(items) do
                     local text = L(item.Text or item.ItemName)
-                    local b = K.Button(side, text, function() pick(item) end, { align = "left", small = true, selected = function()
+                    local b = sideRow(side, { text = text, depth = 1, alt = i % 2 == 0, fn = function() pick(item) end, selected = function()
                         if item.Command and string.find(item.Command, "gmod_tool", 1, true) then
                             local w = LocalPlayer():GetActiveWeapon()
                             local cv = GetConVar("gmod_toolmode")
@@ -1115,7 +1412,7 @@ SP.AddTab("tools", {
                         return pickedName == item.ItemName
                     end })
                     b:Dock(TOP)
-                    b:DockMargin(0, 0, S(8), S(2))
+                    b:DockMargin(0, 0, S(8), 0)
                     rows[#rows + 1] = { btn = b, text = string.lower(text) }
                 end
             end

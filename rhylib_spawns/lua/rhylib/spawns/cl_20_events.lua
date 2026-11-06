@@ -1,6 +1,7 @@
 --[[
-    Event tools (client): the respawn ticket count on the HUD (top middle,
-    while tickets are on), the "no tickets left" line while dead, the
+    Event tools (client): the respawn ticket count on the HUD (a small
+    plate top middle while tickets are on: caps RESPAWN TICKETS, the count
+    right, a red edge at 0), the "no tickets left" plate while dead, the
     objective markers (a diamond with the name and the distance in metres,
     clamped to the screen edge when off screen), and the staff edit menu
     for objective markers (net spawn.objedit / spawn.objset).
@@ -10,7 +11,8 @@
 local S = Rhylib.Spawns
 S.objectives = S.objectives or {}
 
-local GOLD, RED, WHITE, SHADOW = Color(255, 200, 70), Color(235, 80, 70), Color(235, 238, 240), Color(0, 0, 0, 200)
+-- (the markers' gold and white are their gameplay look, not the theme)
+local GOLD, WHITE, SHADOW = Color(255, 200, 70), Color(235, 238, 240), Color(0, 0, 0, 200)
 
 local function font(size, weight)
     return Rhylib.UI and Rhylib.UI.Font and Rhylib.UI.Font(size, weight) or "DermaDefaultBold"
@@ -33,11 +35,31 @@ Rhylib.Hook.Add("HUDPaint", "spawns.events", function()
     -- Respawn tickets.
     if S.TicketsOn() then
         local n = S.Tickets()
-        draw.SimpleTextOutlined("RESPAWN TICKETS  " .. n, font(math.floor(16 * s), 800), w * 0.5, 12 * s, n > 0 and WHITE or RED,
-            TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, SHADOW)
-        if not me:Alive() and n <= 0 and me:GetNW2Bool("rhylib_ticketDue", false) then
-            draw.SimpleTextOutlined("No respawn tickets left: wait for staff", font(math.floor(26 * s), 800), w * 0.5, h * 0.3, RED,
-                TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 2, SHADOW)
+        local K = Rhylib.UI and Rhylib.UI.Kit
+        if K then
+            local C = K.C
+            local pw, ph = K.S(230), K.S(30)
+            local px, py = math.floor(w * 0.5 - pw * 0.5), K.S(10)
+            K.Plate(px, py, pw, ph, { alpha = 235 })
+            K.SetCol(n > 0 and C.accent or C.bad)
+            surface.DrawRect(px + 1, py + 1, K.S(3), ph - 2)
+            K.Caps("Respawn tickets", px + K.S(14), py + ph * 0.5, C.label)
+            draw.SimpleText(n, K.Font(16, 800), px + pw - K.S(12), py + ph * 0.5, n > 0 and C.text or C.bad, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+            if not me:Alive() and n <= 0 and me:GetNW2Bool("rhylib_ticketDue", false) then
+                local f = K.Font(22, 800)
+                local text = "No respawn tickets left: wait for staff"
+                surface.SetFont(f)
+                local tw = surface.GetTextSize(text)
+                local bw, bh = tw + K.S(48), K.S(52)
+                local bx, by = math.floor(w * 0.5 - bw * 0.5), math.floor(h * 0.3 - bh * 0.5)
+                K.Plate(bx, by, bw, bh, { ticks = "all" })
+                K.SetCol(C.bad)
+                surface.DrawRect(bx + 1, by + 1, bw - 2, K.S(3))
+                draw.SimpleText(text, f, w * 0.5, by + bh * 0.5 + K.S(1), C.bad, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            end
+        else
+            draw.SimpleTextOutlined("RESPAWN TICKETS  " .. n, font(math.floor(16 * s), 800), w * 0.5, 12 * s, WHITE,
+                TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, SHADOW)
         end
     end
 
@@ -104,7 +126,7 @@ Rhylib.Net.Receive("spawn.objedit", function()
     m:AddOption("Rename (" .. ent:GetBeaconName() .. ")", function()
         K.Prompt("Rename", "Name shown on the HUD", ent:GetBeaconName(), function(v) if IsValid(ent) then send(ent, 0, v) end end)
     end)
-    local sub = m:AddSubMenu("Who sees it (" .. (ent:GetBattalion() ~= "" and ent:GetBattalion() or "everyone") .. ")")
+    local sub = S.StyleSub(K, m, "Who sees it (" .. (ent:GetBattalion() ~= "" and ent:GetBattalion() or "everyone") .. ")")
     sub:AddOption("Everyone", function() if IsValid(ent) then send(ent, 1, "") end end)
     for _, bn in ipairs(battalions()) do
         sub:AddOption(bn, function() if IsValid(ent) then send(ent, 1, bn) end end)

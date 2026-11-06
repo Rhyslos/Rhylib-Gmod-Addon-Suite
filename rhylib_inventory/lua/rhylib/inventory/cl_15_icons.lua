@@ -49,14 +49,16 @@ local Items = Rhylib.Items
 -- every tile has the same dark body, the stripe tells the kind. An
 -- unknown category draws as misc; add your own category here (client)
 -- to give it colours.
-local BODY = Color(26, 30, 27)
+-- They are theme tokens (the pictures are made again if the body changes).
+local Col = Rhylib.UI.Col
+local BODY = Col("inv.itemBody", 26, 30, 27)
 Inv.CATEGORY_COLORS = {
-    weapon = { body = BODY, stripe = Color(133, 183, 235) },
-    ammo = { body = BODY, stripe = Color(239, 159, 39) },
-    medical = { body = BODY, stripe = Color(226, 75, 74) },
-    gear = { body = BODY, stripe = Color(151, 196, 89) },
-    misc = { body = BODY, stripe = Color(138, 140, 132) },
-    training = { body = BODY, stripe = Color(236, 200, 60) },   -- (rhylib_training gear)
+    weapon = { body = BODY, stripe = Col("inv.kindGun", 133, 183, 235) },
+    ammo = { body = BODY, stripe = Col("inv.kindAmmo", 239, 159, 39) },
+    medical = { body = BODY, stripe = Col("inv.kindMedical", 226, 75, 74) },
+    gear = { body = BODY, stripe = Col("inv.kindGear", 151, 196, 89) },
+    misc = { body = BODY, stripe = Col("inv.kindMisc", 138, 140, 132) },
+    training = { body = BODY, stripe = Col("inv.kindTraining", 236, 200, 60) },   -- (rhylib_training gear)
 }
 
 Inv.Icons = Inv.Icons or {}
@@ -979,4 +981,14 @@ end
 concommand.Add("rhylib_inventory_icon_edit", function(_, _, args)
     if not args[1] then print("rhylib_inventory_icon_edit <item id>  (e.g. rhylib_thermal)") return end
     Icons.OpenEditor(args[1])
+end)
+
+-- The tiles have the body colour baked in: make them again when a theme
+-- switch changes it.
+local bakedBody = { BODY.r, BODY.g, BODY.b }
+Rhylib.Hook.Add("Rhylib.ThemeChanged", "inventory.icons", function()
+    if BODY.r == bakedBody[1] and BODY.g == bakedBody[2] and BODY.b == bakedBody[3] then return end
+    bakedBody[1], bakedBody[2], bakedBody[3] = BODY.r, BODY.g, BODY.b
+    Icons.Reset()
+    if ed then ed.dirty = true end
 end)

@@ -21,12 +21,14 @@
       K.SetCol, K.Ticks, K.Plate, K.Caps, K.Fit     drawing helpers (use in Paint)
       K.Tint                 give a window its own accent colour
       K.Button, K.Label, K.Heading, K.Scroll, K.Row panels
+      K.ThemedText           a label's colour / font that follow a theme switch
       K.Choices, K.Toggle, K.Slider, K.TextEntry    controls bound to get/set
       K.Dropdown, K.Number, K.Search, K.Fold, K.Swatches   a select box, a
                              number (bar + typed box + unit), a search box,
                              a section that folds, colour squares + mixer
       K.Icon, K.Arrow        a line icon by name (K.ICONS) and a small triangle, drawn in a Paint
-      K.Menu, K.Prompt       a right-click menu and a text question popup
+      K.Menu, K.Prompt       a right-click menu (submenus too) and a text question popup
+      K.Confirm              a yes / no popup
     Also UI.prompts / UI.closers / UI.RegisterCloser / UI.CloseAll (what Esc
     closes first; rhylib_menus' Menus.prompts etc. are the same tables).
     The guide (docs/addons/rhylib_menus.md) has an example for each widget.
@@ -40,8 +42,8 @@ local K = UI.Kit
 -- already exists, point it here now)
 if Rhylib.Menus then Rhylib.Menus.Kit = K end
 
--- K.C: the house colours. text/textDim/accent/good/warn/bad come from
--- Rhylib.UI.Colors (rhylib_core), so they match the HUD. K.Tint and the
+-- K.C: the house colours. text/textDim/accent/good/warn/bad start as
+-- Rhylib.UI.Colors (rhylib_core), so they match the HUD in the dark theme. K.Tint and the
 -- skills' command orders swap C.accent for a while; read it each frame.
 K.C = {
     dim = Color(0, 0, 0, 170),
@@ -65,6 +67,12 @@ K.C = {
     bad = UI.Colors.bad,
 }
 local C = K.C
+-- The kit colours are theme tokens "kit.<key>" (cl_11_theme.lua). text,
+-- textDim, accent, good, warn and bad start as the HUD's UI.Colors values
+-- but are their own tokens, so a theme recolours windows without the HUD.
+if UI.Col then
+    for k, col in pairs(C) do C[k] = UI.Col("kit." .. k, col.r, col.g, col.b, col.a) end
+end
 
 -- K.Scale(): screen height / 1080. K.S(n): n pixels at 1080p, scaled to
 -- this screen and rounded. K.Font(size, weight): Rhylib.UI.Font (sizes at
@@ -371,12 +379,31 @@ end
 -- follows its text (dock it TOP). size/weight as K.Font, col default C.text.
 function K.Label(parent, text, size, weight, col)
     local l = vgui.Create("DLabel", parent)
-    l:SetFont(K.Font(size or 14, weight))
-    l:SetTextColor(col or C.text)
     l:SetText(text or "")
     l:SetWrap(true)
     l:SetAutoStretchVertical(true)
+    K.ThemedText(l, col or C.text, size or 14, weight)
     return l
+end
+
+-- K.ThemedText(panel, col, size, weight): a DLabel-like panel's text colour
+-- and font that follow a theme switch (a DLabel copies its colour when
+-- set, so it is set again after a switch). col is a token Color.
+-- Example: K.ThemedText(myLabel, C.textDim, 13)
+function K.ThemedText(l, col, size, weight)
+    l.rhylibTextCol, l.rhylibFontSize, l.rhylibFontWeight = col, size, weight
+    l:SetTextColor(col)
+    if size then l:SetFont(K.Font(size, weight)) end
+    l.rhylibStamp = UI.themeStamp or 0
+    local think = l.Think
+    function l:Think(...)
+        if self.rhylibStamp ~= (UI.themeStamp or 0) then
+            self.rhylibStamp = UI.themeStamp or 0
+            self:SetTextColor(self.rhylibTextCol)
+            if self.rhylibFontSize then self:SetFont(K.Font(self.rhylibFontSize, self.rhylibFontWeight)) end
+        end
+        if think then return think(self, ...) end
+    end
 end
 
 -- K.Heading(parent, text, col): a section heading panel (32 px): caps text
@@ -536,10 +563,20 @@ end
 function K.TextEntry(parent, placeholder)
     local e = vgui.Create("DTextEntry", parent)
     e:SetFont(K.Font(14))
+    e.rhylibFont, e.rhylibStamp = e:GetFont(), UI.themeStamp or 0
     e:SetPlaceholderText(placeholder or "")
     e:SetTall(K.S(30))
     e:SetPaintBackground(false)
     function e:Paint(w, h)
+        -- (a theme switch with another font family: the kit font again,
+        -- unless the caller picked its own)
+        if self.rhylibStamp ~= (UI.themeStamp or 0) then
+            self.rhylibStamp = UI.themeStamp or 0
+            if self:GetFont() == self.rhylibFont then
+                self:SetFont(K.Font(14))
+                self.rhylibFont = self:GetFont()
+            end
+        end
         setCol(C.row)
         surface.DrawRect(0, 0, w, h)
         setCol(self:HasFocus() and C.accent or C.edgeDark)
@@ -590,8 +627,16 @@ function K.Dropdown(parent, options, get, set, opts)
         if isfunction(o) then o = o() end
         return o or {}
     end
+    -- (the label is drawn every frame: a function's list is asked at most
+    -- twice a second for it, and every time the list opens)
+    local cached, cachedAt = nil, 0
     local function labelOf(v)
-        for _, o in ipairs(list()) do
+        local l = cached
+        if not l or not isfunction(options) or RealTime() - cachedAt > 0.5 then
+            l = list()
+            cached, cachedAt = l, RealTime()
+        end
+        for _, o in ipairs(l) do
             if o[1] == v then return o[2] end
         end
         if v == nil or v == "" then return opts.placeholder or "—" end
@@ -950,30 +995,92 @@ function K.Swatches(parent, swatches, get, set)
     return p
 end
 
--- K.Menu(): a DermaMenu in the house style. AddOption(text, fn) is restyled;
--- AddSpacer / AddSubMenu work as normal. Call m:Open() to show it at the mouse.
-function K.Menu()
-    local m = DermaMenu()
+-- K.Menu(): a DermaMenu in the house style. AddOption(text, fn),
+-- AddSpacer() and AddSubMenu(text) are restyled (submenus too, all the way
+-- down). Call m:Open() to show it at the mouse.
+local function styleMenu(m)
     function m:Paint(w, h)
         setCol(C.bg)
         surface.DrawRect(0, 0, w, h)
         setCol(C.edgeDark)
         surface.DrawOutlinedRect(0, 0, w, h)
     end
-    local add = m.AddOption
-    function m:AddOption(text, fn)
-        local o = add(self, text, fn)
-        o:SetTextColor(C.text)
-        o:SetFont(K.Font(13))
+    local function styleOption(o)
+        K.ThemedText(o, C.text, 13)
         function o:Paint(w, h)
-            if self:IsHovered() then
+            if self:IsHovered() or (IsValid(self.SubMenu) and self.SubMenu:IsVisible()) then
                 setCol(C.buttonHover)
                 surface.DrawRect(0, 0, w, h)
             end
         end
+        if IsValid(o.SubMenuArrow) then
+            function o.SubMenuArrow:Paint(w, h) K.Arrow(w * 0.5, h * 0.5, K.S(8), "right", C.textDim) end
+        end
+    end
+    local add, spacer, subm = m.AddOption, m.AddSpacer, m.AddSubMenu
+    function m:AddOption(text, fn)
+        local o = add(self, text, fn)
+        styleOption(o)
         return o
     end
+    if spacer then
+        function m:AddSpacer(...)
+            local sp = spacer(self, ...)
+            if IsValid(sp) then
+                function sp:Paint(w, h)
+                    setCol(C.edgeLight)
+                    surface.DrawRect(K.S(6), math.floor(h / 2), w - K.S(12), 1)
+                end
+            end
+            return sp
+        end
+    end
+    if subm then
+        function m:AddSubMenu(text, fn)
+            local sub, o = subm(self, text, fn)
+            if IsValid(o) then styleOption(o) end
+            if IsValid(sub) then styleMenu(sub) end
+            return sub, o
+        end
+    end
     return m
+end
+function K.Menu()
+    return styleMenu(DermaMenu())
+end
+
+-- K.Confirm(title, desc, yesText, onYes, opts): a small modal yes / no box
+-- in the house style (Esc or Cancel closes it). opts.danger: the yes button
+-- has the red stripe; opts.noText: the cancel button's text. Returns the frame.
+-- Example: K.Confirm("Delete post", "This can't be undone.", "Delete", function() del() end, { danger = true })
+function K.Confirm(title, desc, yesText, onYes, opts)
+    opts = opts or {}
+    local f = vgui.Create("EditablePanel")
+    UI.prompts[f] = true
+    f.OnRemove = function(self) UI.prompts[self] = nil end
+    f:SetSize(K.S(440), K.S(150))
+    f:Center()
+    f:MakePopup()
+    f:DoModal()
+    f:DockPadding(K.S(14), K.S(42), K.S(14), K.S(14))
+    function f:Paint(w, h)
+        K.Plate(0, 0, w, h, { title = title, ticks = "all" })
+    end
+    local d = K.Label(f, desc or "", 13, nil, C.textDim)
+    d:Dock(TOP)
+    local row = vgui.Create("DPanel", f)
+    row:Dock(BOTTOM)
+    row:SetTall(K.S(32))
+    row.Paint = nil
+    local yes = K.Button(row, yesText or "OK", function() f:Remove() if onYes then onYes() end end,
+        { accent = not opts.danger, danger = opts.danger })
+    yes:Dock(RIGHT)
+    yes:SetWide(K.S(120))
+    local no = K.Button(row, opts.noText or "Cancel", function() f:Remove() end)
+    no:Dock(RIGHT)
+    no:SetWide(K.S(100))
+    no:DockMargin(0, 0, K.S(8), 0)
+    return f
 end
 
 -- K.Prompt(title, desc, default, onOk): a small modal box asking for text (a

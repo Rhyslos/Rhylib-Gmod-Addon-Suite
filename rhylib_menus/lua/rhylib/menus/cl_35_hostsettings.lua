@@ -55,6 +55,7 @@
 local Menus = Rhylib.Menus
 local K = Rhylib.UI.Kit
 local C = K.C
+local COL_PROMPT_DIM = Rhylib.UI.Col("hostsettings.promptDim", 0, 0, 0, 150)   -- (behind the "not applied" prompt)
 
 -- Kept across rebuilds of the page (and while the menu is closed).
 local view = { kind = "home" }          -- { kind = "module", id } / "home" / "models" / "changed"
@@ -841,7 +842,7 @@ local function askLeave(go)
     f:SetDrawOnTop(true)
     local n = Menus.SettingsPending()
     function f:Paint(w, h)
-        surface.SetDrawColor(0, 0, 0, 150)
+        surface.SetDrawColor(COL_PROMPT_DIM)
         surface.DrawRect(0, 0, w, h)
     end
     local box = vgui.Create("DPanel", f)

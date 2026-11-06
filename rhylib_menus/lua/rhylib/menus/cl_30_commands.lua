@@ -34,6 +34,16 @@ local Menus = Rhylib.Menus
 local K = Menus.Kit
 local C = K.C
 
+-- Colour per action section (all-blue buttons made it hard to see what
+-- belongs together). Theme tokens "commands.sec<Name>".
+local Col = Rhylib.UI.Col
+local SECTION_COL = {
+    ["Info & messages"] = Col("commands.secInfo", 120, 170, 235), ["Move"] = Col("commands.secMove", 80, 200, 200), ["Health"] = Col("commands.secHealth", 91, 201, 122),
+    ["Restrain"] = Col("commands.secRestrain", 240, 150, 60), ["Chat & voice"] = Col("commands.secChat", 190, 140, 230), ["Powers"] = Col("commands.secPowers", 242, 209, 75),
+    ["Event fun"] = Col("commands.secFun", 235, 120, 190), ["Job & money"] = Col("commands.secJob", 165, 205, 90), ["Roster & staff rank"] = Col("commands.secRoster", 140, 160, 255),
+    ["Punish"] = Col("commands.secPunish", 232, 70, 60), ["Actions"] = Col("commands.secActions", 120, 170, 235), ["Other"] = Col("commands.secOther", 160, 165, 170), ["Steam"] = Col("commands.secSteam", 100, 140, 190),
+}
+
 --------------------------------------------------------------------------
 -- Admin mods
 --------------------------------------------------------------------------
@@ -240,14 +250,6 @@ local function buildPlayers(parent)
     grid:Dock(FILL)
     grid:SetVisible(false)
 
-    -- Colour per section (all-blue buttons made it hard to
-    -- see what belongs together).
-    local SECTION_COL = {
-        ["Info & messages"] = Color(120, 170, 235), ["Move"] = Color(80, 200, 200), ["Health"] = Color(91, 201, 122),
-        ["Restrain"] = Color(240, 150, 60), ["Chat & voice"] = Color(190, 140, 230), ["Powers"] = Color(242, 209, 75),
-        ["Event fun"] = Color(235, 120, 190), ["Job & money"] = Color(165, 205, 90), ["Roster & staff rank"] = Color(140, 160, 255),
-        ["Punish"] = Color(232, 70, 60), ["Actions"] = Color(120, 170, 235), ["Other"] = Color(160, 165, 170), ["Steam"] = Color(100, 140, 190),
-    }
     local function block(title, buttons)
         if #buttons == 0 then return end
         local col = SECTION_COL[title]
