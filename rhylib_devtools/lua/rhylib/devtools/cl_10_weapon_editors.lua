@@ -19,11 +19,25 @@
       rhylib_vm_aim r f u   AimPos;  rhylib_vm_fov n   ViewModelFOV
       rhylib_vm_tune ...    PropVMPos / PropVMAng by numbers
       rhylib_vm_bones       the current viewmodel's bone list
+    The windows are Rhylib.Devtools.UI windows (cl_15_ui.lua, the same
+    look as the pose editor): tabs on the left, the page in the middle,
+    the orbit camera on the right where the editor has one, Copy on its
+    own tab. Tabs:
+      first person (gun)    Gun, Hands (carrier guns), Dual pistols,
+                            Aim & FOV, Copy
+      grenade / build tool  Prop (or Tool), Copy
+      third person          Gun (or Tool), Left pistol (dual), Copy
+      extras                First person, Third person (showing it turns
+                            the orbit camera on, First person off), Copy
+      ear                   Hand, Shoulder, Transition, Fingers,
+                            Transform, Snapshots, Copy
     Hooks: CalcView "weapons.editorcam" (-60) and ShouldDrawLocalPlayer
-    while an editor frame with the orbit camera is open.
+    while an editor window with the orbit camera is open (the camera is
+    Rhylib.Devtools.orbit, also used by the pose editor); the ear editor's
+    gizmo: HUDPaint / GUIMousePressed / GUIMouseReleased / Think
+    "devtools.eargizmo".
     Uses the weapon base's shared client helpers (Rhylib.Weapons.BaseClient,
-    set by rhylib_base): carrierBone. Needs rhylib_weapons; the windows
-    are plain Derma (DFrame).
+    set by rhylib_base): carrierBone. Needs rhylib_weapons.
 ]]
 
 -- The weapon base registers after autorun, so look the helper up when used.
@@ -86,7 +100,7 @@ concommand.Add("rhylib_vm_tune", function(_, _, args)
     print(string.format("SWEP.PropVMPos = Vector(%g, %g, %g)\nSWEP.PropVMAng = Angle(%g, %g, %g)", n[1], n[2], n[3], n[4], n[5], n[6]))
 end)
 
--- rhylib_vm_editor: sliders for the held gun (prop in hand or floating,
+-- rhylib_vm_editor: rows for the held gun (prop in hand or floating,
 -- aim offset, viewmodel FOV). Changes last until the weapon is removed;
 -- Copy puts the lines for the weapon file on the clipboard.
 local editor
@@ -137,165 +151,122 @@ local function editorLines(w, safe, px)
     return table.concat(out, "\n")
 end
 
--- Editor window: typed values with - / + buttons (Enter or leaving the
--- box applies). Returns frame (with .list), label(text), field(...), rows.
-local function editorFrame(title, tall, w)
-    local f = vgui.Create("DFrame")
-    f:SetTitle(title)
-    f:SetSize(340, tall)
-    f:SetPos(20, ScrH() * 0.5 - tall * 0.5)
-    f:MakePopup()   -- (keyboard goes to the window, so number keys don't switch weapons)
+-- Window helpers (Rhylib.Devtools.UI, cl_15_ui.lua) ------------------
 
-    local list = vgui.Create("DScrollPanel", f)
-    list:Dock(FILL)
-    f.list = list
-    local rows = {}
+-- The kit is looked up when an editor opens (cl_15 loads after this file).
+local function kitUI()
+    local DU = Rhylib.Devtools and Rhylib.Devtools.UI
+    if not (DU and DU.Window) then print("Needs Rhy's Core with the UI kit") return nil end
+    return DU
+end
 
-    local function label(text)
-        local l = list:Add("DLabel")
-        l:SetText(text)
-        l:Dock(TOP)
-        l:DockMargin(4, 10, 4, 2)
+-- fn runs when the window closes (before the window's own OnRemove).
+local function onClose(f, fn)
+    local old = f.OnRemove
+    function f:OnRemove(...)
+        fn()
+        if old then return old(self, ...) end
     end
+end
 
-    local function field(text, step, lo, hi, get, set)
-        local row = list:Add("DPanel")
-        row:SetTall(24)
-        row:Dock(TOP)
-        row:DockMargin(4, 1, 4, 1)
-        row:SetPaintBackground(false)
-        local l = vgui.Create("DLabel", row)
-        l:SetText(text)
-        l:SetWide(90)
-        l:Dock(LEFT)
-        local plus = vgui.Create("DButton", row)
-        plus:SetText("+")
-        plus:SetWide(26)
-        plus:Dock(RIGHT)
-        local minus = vgui.Create("DButton", row)
-        minus:SetText("-")
-        minus:SetWide(26)
-        minus:Dock(RIGHT)
-        local e = vgui.Create("DTextEntry", row)
-        e:Dock(FILL)
-        e:DockMargin(0, 0, 4, 0)
-        e:SetNumeric(true)
-        local function show() e:SetText(tostring(math.Round(get(), 3))) end
-        local function apply(v)
-            if not IsValid(w) or not v then return end
-            set(math.Clamp(v, lo, hi))
-            show()
-        end
-        e.OnEnter = function() apply(tonumber(e:GetValue())) end
-        local base = baseclass.Get("DTextEntry")
-        e.OnLoseFocus = function(self)
-            apply(tonumber(self:GetValue()))
-            if base and base.OnLoseFocus then base.OnLoseFocus(self) end
-        end
-        minus.DoClick = function() apply(get() - step) end
-        plus.DoClick = function() apply(get() + step) end
-        -- (held down: keeps stepping, after a short wait)
-        local function holdRepeat(btn, d)
-            function btn:Think()
-                if self:IsDown() then
-                    local t = RealTime()
-                    if not self.rhylibHeld then
-                        self.rhylibHeld = t + 0.35
-                    elseif t >= self.rhylibHeld then
-                        self.rhylibHeld = t + 0.04
-                        apply(get() + d)
-                    end
-                else
-                    self.rhylibHeld = nil
-                end
-            end
-        end
-        holdRepeat(minus, -step)
-        holdRepeat(plus, step)
-        show()
-        rows[#rows + 1] = show
+-- A number row for w's values: - / + (hold to repeat) or type and Enter;
+-- does nothing (and shows 0) once w is gone.
+local function num(pg, w, label, step, lo, hi, get, set)
+    return pg:Number(label, step, lo, hi,
+        function() if not IsValid(w) then return 0 end return tonumber(get()) or 0 end,
+        function(v) if IsValid(w) then set(v) end end)
+end
+
+-- Three rows for the parts of a Vector (x y z) or an Angle (p y r);
+-- obj() gives the Vector / Angle (looked up each time).
+local VEC, ANG = { "x", "y", "z" }, { "p", "y", "r" }
+local POS, TURN = { "Forward", "Right", "Up" }, { "Pitch", "Yaw", "Roll" }
+local function rows3(pg, w, labels, parts, step, range, obj)
+    for i = 1, 3 do
+        local c = parts[i]
+        num(pg, w, labels[i], step, -range, range, function() return obj()[c] end, function(v) obj()[c] = v end)
     end
+end
 
-    local function copyButton(getText)
-        local copy = list:Add("DButton")
-        copy:SetText("Copy lines for the weapon file")
-        copy:SetTall(28)
-        copy:Dock(TOP)
-        copy:DockMargin(4, 10, 4, 4)
-        copy.DoClick = function()
-            if not IsValid(w) then return end
-            local text = getText()
-            SetClipboardText(text)
-            print(text)
-            chat.AddText(Color(120, 200, 255), "Copied (also printed in the console).")
-        end
-    end
-    f.copyButton = copyButton
+local function copyText(w, getText)
+    if not IsValid(w) then return end
+    local text = getText()
+    SetClipboardText(text)
+    print(text)
+    chat.AddText(Color(120, 200, 255), "Copied (also printed in the console).")
+end
 
-    return f, label, field, rows
+-- The Copy tab: the lines as they are now, and the button.
+local function copyTab(f, w, getText, head, button)
+    f:AddTab("Copy", function(pg)
+        pg:Heading(head or "Lines for the weapon file")
+        pg:Note(function() return IsValid(w) and getText() or "" end)
+        pg:Buttons({ { button or "Copy lines for the weapon file", function() copyText(w, getText) end, { accent = true } } })
+        pg:Note("Also printed in the console.")
+    end)
 end
 
 -- Grenades (rhylib_grenade_base, not Rhylib guns): their first-person
 -- prop sits on the viewmodel's grenade bone (PropVMPos / PropVMAng /
 -- PropVMScale).
-local function grenadeEditor(w)
+local function grenadeEditor(w, DU)
     w.PropVMPos = Vector(w.PropVMPos:Unpack())
     w.PropVMAng = Angle(w.PropVMAng:Unpack())
     w.PropVMScale = w.PropVMScale or 1
-    local f, label, field = editorFrame("First person: " .. w:GetClass(), 360, w)
+    local f = DU.Window("First person · " .. w:GetClass())
     editor = f
     local R = 30
-    label("Grenade from the viewmodel's grenade bone")
-    field("Forward", 0.1, -R, R, function() return w.PropVMPos.x end, function(v) w.PropVMPos.x = v end)
-    field("Right", 0.1, -R, R, function() return w.PropVMPos.y end, function(v) w.PropVMPos.y = v end)
-    field("Up", 0.1, -R, R, function() return w.PropVMPos.z end, function(v) w.PropVMPos.z = v end)
-    field("Pitch", 1, -180, 180, function() return w.PropVMAng.p end, function(v) w.PropVMAng.p = v end)
-    field("Yaw", 1, -180, 180, function() return w.PropVMAng.y end, function(v) w.PropVMAng.y = v end)
-    field("Roll", 1, -180, 180, function() return w.PropVMAng.r end, function(v) w.PropVMAng.r = v end)
-    field("Size", 0.05, 0.1, 3, function() return w.PropVMScale end, function(v) w.PropVMScale = v end)
-    f.copyButton(function()
+    f:AddTab("Prop", function(pg)
+        pg:Heading("Grenade from the viewmodel's grenade bone")
+        rows3(pg, w, POS, VEC, 0.1, R, function() return w.PropVMPos end)
+        rows3(pg, w, TURN, ANG, 1, 180, function() return w.PropVMAng end)
+        num(pg, w, "Size", 0.05, 0.1, 3, function() return w.PropVMScale end, function(v) w.PropVMScale = v end)
+    end)
+    copyTab(f, w, function()
         return string.format("SWEP.PropVMScale = %g\nSWEP.PropVMPos = Vector(%g, %g, %g)\nSWEP.PropVMAng = Angle(%g, %g, %g)",
             w.PropVMScale, w.PropVMPos.x, w.PropVMPos.y, w.PropVMPos.z, w.PropVMAng.p, w.PropVMAng.y, w.PropVMAng.r)
     end)
+    f:Show("Prop")
 end
 
 -- Build tools (rhylib_logistics E-tool / repair tool): the tool model on
 -- the hand bone (VMOffset / VMAngle / VMScale in first person, WMOffset /
--- WMAngle / WMScale in third person).
+-- WMAngle / WMScale in third person, with the orbit camera).
 local function isBuildTool(w)
     return IsValid(w) and w.ToolModel ~= nil and w.VMOffset ~= nil and w.WMOffset ~= nil and not w.IsRhylib
 end
-local function toolEditor(w, key, title, extra)
-    local P, A, S = key .. "Offset", key .. "Angle", key .. "Scale"
+local function toolEditor(w, key, title, DU, camera)
+    local P, A, Sc = key .. "Offset", key .. "Angle", key .. "Scale"
     w[P] = Vector(w[P]:Unpack())
     w[A] = Angle(w[A]:Unpack())
-    w[S] = w[S] or 1
-    local f, label, field = editorFrame(title .. ": " .. w:GetClass(), extra and 520 or 360, w)
+    w[Sc] = w[Sc] or 1
+    local f = DU.Window(title .. " · " .. w:GetClass(), { camera = camera })
     local R = 30
-    label("Tool from the right hand")
-    field("Forward", 0.1, -R, R, function() return w[P].x end, function(v) w[P].x = v end)
-    field("Right", 0.1, -R, R, function() return w[P].y end, function(v) w[P].y = v end)
-    field("Up", 0.1, -R, R, function() return w[P].z end, function(v) w[P].z = v end)
-    field("Pitch", 1, -180, 180, function() return w[A].p end, function(v) w[A].p = v end)
-    field("Yaw", 1, -180, 180, function() return w[A].y end, function(v) w[A].y = v end)
-    field("Roll", 1, -180, 180, function() return w[A].r end, function(v) w[A].r = v end)
-    field("Size", 0.05, 0.1, 3, function() return w[S] end, function(v) w[S] = v end)
-    f.copyButton(function()
-        return string.format("SWEP.%s = %g\nSWEP.%s = Vector(%g, %g, %g)\nSWEP.%s = Angle(%g, %g, %g)",
-            S, w[S], P, w[P].x, w[P].y, w[P].z, A, w[A].p, w[A].y, w[A].r)
+    f:AddTab("Tool", function(pg)
+        pg:Heading("Tool from the right hand")
+        rows3(pg, w, POS, VEC, 0.1, R, function() return w[P] end)
+        rows3(pg, w, TURN, ANG, 1, 180, function() return w[A] end)
+        num(pg, w, "Size", 0.05, 0.1, 3, function() return w[Sc] end, function(v) w[Sc] = v end)
     end)
-    return f, label
+    copyTab(f, w, function()
+        return string.format("SWEP.%s = %g\nSWEP.%s = Vector(%g, %g, %g)\nSWEP.%s = Angle(%g, %g, %g)",
+            Sc, w[Sc], P, w[P].x, w[P].y, w[P].z, A, w[A].p, w[A].y, w[A].r)
+    end)
+    f:Show("Tool")
+    return f
 end
 
 concommand.Add("rhylib_vm_editor", function()
     if IsValid(editor) then editor:Remove() return end
+    local DU = kitUI()
+    if not DU then return end
     local g = LocalPlayer():GetActiveWeapon()
     if isBuildTool(g) then
-        editor = toolEditor(g, "VM", "First person")
+        editor = toolEditor(g, "VM", "First person", DU)
         return
     end
     if IsValid(g) and not g.IsRhylib and g.PropModel and g.PropVMPos and g.PropVMAng then
-        grenadeEditor(g)
+        grenadeEditor(g, DU)
         return
     end
     local w = held()
@@ -335,101 +306,72 @@ concommand.Add("rhylib_vm_editor", function()
         px.VMOffset = Vector((px.VMOffset or Vector()):Unpack())
         t = px
     end
-
-    local f, label, field, rows = editorFrame("Viewmodel: " .. w:GetClass() .. (px and (" (" .. w:GetFireModeName() .. " hands)") or safe and " (safety pose)" or carrier and " (in hands)" or " (floating)"), 640, w)
-    editor = f
-    local list = f.list
-    f.OnRemove = function() if IsValid(w) then w.rhylibAimPreview = nil end end
-
-    local R = 30
-    label(carrier and "Gun on the hands' gun bone" or "Floating gun from the view")
-    field("Forward", 0.1, -R, R, function() return t[posKey].x end, function(v) t[posKey].x = v end)
-    field("Right", 0.1, -R, R, function() return t[posKey].y end, function(v) t[posKey].y = v end)
-    field("Up", 0.1, -R, R, function() return t[posKey].z end, function(v) t[posKey].z = v end)
-    field("Pitch", 1, -180, 180, function() return t[angKey].p end, function(v) t[angKey].p = v end)
-    field("Yaw", 1, -180, 180, function() return t[angKey].y end, function(v) t[angKey].y = v end)
-    field("Roll", 1, -180, 180, function() return t[angKey].r end, function(v) t[angKey].r = v end)
-    if carrier then
-        field("Size", 0.05, 0.1, 3, function() return t.PropBoneScale or w.PropScale end, function(v) t.PropBoneScale = v end)
-        label("Hands and gun on screen")
-        field("Right", 0.1, -R, R, function() return t.VMOffset.x end, function(v) t.VMOffset.x = v end)
-        field("Forward", 0.1, -R, R, function() return t.VMOffset.y end, function(v) t.VMOffset.y = v end)
-        field("Up", 0.1, -R, R, function() return t.VMOffset.z end, function(v) t.VMOffset.z = v end)
-        if not safe and not px then
-        local align = list:Add("DButton")
-        align:SetText("Point the gun straight ahead")
-        align:SetTall(24)
-        align:Dock(TOP)
-        align:DockMargin(4, 4, 4, 0)
-        align.DoClick = function()
-            if not IsValid(w) then return end
-            w.rhylibRealign = true
-            timer.Simple(0.3, function()
-                if not IsValid(w) or not IsValid(f) then return end
-                for _, show in ipairs(rows) do show() end
-            end)
-        end
-        local match = list:Add("DButton")
-        match:SetText("Move to the old floating gun position")
-        match:SetTall(24)
-        match:Dock(TOP)
-        match:DockMargin(4, 4, 4, 0)
-        match.DoClick = function()
-            if not IsValid(w) then return end
-            w.rhylibRematch = true   -- worked out again on the next idle frame
-            timer.Simple(0.3, function()
-                if not IsValid(w) or not IsValid(f) then return end
-                for _, show in ipairs(rows) do show() end
-            end)
-        end
-        end
-    end
-    if w.DualMirror and carrier and not safe then
+    local dual = w.DualMirror and carrier and not safe
+    if dual then
         w.DualMirrorPos = Vector((w.DualMirrorPos or Vector()):Unpack())
         w.DualMirrorAng = Angle((w.DualMirrorAng or Angle()):Unpack())
-        label("Dual pistols (switch to dual to see them)")
-        field("Spread", 0.1, -R, R, function() return w.DualSpread or 0 end, function(v) w.DualSpread = v end)
-        field("L forward", 0.1, -R, R, function() return w.DualMirrorPos.x end, function(v) w.DualMirrorPos.x = v end)
-        field("L right", 0.1, -R, R, function() return w.DualMirrorPos.y end, function(v) w.DualMirrorPos.y = v end)
-        field("L up", 0.1, -R, R, function() return w.DualMirrorPos.z end, function(v) w.DualMirrorPos.z = v end)
-        field("L pitch", 1, -180, 180, function() return w.DualMirrorAng.p end, function(v) w.DualMirrorAng.p = v end)
-        field("L yaw", 1, -180, 180, function() return w.DualMirrorAng.y end, function(v) w.DualMirrorAng.y = v end)
-        field("L roll", 1, -180, 180, function() return w.DualMirrorAng.r end, function(v) w.DualMirrorAng.r = v end)
     end
-    label("Aiming (tick Preview aim to see it)")
-    field("Right", 0.1, -R, R, function() return w.AimPos.x end, function(v) w.AimPos.x = v end)
-    field("Forward", 0.1, -R, R, function() return w.AimPos.y end, function(v) w.AimPos.y = v end)
-    field("Up", 0.1, -R, R, function() return w.AimPos.z end, function(v) w.AimPos.z = v end)
-    label("Viewmodel")
-    field("FOV", 1, 30, 110, function() return safe and safe.CarrierFOV or w.ViewModelFOV end, function(v)
-        if safe then safe.CarrierFOV = v return end
-        w.ViewModelFOV = v
-        if carrier then w.CarrierFOV = v end
+
+    local f = DU.Window("Viewmodel · " .. w:GetClass())
+    editor = f
+    onClose(f, function() if IsValid(w) then w.rhylibAimPreview = nil end end)
+    local editing = px and ("the " .. w:GetFireModeName() .. " hands (SWEP.ModeProxies)") or safe and "the safety pose (opened while lowered)"
+        or carrier and "the gun in the hands" or "the floating gun"
+
+    local R = 30
+    f:AddTab("Gun", function(pg)
+        pg:Heading(carrier and "Gun on the hands' gun bone" or "Floating gun from the view")
+        pg:Note("Editing " .. editing .. ".")
+        rows3(pg, w, POS, VEC, 0.1, R, function() return t[posKey] end)
+        rows3(pg, w, TURN, ANG, 1, 180, function() return t[angKey] end)
+        if carrier then
+            num(pg, w, "Size", 0.05, 0.1, 3, function() return t.PropBoneScale or w.PropScale end, function(v) t.PropBoneScale = v end)
+        end
     end)
-
-    local aim = list:Add("DCheckBoxLabel")
-    aim:SetText("Preview aim")
-    aim:Dock(TOP)
-    aim:DockMargin(4, 10, 4, 0)
-    aim.OnChange = function(_, on) if IsValid(w) then w.rhylibAimPreview = on or nil end end
-
-    local copy = list:Add("DButton")
-    copy:SetText("Copy lines for the weapon file")
-    copy:SetTall(28)
-    copy:Dock(TOP)
-    copy:DockMargin(4, 10, 4, 4)
-    copy.DoClick = function()
-        if not IsValid(w) then return end
-        local text = editorLines(w, safe, px)
-        SetClipboardText(text)
-        print(text)
-        chat.AddText(Color(120, 200, 255), "Copied (also printed in the console).")
+    if carrier then
+        f:AddTab("Hands", function(pg)
+            pg:Heading("Hands and gun on screen")
+            rows3(pg, w, { "Right", "Forward", "Up" }, VEC, 0.1, R, function() return t.VMOffset end)
+            if not safe and not px then
+                pg:Space(6)
+                pg:Buttons({
+                    { "Point the gun straight ahead", function() if IsValid(w) then w.rhylibRealign = true end end },
+                    -- (worked out again on the next idle frame)
+                    { "Move to the old floating gun position", function() if IsValid(w) then w.rhylibRematch = true end end },
+                })
+            end
+        end)
     end
+    if dual then
+        f:AddTab("Dual pistols", function(pg)
+            pg:Heading("Dual pistols")
+            pg:Note("Switch to dual to see them.")
+            num(pg, w, "Spread", 0.1, -R, R, function() return w.DualSpread or 0 end, function(v) w.DualSpread = v end)
+            pg:Heading("Left pistol")
+            rows3(pg, w, POS, VEC, 0.1, R, function() return w.DualMirrorPos end)
+            rows3(pg, w, TURN, ANG, 1, 180, function() return w.DualMirrorAng end)
+        end)
+    end
+    f:AddTab("Aim & FOV", function(pg)
+        pg:Heading("Aiming")
+        pg:Toggle("Preview aim", function() return IsValid(w) and w.rhylibAimPreview and true or false end,
+            function(on) if IsValid(w) then w.rhylibAimPreview = on or nil end end)
+        rows3(pg, w, { "Right", "Forward", "Up" }, VEC, 0.1, R, function() return w.AimPos end)
+        pg:Heading("Viewmodel")
+        num(pg, w, "FOV", 1, 30, 110, function() return safe and safe.CarrierFOV or w.ViewModelFOV end, function(v)
+            if safe then safe.CarrierFOV = v return end
+            w.ViewModelFOV = v
+            if carrier then w.CarrierFOV = v end
+        end)
+    end)
+    copyTab(f, w, function() return editorLines(w, safe, px) end)
+    f:Show("Gun")
 end)
 
 -- Orbit camera for the third-person editors: the view circles your right
--- hand while the editor is open (preset buttons, drag to turn, wheel to
--- zoom). Yaw is from your body's facing: 0 = in front of you.
+-- hand while the editor is open (the camera column of the window: presets,
+-- drag to turn, wheel to zoom). Yaw is from your body's facing: 0 = in
+-- front of you.
 local orbit = { on = false, yaw = 30, pitch = 10, dist = 45, pan = Vector() }
 
 local function orbitCentre(ply)
@@ -463,173 +405,49 @@ Rhylib.Hook.Add("ShouldDrawLocalPlayer", "weapons.editorcam", function()
     if orbit.on and IsValid(orbit.frame) then return true end
 end, -60)
 
--- bone: what the camera circles (default the right hand). The camera
--- controls go in a column on the right of the editor (the values stay on
--- the left): presets, a drag area (left drag turns: dragging up always
--- moves the camera up, dragging sideways always goes round the same way;
--- right drag pans; wheel zooms), Reset view, zoom, on / off.
-local function addOrbit(f, label, startOff, bone, headText)
-    orbit.frame = f
-    orbit.ent = nil
-    orbit.on = not startOff
-    orbit.bone = bone
-    orbit.pan = Vector()
-    orbit.baseYaw = nil
-    f:SetWide(f:GetWide() + 300)
-    local col = vgui.Create("DPanel", f)
-    col:Dock(RIGHT)
-    col:SetWide(296)
-    col:DockMargin(4, 0, 0, 0)
-    col:SetPaintBackground(false)
-    local head = vgui.Create("DLabel", col)
-    head:SetText(headText or bone and "Camera (circles your head)" or "Camera (circles your right hand)")
-    head:Dock(TOP)
-    head:DockMargin(4, 4, 4, 2)
-    local row = vgui.Create("DPanel", col)
-    row:SetTall(24)
-    row:Dock(TOP)
-    row:DockMargin(4, 1, 4, 1)
-    row:SetPaintBackground(false)
-    local presets = { { "Front", 0, 5 }, { "Back", 180, 5 }, { "Left", 90, 5 }, { "Right", -90, 5 }, { "Top", 0, -85 }, { "Below", 0, 60 } }
-    for _, p in ipairs(presets) do
-        local b = vgui.Create("DButton", row)
-        b:SetText(p[1])
-        b:SetWide(46)
-        b:Dock(LEFT)
-        b:DockMargin(0, 0, 2, 0)
-        b.DoClick = function()
-            orbit.on = true
-            orbit.yaw, orbit.pitch = p[2], p[3]
-        end
-    end
-    local bottom = vgui.Create("DPanel", col)
-    bottom:Dock(BOTTOM)
-    bottom:SetTall(84)
-    bottom:SetPaintBackground(false)
-    local reset = vgui.Create("DButton", bottom)
-    reset:SetText("Reset view (centre, distance, pan)")
-    reset:Dock(TOP)
-    reset:DockMargin(4, 2, 4, 2)
-    reset.DoClick = function()
-        orbit.pan = Vector()
-        orbit.dist, orbit.yaw, orbit.pitch = 45, 30, 10
-        orbit.baseYaw = nil
-        orbit.on = true
-    end
-    local zoom = vgui.Create("DNumSlider", bottom)
-    zoom:Dock(TOP)
-    zoom:DockMargin(4, 2, 4, 1)
-    zoom:SetText("Zoom (distance)")
-    zoom:SetMinMax(15, 200)
-    zoom:SetDecimals(0)
-    zoom:SetValue(orbit.dist)
-    function zoom:OnValueChanged(v)
-        orbit.dist = math.Clamp(v, 15, 200)
-        orbit.on = true
-    end
-    function zoom:Think()
-        if not self:IsEditing() and math.abs(self:GetValue() - orbit.dist) > 0.5 then self:SetValue(orbit.dist) end
-    end
-    local off = vgui.Create("DCheckBoxLabel", bottom)
-    off:SetText("Orbit camera on")
-    off:Dock(TOP)
-    off:DockMargin(4, 4, 4, 2)
-    off:SetValue(orbit.on)
-    function off:OnChange(v) orbit.on = v end
-    function off:Think()
-        if self:GetChecked() ~= orbit.on then self:SetChecked(orbit.on) end
-    end
-    local pad = vgui.Create("DPanel", col)
-    pad:Dock(FILL)
-    pad:DockMargin(4, 4, 4, 4)
-    pad:SetCursor("sizeall")
-    function pad:Paint(w, h)
-        surface.SetDrawColor(20, 24, 30, 220)
-        surface.DrawRect(0, 0, w, h)
-        surface.SetDrawColor(80, 100, 130, 255)
-        surface.DrawOutlinedRect(0, 0, w, h)
-        draw.SimpleText("Left drag: turn · right drag: pan · wheel: zoom", "DermaDefault", w * 0.5, h * 0.46, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-        draw.SimpleText(string.format("yaw %d · pitch %d · %d units", orbit.yaw, orbit.pitch, orbit.dist), "DermaDefault", w * 0.5, h * 0.54,
-            Color(170, 180, 190), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-    end
-    function pad:OnMousePressed(code)
-        if code ~= MOUSE_LEFT and code ~= MOUSE_RIGHT then return end
-        self.drag = { gui.MouseX(), gui.MouseY() }
-        self.pan = code == MOUSE_RIGHT
-        self:MouseCapture(true)
-    end
-    function pad:OnMouseReleased()
-        self.drag = nil
-        self:MouseCapture(false)
-    end
-    function pad:Think()
-        if not self.drag then return end
-        local x, y = gui.MouseX(), gui.MouseY()
-        local dx, dy = x - self.drag[1], y - self.drag[2]
-        self.drag = { x, y }
-        orbit.on = true
-        if self.pan then
-            -- (the centre slides with the mouse, in the view's plane)
-            local view = Angle(orbit.pitch, (orbit.baseYaw or 0) + orbit.yaw, 0)
-            local k = orbit.dist * 0.004
-            orbit.pan = orbit.pan + view:Right() * (dx * k) - view:Up() * (dy * k)
-        else
-            -- (drag up: camera up, from any side; the pitch sign is fixed to
-            -- the screen, not to the side you're looking from)
-            orbit.yaw = math.NormalizeAngle(orbit.yaw - dx * 0.5)
-            orbit.pitch = math.Clamp(orbit.pitch + dy * 0.4, -89, 89)
-        end
-    end
-    function pad:OnMouseWheeled(d)
-        orbit.dist = math.Clamp(orbit.dist - d * 5, 15, 200)
-        orbit.on = true
-        return true
-    end
-end
-
 -- rhylib_wm_editor: the third-person gun (PropWMPos / PropWMAng /
 -- PropScale, from the right hand). Only your own view changes; the
 -- orbit camera shows it from any side.
 local wmEditor
+local HAND_CAM = { head = "Camera (circles your right hand)" }
 concommand.Add("rhylib_wm_editor", function()
     if IsValid(wmEditor) then wmEditor:Remove() return end
+    local DU = kitUI()
+    if not DU then return end
     -- Any weapon with a third-person prop (guns, grenades), or a build tool.
     local w = LocalPlayer():GetActiveWeapon()
     if isBuildTool(w) then
-        local f, label = toolEditor(w, "WM", "Third person", true)
-        wmEditor = f
-        addOrbit(f, label)
+        wmEditor = toolEditor(w, "WM", "Third person", DU, HAND_CAM)
         return
     end
     if not IsValid(w) or not w.PropModel or not w.PropWMPos then print("Hold a Rhy's weapon or grenade first") return end
     w.PropScale = w.PropScale or 1
     w.PropWMPos = Vector(w.PropWMPos:Unpack())
     w.PropWMAng = Angle(w.PropWMAng:Unpack())
-    local f, label, field = editorFrame("Third person: " .. w:GetClass(), w.DualPropWMPos and 760 or 560, w)
-    wmEditor = f
-    local R = 30
-    label("Gun from the right hand")
-    field("Forward", 0.1, -R, R, function() return w.PropWMPos.x end, function(v) w.PropWMPos.x = v end)
-    field("Right", 0.1, -R, R, function() return w.PropWMPos.y end, function(v) w.PropWMPos.y = v end)
-    field("Up", 0.1, -R, R, function() return w.PropWMPos.z end, function(v) w.PropWMPos.z = v end)
-    field("Pitch", 1, -180, 180, function() return w.PropWMAng.p end, function(v) w.PropWMAng.p = v end)
-    field("Yaw", 1, -180, 180, function() return w.PropWMAng.y end, function(v) w.PropWMAng.y = v end)
-    field("Roll", 1, -180, 180, function() return w.PropWMAng.r end, function(v) w.PropWMAng.r = v end)
-    field("Size", 0.05, 0.1, 3, function() return w.PropScale end, function(v) w.PropScale = v end)
     -- Dual pistols: the second one, from the left hand (switch to dual first to see it).
     local dual = w.DualPropWMPos ~= nil
     if dual then
         w.DualPropWMPos = Vector(w.DualPropWMPos:Unpack())
         w.DualPropWMAng = Angle((w.DualPropWMAng or Angle()):Unpack())
-        label("Left pistol from the left hand (dual mode)")
-        field("L forward", 0.1, -R, R, function() return w.DualPropWMPos.x end, function(v) w.DualPropWMPos.x = v end)
-        field("L right", 0.1, -R, R, function() return w.DualPropWMPos.y end, function(v) w.DualPropWMPos.y = v end)
-        field("L up", 0.1, -R, R, function() return w.DualPropWMPos.z end, function(v) w.DualPropWMPos.z = v end)
-        field("L pitch", 1, -180, 180, function() return w.DualPropWMAng.p end, function(v) w.DualPropWMAng.p = v end)
-        field("L yaw", 1, -180, 180, function() return w.DualPropWMAng.y end, function(v) w.DualPropWMAng.y = v end)
-        field("L roll", 1, -180, 180, function() return w.DualPropWMAng.r end, function(v) w.DualPropWMAng.r = v end)
     end
-    f.copyButton(function()
+    local f = DU.Window("Third person · " .. w:GetClass(), { camera = HAND_CAM })
+    wmEditor = f
+    local R = 30
+    f:AddTab("Gun", function(pg)
+        pg:Heading("Gun from the right hand")
+        rows3(pg, w, POS, VEC, 0.1, R, function() return w.PropWMPos end)
+        rows3(pg, w, TURN, ANG, 1, 180, function() return w.PropWMAng end)
+        num(pg, w, "Size", 0.05, 0.1, 3, function() return w.PropScale end, function(v) w.PropScale = v end)
+    end)
+    if dual then
+        f:AddTab("Left pistol", function(pg)
+            pg:Heading("Left pistol from the left hand")
+            pg:Note("Dual mode: switch to dual first to see it.")
+            rows3(pg, w, POS, VEC, 0.1, R, function() return w.DualPropWMPos end)
+            rows3(pg, w, TURN, ANG, 1, 180, function() return w.DualPropWMAng end)
+        end)
+    end
+    copyTab(f, w, function()
         local t = string.format("SWEP.PropScale = %g\nSWEP.PropWMPos = Vector(%g, %g, %g)\nSWEP.PropWMAng = Angle(%g, %g, %g)",
             w.PropScale, w.PropWMPos.x, w.PropWMPos.y, w.PropWMPos.z, w.PropWMAng.p, w.PropWMAng.y, w.PropWMAng.r)
         if dual then
@@ -638,7 +456,7 @@ concommand.Add("rhylib_wm_editor", function()
         end
         return t
     end)
-    addOrbit(f, label)
+    f:Show("Gun")
 end)
 
 -- rhylib_extra_editor: extra props (a riot shield) in first and third
@@ -649,6 +467,8 @@ local function fmtV(v) return string.format("Vector(%g, %g, %g)", v.x, v.y, v.z)
 local function fmtA(a) return string.format("Angle(%g, %g, %g)", a.p, a.y, a.r) end
 concommand.Add("rhylib_extra_editor", function()
     if IsValid(extraEditor) then extraEditor:Remove() return end
+    local DU = kitUI()
+    if not DU then return end
     local w = LocalPlayer():GetActiveWeapon()
     if not IsValid(w) or not (w.ExtraProps or w.CarrierBoneMods or w.WorldBoneMods) then
         print("Hold a weapon with extra props (the riot shield) first")
@@ -658,64 +478,72 @@ concommand.Add("rhylib_extra_editor", function()
     w.ExtraProps = table.Copy(w.ExtraProps or {})
     w.CarrierBoneMods = w.CarrierBoneMods and table.Copy(w.CarrierBoneMods) or nil
     w.WorldBoneMods = w.WorldBoneMods and table.Copy(w.WorldBoneMods) or nil
-    local f, label, field = editorFrame("Extras: " .. w:GetClass(), 700, w)
-    extraEditor = f
-    addOrbit(f, label, true)   -- (off at first: this editor does first person too)
-    local R, B = 60, 120
-    local function posAng(t, posKey, angKey, what)
-        t[posKey] = Vector((t[posKey] or Vector()):Unpack())
-        t[angKey] = Angle((t[angKey] or Angle()):Unpack())
-        field(what .. " fwd", 0.1, -B, B, function() return t[posKey].x end, function(v) t[posKey].x = v end)
-        field(what .. " right", 0.1, -B, B, function() return t[posKey].y end, function(v) t[posKey].y = v end)
-        field(what .. " up", 0.1, -B, B, function() return t[posKey].z end, function(v) t[posKey].z = v end)
-        field(what .. " pitch", 1, -180, 180, function() return t[angKey].p end, function(v) t[angKey].p = v end)
-        field(what .. " yaw", 1, -180, 180, function() return t[angKey].y end, function(v) t[angKey].y = v end)
-        field(what .. " roll", 1, -180, 180, function() return t[angKey].r end, function(v) t[angKey].r = v end)
-    end
+    local anyAim = false
     for _, e in ipairs(w.ExtraProps) do
-        label(e.key .. ": first person (on " .. tostring(e.vmBone) .. ")")
-        posAng(e, "vmPos", "vmAng", "")
-        field(" size", 0.02, 0.05, 4, function() return e.vmScale or 1 end, function(v) e.vmScale = v end)
+        e.vmPos = Vector((e.vmPos or Vector()):Unpack())
+        e.vmAng = Angle((e.vmAng or Angle()):Unpack())
+        e.wmPos = Vector((e.wmPos or Vector()):Unpack())
+        e.wmAng = Angle((e.wmAng or Angle()):Unpack())
         if e.vmPosAim or e.vmAngAim then
-            e.vmPosAim = e.vmPosAim or Vector(e.vmPos:Unpack())
-            e.vmAngAim = e.vmAngAim or Angle(e.vmAng:Unpack())
-            label(e.key .. ": first person while aiming")
-            local aim = f.list:Add("DCheckBoxLabel")
-            aim:SetText("Preview aim (shows the aiming pose)")
-            aim:Dock(TOP)
-            aim:DockMargin(4, 2, 4, 2)
-            aim.OnChange = function(_, on) if IsValid(w) then w.rhylibAimPreview = on or nil end end
-            local oldRemove = f.OnRemove
-            f.OnRemove = function(...)
-                if IsValid(w) then w.rhylibAimPreview = nil end
-                if oldRemove then return oldRemove(...) end
-            end
-            posAng(e, "vmPosAim", "vmAngAim", "aim")
+            e.vmPosAim = Vector((e.vmPosAim or e.vmPos):Unpack())
+            e.vmAngAim = Angle((e.vmAngAim or e.vmAng):Unpack())
+            anyAim = true
         end
-        label(e.key .. ": third person (on " .. tostring(e.wmBone) .. ")")
-        posAng(e, "wmPos", "wmAng", "")
-        field(" size", 0.02, 0.05, 4, function() return e.wmScale or 1 end, function(v) e.wmScale = v end)
     end
-    for name, m in SortedPairs(w.CarrierBoneMods or {}) do
-        label("First person arm: " .. name)
+    for _, m in pairs(w.CarrierBoneMods or {}) do
         m.pos = Vector((m.pos or Vector()):Unpack())
         m.ang = Angle((m.ang or Angle()):Unpack())
-        field(" x", 0.1, -R, R, function() return m.pos.x end, function(v) m.pos.x = v end)
-        field(" y", 0.1, -R, R, function() return m.pos.y end, function(v) m.pos.y = v end)
-        field(" z", 0.1, -R, R, function() return m.pos.z end, function(v) m.pos.z = v end)
-        field(" pitch", 1, -180, 180, function() return m.ang.p end, function(v) m.ang.p = v end)
-        field(" yaw", 1, -180, 180, function() return m.ang.y end, function(v) m.ang.y = v end)
-        field(" roll", 1, -180, 180, function() return m.ang.r end, function(v) m.ang.r = v end)
     end
-    for name in SortedPairs(w.WorldBoneMods or {}) do
-        local mods = w.WorldBoneMods
-        label("Third person arm: " .. name)
-        mods[name] = Angle(mods[name]:Unpack())
-        field(" pitch", 1, -180, 180, function() return mods[name].p end, function(v) mods[name].p = v end)
-        field(" yaw", 1, -180, 180, function() return mods[name].y end, function(v) mods[name].y = v end)
-        field(" roll", 1, -180, 180, function() return mods[name].r end, function(v) mods[name].r = v end)
+    local mods = w.WorldBoneMods
+    for name in pairs(mods or {}) do mods[name] = Angle(mods[name]:Unpack()) end
+
+    -- (the camera starts off: this editor does first person too)
+    local f = DU.Window("Extras · " .. w:GetClass(), { camera = { head = "Camera (circles your right hand)", off = true } })
+    extraEditor = f
+    if anyAim then onClose(f, function() if IsValid(w) then w.rhylibAimPreview = nil end end) end
+    local R, B = 60, 120
+    local first, third = #w.ExtraProps > 0 or w.CarrierBoneMods ~= nil, #w.ExtraProps > 0 or mods ~= nil
+    if first then
+        f:AddTab("First person", function(pg)
+            for _, e in ipairs(w.ExtraProps) do
+                pg:Heading(e.key)
+                pg:Note("First person, on " .. tostring(e.vmBone))
+                rows3(pg, w, POS, VEC, 0.1, B, function() return e.vmPos end)
+                rows3(pg, w, TURN, ANG, 1, 180, function() return e.vmAng end)
+                num(pg, w, "Size", 0.02, 0.05, 4, function() return e.vmScale or 1 end, function(v) e.vmScale = v end)
+                if e.vmPosAim then
+                    pg:Heading(e.key .. " while aiming")
+                    pg:Toggle("Preview aim (shows the aiming pose)", function() return IsValid(w) and w.rhylibAimPreview and true or false end,
+                        function(on) if IsValid(w) then w.rhylibAimPreview = on or nil end end)
+                    rows3(pg, w, POS, VEC, 0.1, B, function() return e.vmPosAim end)
+                    rows3(pg, w, TURN, ANG, 1, 180, function() return e.vmAngAim end)
+                end
+            end
+            for name, m in SortedPairs(w.CarrierBoneMods or {}) do
+                pg:Heading("Arm move")
+                pg:Note(name)
+                rows3(pg, w, { "X", "Y", "Z" }, VEC, 0.1, R, function() return m.pos end)
+                rows3(pg, w, TURN, ANG, 1, 180, function() return m.ang end)
+            end
+        end)
     end
-    f.copyButton(function()
+    if third then
+        f:AddTab("Third person", function(pg)
+            for _, e in ipairs(w.ExtraProps) do
+                pg:Heading(e.key)
+                pg:Note("Third person, on " .. tostring(e.wmBone))
+                rows3(pg, w, POS, VEC, 0.1, B, function() return e.wmPos end)
+                rows3(pg, w, TURN, ANG, 1, 180, function() return e.wmAng end)
+                num(pg, w, "Size", 0.02, 0.05, 4, function() return e.wmScale or 1 end, function(v) e.wmScale = v end)
+            end
+            for name in SortedPairs(mods or {}) do
+                pg:Heading("Arm turn")
+                pg:Note(name)
+                rows3(pg, w, TURN, ANG, 1, 180, function() return mods[name] end)
+            end
+        end)
+    end
+    copyTab(f, w, function()
         local out = {}
         for _, e in ipairs(w.ExtraProps) do
             out[#out + 1] = string.format('%s = { vmPos = %s, vmAng = %s, vmScale = %g, wmPos = %s, wmAng = %s, wmScale = %g },',
@@ -740,6 +568,11 @@ concommand.Add("rhylib_extra_editor", function()
         end
         return table.concat(out, "\n")
     end)
+    -- (the third-person tab brings the orbit camera on, first person off)
+    f.onShow = function(name)
+        if name == "Third person" then orbit.on = true elseif name == "First person" then orbit.on = false end
+    end
+    f:Show(first and "First person" or third and "Third person" or "Copy")
 end)
 
 
@@ -755,6 +588,9 @@ concommand.Add("rhylib_ear_editor", function()
     if IsValid(earEditor) then earEditor:Remove() return end
     local R = Rhylib.Radio
     if not (R and R.EarBones and R.Cfg) then print("Needs Rhy's Radio & Squads") return end
+    local DU = kitUI()
+    if not DU then return end
+    local K = Rhylib.UI.Kit
     -- (your last edits are also kept in data/rhylib_ear_ik.json on your
     -- computer, so a refused or lost save never throws them away)
     local cur = R.Cfg("earIK") or {}
@@ -772,7 +608,7 @@ concommand.Add("rhylib_ear_editor", function()
     ik.shoulder, ik.viaShoulder, ik.viaPos, ik.viaAng = three(cur.shoulder), three(cur.viaShoulder), three(cur.viaPos), three(cur.viaAng)
     R.earIKEdit, R.earPreview = ik, true
     local me = LocalPlayer()
-    local f, label, field, rows = editorFrame("Hand to the ear (left arm IK)", 900, me)
+    local f = DU.Window("Hand to the ear (left arm IK)", { camera = { bone = "ValveBiped.Bip01_Head1", head = "Camera (circles your head)" } })
     earEditor = f
     local function save()
         timer.Remove("Rhylib.EarEditorSave")
@@ -788,18 +624,15 @@ concommand.Add("rhylib_ear_editor", function()
         dirty = true
         timer.Create("Rhylib.EarEditorSave", 0.5, 1, function() dirty = false save() end)
     end
-    local oldRemove = f.OnRemove
-    function f:OnRemove()
+    onClose(f, function()
         if dirty then save() end
         R.earPreview, R.earViaPreview = nil, nil
         -- (your own view keeps the edited values until the saved ones come back)
         timer.Simple(2, function() if not R.earPreview then R.earIKEdit = nil end end)
-        if oldRemove then oldRemove(self) end
-    end
+    end)
 
     -- Load a whole set of values (Reset to default, a snapshot) into the
-    -- editor: the same tables stay in use, then every row is shown again.
-    local refreshAll
+    -- editor: the same tables stay in use (the rows show them by themselves).
     local function loadInto(src)
         src = istable(src) and src or {}
         for key, d in pairs(DEF) do
@@ -809,158 +642,24 @@ concommand.Add("rhylib_ear_editor", function()
         ik.fingers = isstring(src.fingers) and src.fingers or ""
         ik.swivel = tonumber(src.swivel) or 0
         ik.shoulder, ik.viaShoulder, ik.viaPos, ik.viaAng = three(src.shoulder), three(src.viaShoulder), three(src.viaPos), three(src.viaAng)
-        if refreshAll then refreshAll() end
         changed()
     end
+    -- (the rows refresh themselves; kept for the gizmo below)
+    local function refreshAll() end
     local function copyOut()
         local function c3(t) return t and { t[1], t[2], t[3] } or nil end
         local out = { fingers = ik.fingers, swivel = ik.swivel, shoulder = c3(ik.shoulder), viaShoulder = c3(ik.viaShoulder), viaPos = c3(ik.viaPos), viaAng = c3(ik.viaAng) }
         for key in pairs(DEF) do out[key] = c3(ik[key]) end
         return out
     end
-
-    -- Reset to default (the shipped earIK) and snapshots (kept in
-    -- data/rhylib_ear_ik_snapshots.json on your computer).
-    label("Default and snapshots")
-    local top = f.list:Add("DPanel")
-    top:SetTall(24)
-    top:Dock(TOP)
-    top:DockMargin(4, 1, 4, 1)
-    top:SetPaintBackground(false)
-    local resetBtn = vgui.Create("DButton", top)
-    resetBtn:SetText("Reset to default")
-    resetBtn:Dock(LEFT)
-    resetBtn:SetWide(110)
-    resetBtn.DoClick = function()
-        Derma_Query("Put every value back to the shipped default?", "Reset to default", "Reset", function()
-            local def = Rhylib.Config.defs and Rhylib.Config.defs.radio and Rhylib.Config.defs.radio.earIK
-            loadInto(def and def.default)
-        end, "Cancel")
+    local function lockNow()
+        local la = R.earUpperLocal or Angle()
+        ik.shoulder = { math.Round(la.p), math.Round(la.y), math.Round(la.r) }
     end
-    local SNAP = "rhylib_ear_ik_snapshots.json"
-    local function snaps()
-        local t = util.JSONToTable(file.Read(SNAP, "DATA") or "")
-        return istable(t) and t or {}
-    end
-    local snapCombo
-    local function fillSnaps()
-        snapCombo:Clear()
-        for i, sn in ipairs(snaps()) do snapCombo:AddChoice(sn.name or ("Snapshot " .. i), i) end
-        snapCombo:SetValue("Snapshots (" .. #snaps() .. ")")
-    end
-    local saveBtn = vgui.Create("DButton", top)
-    saveBtn:SetText("Save snapshot")
-    saveBtn:Dock(LEFT)
-    saveBtn:SetWide(100)
-    saveBtn:DockMargin(4, 0, 0, 0)
-    saveBtn.DoClick = function()
-        Derma_StringRequest("Save snapshot", "Name for this snapshot", os.date("%H:%M:%S"), function(name)
-            local list = snaps()
-            list[#list + 1] = { name = string.sub(name ~= "" and name or os.date("%H:%M:%S"), 1, 40), ik = copyOut() }
-            file.Write(SNAP, util.TableToJSON(list) or "[]")
-            fillSnaps()
-        end)
-    end
-    local row2 = f.list:Add("DPanel")
-    row2:SetTall(24)
-    row2:Dock(TOP)
-    row2:DockMargin(4, 1, 4, 1)
-    row2:SetPaintBackground(false)
-    local delBtn = vgui.Create("DButton", row2)
-    delBtn:SetText("Delete")
-    delBtn:Dock(RIGHT)
-    delBtn:SetWide(54)
-    local loadBtn = vgui.Create("DButton", row2)
-    loadBtn:SetText("Load")
-    loadBtn:Dock(RIGHT)
-    loadBtn:SetWide(50)
-    loadBtn:DockMargin(4, 0, 4, 0)
-    snapCombo = vgui.Create("DComboBox", row2)
-    snapCombo:Dock(FILL)
-    fillSnaps()
-    local function picked()
-        local _, i = snapCombo:GetSelected()
-        return i
-    end
-    loadBtn.DoClick = function()
-        local i = picked()
-        local sn = i and snaps()[i]
-        if sn then loadInto(sn.ik) end
-    end
-    delBtn.DoClick = function()
-        local i = picked()
-        if not i then return end
-        local list = snaps()
-        table.remove(list, i)
-        file.Write(SNAP, util.TableToJSON(list) or "[]")
-        fillSnaps()
-    end
-    local ROWS = {
-        { "pos", "Wrist position (from the head)", { "X", "Y", "Z" }, 0.5, 30 },
-        { "ang", "Hand turn (from the head)", { "Pitch", "Yaw", "Roll" }, 5, 180 },
-        { "elbow", "Elbow bends toward (from the head)", { "X", "Y", "Z" }, 1, 60 },
-    }
-    for _, row in ipairs(ROWS) do
-        label(row[2])
-        for i, ax in ipairs(row[3]) do
-            local key = row[1]
-            field(ax, row[4], -row[5], row[5], function() return ik[key][i] end, function(v) ik[key][i] = v changed() end)
-        end
-    end
-    -- Shoulder by hand: lock the upper arm where it is now (in the chest's
-    -- axes), then turn it with these rows; unlocked, the elbow point and
-    -- swivel above decide it instead.
-    label("Shoulder (upper arm from the chest; Lock first)")
-    local lockBtn = f.list:Add("DButton")
-    lockBtn:SetTall(24)
-    lockBtn:Dock(TOP)
-    lockBtn:DockMargin(4, 2, 4, 2)
-    local function lockText() lockBtn:SetText(ik.shoulder and "Shoulder locked: click to unlock (elbow point decides)" or "Lock the shoulder where it is now") end
-    lockText()
-    lockBtn.DoClick = function()
-        if ik.shoulder then
-            ik.shoulder = nil
-        else
-            local la = R.earUpperLocal or Angle()
-            ik.shoulder = { math.Round(la.p), math.Round(la.y), math.Round(la.r) }
-        end
-        lockText()
-        for _, show in ipairs(rows) do show() end
-        changed()
-    end
-    for i, ax in ipairs({ "Pitch", "Yaw", "Roll" }) do
-        field("Shoulder " .. ax, 2, -180, 180, function() return ik.shoulder and ik.shoulder[i] or 0 end,
-            function(v) if ik.shoulder then ik.shoulder[i] = v changed() end end)
-    end
-    -- Transition point: where the arm goes first on its way to the ear
-    -- (and back), so it doesn't cut through the body. "Show it" holds your
-    -- arm there; Lock takes the arm as it is now (from the chest), then the
-    -- rows move it. Needs the shoulder locked.
-    label("Transition point (the arm passes here first; needs the shoulder locked)")
-    local via = f.list:Add("DPanel")
-    via:SetTall(24)
-    via:Dock(TOP)
-    via:DockMargin(4, 2, 4, 2)
-    via:SetPaintBackground(false)
-    local showBtn = vgui.Create("DButton", via)
-    showBtn:Dock(LEFT)
-    showBtn:SetWide(150)
-    local function showText() showBtn:SetText(R.earViaPreview and "Showing it: click to stop" or "Show the transition point") end
-    showText()
-    showBtn.DoClick = function() R.earViaPreview = not R.earViaPreview showText() end
-    local viaBtn = vgui.Create("DButton", via)
-    viaBtn:Dock(FILL)
-    viaBtn:DockMargin(4, 0, 0, 0)
-    local function viaText() viaBtn:SetText(ik.viaShoulder and "Transition set: click to clear" or "Set the transition point to the arm now") end
-    viaText()
-    -- (set from the arm as it is now; also done by itself on the first edit
-    -- of a Via row, and the shoulder gets locked if it wasn't)
+    -- Transition point from the arm as it is now; also done by itself on
+    -- the first edit of a Via row, and the shoulder gets locked if it wasn't.
     local function setVia()
-        if not ik.shoulder then
-            local la = R.earUpperLocal or Angle()
-            ik.shoulder = { math.Round(la.p), math.Round(la.y), math.Round(la.r) }
-            if lockText then lockText() end
-        end
+        if not ik.shoulder then lockNow() end
         local la, wl = R.earUpperLocal or Angle(), R.earWristLocal or Vector()
         ik.viaShoulder = { math.Round(la.p), math.Round(la.y), math.Round(la.r) }
         ik.viaPos = { math.Round(wl.x, 1), math.Round(wl.y, 1), math.Round(wl.z, 1) }
@@ -972,106 +671,117 @@ concommand.Add("rhylib_ear_editor", function()
             ik.viaAng = ik.viaAng or { 0, 0, 0 }
         end
     end
-    viaBtn.DoClick = function()
-        if ik.viaShoulder then
-            ik.viaShoulder, ik.viaPos, ik.viaAng = nil, nil, nil
-        else
-            setVia()
-        end
-        viaText()
-        for _, show in ipairs(rows) do show() end
-        changed()
-    end
     local function viaEdit(key, i, v)
-        if not ik.viaShoulder then
-            setVia()
-            viaText()
-            for _, show in ipairs(rows) do show() end
-        end
+        if not ik.viaShoulder then setVia() end
         ik[key][i] = v
         changed()
     end
-    for i, ax in ipairs({ "Pitch", "Yaw", "Roll" }) do
-        field("Via shoulder " .. ax, 2, -180, 180, function()
-                if ik.viaShoulder then return ik.viaShoulder[i] end
-                local la = R.earUpperLocal or Angle()
-                return math.Round(({ la.p, la.y, la.r })[i])
-            end,
-            function(v) viaEdit("viaShoulder", i, v) end)
-    end
-    for i, ax in ipairs({ "Pitch", "Yaw", "Roll" }) do
-        field("Via hand " .. ax, 5, -180, 180, function() return ik.viaAng and ik.viaAng[i] or 0 end,
-            function(v)
-                if not ik.viaShoulder then setVia() viaText() for _, show in ipairs(rows) do show() end end
-                ik.viaAng = ik.viaAng or { 0, 0, 0 }
-                ik.viaAng[i] = v
-                changed()
-            end)
-    end
-    for i, ax in ipairs({ "X", "Y", "Z" }) do
-        field("Via wrist " .. ax, 0.5, -40, 40, function()
-                if ik.viaPos then return ik.viaPos[i] end
-                local wl = R.earWristLocal or Vector()
-                return math.Round(({ wl.x, wl.y, wl.z })[i], 1)
-            end,
-            function(v) viaEdit("viaPos", i, v) end)
-    end
-    -- Elbow swivel: turns the elbow round the shoulder-to-wrist line.
-    label("Elbow swivel (turns the elbow round the arm's line)")
-    field("Degrees", 5, -180, 180, function() return ik.swivel end, function(v) ik.swivel = v changed() end)
+
+    local ROWS = {
+        { "pos", "Wrist position", "From the head.", { "X", "Y", "Z" }, 0.5, 30 },
+        { "ang", "Hand turn", "From the head.", { "Pitch", "Yaw", "Roll" }, 5, 180 },
+        { "elbow", "Elbow bends toward", "From the head.", { "X", "Y", "Z" }, 1, 60 },
+    }
+    f:AddTab("Hand", function(pg)
+        for _, row in ipairs(ROWS) do
+            pg:Heading(row[2])
+            pg:Note(row[3])
+            for i, ax in ipairs(row[4]) do
+                local key = row[1]
+                num(pg, me, ax, row[5], -row[6], row[6], function() return ik[key][i] end, function(v) ik[key][i] = v changed() end)
+            end
+        end
+        -- Elbow swivel: turns the elbow round the shoulder-to-wrist line.
+        pg:Heading("Elbow swivel")
+        pg:Note("Turns the elbow round the arm's line (the hand stays put).")
+        num(pg, me, "Degrees", 5, -180, 180, function() return ik.swivel end, function(v) ik.swivel = v changed() end)
+    end)
+
+    -- Shoulder by hand: lock the upper arm where it is now (in the chest's
+    -- axes), then turn it with these rows; unlocked, the elbow point and
+    -- swivel decide it instead.
+    f:AddTab("Shoulder", function(pg)
+        pg:Heading("Shoulder")
+        pg:Note("The upper arm from the chest. Lock it first; unlocked, the elbow point and swivel decide it.")
+        pg:Toggle("Shoulder locked (off: the elbow point decides)", function() return ik.shoulder ~= nil end, function()
+            if ik.shoulder then ik.shoulder = nil else lockNow() end
+            changed()
+        end)
+        for i, ax in ipairs(TURN) do
+            num(pg, me, "Shoulder " .. ax, 2, -180, 180, function() return ik.shoulder and ik.shoulder[i] or 0 end,
+                function(v) if ik.shoulder then ik.shoulder[i] = v changed() end end)
+        end
+    end)
+
+    -- Transition point: where the arm goes first on its way to the ear
+    -- (and back), so it doesn't cut through the body. "Show it" holds your
+    -- arm there; setting it takes the arm as it is now (from the chest),
+    -- then the rows move it. Needs the shoulder locked.
+    f:AddTab("Transition", function(pg)
+        pg:Heading("Transition point")
+        pg:Note("The arm passes here first on its way to the ear and back. Needs the shoulder locked (setting it locks it).")
+        pg:Toggle("Show the transition point (holds your arm there)", function() return R.earViaPreview and true or false end,
+            function() R.earViaPreview = not R.earViaPreview end)
+        pg:Toggle("Transition point set (on: from the arm now)", function() return ik.viaShoulder ~= nil end, function()
+            if ik.viaShoulder then
+                ik.viaShoulder, ik.viaPos, ik.viaAng = nil, nil, nil
+            else
+                setVia()
+            end
+            changed()
+        end)
+        pg:Heading("Via shoulder")
+        for i, ax in ipairs(TURN) do
+            num(pg, me, ax, 2, -180, 180, function()
+                    if ik.viaShoulder then return ik.viaShoulder[i] end
+                    local la = R.earUpperLocal or Angle()
+                    return math.Round(({ la.p, la.y, la.r })[i])
+                end,
+                function(v) viaEdit("viaShoulder", i, v) end)
+        end
+        pg:Heading("Via hand")
+        for i, ax in ipairs(TURN) do
+            num(pg, me, ax, 5, -180, 180, function() return ik.viaAng and ik.viaAng[i] or 0 end,
+                function(v)
+                    if not ik.viaShoulder then setVia() end
+                    ik.viaAng = ik.viaAng or { 0, 0, 0 }
+                    ik.viaAng[i] = v
+                    changed()
+                end)
+        end
+        pg:Heading("Via wrist")
+        pg:Note("Chest axes.")
+        for i, ax in ipairs({ "X", "Y", "Z" }) do
+            num(pg, me, ax, 0.5, -40, 40, function()
+                    if ik.viaPos then return ik.viaPos[i] end
+                    local wl = R.earWristLocal or Vector()
+                    return math.Round(({ wl.x, wl.y, wl.z })[i], 1)
+                end,
+                function(v) viaEdit("viaPos", i, v) end)
+        end
+    end)
+
     -- Finger pose: any sequence of your model (the fingers as they are in
     -- it), picked from the list or stepped with < >.
-    label("Finger pose (from one of your model's animations)")
     local seqs = { "" }
     for _, name in pairs(me:GetSequenceList() or {}) do seqs[#seqs + 1] = name end
     table.sort(seqs)
-    local row = f.list:Add("DPanel")
-    row:SetTall(24)
-    row:Dock(TOP)
-    row:DockMargin(4, 1, 4, 1)
-    row:SetPaintBackground(false)
-    local combo
+    local seqOpts = {}
+    for i, n in ipairs(seqs) do seqOpts[i] = { n, n == "" and "(reference pose)" or n } end
     local function pick(i)
         i = (i - 1) % #seqs + 1
         ik.fingers = seqs[i]
-        combo:SetValue(seqs[i] == "" and "(reference pose)" or seqs[i])
         changed()
     end
     local function index()
         for i, n in ipairs(seqs) do if n == ik.fingers then return i end end
         return 1
     end
-    local prev = vgui.Create("DButton", row)
-    prev:SetText("<") prev:SetWide(26) prev:Dock(LEFT)
-    prev.DoClick = function() pick(index() - 1) end
-    local nxt = vgui.Create("DButton", row)
-    nxt:SetText(">") nxt:SetWide(26) nxt:Dock(RIGHT)
-    nxt.DoClick = function() pick(index() + 1) end
-    combo = vgui.Create("DComboBox", row)
-    combo:Dock(FILL)
-    combo:DockMargin(4, 0, 4, 0)
-    for i, n in ipairs(seqs) do combo:AddChoice(n == "" and "(reference pose)" or n, i) end
-    combo:SetValue(ik.fingers == "" and "(reference pose)" or ik.fingers)
-    refreshAll = function()
-        for _, show in ipairs(rows) do show() end
-        if lockText then lockText() end
-        if viaText then viaText() end
-        combo:SetValue(ik.fingers == "" and "(reference pose)" or ik.fingers)
-    end
-    function combo:OnSelect(_, _, i) pick(i) end
-    f.copyButton(function()
-        local parts = {}
-        for _, row2 in ipairs(ROWS) do
-            local a = ik[row2[1]]
-            parts[#parts + 1] = string.format("%s = { %g, %g, %g }", row2[1], a[1], a[2], a[3])
-        end
-        parts[#parts + 1] = string.format("swivel = %g", ik.swivel)
-        if ik.shoulder then parts[#parts + 1] = string.format("shoulder = { %g, %g, %g }", ik.shoulder[1], ik.shoulder[2], ik.shoulder[3]) end
-        if ik.viaShoulder then parts[#parts + 1] = string.format("viaShoulder = { %g, %g, %g }", ik.viaShoulder[1], ik.viaShoulder[2], ik.viaShoulder[3]) end
-        if ik.viaPos then parts[#parts + 1] = string.format("viaPos = { %g, %g, %g }", ik.viaPos[1], ik.viaPos[2], ik.viaPos[3]) end
-        if ik.viaAng then parts[#parts + 1] = string.format("viaAng = { %g, %g, %g }", ik.viaAng[1], ik.viaAng[2], ik.viaAng[3]) end
-        parts[#parts + 1] = string.format("fingers = %q", ik.fingers)
-        return "Rhylib.Config.Set(\"radio\", \"earIK\", { " .. table.concat(parts, ", ") .. " })"
+    f:AddTab("Fingers", function(pg)
+        pg:Heading("Finger pose")
+        pg:Note("The left hand's fingers as they are in one of your model's animations.")
+        pg:Choice("Animation", seqOpts, function() return ik.fingers end, function(v) ik.fingers = v changed() end)
+        pg:Buttons({ { "<  Previous", function() pick(index() - 1) end }, { "Next  >", function() pick(index() + 1) end } }, { wrap = true })
     end)
 
     -- Transform mode (in the 3D view, outside the window): the arm's bones
@@ -1084,29 +794,85 @@ concommand.Add("rhylib_ear_editor", function()
     -- transition point" on it turns the transition shoulder), Transition
     -- (move; only while the transition point shows).
     local G = { mode = "move", space = "local", sel = nil, drag = nil }
-    label("Transform (click a dot on the model, then drag the gizmo)")
-    local trow = f.list:Add("DPanel")
-    trow:SetTall(24)
-    trow:Dock(TOP)
-    trow:DockMargin(4, 1, 4, 1)
-    trow:SetPaintBackground(false)
-    local function tbtn(text, w, fn, sel)
-        local b = vgui.Create("DButton", trow)
-        b:Dock(LEFT)
-        b:SetWide(w)
-        b:DockMargin(0, 0, 3, 0)
-        b:SetText(text)
-        b.DoClick = fn
-        if sel then function b:Think() self:SetText((sel() and "> " or "") .. text) end end
-        return b
-    end
-    tbtn("Move (W)", 70, function() G.mode = "move" end, function() return G.mode == "move" end)
-    tbtn("Rotate (E)", 74, function() G.mode = "rotate" end, function() return G.mode == "rotate" end)
-    local spaceBtn = tbtn("", 110, function() G.space = G.space == "local" and "world" or "local" end)
-    function spaceBtn:Think() self:SetText(G.space == "local" and "Axes: local (Q)" or "Axes: world (Q)") end
-    function f:OnKeyCodePressed(k)
+    f:AddTab("Transform", function(pg)
+        pg:Heading("Transform")
+        pg:Note("Click a dot on the model (in the 3D view, not the window), then drag the gizmo. Click empty space to deselect.")
+        pg:Buttons({
+            { "Move (W)", function() G.mode = "move" end, { selected = function() return G.mode == "move" end } },
+            { "Rotate (E)", function() G.mode = "rotate" end, { selected = function() return G.mode == "rotate" end } },
+            { function() return G.space == "local" and "Axes: local (Q)" or "Axes: world (Q)" end, function() G.space = G.space == "local" and "world" or "local" end },
+        })
+        pg:Note("Hand: move = the wrist point, rotate = the hand's turn. Shoulder: rotate (locks the shoulder). With the transition point shown: Hand (transition) and the transition shoulder.")
+    end)
+    f.onKey = function(k)
         if k == KEY_W then G.mode = "move" elseif k == KEY_E then G.mode = "rotate" elseif k == KEY_Q then G.space = G.space == "local" and "world" or "local" end
     end
+
+    -- Reset to default (the shipped earIK) and snapshots (kept in
+    -- data/rhylib_ear_ik_snapshots.json on your computer).
+    local SNAP = "rhylib_ear_ik_snapshots.json"
+    local function snaps()
+        local t = util.JSONToTable(file.Read(SNAP, "DATA") or "")
+        return istable(t) and t or {}
+    end
+    local snapList, snapPick = snaps(), nil
+    local function reloadSnaps()
+        snapList = snaps()
+        if snapPick and not snapList[snapPick] then snapPick = nil end
+    end
+    f:AddTab("Snapshots", function(pg)
+        pg:Heading("Default")
+        pg:Buttons({ { "Reset to default", function()
+            K.Confirm("Reset to default", "Put every value back to the shipped default?", "Reset", function()
+                local def = Rhylib.Config.defs and Rhylib.Config.defs.radio and Rhylib.Config.defs.radio.earIK
+                loadInto(def and def.default)
+            end, { danger = true })
+        end, { danger = true } } })
+        pg:Heading("Snapshots")
+        pg:Note("Kept in data/rhylib_ear_ik_snapshots.json on your computer.")
+        pg:Buttons({ { "Save snapshot", function()
+            K.Prompt("Save snapshot", "Name for this snapshot", os.date("%H:%M:%S"), function(name)
+                local list = snaps()
+                list[#list + 1] = { name = string.sub(name ~= "" and name or os.date("%H:%M:%S"), 1, 40), ik = copyOut() }
+                file.Write(SNAP, util.TableToJSON(list) or "[]")
+                reloadSnaps()
+            end)
+        end, { accent = true } } })
+        pg:List({ { "Snapshot", 1 } }, function()
+            local out = {}
+            for i, sn in ipairs(snapList) do out[i] = { i, { sn.name or ("Snapshot " .. i) } } end
+            return out
+        end, function() return snapPick end, function(i) snapPick = i end, K.S(180))
+        pg:Buttons({
+            { "Load", function()
+                local sn = snapPick and snaps()[snapPick]
+                if sn then loadInto(sn.ik) end
+            end, { enabled = function() return snapPick ~= nil end } },
+            { "Delete", function()
+                if not snapPick then return end
+                local list = snaps()
+                table.remove(list, snapPick)
+                file.Write(SNAP, util.TableToJSON(list) or "[]")
+                snapPick = nil
+                reloadSnaps()
+            end, { danger = true, enabled = function() return snapPick ~= nil end } },
+        }, { wrap = true })
+    end)
+
+    copyTab(f, me, function()
+        local parts = {}
+        for _, row2 in ipairs(ROWS) do
+            local a = ik[row2[1]]
+            parts[#parts + 1] = string.format("%s = { %g, %g, %g }", row2[1], a[1], a[2], a[3])
+        end
+        parts[#parts + 1] = string.format("swivel = %g", ik.swivel)
+        if ik.shoulder then parts[#parts + 1] = string.format("shoulder = { %g, %g, %g }", ik.shoulder[1], ik.shoulder[2], ik.shoulder[3]) end
+        if ik.viaShoulder then parts[#parts + 1] = string.format("viaShoulder = { %g, %g, %g }", ik.viaShoulder[1], ik.viaShoulder[2], ik.viaShoulder[3]) end
+        if ik.viaPos then parts[#parts + 1] = string.format("viaPos = { %g, %g, %g }", ik.viaPos[1], ik.viaPos[2], ik.viaPos[3]) end
+        if ik.viaAng then parts[#parts + 1] = string.format("viaAng = { %g, %g, %g }", ik.viaAng[1], ik.viaAng[2], ik.viaAng[3]) end
+        parts[#parts + 1] = string.format("fingers = %q", ik.fingers)
+        return "Rhylib.Config.Set(\"radio\", \"earIK\", { " .. table.concat(parts, ", ") .. " })"
+    end, "The Lua line for the default", "Copy the line")
 
     local AXCOL = { Color(235, 70, 70), Color(80, 220, 90), Color(80, 140, 255) }
     local function handles()
@@ -1234,8 +1000,6 @@ concommand.Add("rhylib_ear_editor", function()
                 if key == "viaShoulder" then setVia() else ik.shoulder = { 0, 0, 0 } end
             end
             ik[key][1], ik[key][2], ik[key][3] = r1(la.p), r1(la.y), r1(la.r)
-            if lockText then lockText() end
-            if viaText then viaText() end
         end
     end
 
@@ -1324,11 +1088,9 @@ concommand.Add("rhylib_ear_editor", function()
         refreshAll()
         changed()
     end)
-    addOrbit(f, label, false, "ValveBiped.Bip01_Head1")
+    f:Show("Hand")
 end)
 
--- (for the other editors in this addon: cl_20_pose_editor.lua)
+-- (the orbit camera, for the window kit's camera column: cl_15_ui.lua)
 Rhylib.Devtools = Rhylib.Devtools or {}
-Rhylib.Devtools.editorFrame = editorFrame
-Rhylib.Devtools.addOrbit = addOrbit
 Rhylib.Devtools.orbit = orbit

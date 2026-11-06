@@ -21,17 +21,22 @@
       rockets it suppresses like a B2 at half the rate.
       DSD1 dwarf spider droid (rhylib_spider, entities/rhylib_spider.lua):
       a four-legged walker as tough as a B2 (b2Health, same damage rules),
-      slow, turns its body to its target and fires one slow explosive
-      shell (rhylib_spider_shell) every spiderShellInterval seconds at a
-      target in sight, leading a moving one; backs off from anyone closer
-      than spiderShellMin (fires anyway when it can't). Model: spiderModel
-      (placeholder HL2 antlion).
+      slow, turns its body to its target and fires one explosive shell
+      (rhylib_spider_shell: looks like a B1 bolt, spiderShellSize times
+      as big, at the B1's bolt speed) every spiderShellInterval seconds
+      at a target in sight, leading a moving one; backs off from anyone
+      closer than spiderShellMin (fires anyway when it can't). Model:
+      spiderModel (placeholder HL2 antlion).
       LM-432 crab droid (rhylib_crab, entities/rhylib_crab.lua): the
-      spider's walker with two rapid-fire blasters (fires like a B2,
-      crabRPM), crabHealth, its armour by where a hit comes from: side
-      plates take crabSideMult, front and back crabFrontMult, hits from
-      above crabTopMult (its weak spot). Model: crabModel (placeholder
-      HL2 headcrab).
+      spider's walker with two rapid-fire blasters (crabRPM without
+      stopping), mostly near misses that walk round the target: it aims
+      true at someone standing still in the open (crabStill*), charging
+      it or very close (crabCharge*, crabCloseRange), and suppresses
+      the spot it last saw someone in cover (crabSuppressTime).
+      crabHealth, its armour by where a hit comes from: side plates take
+      crabSideMult, front and back crabFrontMult, hits from above
+      crabTopMult (its weak spot). Model: crabModel (placeholder HL2
+      headcrab).
       Training B1 / B2 (rhylib_b1_training, rhylib_b2_training): like the
       B1 and B2 with orange-yellow bolts that only take sim health
       (rhylib_training).
@@ -142,12 +147,12 @@ Config.Register("droids", "spiderRange", 2800, "How far a spider droid sees and 
 Config.Register("droids", "spiderReaction", 0.9, "Seconds before a spider droid starts firing at a new target")
 Config.Register("droids", "spiderTurnRate", 90, "Spider droid: how fast it turns its body (degrees per second)")
 Config.Register("droids", "spiderAimCone", 12, "Spider droid: fires only once its body points this close to the target (degrees)")
-Config.Register("droids", "spiderShellInterval", 6, "Spider droid: seconds between shells")
+Config.Register("droids", "spiderShellInterval", 4.6, "Spider droid: seconds between shells")
 Config.Register("droids", "spiderShellDamage", 65, "Spider droid shell: blast damage at the centre")
 Config.Register("droids", "spiderShellDirect", 60, "Spider droid shell: extra blast damage to what it hits")
 Config.Register("droids", "spiderShellRadius", 110, "Spider droid shell: blast radius (units)")
 Config.Register("droids", "spiderShellKnock", true, "Spider droid shell: can knock players down (only close to the impact, where the blast does weapons knockMin damage or more)")
-Config.Register("droids", "spiderShellSpeed", 900, "Spider droid shell: speed (units/s)")
+Config.Register("droids", "spiderShellSize", 2, "Spider droid shell: size of its look as a multiple of a B1 blaster bolt (it flies at the B1's bolt speed, boltSpeed)")
 Config.Register("droids", "spiderShellSpread", 40, "Spider droid shell: miss distance per 1000 units of range")
 Config.Register("droids", "spiderShellMin", 350, "Spider droid: closer than this it backs off before firing (cornered: fires anyway)")
 Config.Register("droids", "spiderShellMax", 16, "Spider droid shells in flight at once, all spiders together")
@@ -171,8 +176,27 @@ Config.Register("droids", "crabReaction", 0.6, "Seconds before a crab droid star
 Config.Register("droids", "crabTurnRate", 120, "Crab droid: how fast it turns its body (degrees per second)")
 Config.Register("droids", "crabAimCone", 25, "Crab droid: fires only while its body points this close to the target (degrees)")
 Config.Register("droids", "crabDamage", 11, "Crab droid: blaster damage per bolt")
-Config.Register("droids", "crabRPM", 520, "Crab droid: shots per minute, both guns together, fired without stopping (suppression)")
-Config.Register("droids", "crabSpread", 2.2, "Crab droid inaccuracy cone (degrees), more against moving targets")
+Config.Register("droids", "crabRPM", 1560, "Crab droid: shots per minute, both guns together, fired without stopping")
+Config.Register("droids", "crabSpread", 2.2, "Crab droid inaccuracy cone (degrees) of bolts aimed at the target, more against moving targets")
+-- Crab aim: mostly near misses (a spot off the target's body that walks
+-- round it), aimed true by chance (entities/rhylib_crab.lua).
+Config.Register("droids", "crabMissMin", 40, "Crab droid near misses: closest they pass the target's body (units)")
+Config.Register("droids", "crabMissMax", 90, "Crab droid near misses: furthest they pass the target's body (units)")
+Config.Register("droids", "crabMissSpread", 0.35, "Crab droid near misses: aim cone multiplier on crabSpread (small keeps the stream tight)")
+Config.Register("droids", "crabMissRepick", 0.9, "Crab droid near misses: seconds between new spots round the target (the stream walks there)")
+Config.Register("droids", "crabMissWalk", 240, "Crab droid near misses: how fast the stream circles round the target to the new spot (degrees per second)")
+Config.Register("droids", "crabBaseHit", 0.03, "Crab droid: share of bolts aimed true at a target in sight that is moving (strafing, dashing to cover)")
+Config.Register("droids", "crabStillSpeed", 70, "Crab droid: a target slower than this (units/s) counts as standing still")
+Config.Register("droids", "crabStillTime", 1.5, "Crab droid: seconds a target stands still in sight before it starts aiming true")
+Config.Register("droids", "crabStillRamp", 2, "Crab droid: seconds over which the share aimed true at a target standing still rises to crabStillHit")
+Config.Register("droids", "crabStillHit", 0.5, "Crab droid: share of bolts aimed true at a target standing still in sight (after crabStillTime + crabStillRamp)")
+Config.Register("droids", "crabChargeSpeed", 120, "Crab droid: a target moving toward it at least this fast (units/s) is closing in")
+Config.Register("droids", "crabChargeDist", 350, "Crab droid: units a target has to close in during one approach before it aims true (a short dash to cover stays under it)")
+Config.Register("droids", "crabChargeGrace", 0.5, "Crab droid: seconds a target can stop closing in before its approach starts over")
+Config.Register("droids", "crabChargeRange", 750, "Crab droid: a target closing in is only aimed at true within this range (units)")
+Config.Register("droids", "crabCloseRange", 300, "Crab droid: anyone closer than this (units) is aimed at true at crabChargeHit")
+Config.Register("droids", "crabChargeHit", 0.75, "Crab droid: share of bolts aimed true at a target charging it or closer than crabCloseRange")
+Config.Register("droids", "crabSuppressTime", 4, "Crab droid: seconds after losing sight of a target it keeps firing near misses at the spot it last saw it (0 = stops at once)")
 Config.Register("droids", "crabSideMult", 0.35, "Crab droid: damage taken from hits on its left or right side")
 Config.Register("droids", "crabFrontMult", 0.7, "Crab droid: damage taken from hits on its front or back")
 Config.Register("droids", "crabTopMult", 1.75, "Crab droid: damage taken from hits from above (its weak spot)")
@@ -404,7 +428,7 @@ D.KINDS.spider = { name = "DSD1 dwarf spider droid", modelCfg = "spiderModel", f
     big = true, style = "shell", category = "Rhy's Spider droids", labelZ = 84 }
 
 -- LM-432 crab droid: its own entity (rhylib_crab: the spider's walker,
--- two guns, armour by hit direction), bolts as the B2 fires them.
+-- two guns, its own aim and firing, armour by hit direction).
 D.CRAB_FALLBACK = "models/headcrabclassic.mdl"
 D.KINDS.crab = { name = "LM-432 crab droid", modelCfg = "crabModel", fallback = D.CRAB_FALLBACK, health = "crabHealth", speed = "crabSpeed",
     range = "crabRange", reaction = "crabReaction", damage = "crabDamage", rpm = "crabRPM", spread = "crabSpread", burst = { 1, 1 }, color = 2,

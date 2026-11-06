@@ -20,7 +20,14 @@
                       area (a ring where you aim while Ctrl is held).
       1-5             aggression of the selected squads (1 retreat ... 5
                       charge); 6 back to the global level.
-      R (hold)        order wheel, for where you aim when it opens: Hold,
+      R (hold)        order wheel, for where you aim when it opens, in
+                      groups (Hold & defend, Patrol, Attack, Squad,
+                      Alertness). Layout rhylib_tool_order_wheel (Settings
+                      > Weapons): "tabs" (default) one group at a time,
+                      tabs along the top, mouse wheel or E / Q flips (it
+                      opens on the last one used); "groups" a small ring
+                      of groups, the one pointed at fans out its orders.
+                      The orders: Hold,
                       Defend 360 (ring all round, cover facing out),
                       Spread out (own spots over the area), Patrol,
                       Patrol area, Patrol route, Roam, Remove, Split up,
@@ -36,7 +43,8 @@
     size and the keys; near the crosshair only a "Command · N" tag. The selection is kept while you switch
     weapons; it drops NPCs that die.
 
-    Client only. Client convar rhylib_tool_command_key. Adds Tool.command
+    Client only. Client convars rhylib_tool_command_key,
+    rhylib_tool_order_wheel. Adds Tool.command
     (on/off), Tool.Selection() -> list, Tool.CommandWheel(code) (the R key
     handler in cl_10_tool calls it in Command mode), Tool.DrawCommandHUD().
 ]]
@@ -44,6 +52,7 @@
 local Tool = Rhylib.Tool
 
 local cvKey = CreateClientConVar("rhylib_tool_command_key", "x", true, false, "Toolgun: key that switches between placing and Command mode")
+local cvWheel = CreateClientConVar("rhylib_tool_order_wheel", "tabs", true, false, "Toolgun: the order wheel's layout (tabs: one group at a time, mouse wheel flips; groups: a ring of groups that open out)")
 
 Tool.command = Tool.command or false
 local sel = {}          -- [npc] = true
@@ -310,13 +319,14 @@ function Tool.CommandWheel(code)
         end
     end
     local nr = #Tool.route
-    W.OpenList("Orders (" .. #Tool.Selection() .. " selected)", {
-        { label = "Hold", run = mode(1), sub = "Guard where they stand", col = Color(110, 170, 255) },
-        { label = "Defend 360", run = atSpot(OP.defend, true), sub = m .. " m ring, cover facing out", col = Color(80, 140, 255) },
-        { label = "Spread out", run = atSpot(OP.spread, true), sub = "Own spots over " .. m .. " m", col = Color(90, 200, 220) },
-        { label = "Patrol", run = mode(2), sub = "Walk around where they are", col = Color(120, 230, 140) },
-        { label = "Patrol area", run = atSpot(OP.area, true), sub = "Walk " .. m .. " m round there", col = Color(120, 230, 140) },
-        { label = "Patrol route", col = Color(120, 230, 140),
+    local O = {
+        hold = { label = "Hold", run = mode(1), sub = "Guard where they stand", col = Color(110, 170, 255) },
+        defend = { label = "Defend 360", run = atSpot(OP.defend, true), sub = m .. " m ring, cover facing out", col = Color(80, 140, 255) },
+        spread = { label = "Spread out", run = atSpot(OP.spread, true), sub = "Own spots over " .. m .. " m", col = Color(90, 200, 220) },
+        retreat = { label = "Retreat", run = mode(5), sub = "Withdraw from the enemy", col = Color(255, 170, 60) },
+        patrol = { label = "Patrol", run = mode(2), sub = "Walk around where they are", col = Color(120, 230, 140) },
+        area = { label = "Patrol area", run = atSpot(OP.area, true), sub = "Walk " .. m .. " m round there", col = Color(120, 230, 140) },
+        route = { label = "Patrol route", col = Color(120, 230, 140),
           sub = nr >= 2 and ("Loop the " .. nr .. " points") or nil,
           disabled = nr < 2 and "Shift+RMB: 2+ points" or nil,
           run = function()
@@ -327,17 +337,30 @@ function Tool.CommandWheel(code)
               end)
               if ok then Tool.route = {} end
           end },
-        { label = "Roam", run = mode(4), sub = "Wander the map in twos", col = Color(200, 140, 255) },
-        { label = "Remove", run = function() send(OP.remove) sel, selSide = {}, nil end, sub = "Delete the selected NPCs", col = Color(255, 70, 60) },
-        { label = "Split up", run = function() send(OP.split) end, sub = "Out of their squads" },
-        { label = "Make one squad", run = function() send(OP.group) end, sub = "Up to " .. (D.Cfg("squadMax") or 16) .. " together" },
-        { label = "Next formation", run = function() send(OP.formation) end, sub = "Box, wedge, line, column..." },
-        { label = "Retreat", run = mode(5), sub = "Withdraw from the enemy", col = Color(255, 170, 60) },
-        { label = "Hunt", run = mode(3), sub = "Hunt the nearest enemies", col = Color(255, 100, 80) },
-        { label = "Assault here", run = atSpot(OP.assault), sub = "Attack that spot (waves)", col = COL_ASSAULT },
-        { label = "Unaware (stealth)", run = function() send(OP.alertness, function() net.WriteUInt(2, 2) end) end, sub = "Droids must notice you first", col = Color(133, 183, 235) },
-        { label = "Alert", run = function() send(OP.alertness, function() net.WriteUInt(1, 2) end) end, sub = "Droids see you at once (battle)", col = Color(239, 159, 39) },
-    }, code)
+        roam = { label = "Roam", run = mode(4), sub = "Wander the map in twos", col = Color(200, 140, 255) },
+        hunt = { label = "Hunt", run = mode(3), sub = "Hunt the nearest enemies", col = Color(255, 100, 80) },
+        assault = { label = "Assault here", run = atSpot(OP.assault), sub = "Attack that spot (waves)", col = COL_ASSAULT },
+        group = { label = "Make one squad", run = function() send(OP.group) end, sub = "Up to " .. (D.Cfg("squadMax") or 16) .. " together" },
+        split = { label = "Split up", run = function() send(OP.split) end, sub = "Out of their squads" },
+        formation = { label = "Next formation", run = function() send(OP.formation) end, sub = "Box, wedge, line, column..." },
+        remove = { label = "Remove", run = function() send(OP.remove) sel, selSide = {}, nil end, sub = "Delete the selected NPCs", col = Color(255, 70, 60) },
+        unaware = { label = "Unaware (stealth)", run = function() send(OP.alertness, function() net.WriteUInt(2, 2) end) end, sub = "Droids must notice you first", col = Color(133, 183, 235) },
+        alert = { label = "Alert", run = function() send(OP.alertness, function() net.WriteUInt(1, 2) end) end, sub = "Droids see you at once (battle)", col = Color(239, 159, 39) },
+    }
+    local style = cvWheel:GetString() == "groups" and "groups" or "tabs"
+    local groups = {
+        { label = "Hold & defend", col = Color(110, 170, 255), items = { O.hold, O.defend, O.retreat, O.spread } },
+        { label = "Patrol", col = Color(120, 230, 140), items = { O.patrol, O.area, O.route, O.roam } },
+        { label = "Attack", col = Color(255, 100, 80), items = { O.hunt, O.assault } },
+        -- (tabs: Remove in Squad, straight at the bottom; groups: its own)
+        { label = "Squad", col = Color(200, 200, 210), items = style == "tabs" and { O.group, O.split, O.remove, O.formation } or { O.group, O.split, O.formation }, bottom = style == "tabs" and 3 or nil },
+        { label = "Alertness", col = Color(133, 183, 235), items = { O.unaware, O.alert } },
+    }
+    if style == "groups" then table.insert(groups, 4, { label = "Remove", items = { O.remove } }) end
+    W.OpenList("Orders (" .. #Tool.Selection() .. " selected)", {}, code, {
+        groups = groups, style = style, tab = Tool.wheelTab or 1,
+        onTab = function(i) Tool.wheelTab = i end,
+    })
 end
 
 -- Outlines on the selection.
@@ -472,6 +495,8 @@ local function addSetting()
     if M and M.AddSetting then
         M.AddSetting("Weapons", { id = "toolgun.commandkey", order = 51, title = "Toolgun: Command mode", kind = "key", convar = "rhylib_tool_command_key",
             shareWith = { rhylib_shield_bash_key = true } })   -- (only with the toolgun out; the bash only with a shield)
+        M.AddSetting("Weapons", { id = "toolgun.orderwheel", order = 52, title = "Toolgun: order wheel layout", kind = "choice", convar = "rhylib_tool_order_wheel",
+            options = { { "tabs", "Categories (mouse wheel flips)" }, { "groups", "Groups that open out" } } })
     end
 end
 addSetting()

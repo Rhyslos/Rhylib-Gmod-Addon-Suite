@@ -7,8 +7,11 @@
     sent while it flies or drifts:
       1 flight  from A with velocity V under gravity (sv_gravity), until
                 the top of its arc (at least 0.6 s, so a flare fired level
-                still flies a little way first)
-      2 drift   from A, slowly down (weapons flareFall units/s) with a gentle sway
+                still flies a little way first); over its last weapons
+                flareSlow seconds it slows smoothly to a stop (the same arc,
+                travelled slower and slower)
+      2 drift   from A, slowly down (weapons flareFall units/s, eased in
+                over the first second) with a gentle sway
       3 rest    at A (it came down on something; still burning)
     It lights at the top of its arc or after 1.6 s, whichever is first.
     The server traces along the path every 0.05 s: hitting a wall or
@@ -66,9 +69,28 @@ local function gravity()
     return gravVar and gravVar:GetFloat() or 600
 end
 
--- How long the flight lasts (to the top of the arc, at least FLIGHT_MIN).
+-- The climb: to the top of its arc (at least FLIGHT_MIN) along the
+-- gravity path, its last flareSlow seconds played back slower and slower
+-- until it hangs still. -> apex (path time), slow (s), flight (real s).
+function ENT:FlightParts()
+    local apex = math.max(FLIGHT_MIN, self:GetV().z / math.max(1, gravity()))
+    local slow = math.Clamp(tonumber(Rhylib.Config.Get("weapons", "flareSlow")) or 0, 0, apex)
+    return apex, slow, apex + slow / 2
+end
+
+-- How long the flight lasts (real seconds).
 function ENT:FlightTime()
-    return math.max(FLIGHT_MIN, self:GetV().z / math.max(1, gravity()))
+    local _, _, f = self:FlightParts()
+    return f
+end
+
+-- (real flight time -> path time: speed ramps from full to 0 over the slow part)
+function ENT:PathTime(t)
+    local apex, slow = self:FlightParts()
+    local t1 = apex - slow / 2
+    if t <= t1 or slow <= 0 then return math.min(t, apex) end
+    local u = math.min(t - t1, slow)
+    return t1 + u - u * u / (2 * slow)
 end
 
 -- Where it is at time now (both realms).
@@ -77,10 +99,13 @@ function ENT:PathPos(now)
     local t = math.max(0, now - self:GetT0())
     if ph == 1 then
         local v = self:GetV()
+        t = self:PathTime(t)
         return a + v * t - Vector(0, 0, 0.5 * gravity() * t * t)
     elseif ph == 2 then
         local sw = self:GetSway()
-        return a + Vector(math.sin(t * 0.5) * sw, (1 - math.cos(t * 0.37)) * sw * 0.6, -math.max(1, Rhylib.Config.Get("weapons", "flareFall")) * t)
+        -- (it eases into its fall over the first second, from hanging still)
+        local fall = t < 1 and t * t / 2 or t - 0.5
+        return a + Vector(math.sin(t * 0.5) * sw, (1 - math.cos(t * 0.37)) * sw * 0.6, -math.max(1, Rhylib.Config.Get("weapons", "flareFall")) * fall)
     end
     return a
 end

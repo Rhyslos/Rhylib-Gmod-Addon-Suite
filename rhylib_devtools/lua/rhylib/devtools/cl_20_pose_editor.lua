@@ -3,24 +3,49 @@
     sh_74_poses.lua) on your own player model, with the orbit camera.
       Bones: drawn on the model in groups (spine & head, arms, fingers,
       legs; tick which show). Click a dot to pick it, then drag the
-      gizmo: Rotate (E) rings, Move (W) arrows, Q local / world axes. The
-      selected bone's numbers are in the rows too.
+      gizmo: Rotate (E) rings, Move (W) arrows, Q local / world axes; hold
+      Shift while dragging to snap (15° turns, 0.5 moves, from where the
+      drag started; Shift+Ctrl: 5° turns). The selected bone's numbers are
+      in the rows too; a pink dot's numbers (position, and turn where it
+      has one) are its stored value in its own frame (gun from its anchor,
+      spot from its parent, hand IK target from its frame, elbow point from
+      the chest, sling from its bone, muzzle in the gun's axes).
       Pose: Add (turns on top of the animation, so walking and aiming
       still show) or Set (the listed bones take exactly this turn). Loop
       plays the keys over Length seconds; not looping holds the first key.
-      Keys: add (copies the shown key), delete, step, each key's time;
-      Play previews the loop; the slider scrubs it.
+      Keys: a timeline (each key a numbered mark at its time, its shape
+      its ease: diamond smooth, triangle linear, square snap; the yellow
+      playhead): click a key to show it, drag it to change its time (0.05 s
+      steps, Shift 0.25 s; past another it reorders; key 1 stays put),
+      click / drag the bar to scrub, right-click a key for copy / paste /
+      delete / its ease. Play loop, + Key here (at the playhead, the pose
+      as shown there; on a key: halfway to the next, a copy of it), - Key,
+      the key's time; each key's ease into the next (Linear / Smooth /
+      Snap = hold, then jump).
+      Fades (Pose tab): fade in / out seconds (0 snaps) and the curve
+      (Linear / Smooth); Test fade plays it in on the preview, holds 1 s
+      and fades it out.
       Children follow: off = turning a bone leaves the bones under it
       where they are (their turn is made up for).
       Mirror: copy one side onto the other (whole side or the selected
       bone), matched against the model's reference pose.
       Copy from an animation: any sequence of your model at a point in it,
       for the shown groups or the selected bone.
-      Undo (Ctrl+Z), Reset bone, Clear key.
+      Undo (Ctrl+Z) / Redo (Ctrl+Y, Ctrl+Shift+Z): the pose and the
+      weapon's settings (Po.gear: spots, grip, locks, sling, muzzle, gun
+      model, recoil; re-sent when undone); a new change clears redo.
+      Reset bone, Clear key.
+      Copy / paste (kept while the editor is open): a key (Keys tab: its
+      bones, gun, hand and elbow data; the time stays), a bone's values
+      (Bone tab, onto any bone), a hand (Hands tab: its fingers and hand
+      IK target; onto the other hand it's mirrored). A saved hand pose can
+      be mirrored to the other hand (a copy named "... (mirrored)").
       Weapon poses: pick a weapon (it's given to you and held, perm
       rhylib.poses.edit), "Use this pose here" adds the saved pose to its
       list; tick when it plays (Stance / Moving / Gun / Doing, Po.FILTERS);
-      the first entry that fits wins; Up / Down order them. "Pause the
+      the first entry that fits wins (a green PLAYING chip on the row that
+      plays on you now, greyed rows don't fit now; Po.WeaponPoseIndex);
+      Up / Down order them. "Pause the
       editor's pose" shows them playing on you as others see them.
       Pose on: Me, or a stand-in (a model path, or "Model of what I look
       at": an NPC / droid) spawned in front of you, playing its idle; the
@@ -44,7 +69,11 @@
       see-through copy to drag (Edit spot); shown on anyone carrying it
       while it isn't in their hands.
       Save sends it to the server (perm rhylib.poses.edit, superadmins);
-      !pose <name> plays it. The pose being edited is also kept in
+      !pose <name> plays it. Rename (on the server: weapon pose lists and
+      recoil poses using it follow), Duplicate (a server copy "<name>
+      copy"). Snapshots: copies of the pose being edited kept on this
+      computer (data/rhylib_pose_snapshots.json, at most 50), restored or
+      deleted from the list. The pose being edited is also kept in
       data/rhylib_pose_edit.json, so closing the window loses nothing.
     Hooks "devtools.posegizmo": HUDPaint, GUIMousePressed,
     GUIMouseReleased, Think; "devtools.posepuppet" Think;
@@ -52,8 +81,8 @@
     "devtools.posefire" Think (the fire loop); "devtools.posebase"
     CalcMainActivity / UpdateAnimation (50: the animation played under the
     pose, Keys tab "Play under it"). Window: Rhylib.Devtools.UI (cl_15_ui.lua): tabs Pose (pose on, saved
-    poses: Load, Start from = a copy under a new name, mode / loop /
-    length), Keys, Bone (numbers, gizmo, children
+    poses: Load, Start from = a copy under a new name, Rename, Duplicate,
+    snapshots, mode / loop / length, fades), Keys (timeline, ease), Bone (numbers, gizmo, children
     follow, bones shown), Hands (hand IK per hand: the hand's dot is a
     target kept from the chest, hips or gun; elbows bend toward their
     dots; a hand pose per hand: the fingers from an animation or a saved
@@ -106,7 +135,7 @@ concommand.Add("rhylib_pose_editor", function()
     local T = me
 
     -- The pose being edited (from the local backup, if there is one).
-    local E = { name = "", key = 1, playing = false, scrub = nil, sel = nil, mode = "rotate", space = "local", follow = true, undo = {} }
+    local E = { name = "", key = 1, playing = false, scrub = nil, sel = nil, mode = "rotate", space = "local", follow = true, undo = {}, redo = {}, clip = {} }
     local saved = util.JSONToTable(file.Read("rhylib_pose_edit.json", "DATA") or "")
     E.pose = istable(saved) and Po.Clean(saved.pose) or newPose()
     E.name = istable(saved) and isstring(saved.name) and saved.name or ""
@@ -125,8 +154,20 @@ concommand.Add("rhylib_pose_editor", function()
             file.Write("rhylib_pose_edit.json", util.TableToJSON({ name = E.name, pose = E.pose }) or "")
         end)
     end
-    local function pushUndo()
-        E.live = false
+    local function heldClass() local w = me:GetActiveWeapon() return IsValid(w) and w:GetClass() or nil end
+    -- An undo step: the pose and the gear (JSON) of the held and the picked
+    -- weapon, so settings saved straight to the server undo too.
+    local function capture(classes)
+        local st = { pose = copyPose(E.pose), gear = {} }
+        for c in pairs(classes) do
+            local g = Po.gear[c]
+            st.gear[c] = g and next(g) and (util.TableToJSON(g) or "") or ""
+        end
+        return st
+    end
+    -- noLive: a weapon setting only (doesn't switch the editor's pose back on)
+    local function pushUndo(noLive)
+        if not noLive then E.live = false end
         -- (a held - / + button: one step for the whole hold)
         local DUr = Rhylib.Devtools.UI
         if DUr and DUr.repeating then
@@ -135,8 +176,13 @@ concommand.Add("rhylib_pose_editor", function()
         else
             E.undoRep = nil
         end
-        E.undo[#E.undo + 1] = copyPose(E.pose)
+        local cls = {}
+        local h = heldClass()
+        if h then cls[h] = true end
+        if E.wpn then cls[E.wpn] = true end
+        E.undo[#E.undo + 1] = capture(cls)
         if #E.undo > 60 then table.remove(E.undo, 1) end
+        E.redo = {}
     end
     local function curKey()
         E.key = math.Clamp(E.key, 1, #E.pose.keys)
@@ -159,6 +205,23 @@ concommand.Add("rhylib_pose_editor", function()
     local single, looped = {}, {}
     local function updatePreview()
         local p = E.pose
+        -- (Test fade: in over fadeIn, 1 s held, out over fadeOut)
+        if E.testFade then
+            local fi, fo = tonumber(p.fadeIn) or 0.25, tonumber(p.fadeOut) or 0.25
+            local el = RealTime() - E.testFade
+            if el > fi + 1 + fo + 0.4 then E.testFade = nil end
+            if E.testFade then
+                local lin = 0
+                if el < fi then lin = el / fi
+                elseif el < fi + 1 then lin = 1
+                elseif el < fi + 1 + fo then lin = 1 - (el - fi - 1) / fo end
+                local faded = {}
+                for kk, vv in pairs(p) do faded[kk] = vv end
+                if not p.loop then faded.keys = { p.keys[1] } end
+                Po.preview = { ent = T, pose = faded, t = el, w = Po.FadeWeight and Po.FadeWeight(p, lin) or lin }
+                return
+            end
+        end
         if E.live then
             -- (off: you show what others see, e.g. the weapon poses)
             Po.preview = nil
@@ -192,7 +255,6 @@ concommand.Add("rhylib_pose_editor", function()
     E.gripTo = "weapon"
     local slingCtl   -- (set by the sling rows: { class, bone, p, a })
     local function dbg() return IsValid(T) and T.rhylibPoseDbg or nil end
-    local function heldClass() local w = me:GetActiveWeapon() return IsValid(w) and w:GetClass() or nil end
     -- (the gun now: where the pose puts it, else in the right hand)
     local function gunWorld()
         if T ~= me then return nil end
@@ -336,6 +398,88 @@ concommand.Add("rhylib_pose_editor", function()
         end
     end
 
+    -- handleRef(name) -> { pos, ang, turn, class, frame } or nil: a handle's
+    -- stored value (pos / ang: the stored arrays, written in place; nil
+    -- while not stored yet), whether it has a turn, the weapon whose gear
+    -- holds it (saved with sendGear) and what it's measured from.
+    local SHORT = { chest = "the chest", hips = "the hips", rhand = "the right hand", lhand = "the left hand", gun = "the gun" }
+    local function handleRef(name)
+        local k = curKey()
+        if name == "@gun" then
+            return { pos = k.gun and k.gun.p, ang = k.gun and k.gun.a, turn = true, frame = "from " .. (SHORT[E.pose.anchor] or "its anchor") }
+        end
+        if name == "@lgrip" then
+            if E.gripTo == "pose" or E.pose.grip then
+                local g = E.pose.grip and E.pose.grip.l
+                return { pos = g and g.p, ang = g and g.a, turn = true, frame = "from the gun (this pose)" }
+            end
+            local class = heldClass()
+            local g = class and Po.gear[class] and Po.gear[class].lgrip
+            return { pos = g and g.p, ang = g and g.a, turn = true, class = class, frame = "from the gun (the weapon)" }
+        end
+        if name == "@rhandik" or name == "@lhandik" then
+            local side = name == "@rhandik" and "r" or "l"
+            local h = k.hand and k.hand[side]
+            local c = E.pose.ik and E.pose.ik[side]
+            return { pos = h and h.p, ang = h and h.a, turn = true, frame = "from " .. (SHORT[c and c.rel or "chest"] or "the chest") }
+        end
+        if name == "@relbow" or name == "@lelbow" then
+            return { pos = k.elbow and k.elbow[name == "@relbow" and "r" or "l"], turn = false, frame = "from the chest" }
+        end
+        if string.sub(name, 1, 6) == "@spot:" then
+            local nm = string.sub(name, 7)
+            local tbl, where, class = spotOwner(nm)
+            local sp = tbl and tbl[nm]
+            if not sp then return nil end
+            return { pos = sp.p, ang = sp.a, turn = true, class = where == "weapon" and class or nil, frame = "from " .. (sp.parent == "@gun" and "the gun" or sp.parent) }
+        end
+        if name == "@sling" then
+            local g = E.wpn and Po.gear[E.wpn]
+            local sl = g and g.sling
+            if not sl then return nil end
+            return { pos = sl.p, ang = sl.a, turn = true, class = E.wpn, frame = "from " .. string.gsub(sl.bone or "", "^ValveBiped%.Bip01_", "") }
+        end
+        if name == "@muzzle" then
+            local class = heldClass()
+            local g = class and Po.gear[class]
+            return { pos = g and g.muzzle, turn = false, class = class, frame = "in the gun model's axes" }
+        end
+        return nil
+    end
+    -- (a handle not stored yet: where it is now, in its frame; once a frame)
+    local nowF, nowName, nowP, nowA
+    local function handleNow(name)
+        if nowF == FrameNumber() and nowName == name then return nowP, nowA end
+        nowF, nowName, nowP, nowA = FrameNumber(), name, nil, nil
+        local d = dbg()
+        if name == "@relbow" or name == "@lelbow" then
+            local W = specialWorld(name)
+            if d and d.chest and W then nowP = (d.chest:GetInverseTR() * W):GetTranslation() end
+        elseif name == "@gun" then
+            local W = specialWorld(name)
+            if d and d.A and W then
+                local l = d.A:GetInverseTR() * W
+                nowP, nowA = l:GetTranslation(), l:GetAngles()
+            end
+        elseif name == "@rhandik" or name == "@lhandik" then
+            local W = specialWorld(name)
+            local F = d and d[name == "@rhandik" and "FR" or "FL"]
+            if F and W then
+                local l = F:GetInverseTR() * W
+                nowP, nowA = l:GetTranslation(), l:GetAngles()
+            end
+        elseif name == "@lgrip" then
+            if d and d.G and d.L then
+                local l = d.G:GetInverseTR() * d.L
+                nowP, nowA = l:GetTranslation(), l:GetAngles()
+            end
+        elseif name == "@muzzle" then
+            local w = me:GetActiveWeapon()
+            if IsValid(w) then nowP = select(4, Po.WeaponProp(w)) end
+        end
+        return nowP, nowA
+    end
+
     local function worldOf(name)
         if string.sub(name, 1, 1) == "@" then return specialWorld(name) end
         local inf = info()
@@ -434,6 +578,36 @@ concommand.Add("rhylib_pose_editor", function()
         rebuild()
     end
 
+    -- A handle's number row: writes its stored value (made from where it
+    -- is now first, if it isn't stored yet), saves the weapon's gear.
+    local function handleSet(name, which, i, v)
+        local ref = handleRef(name)
+        if not ref then return end
+        if name == "@muzzle" and not (IsValid(me:GetActiveWeapon()) and heldClass()) then return end
+        -- (weapon-only handles leave "Pause the editor's pose" as it is)
+        pushUndo(ref.class ~= nil)
+        if not ref.pos then
+            if name == "@muzzle" then
+                local w, class = me:GetActiveWeapon(), heldClass()
+                if not (IsValid(w) and class) then return end
+                local m = select(4, Po.WeaponProp(w))
+                Po.gear[class] = Po.gear[class] or {}
+                Po.gear[class].muzzle = { m.x, m.y, m.z }
+            else
+                rebuild()
+                local W = specialWorld(name)
+                if W then setSpecial(name, W) end
+            end
+            ref = handleRef(name)
+            if not (ref and ref.pos) then return end
+        end
+        local arr = which == "a" and ref.ang or ref.pos
+        if not arr then return end
+        arr[i] = math.Round(v, 2)
+        if ref.class and sendGear then sendGear(ref.class) end
+        changed()
+    end
+
     -- The model's reference pose (for mirroring) and an animation frame
     -- (for copying): bone angles in the model's own axes.
     local function sampleModel(seqName, cycle)
@@ -472,6 +646,19 @@ concommand.Add("rhylib_pose_editor", function()
         local f1, u1 = a:Forward(), a:Up()
         f1.y, u1.y = -f1.y, -u1.y
         return f1:AngleEx(u1)
+    end
+    -- (how the other side differs in the reference pose ref: dst's turn
+    -- from the reflected src)
+    local function refDiff(ref, src, dst)
+        local _, k = WorldToLocal(vector_origin, ref[dst], vector_origin, reflect(ref[src]))
+        return k
+    end
+    -- mirrorRel: a bone's turn from its hand (rel, on the src side) as the
+    -- other side's bone's turn from the other hand, with the same maths as
+    -- mirror() (it doesn't depend on where the hands are).
+    local function mirrorRel(ref, srcHand, dstHand, src, dst, rel)
+        local kH, kB = refDiff(ref, srcHand, dstHand), refDiff(ref, src, dst)
+        return (rotOnly(kH):GetInverseTR() * rotOnly(reflect(rel)) * rotOnly(kB)):GetAngles()
     end
     local function mirror(sources)
         local ref = sampleModel("reference", 0)
@@ -708,18 +895,29 @@ concommand.Add("rhylib_pose_editor", function()
         if pending > 0 or timer.Exists("Rhylib.PoseEditorWpn") then return end
         wpnReload()
     end
-    -- (gear: left grip, spots, locks, sling; sent after a burst of edits)
+    -- (gear: left grip, spots, locks, sling, ...; sent after a burst of
+    -- edits, each weapon changed in it once; ours are kept over replies
+    -- meanwhile)
+    local gearDirty = {}
     sendGear = function(class)
-        Po.gearHold = class
+        if not class then return end
+        gearDirty[class] = true
+        local hold = istable(Po.gearHold) and Po.gearHold or {}
+        hold[class] = true
+        Po.gearHold = hold
         timer.Remove("Rhylib.PoseEditorGearHold")
         timer.Create("Rhylib.PoseEditorGear", 0.3, 1, function()
-            pending = pending + 1   -- (its reply comes as a poses.wpn too)
+            local list = gearDirty
+            gearDirty = {}
+            for c in pairs(list) do
+                pending = pending + 1   -- (its reply comes as a poses.wpn too)
+                local g = Po.gear[c]
+                Rhylib.Net.Start("poses.gearset")
+                net.WriteString(c)
+                net.WriteString(g and next(g) and (util.TableToJSON(g) or "") or "")
+                net.SendToServer()
+            end
             timer.Create("Rhylib.PoseEditorGearHold", 1.5, 1, function() Po.gearHold = nil end)
-            local g = Po.gear[class]
-            Rhylib.Net.Start("poses.gearset")
-            net.WriteString(class)
-            net.WriteString(g and next(g) and (util.TableToJSON(g) or "") or "")
-            net.SendToServer()
         end)
     end
 
@@ -917,6 +1115,7 @@ concommand.Add("rhylib_pose_editor", function()
                 E.pose.spots[nm] = sp
                 changed()
             else
+                pushUndo(true)
                 local g = gearOf(class)
                 g.spots = g.spots or {}
                 g.spots[nm] = sp
@@ -929,6 +1128,7 @@ concommand.Add("rhylib_pose_editor", function()
         local nm = E.spotSel
         local tbl, where, class = spotOwner(nm or "")
         if not tbl then return end
+        pushUndo(where ~= "pose")
         tbl[nm] = nil
         local function unref(t)
             if not t then return end
@@ -954,25 +1154,355 @@ concommand.Add("rhylib_pose_editor", function()
     --------------------------------------------------------------------
     -- The window and its tabs
     --------------------------------------------------------------------
-    local function keyNav(d)
-        E.key = E.key + d
-        E.scrub, E.playing, E.live = nil, false, false
-        curKey()
-        changed()
-    end
     local function resort(k)
         table.sort(E.pose.keys, function(a, b) return a.t < b.t end)
         for i, kk in ipairs(E.pose.keys) do if kk == k then E.key = i end end
     end
-    local function undo()
-        local u = table.remove(E.undo)
-        if u then E.pose = u changed() end
+    -- Key actions (the Keys tab's buttons and the timeline's menu).
+    local MAX_KEYS = 32
+    local EASES = { { "linear", "Linear" }, { "smooth", "Smooth" }, { "snap", "Snap" } }
+    local function copyKey() E.clip.key = copyPose(curKey()) end
+    local function pasteKey()
+        if not E.clip.key then return end
+        pushUndo()
+        -- (everything of the copied key but its time)
+        local k, c = curKey(), copyPose(E.clip.key)
+        for fld in pairs(k) do if fld ~= "t" then k[fld] = nil end end
+        for fld, v in pairs(c) do if fld ~= "t" then k[fld] = v end end
+        k.bones = k.bones or {}
+        changed()
     end
+    local function deleteKey()
+        if #E.pose.keys <= 1 then return end
+        pushUndo()
+        table.remove(E.pose.keys, E.key)
+        changed()
+    end
+    local function setEase(v)
+        local k = curKey()
+        if (k.ease or "smooth") == v then return end
+        pushUndo()
+        k.ease = v ~= "smooth" and v or nil
+        changed()
+    end
+    -- (the playhead: the loop's time while playing, the scrub, else the key)
+    local function playheadT()
+        if E.playing then return (RealTime() - playStart) % math.max(0.1, E.pose.length) end
+        if E.scrub then return math.min(E.scrub, E.pose.length) end
+        return curKey().t
+    end
+    local function addKeyHere()
+        if #E.pose.keys >= MAX_KEYS then msg("At most " .. MAX_KEYS .. " keys.") return end
+        local ph = E.playing and playheadT() or E.scrub
+        if not ph then
+            -- (showing a key: halfway to the next one, a copy of it)
+            local cur, nxt = curKey(), E.pose.keys[E.key + 1]
+            local t = math.Round((cur.t + (nxt and nxt.t or E.pose.length)) * 0.5, 2)
+            if t - cur.t < 0.05 then msg("No room for a key after this one: make Length longer or move a key's time.") return end
+            pushUndo()
+            local k = copyPose(cur)
+            k.t = t
+            table.insert(E.pose.keys, k)
+            resort(k)
+            changed()
+            return
+        end
+        ph = math.Round(math.Clamp(ph, 0, E.pose.length), 2)
+        E.playing, E.scrub, E.live = false, nil, false
+        for i, k in ipairs(E.pose.keys) do
+            if math.abs(k.t - ph) < 0.03 then
+                E.key = i
+                changed()
+                info2("There's a key here already: showing it.")
+                return
+            end
+        end
+        pushUndo()
+        -- (the pose as the loop shows it there)
+        local smp, ex = Po.Sample({ loop = true, length = E.pose.length, keys = E.pose.keys }, ph)
+        local k = { t = ph, bones = {} }
+        for n, b in pairs(smp) do k.bones[n] = { a = at(b.a), v = vt(b.v) } end
+        if ex.gun and ex.gun.p and ex.gun.a then k.gun = { p = vt(ex.gun.p), a = at(ex.gun.a) } end
+        if ex.er or ex.el then k.elbow = { r = ex.er and vt(ex.er) or nil, l = ex.el and vt(ex.el) or nil } end
+        local function hd(h) return h and { p = vt(h.p), a = at(h.a) } or nil end
+        if ex.hr or ex.hl then k.hand = { r = hd(ex.hr), l = hd(ex.hl) } end
+        -- (it eases on as the key before it did)
+        local prev
+        for _, kk in ipairs(E.pose.keys) do if kk.t <= ph then prev = kk end end
+        k.ease = prev and prev.ease or nil
+        table.insert(E.pose.keys, k)
+        resort(k)
+        changed()
+    end
+
+    -- The timeline (Keys tab): a custom row on the page.
+    local Kit = Rhylib.UI.Kit
+    local KC = Kit.C
+    local PLAYHEAD, KEYSEL, KEYOFF = Color(255, 200, 70), Color(90, 160, 230), Color(160, 164, 160)
+    local function shapePts(ease, x, y, s)
+        if ease == "linear" then return { { x = x - s * 0.8, y = y - s }, { x = x + s, y = y }, { x = x - s * 0.8, y = y + s } } end
+        if ease == "snap" then
+            local q = s * 0.8
+            return { { x = x - q, y = y - q }, { x = x + q, y = y - q }, { x = x + q, y = y + q }, { x = x - q, y = y + q } }
+        end
+        return { { x = x, y = y - s }, { x = x + s, y = y }, { x = x, y = y + s }, { x = x - s, y = y } }
+    end
+    local function outline(pts, col)
+        surface.SetDrawColor(col)
+        for i = 1, #pts do
+            local a, b = pts[i], pts[i % #pts + 1]
+            surface.DrawLine(a.x, a.y, b.x, b.y)
+        end
+    end
+    local function keyMenu()
+        local m = Kit.Menu and Kit.Menu() or DermaMenu()
+        m:AddOption("Copy key", copyKey)
+        m:AddOption(E.clip.key and "Paste key" or "Paste key (nothing copied)", pasteKey)
+        m:AddOption("Delete key", deleteKey)
+        local sub = m:AddSubMenu("Ease")
+        local cur = curKey().ease or "smooth"
+        for _, e in ipairs(EASES) do
+            sub:AddOption(e[2] .. (cur == e[1] and "  ✓" or ""), function() setEase(e[1]) end)
+        end
+        m:Open()
+    end
+    local function timeline(pg)
+        local r = vgui.Create("DPanel", pg.canvas)
+        r:Dock(TOP)
+        r:DockMargin(0, 0, S(8), S(4))
+        local LAB, TRK, PAD = S(16), S(54), S(12)
+        r:SetTall(LAB + TRK + S(22))
+        -- (the bar spans the length rounded up to 0.5 s, at least 1 s)
+        local function span() return math.max(1, math.ceil(E.pose.length * 2 - 1e-4) / 2) end
+        local function xOf(t, w) return PAD + (w - PAD * 2) * t / span() end
+        local function tOf(x, w) return (x - PAD) / math.max(1, w - PAD * 2) * span() end
+        local function keyAt(mx, my, w)
+            if my < LAB - S(4) or my > LAB + TRK + S(2) then return nil end
+            local best, bd
+            for i, k in ipairs(E.pose.keys) do
+                local d = math.abs(xOf(k.t, w) - mx)
+                if d <= S(10) and (not bd or d < bd or (d == bd and i == E.key)) then best, bd = i, d end
+            end
+            return best
+        end
+        local function scrubAt(mx, w)
+            E.playing, E.live, E.testFade = false, false, nil
+            E.scrub = math.Clamp(math.Round(tOf(mx, w), 2), 0, E.pose.length)
+            updatePreview()
+        end
+        function r:Paint(w, h)
+            local len, sp = E.pose.length, span()
+            local cy = LAB + TRK * 0.5
+            draw.NoTexture()
+            surface.SetDrawColor(KC.row)
+            surface.DrawRect(0, LAB, w, TRK)
+            local xl = xOf(len, w)
+            if xl < w then
+                surface.SetDrawColor(0, 0, 0, 110)
+                surface.DrawRect(xl, LAB, w - xl, TRK)
+            end
+            surface.SetDrawColor(KC.edgeDark)
+            surface.DrawOutlinedRect(0, LAB, w, TRK)
+            -- (second ticks, thinned out so the labels stay apart)
+            local stepT = 10
+            for _, st in ipairs({ 0.5, 1, 2, 5, 10 }) do
+                if (w - PAD * 2) * st / sp >= S(30) then stepT = st break end
+            end
+            local font = Kit.Font(11)
+            for i = 0, math.floor(sp / stepT + 1e-4) do
+                local t = i * stepT
+                local x = xOf(t, w)
+                surface.SetDrawColor(255, 255, 255, 28)
+                surface.DrawLine(x, LAB + 1, x, LAB + TRK - 1)
+                draw.SimpleText(i == 0 and "0" or string.format("%.1f", t), font, x, LAB - S(2), KC.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM)
+            end
+            -- (a line through the keys)
+            local keys = E.pose.keys
+            if #keys > 1 then
+                surface.SetDrawColor(255, 255, 255, 40)
+                surface.DrawLine(xOf(keys[1].t, w), cy, xOf(keys[#keys].t, w), cy)
+            end
+            local s = S(10)
+            local nf = Kit.Font(11, 700)
+            for i, k in ipairs(keys) do
+                local x = xOf(k.t, w)
+                local pts = shapePts(k.ease, x, cy, s)
+                local sel = i == E.key
+                draw.NoTexture()
+                surface.SetDrawColor(sel and KEYSEL or KC.header)
+                surface.DrawPoly(pts)
+                outline(pts, sel and KEYSEL or KEYOFF)
+                draw.SimpleText(tostring(i), nf, x, cy, sel and Color(15, 20, 28) or KEYOFF, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            end
+            -- (the playhead)
+            local ph = playheadT()
+            local px = xOf(ph, w)
+            surface.SetDrawColor(PLAYHEAD)
+            surface.DrawRect(px - 1, LAB, 2, TRK)
+            draw.NoTexture()
+            surface.DrawPoly({ { x = px - S(5), y = LAB }, { x = px + S(5), y = LAB }, { x = px, y = LAB + S(6) } })
+            local ty = LAB + TRK + S(11)
+            draw.SimpleText(string.format("Key %d · %.2f s", E.key, curKey().t), Kit.Font(12, 700), 0, ty, KC.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            draw.SimpleText(string.format("▲ %.2f s", ph), Kit.Font(12, 700), w, ty, PLAYHEAD, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+        end
+        function r:OnMousePressed(code)
+            local mx, my = self:CursorPos()
+            local w = self:GetWide()
+            local i = keyAt(mx, my, w)
+            if code == MOUSE_RIGHT then
+                if i then
+                    E.key, E.playing, E.scrub, E.live, E.testFade = i, false, nil, false, nil
+                    changed()
+                    keyMenu()
+                end
+                return
+            end
+            if code ~= MOUSE_LEFT then return end
+            if i then
+                E.key, E.playing, E.scrub, E.live, E.testFade = i, false, nil, false, nil
+                changed()
+                self.drag = { key = E.pose.keys[i], x = mx, first = i == 1 }
+            elseif my <= LAB + TRK then
+                self.drag = { scrub = true }
+                scrubAt(mx, w)
+            else
+                return
+            end
+            self:MouseCapture(true)
+        end
+        function r:OnMouseReleased()
+            self.drag = nil
+            self:MouseCapture(false)
+        end
+        function r:Think()
+            local d = self.drag
+            if not d then
+                -- (the cursor says what a click does)
+                local mx, my = self:CursorPos()
+                local i = self:IsHovered() and keyAt(mx, my, self:GetWide())
+                local want = i and (i == 1 and "hand" or "sizewe") or "arrow"
+                if self.rhylibCur ~= want then self.rhylibCur = want self:SetCursor(want) end
+                return
+            end
+            if not input.IsMouseDown(MOUSE_LEFT) then self.drag = nil self:MouseCapture(false) return end
+            local mx = self:CursorPos()
+            local w = self:GetWide()
+            if d.scrub then scrubAt(mx, w) return end
+            -- (key 1 stays where it is; a small wobble isn't a drag)
+            if d.first or not E.pose.keys[1] then return end
+            if not d.moved and math.abs(mx - d.x) < S(3) then return end
+            local shift = input.IsKeyDown(KEY_LSHIFT) or input.IsKeyDown(KEY_RSHIFT)
+            local stp = shift and 0.25 or 0.05
+            local t = math.Round(math.Clamp(math.Round(tOf(mx, w) / stp) * stp, 0.05, E.pose.length), 2)
+            if not d.moved then
+                d.moved = true
+                pushUndo()
+            end
+            if d.key.t ~= t then
+                d.key.t = t
+                resort(d.key)
+                changed()
+            end
+        end
+        return r
+    end
+    -- "This key's ease": three buttons with their curves drawn.
+    local function easeRow(pg)
+        local r = vgui.Create("DPanel", pg.canvas)
+        r:Dock(TOP)
+        r:DockMargin(0, 0, S(8), S(4))
+        r:SetTall(S(50))
+        function r:Paint(w)
+            draw.SimpleText("This key's ease (into the next key)", Kit.Font(13), 0, S(8), KC.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        end
+        local curve = {
+            linear = function(x) return x end,
+            smooth = function(x) return x * x * (3 - 2 * x) end,
+            snap = function(x) return x < 1 and 0 or 1 end,
+        }
+        local btns = {}
+        for i, e in ipairs(EASES) do
+            local b = vgui.Create("DButton", r)
+            b:SetText("")
+            function b:Paint(w, h)
+                local on = (curKey().ease or "smooth") == e[1]
+                surface.SetDrawColor(on and KEYSEL or (self:IsHovered() and KC.rowHover or KC.row))
+                surface.DrawRect(0, 0, w, h)
+                surface.SetDrawColor(KC.edgeDark)
+                surface.DrawOutlinedRect(0, 0, w, h)
+                local col = on and Color(15, 20, 28) or KC.text
+                local ix, iw, ih = S(6), S(18), S(12)
+                local iy = math.floor(h * 0.5 + ih * 0.5)
+                surface.SetDrawColor(col)
+                local fn = curve[e[1]]
+                local N = 12
+                local lx, ly = ix, iy
+                for j = 1, N do
+                    local xx = j / N
+                    local nx, ny = ix + iw * xx, iy - ih * fn(xx)
+                    if e[1] == "snap" and j == N then
+                        surface.DrawLine(lx, ly, nx, ly)
+                        surface.DrawLine(nx, ly, nx, ny)
+                        surface.DrawLine(nx - 1, ly, nx - 1, ny)
+                    else
+                        surface.DrawLine(lx, ly, nx, ny)
+                        surface.DrawLine(lx, ly - 1, nx, ny - 1)
+                    end
+                    lx, ly = nx, ny
+                end
+                draw.SimpleText(string.upper(e[2]), Kit.Font(12, 700), ix + iw + S(6), h * 0.5, col, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            end
+            b.DoClick = function() setEase(e[1]) end
+            btns[i] = b
+        end
+        function r:PerformLayout(w)
+            local gap = S(4)
+            local bw = math.floor((w - gap * 2) / 3)
+            for i, b in ipairs(btns) do
+                b:SetPos((i - 1) * (bw + gap), S(18))
+                b:SetSize(i == 3 and (w - 2 * (bw + gap)) or bw, S(30))
+            end
+        end
+        return r
+    end
+    -- (a text box: the kit's prompt)
+    local function askText(title, desc, default, fn)
+        if Kit.Prompt then Kit.Prompt(title, desc, default, fn) else Derma_StringRequest(title, desc, default, fn) end
+    end
+    -- (undo / redo: the pose and those weapons' gear; changed gear is sent)
+    local function restore(st)
+        E.pose = st.pose
+        for c, js in pairs(st.gear) do
+            local g = Po.gear[c]
+            local now = g and next(g) and (util.TableToJSON(g) or "") or ""
+            if now ~= js then
+                Po.gear[c] = js ~= "" and util.JSONToTable(js) or nil
+                sendGear(c)
+            end
+        end
+        E.undoRep = nil
+        changed()
+        refreshAll()
+    end
+    local function step(from, to)
+        local st = table.remove(from)
+        if not st then return end
+        local cls = {}
+        for c in pairs(st.gear) do cls[c] = true end
+        to[#to + 1] = capture(cls)
+        if #to > 60 then table.remove(to, 1) end
+        restore(st)
+    end
+    local function undo() step(E.undo, E.redo) end
+    local function redo() step(E.redo, E.undo) end
     f.onKey = function(k)
+        local ctrl = input.IsKeyDown(KEY_LCONTROL) or input.IsKeyDown(KEY_RCONTROL)
+        local shift = input.IsKeyDown(KEY_LSHIFT) or input.IsKeyDown(KEY_RSHIFT)
         if k == KEY_W then E.mode = "move"
         elseif k == KEY_E then E.mode = "rotate"
         elseif k == KEY_Q then E.space = E.space == "local" and "world" or "local"
-        elseif k == KEY_Z and input.IsKeyDown(KEY_LCONTROL) then undo() end
+        elseif k == KEY_Z and ctrl then if shift then redo() else undo() end
+        elseif k == KEY_Y and ctrl then redo() end
     end
 
     f:AddTab("Pose", function(pg)
@@ -1048,8 +1578,99 @@ concommand.Add("rhylib_pose_editor", function()
                     net.SendToServer()
                 end, "Cancel")
             end, { danger = true } },
-            { "Undo (Ctrl+Z)", undo },
+            { "Undo (Ctrl+Z)", undo, { enabled = function() return #E.undo > 0 end } },
+            { "Redo (Ctrl+Y)", redo, { enabled = function() return #E.redo > 0 end } },
         })
+        pg:Buttons({
+            { "Rename", function()
+                local n = Po.CleanName(E.name)
+                if not Po.defs[n] then msg("No saved pose called \"" .. n .. "\": load one first.") return end
+                askText("Rename pose", "A new name for \"" .. n .. "\" (on the server)", n, function(v)
+                    local to = Po.CleanName(v)
+                    if to == "" or to == n then return end
+                    if Po.defs[to] then msg("There's already a pose called \"" .. to .. "\".") return end
+                    Rhylib.Net.Start("poses.ren")
+                    net.WriteString(n)
+                    net.WriteString(to)
+                    net.SendToServer()
+                    -- (the editor takes the new name once the server has the
+                    -- renamed pose; refused, it keeps the old one)
+                    local tries = 0
+                    timer.Create("Rhylib.PoseEditorRename", 0.2, 25, function()
+                        tries = tries + 1
+                        if not IsValid(editor) then timer.Remove("Rhylib.PoseEditorRename") return end
+                        if Po.defs[to] and not Po.defs[n] then
+                            if Po.CleanName(E.name) == n then E.name = to backup() end
+                            timer.Remove("Rhylib.PoseEditorRename")
+                        elseif tries >= 25 then
+                            msg("The server didn't rename \"" .. n .. "\".")
+                        end
+                    end)
+                end)
+            end },
+            { "Duplicate", function()
+                local n = Po.CleanName(E.name)
+                local src = Po.defs[n]
+                if not src then msg("No saved pose called \"" .. n .. "\": load one first.") return end
+                if table.Count(Po.defs) >= (Po.MAX_POSES or 200) then msg("Too many poses saved: delete some first.") return end
+                local base = string.Trim(string.sub(n, 1, 32)) .. " copy"
+                local nm, i = base, 2
+                while Po.defs[nm] do nm = base .. " " .. i i = i + 1 end
+                local js = util.TableToJSON(src)
+                if not js then return end
+                Rhylib.Net.Start("poses.save")
+                net.WriteString(nm)
+                net.WriteString(js)
+                net.SendToServer()
+                info2("Saved a copy of \"" .. n .. "\" as \"" .. nm .. "\".")
+            end },
+        }, { wrap = true })
+
+        -- Snapshots of the pose being edited, on this computer.
+        pg:Heading("Snapshots (this computer)")
+        local SNAP = "rhylib_pose_snapshots.json"
+        local snapList = util.JSONToTable(file.Read(SNAP, "DATA") or "")
+        if not istable(snapList) then snapList = {} end
+        local snapSel
+        local function writeSnaps() file.Write(SNAP, util.TableToJSON(snapList) or "[]") end
+        pg:Buttons({
+            { "Save snapshot", function()
+                local stamp = os.date("%H:%M:%S")
+                askText("Save snapshot", "A name for this snapshot", stamp .. (E.name ~= "" and (" " .. E.name) or ""), function(v)
+                    v = string.Trim(v or "")
+                    snapList[#snapList + 1] = { name = string.sub(v ~= "" and v or stamp, 1, 40), at = os.date("%H:%M"), poseName = E.name, pose = copyPose(E.pose) }
+                    while #snapList > 50 do table.remove(snapList, 1) end
+                    writeSnaps()
+                    snapSel = #snapList
+                end)
+            end, { accent = true } },
+        })
+        pg:List({ { "Snapshot", 0.5 }, { "Pose", 0.32 }, { "At", 0.18 } }, function()
+            local out = {}
+            for i = #snapList, 1, -1 do
+                local sn = snapList[i]
+                out[#out + 1] = { i, { sn.name or ("Snapshot " .. i), sn.poseName or "", sn.at or "" } }
+            end
+            return out
+        end, function() return snapSel end, function(id) snapSel = id end, S(110))
+        pg:Buttons({
+            { "Restore", function()
+                local sn = snapSel and snapList[snapSel]
+                local p = sn and Po.Clean(sn.pose)
+                if not p then return end
+                pushUndo()
+                E.pose, E.key, E.scrub, E.playing = p, 1, nil, false
+                if isstring(sn.poseName) and sn.poseName ~= "" then E.name = sn.poseName end
+                changed()
+                refreshAll()
+            end, { enabled = function() return snapSel ~= nil and snapList[snapSel] ~= nil end } },
+            { "Delete", function()
+                if not (snapSel and snapList[snapSel]) then return end
+                table.remove(snapList, snapSel)
+                writeSnaps()
+                snapSel = nil
+            end, { danger = true, enabled = function() return snapSel ~= nil and snapList[snapSel] ~= nil end } },
+        }, { wrap = true })
 
         pg:Heading("How it plays")
         pg:Choice("Mode", { { "add", "Add: on top of the animation" }, { "set", "Set: exact turns" } }, function() return E.pose.mode end, function(v)
@@ -1071,34 +1692,46 @@ concommand.Add("rhylib_pose_editor", function()
             resort(k)
             changed()
         end)
+        -- (fades: kept only when not the default 0.25 s / linear)
+        for _, fd in ipairs({ { "fadeIn", "Fade in (s)" }, { "fadeOut", "Fade out (s)" } }) do
+            pg:Number(fd[2], 0.05, 0, 2, function() return tonumber(E.pose[fd[1]]) or 0.25 end, function(v)
+                v = math.Round(v, 2)
+                if v == (tonumber(E.pose[fd[1]]) or 0.25) then return end
+                pushUndo()
+                E.pose[fd[1]] = v ~= 0.25 and v or nil
+                changed()
+            end)
+        end
+        pg:Choice("Fade curve", { { "linear", "Linear" }, { "smooth", "Smooth" } }, function() return E.pose.fadeCurve or "linear" end, function(v)
+            if v == (E.pose.fadeCurve or "linear") then return end
+            pushUndo()
+            E.pose.fadeCurve = v == "smooth" and "smooth" or nil
+            changed()
+        end)
+        pg:Buttons({ { "Test fade", function()
+            E.playing, E.scrub, E.live = false, nil, false
+            E.testFade = RealTime()
+            updatePreview()
+        end } })
+        pg:Note("How it eases in and out when it starts and stops playing (0 = snaps). Test fade: in, held 1 s, out, on the preview.")
     end)
 
     f:AddTab("Keys", function(pg)
-        pg:Heading("Keys")
+        pg:Heading("Timeline")
+        timeline(pg)
         pg:Buttons({
-            { "<", function() keyNav(-1) end },
-            { function() return "Key " .. E.key .. " of " .. #E.pose.keys end, function() end },
-            { ">", function() keyNav(1) end },
+            { function() return E.playing and "Stop" or "Play loop" end, function()
+                E.playing = not E.playing
+                E.scrub, E.live, E.testFade = nil, false, nil
+                playStart = RealTime()
+                changed()
+            end, { accent = true } },
+            { "+ Key here", addKeyHere },
+            { "− Key", deleteKey, { danger = true } },
         }, { wrap = true })
-        pg:Buttons({
-            { "+ Key", function()
-                local cur, nxt = curKey(), E.pose.keys[E.key + 1]
-                local t = math.Round((cur.t + (nxt and nxt.t or E.pose.length)) * 0.5, 2)
-                if t - cur.t < 0.05 then msg("No room for a key after this one: make Length longer or move a key's time.") return end
-                pushUndo()
-                local k = copyPose(cur)
-                k.t = t
-                table.insert(E.pose.keys, k)
-                resort(k)
-                changed()
-            end },
-            { "- Key", function()
-                if #E.pose.keys <= 1 then return end
-                pushUndo()
-                table.remove(E.pose.keys, E.key)
-                changed()
-            end, { danger = true } },
-        })
+        pg:Note("Click a key to show it, drag it to move it (Shift: 0.25 s steps), right-click it for more; click or drag the bar to scrub.")
+        pg:Heading("This key")
+        easeRow(pg)
         pg:Number("Key time (s)", 0.05, 0, 60, function() return curKey().t end, function(v)
             pushUndo()
             local k = curKey()
@@ -1106,7 +1739,11 @@ concommand.Add("rhylib_pose_editor", function()
             resort(k)
             changed()
         end)
-        pg:Note("Keys after the first only play with Loop on (Pose tab).")
+        pg:Buttons({
+            { "Copy key", copyKey },
+            { "Paste key", pasteKey, { enabled = function() return E.clip.key ~= nil end } },
+        }, { wrap = true })
+        pg:Note("Keys after the first only play with Loop on (Pose tab). Snap holds this key, then jumps to the next at its time.")
         pg:Heading("Animation under it")
         pg:Toggle("Freeze the animation (breathing, sway, walk cycle)", function() return E.freeze end, function(v) setFreeze(v) end)
         pg:Choice("Play under it", function()
@@ -1120,34 +1757,20 @@ concommand.Add("rhylib_pose_editor", function()
         end, function() return E.base or "@real" end, function(v) setBase(v ~= "@real" and v or nil) end)
         pg:Slider("Its speed", 0, 2, 2, function() return E.baseSpeed end, function(v) E.baseSpeed = v end)
         pg:Note("Only on your screen, with the weapon you hold (its hold type). Stand still while it plays; the stand-in plays its own version.")
-        pg:Heading("Preview")
-        pg:Buttons({
-            { function() return E.playing and "Stop" or "Play loop" end, function()
-                E.playing = not E.playing
-                E.scrub, E.live = nil, false
-                playStart = RealTime()
-                changed()
-            end, { accent = true } },
-            { "Show key", function() E.playing, E.scrub, E.live = false, nil, false changed() end },
-        })
-        pg:Slider("Scrub (s)", 0, function() return E.pose.length end, 2, function()
-            if E.playing then return (RealTime() - playStart) % math.max(0.1, E.pose.length) end
-            return math.min(E.scrub or 0, E.pose.length)
-        end, function(v)
-            E.playing, E.scrub, E.live = false, math.min(v, E.pose.length), false
-            updatePreview()
-        end)
     end)
 
     f:AddTab("Bone", function(pg)
         pg:Heading("Selected (click a dot on the model)")
         pg:Note(function()
             if not E.sel then return "Nothing picked." end
-            if string.sub(E.sel, 1, 1) == "@" then return "Handle: " .. string.gsub(E.sel, "^@", "") .. " (drag it with the gizmo)" end
+            if string.sub(E.sel, 1, 1) == "@" then
+                local ref = handleRef(E.sel)
+                return "Handle: " .. string.gsub(E.sel, "^@", "") .. (ref and (" · its numbers " .. ref.frame) or " (drag it with the gizmo)")
+            end
             return string.gsub(E.sel, "^ValveBiped%.Bip01_", "") .. (boneData(E.sel) and "  (in this key)" or "") .. (handPlaced(E.sel) and " · placed by IK: these turn / move it a little on top" or "")
         end)
         local function selNum(text, part, i, step, lim)
-            pg:Number(text, step, -lim, lim, function()
+            return pg:Number(text, step, -lim, lim, function()
                 local b = E.sel and boneData(E.sel)
                 return b and b[part][i] or 0
             end, function(v, bone)
@@ -1160,12 +1783,41 @@ concommand.Add("rhylib_pose_editor", function()
                 changed()
             end, function() return E.sel end)
         end
-        selNum("Turn pitch", "a", 1, 1, 360)
-        selNum("Turn yaw", "a", 2, 1, 360)
-        selNum("Turn roll", "a", 3, 1, 360)
-        selNum("Move x", "v", 1, 0.1, 50)
-        selNum("Move y", "v", 2, 0.1, 50)
-        selNum("Move z", "v", 3, 0.1, 50)
+        local function isHandle() return E.sel ~= nil and string.sub(E.sel, 1, 1) == "@" end
+        local boneRows = {}
+        boneRows[1] = selNum("Turn pitch", "a", 1, 1, 360)
+        boneRows[2] = selNum("Turn yaw", "a", 2, 1, 360)
+        boneRows[3] = selNum("Turn roll", "a", 3, 1, 360)
+        boneRows[4] = selNum("Move x", "v", 1, 0.1, 50)
+        boneRows[5] = selNum("Move y", "v", 2, 0.1, 50)
+        boneRows[6] = selNum("Move z", "v", 3, 0.1, 50)
+        for _, r in ipairs(boneRows) do DU.ShowIf(r, function() return not isHandle() end) end
+        -- (a pink dot: its stored value; rows it hasn't got fold away)
+        local function handleNum(text, which, i, step, lim)
+            local r = pg:Number(text, step, -lim, lim, function()
+                local ref = isHandle() and handleRef(E.sel)
+                if not ref then return 0 end
+                local arr = which == "a" and ref.ang or ref.pos
+                if arr then return arr[i] or 0 end
+                local p, a = handleNow(E.sel)
+                if which == "a" then return a and ({ a.p, a.y, a.r })[i] or 0 end
+                return p and ({ p.x, p.y, p.z })[i] or 0
+            end, function(v, h)
+                h = h or E.sel
+                if not h or string.sub(h, 1, 1) ~= "@" then return end
+                handleSet(h, which, i, v)
+            end, function() return E.sel end)
+            DU.ShowIf(r, function()
+                local ref = isHandle() and handleRef(E.sel)
+                return ref and (which == "p" or ref.turn) or false
+            end)
+        end
+        handleNum("Position x", "p", 1, 0.1, 100)
+        handleNum("Position y", "p", 2, 0.1, 100)
+        handleNum("Position z", "p", 3, 0.1, 100)
+        handleNum("Turn pitch", "a", 1, 1, 360)
+        handleNum("Turn yaw", "a", 2, 1, 360)
+        handleNum("Turn roll", "a", 3, 1, 360)
         pg:Buttons({
             { "Reset bone", function()
                 if not E.sel then return end
@@ -1179,12 +1831,35 @@ concommand.Add("rhylib_pose_editor", function()
                 changed()
             end, { danger = true } },
         })
+        local function short(n) return (string.gsub(n, "^ValveBiped%.Bip01_", "")) end
+        pg:Buttons({
+            { "Copy bone", function()
+                if not E.sel or isHandle() then msg("Pick a bone first (not a pink dot).") return end
+                local b = boneData(E.sel)
+                E.clip.bone = { from = E.sel, a = b and table.Copy(b.a), v = b and table.Copy(b.v) }
+            end },
+            { function() return E.clip.bone and ("Paste bone (" .. short(E.clip.bone.from) .. ")") or "Paste bone" end, function()
+                local c = E.clip.bone
+                if not c then return end
+                if not E.sel or isHandle() then msg("Pick the bone to paste onto first.") return end
+                pushUndo()
+                -- (a bone that wasn't in its key: this one isn't either)
+                if not c.a then
+                    curKey().bones[E.sel] = nil
+                else
+                    local b = boneData(E.sel, true)
+                    b.a, b.v = table.Copy(c.a), table.Copy(c.v)
+                end
+                changed()
+            end, { enabled = function() return E.clip.bone ~= nil end } },
+        }, { wrap = true })
         pg:Heading("Gizmo")
         pg:Buttons({
             { "Rotate (E)", function() E.mode = "rotate" end, { selected = function() return E.mode == "rotate" end } },
             { "Move (W)", function() E.mode = "move" end, { selected = function() return E.mode == "move" end } },
             { function() return E.space == "local" and "Axes: local (Q)" or "Axes: world (Q)" end, function() E.space = E.space == "local" and "world" or "local" end },
         })
+        pg:Note("Shift: snap 15° / 0.5 · Shift+Ctrl: 5° (from where the drag started).")
         pg:Toggle("Children follow (off: the bones under it keep their turn)", function() return E.follow end, function(v) E.follow = v end)
         pg:Heading("Bones shown")
         local opts = {}
@@ -1369,6 +2044,118 @@ concommand.Add("rhylib_pose_editor", function()
         return out
     end
 
+    -- Copy / paste a hand (the shown key): its fingers and its hand IK
+    -- target. Onto the same hand: the values as they are; onto the other
+    -- hand: mirrored (fingers from the hand, the target across the body).
+    local function handBone(SIDE) return "ValveBiped.Bip01_" .. SIDE .. "_Hand" end
+    local function copyHand(side)
+        local SIDE = side == "r" and "R" or "L"
+        local k = curKey()
+        -- (copy what the key shows, not the loop or the weapon's pose)
+        E.playing, E.scrub, E.live = false, nil, false
+        rebuild()
+        local Hw = worldOf(handBone(SIDE))
+        local c = { side = side, bones = {}, rel = {} }
+        for _, n in ipairs(fingerNames(SIDE)) do
+            if k.bones[n] then c.bones[n] = copyPose(k.bones[n]) end
+            local W = worldOf(n)
+            if W and Hw then
+                local _, r = WorldToLocal(vector_origin, W:GetAngles(), vector_origin, Hw:GetAngles())
+                c.rel[n] = r
+            end
+        end
+        if E.pose.ik and E.pose.ik[side] and k.hand and k.hand[side] then
+            c.ik = copyPose(k.hand[side])
+            local d = dbg()
+            local Hm = d and d[side == "r" and "HR" or "HL"]
+            if Hm then
+                local pos, ang = entFrame()
+                local lp, la = WorldToLocal(Hm:GetTranslation(), Hm:GetAngles(), pos, ang)
+                c.ikEnt = { lp, la }
+            end
+        end
+        E.clip.hand = c
+    end
+    local function pasteHand(side)
+        local c = E.clip.hand
+        if not c then return end
+        local SIDE = side == "r" and "R" or "L"
+        local ikOn = E.pose.ik and E.pose.ik[side]
+        local ref
+        if c.side ~= side then
+            ref = sampleModel("reference", 0)
+            if not (ref[handBone("R")] and ref[handBone("L")]) then msg("This model has no hands to mirror with.") return end
+        end
+        pushUndo()
+        E.playing, E.scrub, E.live = false, nil, false
+        local k = curKey()
+        if c.side == side then
+            for _, n in ipairs(fingerNames(SIDE)) do k.bones[n] = c.bones[n] and copyPose(c.bones[n]) or nil end
+            if c.ik and ikOn then
+                k.hand = k.hand or {}
+                k.hand[side] = copyPose(c.ik)
+            end
+            changed()
+            return
+        end
+        local srcH, dstH = handBone(SIDE == "R" and "L" or "R"), handBone(SIDE)
+        -- (the target first, reflected across the body's middle)
+        if c.ikEnt and ikOn then
+            local lp, la = c.ikEnt[1], c.ikEnt[2]
+            local _, ma = LocalToWorld(vector_origin, refDiff(ref, srcH, dstH), vector_origin, reflect(la))
+            local pos, ang = entFrame()
+            local wp, wa = LocalToWorld(Vector(lp.x, -lp.y, lp.z), ma, pos, ang)
+            rebuild()
+            local F = ikFrame(ikOn.rel)
+            if F then
+                local l = mat(F:GetTranslation(), F:GetAngles()):GetInverseTR() * mat(wp, wa)
+                k.hand = k.hand or {}
+                k.hand[side] = { p = vt(l:GetTranslation()), a = at(l:GetAngles()) }
+            end
+        end
+        for _, n in ipairs(fingerNames(SIDE)) do
+            local src = otherSide(n)
+            local r = src and c.rel[src]
+            if r and ref[src] and ref[n] then
+                local rel2 = mirrorRel(ref, srcH, dstH, src, n, r)
+                rebuild()
+                local Hw = worldOf(dstH)
+                if Hw then
+                    local _, wt = LocalToWorld(vector_origin, rel2, vector_origin, Hw:GetAngles())
+                    setWorldAng(n, wt)
+                end
+            end
+        end
+        changed()
+    end
+    -- A saved hand pose mirrored for the other hand (a new saved one).
+    local function mirrorPreset(side)
+        local src = handPose[side].src
+        if string.sub(src, 1, 7) ~= "preset:" then msg("Pick a saved hand pose (★) first.") return end
+        local nm = string.sub(src, 8)
+        local all = loadPresets()
+        local pr = all[nm]
+        if not pr or (pr.side ~= "R" and pr.side ~= "L") then return end
+        local OTHER = pr.side == "R" and "L" or "R"
+        local ref = sampleModel("reference", 0)
+        local srcH, dstH = handBone(pr.side), handBone(OTHER)
+        if not (ref[srcH] and ref[dstH]) then msg("This model has no hands to mirror with.") return end
+        local fingers = {}
+        for n, a in pairs(pr.fingers or {}) do
+            local dst = otherSide(n)
+            if dst and ref[n] and ref[dst] and istable(a) then
+                local r = mirrorRel(ref, srcH, dstH, n, dst, Angle(tonumber(a[1]) or 0, tonumber(a[2]) or 0, tonumber(a[3]) or 0))
+                fingers[dst] = { math.Round(r.p, 2), math.Round(r.y, 2), math.Round(r.r, 2) }
+            end
+        end
+        if not next(fingers) then msg("That hand pose has no fingers this model can mirror.") return end
+        local newName = nm .. " (mirrored)"
+        all[newName] = { side = OTHER, fingers = fingers }
+        file.Write(PRESETS, util.TableToJSON(all, true) or "")
+        handPose[OTHER == "R" and "r" or "l"].src = "preset:" .. newName
+        info2("Hand pose \"" .. newName .. "\" saved (" .. (OTHER == "R" and "right" or "left") .. " hand).")
+    end
+
     f:AddTab("Hands", function(pg)
         pg:Heading("Hand IK")
         pg:Note("With Hand IK on, the hand's pink dot is a target: Move (W) puts the hand there, Rotate (E) turns it, and the shoulder and elbow follow. The elbow dots choose which way each arm bends. Every key has its own target.")
@@ -1408,7 +2195,16 @@ concommand.Add("rhylib_pose_editor", function()
                     file.Write(PRESETS, util.TableToJSON(all, true) or "")
                     handPose[side].src = "seq:idle_ar2"
                 end, { danger = true } },
+                { "Mirror the picked saved one to the other hand", function() mirrorPreset(side) end },
             })
+            pg:Buttons({
+                { "Copy hand", function() copyHand(side) end },
+                { function()
+                    local c = E.clip.hand
+                    if c and c.side ~= side then return "Paste hand (mirrored)" end
+                    return "Paste hand"
+                end, function() pasteHand(side) end, { enabled = function() return E.clip.hand ~= nil end } },
+            }, { wrap = true })
         end
         pg:Note("Both hands on points of the gun: set each to \"The gun\". The right hand then needs the gun to move with the pose (it's switched on for you); the left works with the gun as held. Hand IK wins over Gun-tab grips and Spots locks for that hand.")
     end)
@@ -1425,6 +2221,7 @@ concommand.Add("rhylib_pose_editor", function()
     local function rcSet(key, v)
         local class = heldClass()
         if not class then msg("Hold the weapon first (Weapon poses: Hold it).") return end
+        pushUndo(true)
         local rc = rcOf(class, true)
         rc[key] = v
         sendGear(class)
@@ -1549,6 +2346,7 @@ concommand.Add("rhylib_pose_editor", function()
         end, function(v)
             local class = heldClass()
             if not class then msg("Hold the weapon first (Weapon poses: Hold it).") return end
+            pushUndo(true)
             local o = wmOf(class, true)
             if key == "s" then o.s = math.Round(v, 3) else o[key][i] = math.Round(v, 2) end
             sendGear(class)
@@ -1565,6 +2363,7 @@ concommand.Add("rhylib_pose_editor", function()
             if not class then msg("Hold the weapon first (Weapon poses: Hold it).") return end
             local w = me:GetActiveWeapon()
             local _, _, _, m = Po.WeaponProp(w)
+            pushUndo(true)
             local g = gearOf(class)
             g.muzzle = g.muzzle or { m.x, m.y, m.z }
             g.muzzle[i] = math.Round(v, 2)
@@ -1607,6 +2406,7 @@ concommand.Add("rhylib_pose_editor", function()
             { "Back to the weapon file's numbers", function()
                 local class = heldClass()
                 if not (class and Po.gear[class]) then return end
+                pushUndo(true)
                 Po.gear[class].wm, Po.gear[class].muzzle = nil, nil
                 sendGear(class)
             end, { danger = true } },
@@ -1634,6 +2434,7 @@ concommand.Add("rhylib_pose_editor", function()
         pg:Buttons({ { "Remove this weapon's recoil", function()
             local class = heldClass()
             if not (class and Po.gear[class]) then return end
+            pushUndo(true)
             Po.gear[class].recoil = nil
             sendGear(class)
         end, { danger = true } } })
@@ -1730,7 +2531,7 @@ concommand.Add("rhylib_pose_editor", function()
         local function lockSet(side, v)
             local lt, class = lockTable(true)
             if not lt then msg("Hold the weapon first.") return end
-            if E.lockTo == "pose" then pushUndo() end
+            pushUndo(E.lockTo ~= "pose")
             if v == "@weapon" then lt[side] = nil elseif v == "@off" then lt[side] = false else lt[side] = v end
             if E.lockTo == "pose" then
                 if next(lt) == nil then E.pose.lock = nil end
@@ -1749,6 +2550,7 @@ concommand.Add("rhylib_pose_editor", function()
         local function tickSet(key, v)
             local class = heldClass()
             if not class then return end
+            pushUndo(true)
             local g = gearOf(class)
             g.lock = g.lock or {}
             g.lock[key] = v or nil
@@ -1778,11 +2580,44 @@ concommand.Add("rhylib_pose_editor", function()
             end
             return table.concat(parts, ", ")
         end
+        -- (which row plays on you now, as the runtime picks it: a few times
+        -- a second, not each frame)
+        E.wplay = nil
+        timer.Create("Rhylib.PoseEditorPlaying", 0.25, 0, function()
+            if not IsValid(editor) then timer.Remove("Rhylib.PoseEditorPlaying") return end
+            local fits, playing = {}, nil
+            local st = Po.State(me)
+            for i, e in ipairs(entries) do
+                fits[i] = Po.EntryFits(e, st) and Po.defs[e.pose] ~= nil
+            end
+            if E.wpn and heldClass() == E.wpn then playing = Po.WeaponPoseIndex(me, entries) end
+            E.wplay = { fits = fits, playing = playing }
+        end)
+        local PLAY_STYLE = { chip = "PLAYING", chipCol = Color(80, 200, 100) }
+        local DIM_STYLE = { dim = true }
         pg:List({ { "Pose", 0.3 }, { "When", 0.7 } }, function()
             local out = {}
             for i, e in ipairs(entries) do out[#out + 1] = { i, { e.pose, whenText(e) } } end
             return out
-        end, function() return E.wsel end, function(i) E.wsel = i end, S(110))
+        end, function() return E.wsel end, function(i) E.wsel = i end, S(110), function(i)
+            local wp = E.wplay
+            if not wp then return nil end
+            if wp.playing == i then return PLAY_STYLE end
+            if wp.fits[i] == false then return DIM_STYLE end
+            return nil
+        end)
+        pg:Note(function()
+            if not E.wpn or #entries == 0 then return "" end
+            local held = heldClass()
+            if held ~= E.wpn then return "Hold it (Hold it, above) to see which row plays on you now." end
+            local wp = E.wplay
+            local i = wp and wp.playing
+            if not i then return "Greyed rows don't fit what you do now; none fits, so no weapon pose plays." end
+            local t = "Row " .. i .. " is the first that fits: it plays on you"
+            if me:GetNW2String("rhylib_pose", "") ~= "" then return t .. ", but a !pose plays over it." end
+            if not E.live then return t .. " once the editor's pose is paused (below)." end
+            return t .. "."
+        end)
         pg:Buttons({
             { "Use this pose here", function()
                 local n = Po.CleanName(E.name)
@@ -1844,6 +2679,7 @@ concommand.Add("rhylib_pose_editor", function()
             return out
         end, function() local sl = slingOf(E.wpn) return sl and sl.bone or "" end, function(bone)
             if not E.wpn or bone == "" then return end
+            pushUndo(true)
             local g = gearOf(E.wpn)
             local sl = g.sling
             g.sling = { bone = bone, p = sl and sl.p or { 0, 0, 0 }, a = sl and sl.a or { 0, 0, 0 } }
@@ -1858,6 +2694,7 @@ concommand.Add("rhylib_pose_editor", function()
             end },
             { "Remove spot", function()
                 if not (E.wpn and Po.gear[E.wpn]) then return end
+                pushUndo(true)
                 Po.gear[E.wpn].sling = nil
                 E.slingEdit = false
                 if E.sel == "@sling" then E.sel = nil end
@@ -1919,6 +2756,13 @@ concommand.Add("rhylib_pose_editor", function()
         return pts
     end
     local function gizmoLen() return math.max(3, orbit.dist * 0.12) end
+    -- Snapping while Shift is held (Ctrl too: fine turns).
+    local function snapKeys()
+        local shift = input.IsKeyDown(KEY_LSHIFT) or input.IsKeyDown(KEY_RSHIFT)
+        local ctrl = input.IsKeyDown(KEY_LCONTROL) or input.IsKeyDown(KEY_RCONTROL)
+        return shift, shift and ctrl
+    end
+    local function snapTo(v, s) return math.Round(v / s) * s end
     local function axes(name)
         if E.space == "world" then return { Vector(1, 0, 0), Vector(0, 1, 0), Vector(0, 0, 1) } end
         local W = worldOf(name)
@@ -2002,6 +2846,19 @@ concommand.Add("rhylib_pose_editor", function()
             surface.SetDrawColor(255, 255, 255, E.drag and E.drag.plane and 255 or 150)
             surface.DrawOutlinedRect(px - 5, py - 5, 10, 10)
         end
+        -- (while dragging: how far so far, and the snap keys)
+        local dr = E.drag
+        local snap, fine = snapKeys()
+        local txt
+        if dr and dr.plane then
+            txt = string.format("%+.2f, %+.2f", dr.sx, dr.sy)
+        elseif dr then
+            txt = E.mode == "move" and string.format("%+.2f", dr.done) or string.format("%+.1f°", dr.done)
+        end
+        if txt then
+            txt = txt .. (snap and (E.mode == "move" and "  snap 0.5" or (fine and "  snap 5°" or "  snap 15°")) or "  (Shift: snap · Shift+Ctrl: 5°)")
+            draw.SimpleTextOutlined(txt, "DermaDefault", px + 12, py + 12, Color(255, 230, 80), TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP, 1, color_black)
+        end
     end)
 
     Rhylib.Hook.Add("GUIMousePressed", "devtools.posegizmo", function(code)
@@ -2017,7 +2874,7 @@ concommand.Add("rhylib_pose_editor", function()
                 local px, py = scr(pos)
                 if E.mode == "move" and math.abs(mx - px) <= 7 and math.abs(my - py) <= 7 then
                     pushUndo()
-                    E.drag = { plane = true, x = mx, y = my }
+                    E.drag = { plane = true, x = mx, y = my, tx = 0, ty = 0, sx = 0, sy = 0 }
                     return
                 end
                 for i = 1, 3 do
@@ -2035,7 +2892,9 @@ concommand.Add("rhylib_pose_editor", function()
                     end
                     if hit then
                         pushUndo()
-                        E.drag = { axis = i, x = mx, y = my }
+                        -- (total: the whole drag so far; done: what's been applied,
+                        -- snapped while Shift is held)
+                        E.drag = { axis = i, x = mx, y = my, total = 0, done = 0 }
                         return
                     end
                 end
@@ -2079,7 +2938,7 @@ concommand.Add("rhylib_pose_editor", function()
             Rhylib.Hook.Remove("Think", "devtools.posegizmo")
             return
         end
-        if E.playing then updatePreview() end
+        if E.playing or E.testFade then updatePreview() end
         local dr = E.drag
         if not dr or not E.sel then return end
         if not input.IsMouseDown(MOUSE_LEFT) then E.drag = nil return end
@@ -2092,10 +2951,16 @@ concommand.Add("rhylib_pose_editor", function()
         local W = worldOf(E.sel)
         if not W then return end
         local pos = W:GetTranslation()
+        local snap, fine = snapKeys()
         if dr.plane then
             local va = orbit.viewAng or EyeAngles()
             local k = orbit.dist * 0.0025
-            moveBone(E.sel, va:Right() * (dx * k) - va:Up() * (dy * k))
+            dr.tx, dr.ty = dr.tx + dx * k, dr.ty - dy * k
+            local wx, wy = dr.tx, dr.ty
+            if snap then wx, wy = snapTo(wx, 0.5), snapTo(wy, 0.5) end
+            local mx2, my2 = wx - dr.sx, wy - dr.sy
+            if mx2 ~= 0 or my2 ~= 0 then moveBone(E.sel, va:Right() * mx2 + va:Up() * my2) end
+            dr.sx, dr.sy = wx, wy
         elseif E.mode == "move" then
             local ax = axes(E.sel)[dr.axis]
             local L = gizmoLen()
@@ -2103,16 +2968,26 @@ concommand.Add("rhylib_pose_editor", function()
             local qx, qy = scr(pos + ax * L)
             local sx, sy = qx - px, qy - py
             local l2 = sx * sx + sy * sy
-            if l2 > 1 then moveBone(E.sel, ax * ((dx * sx + dy * sy) / l2 * L)) end
+            if l2 > 1 then
+                dr.total = dr.total + (dx * sx + dy * sy) / l2 * L
+                local want = snap and snapTo(dr.total, 0.5) or dr.total
+                if want ~= dr.done then moveBone(E.sel, ax * (want - dr.done)) end
+                dr.done = want
+            end
         else
             local ax = axes(E.sel)[dr.axis]
             local px, py = scr(pos)
             local dA = math.deg(math.atan2(my - py, mx - px) - math.atan2(dr.y - py, dr.x - px))
             dA = (dA + 180) % 360 - 180
             local facing = ax:Dot((orbit.viewPos or EyePos()) - pos) > 0
-            local target = W:GetAngles()
-            target:RotateAroundAxis(ax, facing and -dA or dA)
-            turnBone(E.sel, target)
+            dr.total = dr.total + (facing and -dA or dA)
+            local want = snap and snapTo(dr.total, fine and 5 or 15) or dr.total
+            if want ~= dr.done then
+                local target = W:GetAngles()
+                target:RotateAroundAxis(ax, want - dr.done)
+                turnBone(E.sel, target)
+            end
+            dr.done = want
         end
         dr.x, dr.y = mx, my
         rebuild()

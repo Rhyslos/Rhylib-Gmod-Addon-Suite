@@ -10,10 +10,12 @@
         win:Show("Pose")
 
     Window(title, opts) -> win (an EditablePanel, made popup). opts.camera
-      = { bone, dist, head } adds the camera column (Rhylib.Devtools.orbit,
-      cl_10_weapon_editors.lua's CalcView). win:AddTab(name, build) adds a
-      tab, built the first time it's shown; win:Show(name); win.onKey(code)
-      gets W / E / Q / Z presses (not while typing in a field). Esc closes
+      = { bone, dist, head, off } adds the camera column (Rhylib.Devtools.orbit,
+      cl_10_weapon_editors.lua's CalcView; bone nil = the right hand; off =
+      the camera starts switched off). win:AddTab(name, build) adds a
+      tab, built the first time it's shown; win:Show(name) (then
+      win.onShow(name) if set); win.onKey(code)
+      gets W / E / Q / Z / Y presses (not while typing in a field). Esc closes
       an open list, then the window (a kit prompt over it first).
     A page (pg) has, each a full-width row docked in order:
       pg:Heading(text)                    pg:Note(text or fn)
@@ -22,16 +24,20 @@
           (wrap = true: side by side, onto more lines when they don't fit)
       pg:Number(label, step, lo, hi, get, set, ctx)    - [value] +, hold
           repeats (DU.repeating while it does); typed values apply on
-          Enter / leaving the field, only if changed
+          Enter / leaving the field, only if changed; returns its row
       pg:Toggle(label, get, set)
       pg:Choice(label, options|fn, get, set)      options { { value, text } };
           a button opening a list (with a filter box over 20 entries)
       pg:Slider(label, min, max, decimals, get, set)   min / max may be fns
       pg:Text(placeholder, get, set)              set on every key
       pg:Chips(options|fn, isOn, toggle)          wrapping on / off chips
-      pg:List(columns, rows fn, selected fn, onPick, tall)
-          rows fn -> { { id, { col1, col2, ... } }, ... }
+      pg:List(columns, rows fn, selected fn, onPick, tall, style)
+          rows fn -> { { id, { col1, col2, ... } }, ... }; style(id) (drawn
+          each frame, keep it cheap) -> nil or { dim = true, chip = text,
+          chipCol = Color }: a greyed row / a chip on its right
       pg:Space(n)
+    DU.ShowIf(row, fn): the row folds away (no height) while fn() is false
+      (rows without a Think of their own, e.g. Number rows).
 ]]
 
 Rhylib.Devtools = Rhylib.Devtools or {}
@@ -185,7 +191,7 @@ end
 -- ctx (optional): a function whose value is taken when you start typing
 -- and handed to set(v, ctx) (e.g. which bone the field was for).
 function PAGE:Number(label, step, lo, hi, get, set, ctx)
-    local _, right = labelled(self, label)
+    local r, right = labelled(self, label)
     local win = self.win
     local function apply(v, c)
         if not v then return end
@@ -258,6 +264,32 @@ function PAGE:Number(label, step, lo, hi, get, set, ctx)
             end
         end
     end
+    return r
+end
+
+-- A row shown only while fn() is true (folded to no height otherwise).
+function DU.ShowIf(r, fn)
+    local think = r.Think
+    local tall = r:GetTall()
+    local ml, mt, mr, mb = r:GetDockMargin()
+    local shown = true
+    function r:Think()
+        local on = fn() and true or false
+        if on ~= shown then
+            shown = on
+            for _, c in ipairs(self:GetChildren()) do c:SetVisible(on) end
+            if on then
+                self:DockMargin(ml, mt, mr, mb)
+                self:SetTall(tall)
+            else
+                self:DockMargin(0, 0, 0, 0)
+                self:SetTall(0)
+            end
+            self:InvalidateParent(true)
+        end
+        if on and think then think(self) end
+    end
+    return r
 end
 
 -- (the label wraps onto more lines in a narrow page; the row grows to fit)
@@ -438,7 +470,7 @@ function PAGE:Chips(options, isOn, toggle)
 end
 
 -- A list with columns; click a row to pick it.
-function PAGE:List(columns, rows, selected, onPick, tall)
+function PAGE:List(columns, rows, selected, onPick, tall, style)
     local holder = row(self, tall or S(120))
     function holder:Paint(w, h)
         K.SetCol(C.row)
@@ -476,12 +508,26 @@ function PAGE:List(columns, rows, selected, onPick, tall)
             line:SetTall(S(22))
             function line:Paint(w, h)
                 local on = selected() == r[1]
+                local st = style and style(r[1])
                 K.SetCol(on and C.buttonDown or (self:IsHovered() and C.rowHover or C.row))
                 surface.DrawRect(0, 0, w, h)
+                -- (a chip on the right takes its width from the columns)
+                local chipW = 0
+                if st and st.chip then
+                    local cf = K.Font(11, 700)
+                    surface.SetFont(cf)
+                    local tw = surface.GetTextSize(st.chip)
+                    chipW = tw + S(10)
+                    draw.RoundedBox(S(3), w - chipW - S(4), S(3), chipW, h - S(6), st.chipCol or C.buttonDown)
+                    draw.SimpleText(st.chip, cf, w - S(4) - chipW * 0.5, h * 0.5, color_black, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                    chipW = chipW + S(6)
+                end
+                local col = on and C.text or C.textDim
+                if st and st.dim then col = Color(col.r, col.g, col.b, 70) end
                 local x = S(6)
                 for i, c in ipairs(columns) do
-                    local cw = (w - S(8)) * c[2]
-                    draw.SimpleText(fitText(tostring(r[2][i] or ""), K.Font(13), cw - S(6)), K.Font(13), x, h * 0.5, on and C.text or C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                    local cw = (w - S(8) - chipW) * c[2]
+                    draw.SimpleText(fitText(tostring(r[2][i] or ""), K.Font(13), cw - S(6)), K.Font(13), x, h * 0.5, col, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
                     x = x + cw
                 end
                 return true
@@ -498,7 +544,7 @@ end
 local function cameraColumn(win, col, cam)
     local orbit = DT.orbit
     orbit.frame = win
-    orbit.on = true
+    orbit.on = not cam.off
     orbit.bone = cam.bone
     orbit.pan = Vector()
     orbit.baseYaw = nil
@@ -609,7 +655,7 @@ function DU.Window(title, opts)
         -- (W / E / Q... reach onKey wherever the focus is, except while typing)
         local fp = vgui.GetKeyboardFocus()
         local typing = IsValid(fp) and fp:GetClassName() == "TextEntry"
-        for _, k in ipairs({ KEY_W, KEY_E, KEY_Q, KEY_Z }) do
+        for _, k in ipairs({ KEY_W, KEY_E, KEY_Q, KEY_Z, KEY_Y }) do
             local d = input.IsKeyDown(k)
             if d and not keysDown[k] and not typing and self.onKey and (not IsValid(fp) or fp == self or self:IsOurChild(fp)) then self.onKey(k) end
             keysDown[k] = d

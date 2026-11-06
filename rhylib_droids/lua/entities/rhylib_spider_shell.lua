@@ -1,19 +1,23 @@
 --[[
-    Spider droid shell: a slow glowing explosive round from the DSD1 dwarf
-    spider droid (entities/rhylib_spider.lua). Flies straight (no gravity),
-    moved by hand each tick with one trace, so it never tunnels; flies
-    through droids. On impact: Rhylib.Weapons.Explode with kind
-    "spidershell", tier 2 (hook Rhylib.Explosion; stealth hearing),
-    spiderShellRadius / spiderShellDamage, plus spiderShellDirect to what
-    it hit; it knocks players down only where the blast does weapons
-    knockMin or more (close to the impact), never with spiderShellKnock
-    off. A training spider's shell (r.training) only takes sim health.
+    Spider droid shell: an explosive round from the DSD1 dwarf spider droid
+    (entities/rhylib_spider.lua) that looks like a droid blaster bolt (the
+    B1's red bolt, rhylib_weapons BoltColor 11: beam, white core, glow;
+    a training spider's: the training droids' orange, BoltColor 8),
+    spiderShellSize times as big. Flies straight (no gravity) at the
+    speed the spider gives it (the B1's bolt speed), moved by hand each
+    tick with one trace, so it never tunnels; flies through droids. On
+    impact: Rhylib.Weapons.Explode with kind "spidershell", tier 2 (hook
+    Rhylib.Explosion; stealth hearing), spiderShellRadius /
+    spiderShellDamage, plus spiderShellDirect to what it hit; it knocks
+    players down only where the blast does weapons knockMin or more
+    (close to the impact), never with spiderShellKnock off. A training
+    spider's shell (r.training) only takes sim health.
 
     Shared entity. Fields set before Spawn: s.vel (velocity), s.owner (the
-    spider, credited), s.training. Training is a DT Bool for the glow
-    colour. Listed in Rhylib.Droids.spiderShells while it flies (the
-    spiderShellMax cap). Gone after 8 s, in the sky, or without
-    rhylib_weapons.
+    spider, credited), s.training, s.size (look size multiplier).
+    Training (Bool) and Size (Float) are DT vars for the look. Listed in
+    Rhylib.Droids.spiderShells while it flies (the spiderShellMax cap).
+    Gone after 8 s, in the sky, or without rhylib_weapons.
 ]]
 
 AddCSLuaFile()
@@ -22,12 +26,13 @@ ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.PrintName = "Spider droid shell"
 ENT.Category = "Rhy's Droids"
-ENT.Model = "models/hunter/blocks/cube025x025x025.mdl"   -- (never drawn: only its glow)
+ENT.Model = "models/hunter/blocks/cube025x025x025.mdl"   -- (never drawn: only its bolt look)
 ENT.Spawnable = false
 ENT.RenderGroup = RENDERGROUP_TRANSLUCENT
 
 function ENT:SetupDataTables()
     self:NetworkVar("Bool", 0, "Training")
+    self:NetworkVar("Float", 0, "Size")
 end
 
 if SERVER then
@@ -41,6 +46,7 @@ if SERVER then
         self:DrawShadow(false)
         self.rhylibDroidShot = true   -- (counts as a droid's when its spider is gone: no droid damage, no mines)
         self:SetTraining(self.training and true or false)
+        self:SetSize(math.Clamp(tonumber(self.size) or 1, 0.25, 6))
         self.vel = self.vel or Vector(0, 0, 0)
         self.dieAt = CurTime() + 8
         local me = self
@@ -51,7 +57,6 @@ if SERVER then
             D.spiderShells = D.spiderShells or {}
             D.spiderShells[self] = true
         end
-        util.SpriteTrail(self, 0, self.training and Color(255, 170, 50) or Color(255, 90, 40), true, 14, 0, 0.35, 1 / 14 * 0.5, "trails/laser.vmt")
     end
 
     function ENT:Explode(pos, normal, hit)
@@ -103,22 +108,48 @@ if SERVER then
 end
 
 if CLIENT then
+    -- The droids' bolt looks (rhylib_weapons cl_10_bolts STYLES 11 and 8),
+    -- times the shell's Size.
+    local BEAM = Material("trails/laser")
     local GLOW = Material("sprites/light_glow02_add")
-    local RED = Color(255, 80, 35)
-    local ORANGE = Color(255, 175, 50)
-    local CORE = Color(255, 235, 200)
+    local CORE = Color(255, 255, 255, 220)
+    local LOOK = { color = Color(255, 30, 25), length = 100, width = 10, glow = 26, core = true }
+    local LOOK_TRAINING = { color = Color(255, 160, 40), length = 70, width = 5, glow = 14 }
 
     function ENT:Initialize()
-        self:SetRenderBounds(Vector(-40, -40, -40), Vector(40, 40, 40))
+        self.firstPos = self:GetPos()
+    end
+
+    local function size(self)
+        local m = self:GetSize()
+        return m > 0 and m or 1
+    end
+
+    function ENT:Think()
+        -- (bounds along its flight: the tail trails behind it)
+        local m = size(self)
+        if self.boundsSize ~= m then
+            self.boundsSize = m
+            local r = 30 * m
+            self:SetRenderBounds(Vector(-LOOK.length * m - r, -r, -r), Vector(r, r, r))
+        end
     end
 
     function ENT:Draw() end
 
+    local tail = Vector()
     function ENT:DrawTranslucent()
+        local look = self:GetTraining() and LOOK_TRAINING or LOOK
+        local m = size(self)
         local pos = self:GetPos()
+        local d = self:GetForward()
+        self.firstPos = self.firstPos or pos
+        local len = math.min(look.length * m, pos:Distance(self.firstPos) + 1)
+        tail:SetUnpacked(pos.x - d.x * len, pos.y - d.y * len, pos.z - d.z * len)
+        render.SetMaterial(BEAM)
+        render.DrawBeam(tail, pos, look.width * m, 0, 1, look.color)
+        if look.core then render.DrawBeam(tail, pos, look.width * m * 0.3, 0, 1, CORE) end
         render.SetMaterial(GLOW)
-        local s = 56 + 8 * math.sin(CurTime() * 30)
-        render.DrawSprite(pos, s, s, self:GetTraining() and ORANGE or RED)
-        render.DrawSprite(pos, 18, 18, CORE)
+        render.DrawSprite(pos, look.glow * m, look.glow * m, look.color)
     end
 end

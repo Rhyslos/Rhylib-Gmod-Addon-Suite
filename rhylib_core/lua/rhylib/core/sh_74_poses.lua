@@ -36,17 +36,29 @@
       helper bones (Ulna, Wrist) share the hand's turn round the forearm.
       loop: the keys play over length seconds and repeat (blended, eased);
       not loop: the first key is held.
+      Easing (optional fields, left out at their defaults): each key's ease
+      (into the next key) = "smooth" (default: smooth start and stop) |
+      "linear" | "snap" (hold this key, jump to the next at its time);
+      fadeIn / fadeOut = seconds (0-2, default 0.25; 0 = snaps in / out) and
+      fadeCurve = "linear" (default) | "smooth" for how the pose eases in
+      and out (a pose fading out uses its own fadeOut and curve; a fade
+      given to Po.Play wins over both).
 
     Rhylib.Poses (Po):
       Po.defs[name]                     the saved poses (both realms)
       Po.Play(ent, name, fade)          server: play a pose on ent (NW2String
-                                        rhylib_pose, NW2Float rhylib_poseAt)
+                                        rhylib_pose, NW2Float rhylib_poseAt,
+                                        NW2Float rhylib_poseFade: fade, or -1
+                                        = the poses' own fadeIn / fadeOut)
       Po.Stop(ent, fade)                server: stop it
       Po.SetLocal(ent, name)            client: play one on this client only,
                                         over the networked one ("" = none;
                                         nil = back to the networked one)
       Po.Sample(pose, t) -> bones       { [boneName] = { a = Angle, v = Vector } }
-      Po.preview = { ent, pose, t }     client: the editor's live preview
+      Po.FadeWeight(pose, x) -> w       the fade weight at x (0-1 of the way
+                                        in) with the pose's fadeCurve
+      Po.preview = { ent, pose, t, w }  client: the editor's live preview
+                                        (w: its weight, default 1)
     Po.gear[class] = { lgrip = { p, a }, sling = { bone, p, a }, spots,
       lock }: per weapon, the left-hand grip from the gun, the spot on the
       body where it shows while carried but not held (from that bone; only
@@ -90,14 +102,20 @@
         Doing    none, shooting (fired in the last 0.4 s), reloading
       (Gun and Doing read the Rhylib weapon base; other weapons count as
       hip / none.) Po.State(ply) -> { [filter] = true } of the four now.
+      Po.EntryFits(entry, state) -> whether one entry's filters fit;
+      Po.WeaponPoseIndex(ply, list) -> the index of the entry that plays
+      now in list (default: their held weapon's), or nil (the editor's
+      PLAYING marker; Po.WeaponPose uses it).
       A pose from !pose or Po.SetLocal wins over the weapon's.
-    Perms: rhylib.poses.edit (superadmin): save / delete poses;
+    Perms: rhylib.poses.edit (superadmin): save / rename / delete poses;
     rhylib.poses.play (admin): !pose.
     Command !pose <name> (on the player / NPC you look at, else you),
     !pose stop, !pose list.
     Nets: poses.req (client: send me every pose), poses.one (server ->
     client: name, JSON or "" = deleted), poses.save (client, edit perm:
-    name, JSON), poses.del (client, edit perm: name), poses.wpn (server ->
+    name, JSON), poses.del (client, edit perm: name), poses.ren (client,
+    edit perm: old name, new name; weapon pose lists and recoil poses
+    naming it follow), poses.wpn (server ->
     client: UInt32 length + compressed JSON of Po.weapons, on join and
     when changed), poses.wpnset (client, edit perm: class, JSON list or
     "" = none), poses.gearset (client, edit perm: class, JSON
@@ -162,6 +180,15 @@ function Po.Clean(p)
         local r, l = side(p.ik.r), side(p.ik.l)
         if r or l then out.ik = { r = r, l = l } end
     end
+    -- (fades: left out at their defaults, so old poses play as before)
+    for _, f in ipairs({ "fadeIn", "fadeOut" }) do
+        local v = tonumber(p[f])
+        if v then
+            v = math.Round(math.Clamp(v, 0, 2), 2)
+            if v ~= 0.25 then out[f] = v end
+        end
+    end
+    if p.fadeCurve == "smooth" then out.fadeCurve = "smooth" end
     if istable(p.grip) and istable(p.grip.l) then
         out.grip = { l = { p = three(p.grip.l.p, 100) or { 0, 0, 0 }, a = three(p.grip.l.a, 360, true) or { 0, 0, 0 } } }
     end
@@ -169,6 +196,7 @@ function Po.Clean(p)
         if i > MAX_KEYS then break end
         if istable(k) and istable(k.bones) then
             local key = { t = math.Clamp(tonumber(k.t) or 0, 0, out.length), bones = {} }
+            if k.ease == "linear" or k.ease == "snap" then key.ease = k.ease end
             if out.anchor and istable(k.gun) then
                 key.gun = { p = three(k.gun.p, 150) or { 0, 0, 0 }, a = three(k.gun.a, 360, true) or { 0, 0, 0 } }
             end
@@ -232,6 +260,14 @@ local slerp = Po.SlerpAngle
 -- (smooth start and stop between keys)
 local function ease(x) return x * x * (3 - 2 * x) end
 
+-- Po.FadeWeight(pose, x): the weight x of the way through a fade in (or
+-- back out), shaped by the pose's fadeCurve.
+function Po.FadeWeight(p, x)
+    x = math.Clamp(x or 0, 0, 1)
+    if p and p.fadeCurve == "smooth" then return ease(x) end
+    return x
+end
+
 local function angOf(b) return b and b.a and Angle(b.a[1], b.a[2], b.a[3]) or Angle() end
 local function vecOf(b) return b and b.v and Vector(b.v[1], b.v[2], b.v[3]) or Vector() end
 
@@ -291,7 +327,11 @@ function Po.Sample(p, t)
     if tb <= ta then tb = tb + len end
     local tt = t
     if tt < ta then tt = tt + len end
-    local k = tb > ta and ease(math.Clamp((tt - ta) / (tb - ta), 0, 1)) or 0
+    -- (the key's ease into the next: smooth by default, linear, or snap:
+    -- held until the next key's time)
+    local x = tb > ta and math.Clamp((tt - ta) / (tb - ta), 0, 1) or 0
+    local ek = keys[ia].ease
+    local k = ek == "snap" and 0 or ek == "linear" and x or ease(x)
     local A, B = keys[ia].bones, keys[ib].bones
     local names = {}
     for n in pairs(A) do names[n] = true end
@@ -475,25 +515,41 @@ function Po.State(ply)
     return st
 end
 
+-- Po.EntryFits(e, st): every filter group has a ticked option that is on now.
+function Po.EntryFits(e, st)
+    for _, g in ipairs(Po.FILTERS) do
+        local any = false
+        for _, o in ipairs(g.opts) do
+            if e.when[o[1]] and st[o[1]] then any = true break end
+        end
+        if not any then return false end
+    end
+    return true
+end
+
+-- Po.WeaponPoseIndex(ply, list) -> the first entry that fits and exists
+-- (list: their held weapon's by default), or nil.
+function Po.WeaponPoseIndex(ply, list)
+    if not ply:IsPlayer() or not ply:Alive() then return nil end
+    if not list then
+        local w = ply:GetActiveWeapon()
+        list = IsValid(w) and Po.weapons[w:GetClass()]
+    end
+    if not list then return nil end
+    local st = Po.State(ply)
+    for i, e in ipairs(list) do
+        if Po.EntryFits(e, st) and Po.defs[e.pose] then return i end
+    end
+    return nil
+end
+
 -- Po.WeaponPose(ply) -> the pose name for what they hold and do now, or nil.
 function Po.WeaponPose(ply)
     if not ply:IsPlayer() or not ply:Alive() then return nil end
     local w = ply:GetActiveWeapon()
     local list = IsValid(w) and Po.weapons[w:GetClass()]
-    if not list then return nil end
-    local st = Po.State(ply)
-    for _, e in ipairs(list) do
-        local fits = true
-        for _, g in ipairs(Po.FILTERS) do
-            local any = false
-            for _, o in ipairs(g.opts) do
-                if e.when[o[1]] and st[o[1]] then any = true break end
-            end
-            if not any then fits = false break end
-        end
-        if fits and Po.defs[e.pose] then return e.pose end
-    end
-    return nil
+    local i = list and Po.WeaponPoseIndex(ply, list)
+    return i and list[i].pose or nil
 end
 
 -- The fire gesture a weapon's recoil picks (both realms).
@@ -626,6 +682,37 @@ if SERVER then
         end)
     end, { rate = 4, burst = 4 })
 
+    Rhylib.Net.Receive("poses.ren", function(ply)
+        local from, to = cleanName(net.ReadString()), cleanName(net.ReadString())
+        if from == "" or to == "" or from == to then return end
+        Rhylib.Perms.Check(ply, "rhylib.poses.edit", function(ok)
+            if not ok then return Rhylib.Notify(ply, "You can't rename poses", "bad", "Poses") end
+            load()
+            if not Po.defs[from] then return Rhylib.Notify(ply, "No pose called \"" .. from .. "\"", "bad", "Poses") end
+            if Po.defs[to] then return Rhylib.Notify(ply, "There's already a pose called \"" .. to .. "\"", "bad", "Poses") end
+            Po.defs[to], Po.defs[from] = Po.defs[from], nil
+            save()
+            sendOne(from)
+            sendOne(to)
+            -- (weapon pose lists and recoil poses naming it follow)
+            local wch, gch = false, false
+            for _, list in pairs(Po.weapons) do
+                for _, e in ipairs(list) do
+                    if e.pose == from then e.pose = to wch = true end
+                end
+            end
+            for _, g in pairs(Po.gear) do
+                if g.recoil and g.recoil.pose == from then g.recoil.pose = to gch = true end
+            end
+            if Rhylib.Data then
+                if wch then Rhylib.Data.Set("poses", "weapons", Po.weapons) end
+                if gch then Rhylib.Data.Set("poses", "gear", Po.gear) end
+            end
+            if wch or gch then sendWeapons() end
+            Rhylib.Notify(ply, "Pose \"" .. from .. "\" renamed to \"" .. to .. "\"", "good", "Poses")
+        end)
+    end, { rate = 4, burst = 4 })
+
     Rhylib.Net.Receive("poses.wpnset", function(ply)
         local class = string.sub(net.ReadString(), 1, 64)
         local js = net.ReadString() or ""
@@ -691,7 +778,8 @@ if SERVER then
         if not IsValid(ent) then return end
         ent:SetNW2String("rhylib_pose", name or "")
         ent:SetNW2Float("rhylib_poseAt", CurTime())
-        ent:SetNW2Float("rhylib_poseFade", tonumber(fade) or 0.25)
+        -- (-1: each pose's own fadeIn / fadeOut)
+        ent:SetNW2Float("rhylib_poseFade", tonumber(fade) or -1)
     end
     function Po.Stop(ent, fade) Po.Play(ent, "", fade) end
 
@@ -710,9 +798,14 @@ end)
 Rhylib.Net.Receive("poses.wpn", function()
     local len = net.ReadUInt(32)
     local t = util.JSONToTable(util.Decompress(net.ReadData(len) or "") or "") or {}
-    -- (Po.gearHold: the pose editor is sending this weapon's gear: keep ours)
+    -- (Po.gearHold: the pose editor is sending this weapon's gear (a class,
+    -- or a set of classes): keep ours)
     local hold = Po.gearHold
-    local keep = hold and Po.gear[hold]
+    if isstring(hold) then hold = { [hold] = true } end
+    local keep = {}
+    if istable(hold) then
+        for c in pairs(hold) do keep[c] = Po.gear[c] or false end
+    end
     Po.weapons, Po.gear = {}, {}
     for class, list in pairs(istable(t.w) and t.w or {}) do
         local c = Po.CleanWeapon(list)
@@ -722,7 +815,7 @@ Rhylib.Net.Receive("poses.wpn", function()
         local c = Po.CleanGear(g)
         if c then Po.gear[tostring(class)] = c end
     end
-    if hold then Po.gear[hold] = keep end
+    for c, g in pairs(keep) do Po.gear[c] = g or nil end
     if Po.onWeaponsChanged then Po.onWeaponsChanged() end
 end)
 Rhylib.Hook.Add("InitPostEntity", "core.poses", function()
@@ -766,9 +859,24 @@ function Po.SetLocal(ent, name)
     Po.Hook(ent)
 end
 
+-- (a fade's length: the one given to Po.Play (nw >= 0), else the pose's
+-- own fadeIn / fadeOut)
+local function fadeOf(nw, p, out)
+    if nw >= 0 then return math.max(0.05, nw) end
+    local v = p and (out and p.fadeOut or p.fadeIn)
+    return tonumber(v) or 0.25
+end
+local function fadeStep(st, target, secs, dt)
+    if secs <= 0 then st.w = target else st.w = math.Approach(st.w, target, dt / secs) end
+end
+
 local function current(ent)
     local pv = Po.preview
-    if pv and pv.ent == ent and pv.pose then return pv.pose, pv.t or 0, 1 end
+    if pv and pv.ent == ent and pv.pose then
+        local pw = pv.w or 1
+        if pw <= 0 then return nil end
+        return pv.pose, pv.t or 0, pw
+    end
     local l = local_[ent]
     local name, at = l and l.name, l and l.at
     if not name then
@@ -801,24 +909,29 @@ local function current(ent)
     local now = CurTime()
     local st = ent.rhylibPoseSt
     if not st then st = { w = 0 } ent.rhylibPoseSt = st end
-    local fade = math.max(0.05, ent:GetNW2Float("rhylib_poseFade", 0.25))
+    -- (a fade given to Po.Play wins; else the pose's own: fading in the
+    -- new one's fadeIn, fading out the old one's fadeOut; 0 snaps)
+    local nwFade = ent:GetNW2Float("rhylib_poseFade", -1)
     -- (by real time passed: bones can be built more than once a frame)
     local dt = math.Clamp(now - (st.last or now), 0, 0.2)
     st.last = now
-    if name ~= "" and Po.defs[name] then
+    local new = name ~= "" and Po.defs[name]
+    if new then
         if st.name ~= name and st.w > 0 and st.name and Po.defs[st.name] then
             -- (another pose: the old one eases out first, then the new one in)
-            st.w = math.Approach(st.w, 0, dt / fade)
-        else
+            fadeStep(st, 0, fadeOf(nwFade, Po.defs[st.name], true), dt)
+        end
+        if st.name == name or st.w <= 0 or not st.name or not Po.defs[st.name] then
             if st.name ~= name then st.w = 0 end
             st.name, st.at = name, at
-            st.w = math.Approach(st.w, 1, dt / fade)
+            fadeStep(st, 1, fadeOf(nwFade, new, false), dt)
         end
     else
-        st.w = math.Approach(st.w, 0, dt / fade)
+        fadeStep(st, 0, fadeOf(nwFade, st.name and Po.defs[st.name], true), dt)
     end
     if st.w <= 0 or not st.name or not Po.defs[st.name] then return nil end
-    return Po.defs[st.name], now - (st.at or now), st.w
+    local def = Po.defs[st.name]
+    return def, now - (st.at or now), Po.FadeWeight(def, st.w)
 end
 
 local function apply(ent)

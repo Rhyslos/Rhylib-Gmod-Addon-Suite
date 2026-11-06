@@ -93,6 +93,9 @@ end
 
 Rhylib.Hook.Add("PlayerBindPress", "menus.qkey", function(ply, bind, pressed)
     if bind ~= "+menu" and bind ~= "-menu" then return end
+    -- (a "tabs" list wheel is open: Q flips its group there, cl_70_wheel.lua)
+    local Wh = Menus.Wheel
+    if Wh and Wh.open and Wh.groups and Wh.style == "tabs" then return end
     -- No toolgun addon: staff hold Q for the normal Q menu, like sandbox.
     if not hasToolgun() and Menus.MaySpawn() then
         if pressed and bind == "+menu" then Menus.spawnAllowed = true end

@@ -12,13 +12,15 @@
         no walk or run sequence gets a small body bob while it moves
         (client, NW2Bool rhylib_bob) instead of sliding
       - turning: its body turns at spiderTurnRate degrees a second
-      - main gun (style "shell", ENT:StyleFire): one slow explosive shell
-        (entities/rhylib_spider_shell.lua) every spiderShellInterval s at
-        a target in sight, led by its speed, only once its body points
-        within spiderAimCone of it and the way from the gun is clear (a
-        wall in the way for 2 s: it steps aside). At most spiderShellMax
-        shells fly at once. No bolts at all (FireAtPos and firing into
-        smoke do nothing).
+      - main gun (style "shell", ENT:StyleFire): one explosive shell
+        (entities/rhylib_spider_shell.lua: a B1 blaster bolt's look,
+        spiderShellSize times as big, at the B1's bolt speed, droids
+        boltSpeed through rhylib_weapons Bolts.Speed) every
+        spiderShellInterval s at a target in sight, led by its speed,
+        only once its body points within spiderAimCone of it and the way
+        from the gun is clear (a wall in the way for 2 s: it steps
+        aside). At most spiderShellMax shells fly at once. No real bolts
+        (FireAtPos and firing into smoke do nothing).
       - closer than spiderShellMin: it backs off, walking and facing the
         target, and holds fire; with nowhere to back off, or while an
         order keeps it in place (defending, guarding, following,
@@ -215,7 +217,10 @@ if SERVER then
         if shellCount(D) >= D.Cfg("spiderShellMax") then return now + 0.5 end
         -- Aim low (a near miss lands by them), lead by the flight time.
         local from = self:Muzzle()
-        local speed = math.max(D.Cfg("spiderShellSpeed"), 50)
+        -- (the B1's bolt speed: droids boltSpeed, scaled as rhylib_weapons scales bolts)
+        local W = Rhylib.Weapons
+        local speed = W and W.Bolts and W.Bolts.Speed and W.Bolts.Speed(D.Gun("b1")) or D.Cfg("boltSpeed")
+        speed = math.max(speed, 50)
         local vel = speedOf(t)
         local low = tp + Vector(0, 0, 20)
         local fly = math.min(from:Distance(low) / speed, 3)
@@ -250,6 +255,7 @@ if SERVER then
         s.vel = (aim - from):GetNormalized() * speed
         s.owner = self
         s.training = self.Training
+        s.size = D.Cfg("spiderShellSize")
         s:SetOwner(self)
         s:Spawn()
         self:EmitSound("weapons/explosives_cannons_superlazers/wpn_rocket_launcher_shoot_02.ogg", 110, 75)

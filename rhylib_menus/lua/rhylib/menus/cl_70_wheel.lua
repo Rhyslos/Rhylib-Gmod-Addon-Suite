@@ -28,7 +28,11 @@
     same rope while it's open.
 
     W.OpenList(title, list, code, opts) opens a wheel with no target
-    (opts.bottom = the index of the option to put straight at the bottom): list =
+    (opts.bottom = the index of the option to put straight at the bottom;
+    opts.groups = options in groups, opts.style "tabs" (one group at a
+    time, tabs along the top of the screen, mouse wheel or E / Q flips:
+    W.FlipTab) or "groups" (a small ring of groups, the one pointed at
+    fans its options out beyond it); see W.OpenList below): list =
     { { label, run, sub, disabled, col } } (col: a Color for a wider strip
     on the left edge), held while button code is down (rhylib_skills'
     squad wheel and rhylib_radio's ping wheel use it); let go on an
@@ -147,6 +151,61 @@ end
 -- W.Close(): closes the wheel without running anything.
 function W.Close()
     W.open, W.target, W.list, W.pick, W.pending, W.title = false, nil, nil, nil, nil, nil
+    W.groups, W.style, W.fan, W.onTab = nil, nil, nil, nil
+end
+
+-- (angles round the ring, clockwise from the top; turned so list[bottom]
+-- sits straight at the bottom)
+local function ringAngles(list, bottom)
+    local turn = 0
+    if bottom and list[bottom] then turn = 180 - (bottom - 1) * 360 / #list end
+    for i, o in ipairs(list) do o.angle = -90 + (i - 1) * 360 / #list + turn end
+end
+
+-- Grouped list wheels (opts.groups): "tabs" shows one group's options at
+-- a time (W.FlipTab), "groups" shows the groups on a small ring, and the
+-- one pointed at fans its options out beyond it.
+local GROUP_BW, GROUP_BH, GROUP_RING = 160, 48, 135
+local FAN_BW, FAN_BH, FAN_OUT = 180, 50, 150
+local FAN_AT, FAN_KEEP = 105, 84   -- (cursor px: past FAN_AT picks in the fan; under FAN_KEEP lets go of it)
+
+local function showTab(i)
+    local g = W.groups[i]
+    W.tab = i
+    W.list = g.items
+    ringAngles(g.items, g.bottom)
+end
+
+-- W.FlipTab(d): the next (d = 1) or previous (-1) group of a "tabs" wheel.
+function W.FlipTab(d)
+    if not (W.open and W.groups and W.style == "tabs") then return end
+    local n = #W.groups
+    showTab((W.tab - 1 + d) % n + 1)
+    if W.onTab then W.onTab(W.tab) end
+    surface.PlaySound("ui/buttonrollover.wav")
+end
+
+-- (a group's fan: the angle between its options, as small as lets
+-- neighbours clear each other across or down)
+local function fanAngles(g)
+    if g.fanFor == g.angle then return end
+    g.fanFor = g.angle
+    local n = #g.items
+    local r = GROUP_RING + FAN_OUT
+    local step = 10
+    for _ = 1, 40 do
+        local ok = true
+        for i = 1, n - 1 do
+            local a1 = math.rad(g.angle + (i - 1 - (n - 1) / 2) * step)
+            local a2 = math.rad(g.angle + (i - (n - 1) / 2) * step)
+            local dx = math.abs(math.cos(a2) - math.cos(a1)) * r
+            local dy = math.abs(math.sin(a2) - math.sin(a1)) * r
+            if dx < FAN_BW + 8 and dy < FAN_BH + 6 then ok = false break end
+        end
+        if ok then break end
+        step = step + 2
+    end
+    for i, o in ipairs(g.items) do o.angle = g.angle + (i - 1 - (n - 1) / 2) * step end
 end
 
 -- A wheel from a fixed list, no target (held with button code).
@@ -158,13 +217,44 @@ end
 --   }, code)
 -- opts.bottom = an index in list: the ring is turned so that option sits
 -- straight at the bottom.
+--
+-- Grouped: opts.groups = { { label, col, sub, bottom, items = { options } } },
+-- list unused (pass {}); opts.style "tabs" (default: one group at a time,
+-- tabs along the top of the screen, mouse wheel or E / Q flips; opts.tab
+-- = the group it opens on, opts.onTab(i) when it flips) or "groups" (the
+-- groups on a small ring; pointing at one fans out its options, pushing
+-- on picks one; a group with one option runs it straight away).
 function W.OpenList(title, list, code, opts)
-    if W.open or #list == 0 then return false end
-    local turn = 0
-    local b = opts and opts.bottom
-    if b and list[b] then turn = 180 - (b - 1) * 360 / #list end
-    for i, o in ipairs(list) do o.angle = -90 + (i - 1) * 360 / #list + turn end
-    W.open, W.target, W.list, W.title, W.code = true, nil, list, title, code
+    if W.open then return false end
+    opts = opts or {}
+    local groups = opts.groups
+    if groups then
+        local keep = {}
+        for _, g in ipairs(groups) do if g.items and #g.items > 0 then keep[#keep + 1] = g end end
+        if #keep == 0 then return false end
+        W.groups, W.style, W.onTab, W.fan = keep, opts.style == "groups" and "groups" or "tabs", opts.onTab, nil
+        if W.style == "tabs" then
+            showTab(math.Clamp(math.floor(tonumber(opts.tab) or 1), 1, #keep))
+        else
+            list = {}
+            for _, g in ipairs(keep) do
+                if #g.items == 1 then
+                    local o = g.items[1]
+                    list[#list + 1] = { label = g.label or o.label, sub = o.disabled and nil or (o.sub or g.sub), run = o.run, disabled = o.disabled, col = o.col or g.col }
+                else
+                    list[#list + 1] = { label = g.label, sub = g.sub or (#g.items .. " orders  >"), col = g.col, items = g.items }
+                end
+            end
+            ringAngles(list)
+            W.list = list
+        end
+    else
+        if #list == 0 then return false end
+        W.groups = nil
+        ringAngles(list, opts.bottom)
+        W.list = list
+    end
+    W.open, W.target, W.title, W.code = true, nil, title, code
     W.cx, W.cy = 0, 0
     W.openedAt = RealTime()
     surface.PlaySound("ui/buttonrollover.wav")
@@ -190,6 +280,11 @@ local function isDown(t)
 end
 
 Rhylib.Hook.Add("PlayerBindPress", "menus.wheel", function(ply, bind, pressed, code)
+    -- (a "tabs" wheel: the mouse wheel, E and Q flip the group)
+    if pressed and W.open and W.groups and W.style == "tabs" then
+        if string.find(bind, "invnext", 1, true) or string.find(bind, "+use", 1, true) then W.FlipTab(1) return true end
+        if string.find(bind, "invprev", 1, true) or bind == "+menu" then W.FlipTab(-1) return true end
+    end
     if pressed and bind == "+reload" then
         W.lastReload = RealTime()
         -- (Shift + E + R pressed a little late: the wheel that just opened goes away)
@@ -269,17 +364,34 @@ end, -40)
 
 -- W.PickOption(s): the option the virtual cursor points at (nearest by
 -- angle), or nil inside the dead zone. s = screen scale (ScrH() / 1080).
-function W.PickOption(s)
-    if not W.list then return nil end
-    local len = math.sqrt(W.cx * W.cx + W.cy * W.cy)
-    if len < DEADZONE * s then return nil end
-    local ang = math.deg(math.atan2(W.cy, W.cx))
+local function nearest(list, ang)
     local best, bestD
-    for _, o in ipairs(W.list) do
+    for _, o in ipairs(list) do
         local d = math.abs(math.NormalizeAngle(ang - o.angle))
         if not bestD or d < bestD then best, bestD = o, d end
     end
     return best
+end
+function W.PickOption(s)
+    if not W.list then return nil end
+    local len = math.sqrt(W.cx * W.cx + W.cy * W.cy)
+    if len < DEADZONE * s then
+        W.fan = nil
+        return nil
+    end
+    local ang = math.deg(math.atan2(W.cy, W.cx))
+    if W.style ~= "groups" then return nearest(W.list, ang) end
+    -- (a "groups" wheel: the group pointed at fans out; further out, held
+    -- on that group until the cursor comes back in, picks in its fan)
+    local fan = W.fan
+    if not (fan and len >= FAN_KEEP * s) then
+        local g = nearest(W.list, ang)
+        fan = g and g.items and g or nil
+        W.fan = fan
+        if not fan or len < FAN_AT * s then return g end
+    end
+    fanAngles(fan)
+    return nearest(fan.items, ang)
 end
 
 -- (theme tokens; the dark values are the wheel's look)
@@ -319,7 +431,7 @@ Rhylib.Hook.Add("HUDPaint", "menus.wheel", function()
 
     local dz = DEADZONE * s
     draw.RoundedBox(dz, cx - dz, cy - dz, dz * 2, dz * 2, COL_DEAD)
-    draw.SimpleText(pick and "" or "Cancel", UI.Font(14), cx, cy + 9 * s, UI.Colors.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    draw.SimpleText((pick and (pick.run or pick.disabled)) and "" or "Cancel", UI.Font(14), cx, cy + 9 * s, UI.Colors.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     if W.title then
         draw.SimpleText(W.title, UI.Font(15, 700), cx, cy - 9 * s, UI.Colors.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     elseif IsValid(W.target) then
@@ -330,9 +442,10 @@ Rhylib.Hook.Add("HUDPaint", "menus.wheel", function()
     -- (more than 10 options: smaller boxes; the ring grows until
     -- neighbours clear each other across or down)
     local bw, bh = n > 8 and 180 or 210, n > 8 and 50 or 58
-    local w, h = bw * s, bh * s
     local ring = RING * (n > 6 and 1.32 or 1)   -- (7+ options: wider, so they don't overlap)
-    if n > 8 then
+    if W.style == "groups" then bw, bh, ring = GROUP_BW, GROUP_BH, GROUP_RING end
+    local w, h = bw * s, bh * s
+    if n > 8 and W.style ~= "groups" then
         -- (the smallest ring where every pair of neighbours clears,
         -- across or down, all the way round)
         local step = math.pi * 2 / n
@@ -351,11 +464,11 @@ Rhylib.Hook.Add("HUDPaint", "menus.wheel", function()
         ring = math.min(need, 470)
     end
     local HUD = Rhylib.HUD
-    for _, o in ipairs(W.list) do
+    local function box(o, ring, w, h)
         local a = math.rad(o.angle)
         local ox, oy = cx + math.cos(a) * ring * s, cy + math.sin(a) * ring * s
         local bx, by = ox - w * 0.5, oy - h * 0.5
-        local isPick = pick == o
+        local isPick = pick == o or (W.fan == o)
         if HUD and HUD.Frame then
             HUD.Frame(bx, by, w, h, { ticks = isPick })
         else
@@ -379,6 +492,31 @@ Rhylib.Hook.Add("HUDPaint", "menus.wheel", function()
         if sub then
             draw.SimpleText(sub, UI.Font(13), ox, oy + 12 * s, o.disabled and UI.Colors.bad or UI.Colors.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         end
+    end
+    for _, o in ipairs(W.list) do box(o, ring, w, h) end
+    if W.style == "groups" and W.fan then
+        fanAngles(W.fan)
+        for _, o in ipairs(W.fan.items) do box(o, GROUP_RING + FAN_OUT, FAN_BW * s, FAN_BH * s) end
+    end
+    if W.groups and W.style == "tabs" then
+        -- (the groups along the top of the screen)
+        local ng = #W.groups
+        local tw, th, gap = 150 * s, 34 * s, 4 * s
+        local x0 = cx - (ng * tw + (ng - 1) * gap) * 0.5
+        local ty = 36 * s
+        for i, g in ipairs(W.groups) do
+            local tx = x0 + (i - 1) * (tw + gap)
+            local on = i == W.tab
+            if HUD and HUD.Frame then HUD.Frame(tx, ty, tw, th, { ticks = on }) else draw.RoundedBox(0, tx, ty, tw, th, UI.Colors.bg) end
+            if on then
+                surface.SetDrawColor(COL_PICK)
+                surface.DrawRect(tx + 1, ty + 1, tw - 2, th - 2)
+                surface.SetDrawColor(g.col or UI.Colors.accent)
+                surface.DrawRect(tx + 1, ty + th - 4 * s, tw - 2, 3 * s)
+            end
+            draw.SimpleText(string.upper(g.label or ""), UI.Font(14, on and 700 or 600), tx + tw * 0.5, ty + th * 0.5, on and UI.Colors.text or UI.Colors.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
+        draw.SimpleTextOutlined("Mouse wheel or E / Q: next group", UI.Font(13, 600), cx, ty + th + 14 * s, COL_HINT, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, COL_HINT_EDGE)
     end
     draw.RoundedBox(4 * s, cx + W.cx - 4 * s, cy + W.cy - 4 * s, 8 * s, 8 * s, UI.Colors.text)
 end)
