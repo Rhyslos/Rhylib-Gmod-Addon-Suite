@@ -434,7 +434,7 @@ end
 -- Calls for help (D.CallHelp, D.CloneCall) are in sv_40_squads.
 
 -- The odds around a clone: friends (clones and players) within
--- ctOddsFriends, enemies (B2s count double) within ctOddsEnemies, and
+-- ctOddsFriends, enemies (B2s count double, an AAT tank aatOdds) within ctOddsEnemies, and
 -- where the enemies are (their middle).
 -- D.CloneOdds(clone) -> friends, enemies, middle (Vector or nil). The
 -- clone counts itself as a friend.
@@ -453,7 +453,8 @@ function D.CloneOdds(c)
         if IsValid(d) then
             local dp = d:GetPos()
             if dp:DistToSqr(pos) < er2 then
-                local w = d:Kind().big and 2 or 1
+                local k = d:Kind()
+                local w = k.weight and (tonumber(D.Cfg(k.weight)) or 1) or (k.big and 2 or 1)   -- (kind.weight: the AAT tank counts as several)
                 e = e + w
                 sum:Add(dp * w)
             end

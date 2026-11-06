@@ -353,7 +353,7 @@ Rhylib.Hook.Add("PostDrawTranslucentRenderables", "droids.stealthcones", functio
             local p = d:GetPos()
             if p:DistToSqr(eye) < 3000 * 3000 then
                 drawn = drawn + 1
-                local R = D.Cfg(d:Kind().range)
+                local R = d.SightRange and d:SightRange() or D.Cfg(d:Kind().range)
                 local yaw = d:GetAngles().y
                 local z = p.z + 4
                 local full, wide = s == 1 and COL_FULL or COL_SUSP, s == 1 and COL_WIDE or COL_SUSPW

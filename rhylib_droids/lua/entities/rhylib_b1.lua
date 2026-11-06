@@ -140,6 +140,12 @@ function ENT:Kind()
     return Rhylib.Droids.KINDS[self.DroidKind] or Rhylib.Droids.KINDS.b1
 end
 
+-- ENT:SightRange() -> how far it sees and fights (its row's range key;
+-- the AAT tank overrides it). Shared.
+function ENT:SightRange()
+    return Rhylib.Droids.Cfg(self:Kind().range)
+end
+
 -- Shared. Sets the model on both realms; server only: cap check (over
 -- the cap = removed next tick, self.overCap), registers it in D.active /
 -- D.clones / D.commanders, health and speed from config, guard mode at
@@ -336,7 +342,7 @@ if SERVER then
         local now = CurTime()
         if now < self.nextLook then return self.target end
         local k = self:Kind()
-        local range = self.artillery and D.Cfg("artyRange") or D.Cfg(k.range)
+        local range = self.artillery and D.Cfg("artyRange") or self:SightRange()
         local pos = self:GetPos()
         local cur = self.target
         -- Targets in range, sorted nearest first (insertion sort, few).
@@ -761,8 +767,7 @@ if SERVER then
     -- ENT:OtherTarget(t): another enemy within range it can see (a few
     -- checks at most), or nil.
     function ENT:OtherTarget(t)
-        local k = self:Kind()
-        local range = D.Cfg(k.range)
+        local range = self:SightRange()
         local pos, tries = self:GetPos(), 0
         for _, p in ipairs(self:TargetList()) do
             if p ~= t and valid(p) and p:GetPos():DistToSqr(pos) < range * range then
@@ -833,7 +838,7 @@ if SERVER then
 
     -- Any target within 1.5x range (distance only, no traces).
     function ENT:AnyoneNear()
-        local r = D.Cfg(self:Kind().range) * 1.5
+        local r = self:SightRange() * 1.5
         local pos = self:GetPos()
         for _, p in ipairs(self:TargetList()) do
             if IsValid(p) and not p.rhylibObjTarget and p:GetPos():DistToSqr(pos) < r * r then return true end

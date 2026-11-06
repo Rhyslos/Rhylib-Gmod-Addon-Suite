@@ -19,6 +19,8 @@
                           category in the spawn window's Rhy's tab
       class               entity placed by LMB (RMB removes things of it)
       count = true        "Droids at once" 1/3/5 places that many in a ring
+      ring = units        radius of that ring (default 45 + 6 per NPC; big NPCs such as the AAT tank)
+      ghostYaw = fn       fn(model) -> degrees the placement ghost is turned (an NPC that turns its own model)
       named = true        gets the "Beacon name" text (SetBeaconName)
       marker, side        droid marker kind 1-3 and side (1 = clones)
       order, side         a brush: D.PaintMode on NPCs near the aim point
@@ -67,6 +69,18 @@ local ALL = {
     { id = "spider", name = "DSD1 dwarf spider droid", cat = "Droid NPCs", class = "rhylib_spider", count = true },
     { id = "crab", name = "LM-432 crab droid", cat = "Droid NPCs", class = "rhylib_crab", count = true },
     { id = "droideka", name = "Droideka", cat = "Droid NPCs", class = "rhylib_droideka", count = true },
+    { id = "aat", name = "AAT tank", cat = "Droid NPCs", class = "rhylib_aat", count = true, ring = 480,
+        ghostYaw = function(model)
+            local D = Rhylib.Droids
+            if not (D and D.Cfg) then return 0 end
+            return tonumber(D.Cfg(model == D.Cfg("aatModel") and "aatYawOffset" or "aatFallbackYawOffset")) or 0
+        end },
+    { id = "aat_mortar", name = "AAT mortar tank", cat = "Droid NPCs", class = "rhylib_aat_mortar", count = true, ring = 480,
+        ghostYaw = function(model)
+            local D = Rhylib.Droids
+            if not (D and D.Cfg) then return 0 end
+            return tonumber(D.Cfg(model == D.Cfg("aatModel") and "aatYawOffset" or "aatFallbackYawOffset")) or 0
+        end },
     { id = "aqua", name = "Aqua droid", cat = "Droid NPCs", class = "rhylib_aqua_droid", count = true },
     { id = "b1_commander", name = "B1 commander droid", cat = "Droid NPCs", class = "rhylib_b1_commander", count = true },
     { id = "bx", name = "BX commando droid", cat = "Droid NPCs", class = "rhylib_bx_commando", count = true },

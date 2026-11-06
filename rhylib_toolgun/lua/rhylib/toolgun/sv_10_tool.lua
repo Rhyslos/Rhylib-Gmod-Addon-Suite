@@ -228,7 +228,7 @@ local function place(ply, e, count, name, mode)
         if count > 1 then
             -- A small ring around the spot.
             local a = (i / count) * math.pi * 2
-            local r = 45 + count * 6
+            local r = e.ring or (45 + count * 6)   -- (e.ring: big NPCs, the AAT tank)
             pos = pos + Vector(math.cos(a) * r, math.sin(a) * r, 0)
             local down = util.TraceLine({ start = pos + Vector(0, 0, 40), endpos = pos - Vector(0, 0, 120), mask = MASK_SOLID })
             if down.Hit then pos = down.HitPos end
@@ -454,7 +454,7 @@ local function removable(ent)
     if ent.rhylibToolSpawned then return { class = ent:GetClass() } end
     local par = ent:GetParent()
     if IsValid(par) and par.rhylibToolSpawned then return { class = par:GetClass(), ent = par } end
-    if ent.IsRhylibDroid or ent.IsRhylibClone or ent:GetClass() == "rhylib_b2_rocket" or ent:GetClass() == "rhylib_spider_shell" then return { class = ent:GetClass() } end
+    if ent.IsRhylibDroid or ent.IsRhylibClone or ent:GetClass() == "rhylib_b2_rocket" or ent:GetClass() == "rhylib_spider_shell" or ent:GetClass() == "rhylib_aat_shell" then return { class = ent:GetClass() } end
     -- Grapple ropes and ziplines (staff with the full toolgun only: no entry);
     -- a zipline's far end stands for its line.
     local cls = ent:GetClass()

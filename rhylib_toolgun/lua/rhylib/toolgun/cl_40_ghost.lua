@@ -96,14 +96,14 @@ Rhylib.Hook.Add("Think", "toolgun.ghost", function()
         if count > 1 then
             -- (the same ring the server places them in)
             local a = (i / count) * math.pi * 2
-            local r = 45 + count * 6
+            local r = e.ring or (45 + count * 6)
             pos = pos + Vector(math.cos(a) * r, math.sin(a) * r, 0)
             local down = util.TraceLine({ start = pos + Vector(0, 0, 40), endpos = pos - Vector(0, 0, 120), mask = MASK_SOLID })
             if down.Hit then pos = down.HitPos end
         end
         local g = ghost(i, model)
         if g then
-            g:SetAngles(Angle(0, yaw, 0))
+            g:SetAngles(Angle(0, yaw + (e.ghostYaw and e.ghostYaw(model) or 0), 0))   -- (e.ghostYaw: a model turned on its NPC, the AAT tank)
             -- (sits on the surface like the real thing)
             local mins = g:OBBMins()
             g:SetPos(pos + tr.HitNormal * 2 - Vector(0, 0, math.min(mins.z, 0)))

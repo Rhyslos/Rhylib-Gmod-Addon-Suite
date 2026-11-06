@@ -21,7 +21,7 @@
     squad (cut into squads of squadSize), or a GM groups NPCs in the
     toolgun's Command mode (D.MakeSquad). Clones following an officer,
     artillery and the NPCs guarding it keep their own way of following and
-    are never put in a squad.
+    are never put in a squad; nor are kinds with noSquad (the AAT tank).
 
     Roam and patrol groups (D.WanderGroups): NPCs given roam or patrol are
     cut into groups of wanderClones / wanderDroids (roaming droids left
@@ -104,10 +104,10 @@ local function boxKeep(sq, yaw)
 end
 
 -- Can this NPC be in a squad? (Not following an officer or an NPC, not
--- artillery, alive.)
+-- artillery, not a kind that is never in one (noSquad: the AAT tank), alive.)
 local function squadable(d)
     return IsValid(d) and (d.IsRhylibDroid or d.IsRhylibClone) and d:Health() > 0
-        and not d.artillery and not d.leader and not d.overCap
+        and not d.artillery and not d.leader and not d.overCap and not (d.Kind and d:Kind().noSquad)
 end
 D.Squadable = squadable
 

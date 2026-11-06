@@ -5,7 +5,8 @@
 
     What this file changes from rhylib_b1:
       - model: config spiderModel (models/macieg/starwars/spider.mdl; missing: models/antlion.mdl), sized
-        to spiderHeight (or spiderScale), hull spiderHeight tall, eyes near
+        by spiderScale (1 = its own size, hull and eyes from its height;
+        0 = fitted to spiderHeight), hull that tall, eyes near
         the top of the body
       - animation: spiderSeqIdle / spiderSeqWalk / spiderSeqRun sequence
         (else the model's idle / walk / run activity, else the first
@@ -169,8 +170,8 @@ end
 -- ENT:SpiderHull(h, scale): the hull h units tall; if the engine scaled
 -- the stored bounds by the model scale (height off by over 10%), set
 -- them again divided by it (server).
-function ENT:SpiderHull(h, scale)
-    local w = self.HullHalf or 20
+function ENT:SpiderHull(h, scale, wide)
+    local w = wide or self.HullHalf or 20
     local mins, maxs = Vector(-w, -w, 0), Vector(w, w, h)
     self:SetCollisionBounds(mins, maxs)
     if scale > 0 and math.abs(self:OBBMaxs().z - h) > h * 0.1 then
@@ -189,17 +190,26 @@ function ENT:Initialize()
     local D = Rhylib.Droids
     local pre = self.CfgPrefix
     local h = math.max(D.Cfg(pre .. "Height"), 16)
-    -- Size: spiderScale, or fitted to spiderHeight.
+    -- Size: spiderScale (1 = the model's own size: the hull and eyes follow
+    -- the model's height, up to 400), or 0 = fitted to spiderHeight.
     local scale = D.Cfg(pre .. "Scale")
-    if not (scale and scale > 0) then
-        local mn, mx = self:GetModelBounds()
-        local mh = mn and mx and (mx.z - mn.z) or 0
+    local mn, mx = self:GetModelBounds()
+    local mh = mn and mx and (mx.z - mn.z) or 0
+    local wide
+    if scale and scale > 0 then
+        if mh > 16 then
+            h = math.Clamp(mh * scale, 16, 400)
+            -- (a little narrower than the model, so it still fits through doors)
+            local half = math.min(mx.x - mn.x, mx.y - mn.y) * 0.5 * scale * 0.7
+            wide = math.Clamp(half, self.HullHalf or 20, 64)
+        end
+    else
         scale = mh > 1 and math.Clamp(h / mh, 0.25, 4) or 1
     end
     if math.abs(scale - 1) > 0.01 then self:SetModelScale(scale, 0) end
-    self:SpiderHull(h, scale)
+    self:SpiderHull(h, scale, wide)
     -- (again a moment later, in case the scale lands after this tick)
-    timer.Simple(0.1, function() if IsValid(self) then self:SpiderHull(h, scale) end end)
+    timer.Simple(0.1, function() if IsValid(self) then self:SpiderHull(h, scale, wide) end end)
     self.eyeOff = Vector(0, 0, math.max(h * 0.85, 12))
     self.loco:SetMaxYawRate(D.Cfg(pre .. "TurnRate"))
     -- (the shared brain reads self.anims.shoot / throw: none here)

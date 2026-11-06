@@ -14,7 +14,9 @@
     doesn't swing it round. Blast
     (rhylib_weapons W.Explode) =
     the RPS-6's (Explosive radius / damage), hook Rhylib.Explosion strength
-    2 for comms jammers (kind "rocket"). Gives up after 12 s (explodes
+    2 for comms jammers (kind "rocket"); Rhylib.Weapons.topAttackHit is
+    this rocket while that blast's damage is dealt, if it was fired with a
+    lock (laser-guided: nil). Gives up after 12 s (explodes
     where it is).
     Cluster (rhylib_rps6 cluster mode, EOD Cluster rockets skill): spawned
     with aimAt, it isn't guided; it climbs the same way and heads for
@@ -201,6 +203,7 @@ if SERVER then
         self:SetMoveType(MOVETYPE_NONE)
         self:SetSolid(SOLID_NONE)
         self.dir = (self.dir or self:GetForward()):GetNormalized()
+        self.locked = IsValid(self.target)   -- (fired with a lock: W.topAttackHit)
         self.speed = Config.Get("weapons", "topSpeed")
         self.born = CurTime()
         self.dieAt = CurTime() + 12
@@ -247,14 +250,22 @@ if SERVER then
         local owner = IsValid(self.owner) and self.owner or game.GetWorld()
         local inflictor = IsValid(self.weapon) and self.weapon or self
         local ex = self.explosive or { radius = 200, damage = 250 }
-        Rhylib.Weapons.Explode({
-            pos = pos, radius = ex.radius, damage = ex.damage,
-            attacker = owner, inflictor = inflictor,
-            tier = ex.tier or 2, kind = "rocket",
-            effectData = { magnitude = 1, scale = 1 },
-            decal = true, decalFilter = self,
-            direct = ex.direct and { ent = hit, damage = ex.direct } or nil,
-        })
+        -- (W.topAttackHit while its damage is dealt, only for a rocket fired
+        -- with a lock: damage hooks can tell a locked rocket from a fired or
+        -- laser-guided one, e.g. rhylib_droids' AAT tank)
+        local W = Rhylib.Weapons
+        W.topAttackHit = self.locked and self or nil
+        ProtectedCall(function()
+            W.Explode({
+                pos = pos, radius = ex.radius, damage = ex.damage,
+                attacker = owner, inflictor = inflictor,
+                tier = ex.tier or 2, kind = "rocket",
+                effectData = { magnitude = 1, scale = 1 },
+                decal = true, decalFilter = self,
+                direct = ex.direct and { ent = hit, damage = ex.direct } or nil,
+            })
+        end)
+        W.topAttackHit = nil
         self:StopSound("weapons/rpg/rocket1.wav")
         self:Remove()
     end

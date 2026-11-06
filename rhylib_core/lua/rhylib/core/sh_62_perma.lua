@@ -76,7 +76,7 @@ end
 -- hands/viewmodels, ropes and lying bodies.
 local SKIP = { gmod_hands = true, predicted_viewmodel = true, viewmodel = true, rhylib_rope = true, rhylib_zipline = true, rhylib_zipline_end = true,
     rhylib_world_item = true, gmod_gamerules = true, physgun_beam = true,
-    rhylib_grenade = true, rhylib_he_planted = true, rhylib_b2_rocket = true, rhylib_spider_shell = true }   -- (live explosives)
+    rhylib_grenade = true, rhylib_he_planted = true, rhylib_b2_rocket = true, rhylib_spider_shell = true, rhylib_aat_shell = true }   -- (live explosives)
 
 -- P.Why(ent): nil if ent may be made permanent, else a reason for the player.
 function P.Why(e)
@@ -87,7 +87,8 @@ function P.Why(e)
     if e:IsNPC() or e:IsNextBot() then return "NPCs aren't kept (place them again each time)" end
     if e:IsVehicle() then return "Vehicles can't be made permanent" end
     if e:IsWeapon() and IsValid(e:GetOwner()) then return "Someone is holding that" end
-    if SKIP[e:GetClass()] or e:GetNW2Bool("rhylib_lyingRag", false) then return "That can't be made permanent" end
+    -- (rhylibNoPerma: a thing that is never kept, e.g. the AAT tank's wreck)
+    if SKIP[e:GetClass()] or e.rhylibNoPerma or e:GetNW2Bool("rhylib_lyingRag", false) then return "That can't be made permanent" end
     local par = e:GetParent()
     if IsValid(par) then return "That's attached to something else" end
     return nil

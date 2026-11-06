@@ -11,7 +11,8 @@
     Shared entity, made by ENT:FireRocket / ENT:FireDirectRocket in
     rhylib_b1.lua. Fields set before Spawn: r.vel (start velocity),
     r.owner (the droid, credited for the blast), r.training, and for the
-    rocket droid r.direct + r.diveAt (aim point). Training is also a DT
+    rocket droid r.direct + r.diveAt (aim point); r.damage / r.radius
+    replace b2RocketDamage / b2RocketRadius (the AAT tank's barrage). Training is also a DT
     Bool so clients pick the glow colour. Gone after 8 s or in the sky.
     The blast effect needs rhylib_republic (rhylib_emp).
 ]]
@@ -58,7 +59,7 @@ if SERVER then
         self.done = true
         local D = Rhylib.Droids
         local owner = IsValid(self.owner) and self.owner or self
-        local radius, damage = D.Cfg("b2RocketRadius"), D.Cfg("b2RocketDamage")
+        local radius, damage = self.radius or D.Cfg("b2RocketRadius"), self.damage or D.Cfg("b2RocketDamage")   -- (r.radius / r.damage: the AAT tank's barrage)
         -- (the rhylib_emp blast look: purple, orange for training; no jammer hook)
         Rhylib.Weapons.Explode({
             pos = pos, radius = radius, damage = damage,

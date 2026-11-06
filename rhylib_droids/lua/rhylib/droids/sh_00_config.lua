@@ -47,6 +47,20 @@
       rocket hit or a rocket blast at the bubble kills it; a droid popper
       drops the shield for
       droidekaShieldDownTime s. Model: droidekaModel.
+      AAT droid tank (rhylib_aat, entities/rhylib_aat.lua): a repulsor
+      hover tank (aatModel, skin aatSkin; missing: the HL2 APC prop) that
+      drives the navmesh on open ground only (areas too narrow for its
+      hull are left out of its routes), turns slowly and stops to fire.
+      Turret cannon (rhylib_aat_shell: a big red bolt-look shell, blast
+      aatCannonDamage / aatCannonRadius) direct, or lobbed as a mortar at
+      a target out of sight that it or another droid saw (aatMortarRange);
+      two side lasers that track infantry on their own; a rocket barrage
+      from the front tubes (aatRocketCount B2 rockets) at a group.
+      Armour: aatBlasterMult (rear aatRearMult); a lock-on rocket takes
+      1/aatLockonHits of its health, another direct rocket 1/aatRocketHits
+      (from behind: a kill); one HE charge on it or next to it kills it; a
+      droid popper stuns it aatStunTime s. Never in a squad; clones count
+      it as aatOdds droids.
       Training B1 / B2 (rhylib_b1_training, rhylib_b2_training): like the
       B1 and B2 with orange-yellow bolts that only take sim health
       (rhylib_training).
@@ -72,7 +86,7 @@
       one droids stand and shoot.
 
     Spawn menu: NPCs tab, "Rhy's B1 battle droids", "Rhy's B2 super
-    battle droids", "Rhy's Spider droids", "Rhy's Crab droids", "Rhy's Droidekas", "Rhy's Commando droids" and "Rhy's Training droids"
+    battle droids", "Rhy's Spider droids", "Rhy's Crab droids", "Rhy's Droidekas", "Rhy's Commando droids", "Rhy's Droid tanks" and "Rhy's Training droids"
     (admins). Droids don't hurt each other. At most maxActive droids exist at once.
 
     Clone troopers (rhylib_ct_*, spawn menu "Rhy's Clone troopers"):
@@ -157,8 +171,8 @@ Config.Register("droids", "artyBlasterRange", 1500, "Mortar squad artillery: clo
 
 -- DSD1 dwarf spider droid (rhylib_spider). Health is the B2's (b2Health).
 Config.Register("droids", "spiderModel", "models/macieg/starwars/spider.mdl", "DSD1 dwarf spider droid model (a missing one falls back to the HL2 antlion)")
-Config.Register("droids", "spiderScale", 0, "Spider droid: model size (0 = sized to spiderHeight)")
-Config.Register("droids", "spiderHeight", 64, "Spider droid: body height (units): its hull, its eyes and, with spiderScale 0, the model's size")
+Config.Register("droids", "spiderScale", 1, "Spider droid: model size (1 = the model's own size, its hull and eyes from the model's height; 0 = fitted to spiderHeight)")
+Config.Register("droids", "spiderHeight", 64, "Spider droid: body height (units) with spiderScale 0 (the model fitted to it), or for a model with no size")
 Config.Register("droids", "spiderSeqIdle", "", "Spider droid: standing animation (sequence name; empty = found by itself)")
 Config.Register("droids", "spiderSeqWalk", "", "Spider droid: walking animation (sequence name; empty = found by itself)")
 Config.Register("droids", "spiderSeqRun", "", "Spider droid: running animation (sequence name; empty = found by itself)")
@@ -188,8 +202,8 @@ Config.Register("droids", "spiderBellyHeight", 0.35, "Spider droid: under it = t
 
 -- LM-432 crab droid (rhylib_crab).
 Config.Register("droids", "crabModel", "models/funky/starwars/crab.mdl", "LM-432 crab droid model (a missing one falls back to the HL2 headcrab)")
-Config.Register("droids", "crabScale", 0, "Crab droid: model size (0 = sized to crabHeight)")
-Config.Register("droids", "crabHeight", 56, "Crab droid: body height (units): its hull, its eyes and, with crabScale 0, the model's size")
+Config.Register("droids", "crabScale", 1, "Crab droid: model size (1 = the model's own size, its hull and eyes from the model's height; 0 = fitted to crabHeight)")
+Config.Register("droids", "crabHeight", 56, "Crab droid: body height (units) with crabScale 0 (the model fitted to it), or for a model with no size")
 Config.Register("droids", "crabSeqIdle", "", "Crab droid: standing animation (sequence name; empty = found by itself)")
 Config.Register("droids", "crabSeqWalk", "", "Crab droid: walking animation (sequence name; empty = found by itself)")
 Config.Register("droids", "crabSeqRun", "", "Crab droid: running animation (sequence name; empty = found by itself)")
@@ -266,6 +280,75 @@ Config.Register("droids", "droidekaShieldScale", 0.69, "Droideka shield: bubble 
 Config.Register("droids", "droidekaShieldRadius", 0, "Droideka shield: bubble radius in units (0 = from the model, droidekaShieldScale)")
 Config.Register("droids", "droidekaInsideMult", 1.3, "Droideka: damage multiplier on hits from someone inside its shield while it is up")
 Config.Register("droids", "droidekaShieldDownTime", 5, "Droideka: seconds a droid popper's EMP keeps its shield down")
+
+-- AAT droid tank (rhylib_aat).
+Config.Register("droids", "aatModel", "models/starwarsbattlefrontii/vehicles/aat.mdl", "AAT droid tank model (a missing one falls back to the HL2 APC prop)")
+Config.Register("droids", "aatSkin", 1, "AAT droid tank: model skin (0 = the first; 1 = the second, blue CIS colours)")
+Config.Register("droids", "aatYawOffset", 0, "AAT droid tank: turns the model by this many degrees so its front points the way it drives (its root bone)")
+Config.Register("droids", "aatFallbackYawOffset", 0, "AAT droid tank: the same turn for the fallback model")
+Config.Register("droids", "aatTurretAxis", "p", "AAT droid tank: which angle of the turret bone (main_gun) turns it left / right: p, y or r, - in front to reverse")
+Config.Register("droids", "aatBarrelAxis", "-r", "AAT droid tank: which angle of the barrel bone (main_gun_part) raises it: p, y or r, - in front to reverse")
+Config.Register("droids", "aatSideYawAxis", "p", "AAT droid tank: which angle of a side gun bone (gun_side_L / R) turns it left / right: p, y or r, - in front to reverse")
+Config.Register("droids", "aatSidePitchAxis", "-r", "AAT droid tank: which angle of a side gun bone raises it: p, y or r, - in front to reverse")
+Config.Register("droids", "aatHealth", 3000, "AAT droid tank: health")
+Config.Register("droids", "aatSpeed", 170, "AAT droid tank: driving speed (units/s)")
+Config.Register("droids", "aatAccel", 140, "AAT droid tank: acceleration (units/s each second)")
+Config.Register("droids", "aatTurnRate", 35, "AAT droid tank: how fast its hull turns (degrees per second)")
+Config.Register("droids", "aatHullHalf", 170, "AAT droid tank: half the width of its square hull (units); routes leave out navmesh areas where that hull doesn't fit")
+Config.Register("droids", "aatHullHeight", 190, "AAT droid tank: hull height (units)")
+Config.Register("droids", "aatHover", 14, "AAT droid tank: how high the model floats over the ground (units, looks only)")
+Config.Register("droids", "aatRange", 15000, "How far an AAT droid tank sees and fires directly (units)")
+Config.Register("droids", "aatReaction", 1.2, "Seconds before an AAT droid tank starts firing at a new target")
+Config.Register("droids", "aatStandoff", 1600, "AAT droid tank: in a fight it drives no closer than this to its target (units; aggression 5: 60% of it)")
+Config.Register("droids", "aatOdds", 6, "AAT droid tank: clones count it as this many droids when weighing the odds")
+Config.Register("droids", "aatTurretRate", 35, "AAT droid tank: how fast the turret turns and the barrel rises (degrees per second)")
+Config.Register("droids", "aatBarrelMin", -8, "AAT droid tank: lowest barrel angle (degrees)")
+Config.Register("droids", "aatBarrelMax", 45, "AAT droid tank: highest barrel angle (degrees)")
+Config.Register("droids", "aatCannonLength", 228, "AAT droid tank: shells leave this far along the barrel from its pivot (units)")
+Config.Register("droids", "aatCannonInterval", 6, "AAT droid tank: seconds between cannon shells")
+Config.Register("droids", "aatCannonDamage", 160, "AAT droid tank shell: blast damage at the centre")
+Config.Register("droids", "aatCannonDirect", 120, "AAT droid tank shell: extra blast damage to what it hits")
+Config.Register("droids", "aatCannonRadius", 300, "AAT droid tank shell: blast radius (units)")
+Config.Register("droids", "aatCannonMin", 500, "AAT droid tank: closest target it fires the cannon at (units)")
+Config.Register("droids", "aatCannonSpread", 30, "AAT droid tank: cannon miss distance per 1000 units of range")
+Config.Register("droids", "aatShellSpeed", 3500, "AAT droid tank shell: speed fired directly (units/s)")
+Config.Register("droids", "aatShellSize", 4, "AAT droid tank shell: size of its look as a multiple of a B1 blaster bolt")
+Config.Register("droids", "aatMortarRange", 20000, "AAT droid tank mortar: furthest target it lobs shells at (out of its sight: one it lost sight of, or one another droid sees)")
+Config.Register("droids", "aatMortarStandoff", 0, "AAT mortar tank: closes in only to this far from its target, then shells it from there (0 = 60% of aatMortarRange; at most 90% of it)")
+Config.Register("droids", "aatMortarMin", 900, "AAT droid tank mortar: closest target it lobs shells at (units)")
+Config.Register("droids", "aatMortarPitch", 40, "AAT droid tank mortar: barrel angle of a lobbed shell (degrees, at most aatBarrelMax)")
+Config.Register("droids", "aatMortarMaxFlight", 12, "AAT droid tank mortar: longest flight time (seconds)")
+Config.Register("droids", "aatMortarSpread", 45, "AAT droid tank mortar: miss distance per 1000 units (tightens on repeated shots at one target)")
+Config.Register("droids", "aatLaserLength", 74, "AAT droid tank: side laser bolts leave this far along each gun from its pivot (units)")
+Config.Register("droids", "aatLaserDamage", 14, "AAT droid tank: side laser damage per bolt")
+Config.Register("droids", "aatLaserRPM", 420, "AAT droid tank: shots per minute of each side laser")
+Config.Register("droids", "aatLaserSpread", 1.6, "AAT droid tank: side laser inaccuracy cone (degrees), more against moving targets")
+Config.Register("droids", "aatLaserRange", 6000, "AAT droid tank: how far the side lasers fire (units)")
+Config.Register("droids", "aatLaserArc", 100, "AAT droid tank: each side laser turns this far left and right of straight ahead (degrees)")
+Config.Register("droids", "aatLaserTurn", 150, "AAT droid tank: how fast the side lasers turn (degrees per second)")
+Config.Register("droids", "aatRocketCount", 6, "AAT droid tank: rockets in one barrage")
+Config.Register("droids", "aatRocketCooldown", 18, "AAT droid tank: seconds between rocket barrages")
+Config.Register("droids", "aatRocketDamage", 80, "AAT droid tank rocket: blast damage at the centre")
+Config.Register("droids", "aatRocketRadius", 220, "AAT droid tank rocket: blast radius (units)")
+Config.Register("droids", "aatRocketMin", 600, "AAT droid tank: closest group it fires a barrage at (units)")
+Config.Register("droids", "aatRocketMax", 3500, "AAT droid tank: furthest group it fires a barrage at (units)")
+Config.Register("droids", "aatRocketSpread", 220, "AAT droid tank: barrage rockets land within this radius of the group's middle (units)")
+Config.Register("droids", "aatRocketCluster", 3, "AAT droid tank: enemies within aatClusterRadius of each other that make a group worth a barrage")
+Config.Register("droids", "aatClusterRadius", 450, "AAT droid tank: enemies this close to its target count as one group (barrage, and the cannon aims at the group's middle)")
+Config.Register("droids", "aatRocketFwd", 195, "AAT droid tank: rocket tubes this far in front of its centre (units)")
+Config.Register("droids", "aatRocketSide", 45, "AAT droid tank: rocket tubes this far left / right of its centre (units)")
+Config.Register("droids", "aatRocketUp", 70, "AAT droid tank: rocket tubes this high above its feet (units)")
+Config.Register("droids", "aatBlasterMult", 0.1, "AAT droid tank: damage taken from bolts, bullets, grenades and other blasts")
+Config.Register("droids", "aatRearMult", 0.5, "AAT droid tank: the same, from behind or landing on its back")
+Config.Register("droids", "aatRearShare", 0.33, "AAT droid tank: the back part of its length that counts as its rear")
+Config.Register("droids", "aatRearAngle", 45, "AAT droid tank: a shot from within this many degrees of straight behind it counts as from the rear")
+Config.Register("droids", "aatLockonHits", 3, "AAT droid tank: lock-on (top attack) rocket hits that destroy it")
+Config.Register("droids", "aatRocketHits", 3, "AAT droid tank: other direct rocket hits that destroy it (one from the rear destroys it)")
+Config.Register("droids", "aatChargeReach", 120, "AAT droid tank: a high explosive charge going off on it or this close to it destroys it (units)")
+Config.Register("droids", "aatStunTime", 6, "AAT droid tank: seconds a droid popper's EMP stops it moving and firing")
+Config.Register("droids", "aatDeathDamage", 150, "AAT droid tank: blast damage at its middle when it is destroyed")
+Config.Register("droids", "aatDeathRadius", 450, "AAT droid tank: blast radius when it is destroyed (units)")
+Config.Register("droids", "aatWreckTime", 30, "AAT droid tank: seconds its burning wreck stays (0 = none; nothing collides with it)")
 
 Config.Register("droids", "heavyHealth", 340, "B1 heavy: health")
 Config.Register("droids", "heavySpeed", 140, "B1 heavy: run speed")
@@ -478,6 +561,9 @@ D.B2T_MODEL = "models/aussiwozzi/cgi/b1droids/b2_battledroid_training.mdl"
       leads       (commanders) a field name: boosts only kinds with that
                   field set (bx_captain: "bx")
       healthMult  config key multiplying health (bx: bxHealthMult)
+      weight      config key: clones count it as this many droids in their
+                  odds (none: 2 for big kinds, else 1)
+      noSquad     never put in a squad (fights and moves as its own unit)
       bx          a BX commando (entities/rhylib_bx_commando.lua)
       medic       heals, treats and revives (clones)
       training    sim-only bolts and blasts, no kill credit
@@ -538,6 +624,17 @@ D.DROIDEKA_FALLBACK = "models/combine_turrets/floor_turret.mdl"
 D.KINDS.droideka = { name = "Droideka", modelCfg = "droidekaModel", fallback = D.DROIDEKA_FALLBACK, health = "droidekaHealth", speed = "droidekaSpeed",
     range = "droidekaRange", reaction = "droidekaReaction", damage = "droidekaDamage", rpm = "droidekaRPM", spread = "droidekaSpread", burst = { 6, 10 }, color = 2,
     big = true, sound = D.B2_SOUND, pitch = 115, style = "suppress", category = "Rhy's Droidekas", labelZ = 80 }
+
+-- AAT droid tank: its own entity (rhylib_aat: hover driving, turret
+-- cannon and mortar, side lasers, rocket barrage, armour). damage / rpm /
+-- spread are its side lasers'.
+D.AAT_FALLBACK = "models/props_vehicles/apc001.mdl"
+D.KINDS.aat = { name = "AAT droid tank", modelCfg = "aatModel", fallback = D.AAT_FALLBACK, health = "aatHealth", speed = "aatSpeed",
+    range = "aatRange", reaction = "aatReaction", damage = "aatLaserDamage", rpm = "aatLaserRPM", spread = "aatLaserSpread", burst = { 1, 1 }, color = 2,
+    big = true, sound = D.B2_SOUND, pitch = 80, style = "aat", category = "Rhy's Droid tanks", labelZ = 230, weight = "aatOdds", noSquad = true, aatRole = "tank" }
+-- (the mortar variant: hangs back and only lobs mortar shells, side lasers to defend itself)
+D.KINDS.aat_mortar = table.Copy(D.KINDS.aat)
+D.KINDS.aat_mortar.name, D.KINDS.aat_mortar.aatRole = "AAT mortar tank", "mortar"
 
 -- Training droids: yellow bolts (color 8), no kill credit.
 D.KINDS.b1t = variant("b1", "B1 training droid", D.B1T_MODEL, { training = true, color = 8 })
@@ -605,6 +702,8 @@ for _, v in ipairs({ "aat", "commander", "geonosis", "heavy", "marine", "securit
 end
 D.CLASSES.droideka = "rhylib_droideka"
 D.CLASSES.aqua = "rhylib_aqua_droid"
+D.CLASSES.aat = "rhylib_aat"
+D.CLASSES.aat_mortar = "rhylib_aat_mortar"
 D.CLASSES.bx, D.CLASSES.bx_captain, D.CLASSES.bx_training = "rhylib_bx_commando", "rhylib_bx_captain", "rhylib_bx_training"
 
 D.MODES = { "guard", "patrol", "attack", "roam" }   -- (index 1-4 on the wire, toolgun "New droids")
@@ -712,6 +811,7 @@ local PAGE_SECTIONS = {
     { "Spider droids", { "^spider" } },
     { "Crab droids", { "^crab" } },
     { "Droidekas", { "^droideka" } },
+    { "AAT droid tanks", { "^aat" } },
     { "Commando droids", { "^bx" } },
     { "Heavy & commander droids", { "^suppress", "^heavy", "^cmdHealth$", "^cmdRadius$", "^cmdSpread$", "^cmdReaction$", "^cmdPause$", "^cmdDeath", "^smoke" } },
     { "Cover & accuracy", { "^cover", "^blindSpread$", "^retreatFrac$", "^flash", "^settle", "^crowd" } },

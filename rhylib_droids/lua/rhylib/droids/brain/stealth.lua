@@ -101,7 +101,7 @@ return function(ENT, env)
         local c = D.Cfg
         local M = D.StealthMath   -- (sh_50_stealth.lua)
         local k = self:Kind()
-        local range = D.Cfg(k.range)
+        local range = self.SightRange and self:SightRange() or D.Cfg(k.range)
         local litRange = range * c("stealthLightsRange")
         local far = math.max(range, litRange)
         local stepR = math.max(c("stealthStepSprint"), c("stealthStepWalk"))
