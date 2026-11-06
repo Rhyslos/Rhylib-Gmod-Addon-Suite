@@ -88,11 +88,13 @@ end
 -- HUD.VisorActive(): true while the visor is drawn: rhylib_hud_visor on,
 -- layout isn't "thirdperson", alive, first person, not in a vehicle,
 -- helmet on (rhylib_gear NW2Bool rhylib_helmetOff), binoculars not in
--- weapon mode, and not holding the camera. Most HUD files ask this to
+-- weapon mode, not hidden by Rhylib.HUDHide (HUD.Suppressed) and not
+-- holding the camera. Most HUD files ask this to
 -- pick their visor or third-person look. Client only.
 -- Example: if Rhylib.HUD.VisorActive and Rhylib.HUD.VisorActive() then ... end
 function HUD.VisorActive()
     if not visorVar:GetBool() then return false end
+    if HUD.Suppressed and HUD.Suppressed() then return false end   -- (another addon hides the HUD: rhylib_toolgun staff view)
     if HUD.VisorLayout and HUD.VisorLayout() == "thirdperson" then return false end
     local ply = LocalPlayer()
     if not IsValid(ply) or not ply:Alive() or ply:InVehicle() or ply:ShouldDrawLocalPlayer() then return false end

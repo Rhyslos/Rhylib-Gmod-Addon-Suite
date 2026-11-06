@@ -29,6 +29,8 @@
     Client convar rhylib_hud_hotbar_fade (default 1, Settings): fade the
     bar when you're not switching.
     Shares HUD.HotbarRect with the stamina bar (cl_45_stamina.lua).
+    HUD.HotbarEntries() hands the entries to other HUDs. Not drawn while
+    HUD.LayoutHidden() (the number keys still work).
     The held slot uses HUD.Colors.accent (HUD colour "Selected"); the
     console's header labels follow "HUD text and lines" (hud.headText).
 ]]
@@ -495,11 +497,9 @@ local function drawConsole(active, alpha, s)
     end
 end
 
-Rhylib.Hook.Add("HUDPaint", "hud.hotbar", function()
-    if HUD.Hidden() then return end
-    local ply = LocalPlayer()
-    -- Rebuild five times a second, or straight away if a weapon on the bar
-    -- was removed (dying, dropping, being stripped).
+-- Rebuild five times a second, or straight away if a weapon on the bar
+-- was removed (dying, dropping, being stripped).
+local function refresh(ply)
     local stale = RealTime() >= nextBuild
     for i = 1, #entries do
         local w = entries[i].wep
@@ -509,6 +509,22 @@ Rhylib.Hook.Add("HUDPaint", "hud.hotbar", function()
         rebuild(ply)
         nextBuild = RealTime() + 0.2
     end
+end
+
+-- HUD.HotbarEntries(): the bar's entries, in order (read only; see the
+-- entries comment at the top). For other HUDs drawing their own bar
+-- (rhylib_toolgun's staff view). Example:
+--   for _, e in ipairs(HUD.HotbarEntries()) do print(e.key, e.name, e.wep) end
+function HUD.HotbarEntries()
+    local ply = LocalPlayer()
+    if IsValid(ply) then refresh(ply) end
+    return entries
+end
+
+Rhylib.Hook.Add("HUDPaint", "hud.hotbar", function()
+    if HUD.LayoutHidden() then return end
+    local ply = LocalPlayer()
+    refresh(ply)
     local count = #entries
     if count == 0 then return end
 

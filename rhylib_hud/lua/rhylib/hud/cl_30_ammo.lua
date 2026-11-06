@@ -204,7 +204,7 @@ local function drawEmpty(wep, x, y, w, sizes)
 end
 
 Rhylib.Hook.Add("HUDPaint", "hud.ammo", function()
-    if HUD.Hidden() then return end
+    if HUD.LayoutHidden() then return end
     -- The visor layouts f4/f5 draw the ammo with the hotbar (cl_42_layouts.lua).
     if HUD.LayoutDrawsAmmo and HUD.LayoutDrawsAmmo() then return end
     local ply = LocalPlayer()

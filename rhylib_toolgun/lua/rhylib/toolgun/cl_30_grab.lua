@@ -16,7 +16,9 @@
     point, for everyone who can see it; nothing shows through walls (it's
     drawn in the world).
 
-    Adds Tool.ToolMode(w) -> 0 / 1, Tool.SendMode(n), Tool.DrawPhysHUD().
+    Adds Tool.ToolMode(w) -> 0 / 1, Tool.SendMode(n), Tool.DrawPhysHUD()
+    (the toolgun info: cl_10_tool's Tool.DrawInfo, strip or side panel,
+    plus a "Physgun" tag by the crosshair; shows what you hold).
 ]]
 
 local Tool = Rhylib.Tool
@@ -183,12 +185,32 @@ Rhylib.Hook.Add("PostDrawTranslucentRenderables", "toolgun.grab", function(depth
     end
 end)
 
--- HUD in physgun mode (cl_10_tool's DrawHUD calls it).
+-- HUD in physgun mode (cl_10_tool's DrawHUD calls it): the crosshair tag
+-- and the toolgun info (Tool.DrawInfo: strip or panel), rebuilt only when
+-- the held thing or the key changes.
+local pc = {}
 function Tool.DrawPhysHUD()
-    local x, y = ScrW() * 0.5, ScrH() * 0.5 + 40
-    local key = cvPhysKey and string.upper(cvPhysKey:GetString()) or "T"
-    draw.SimpleTextOutlined("PHYSGUN MODE", Rhylib.UI.Font(16, 700), x, y, BEAM_COL, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
-    local f = Rhylib.UI.Font(13)
-    draw.SimpleTextOutlined("LMB hold: grab  ·  wheel: nearer / further  ·  R + mouse: turn  ·  RMB: freeze / unfreeze", f, x, y + 22, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
-    draw.SimpleTextOutlined(key .. " or hold E: other modes  ·  letting go of a permanent thing saves its spot", f, x, y + 38, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
+    if not (Tool.DrawInfo and Tool.DrawTag) then return end
+    local key = cvPhysKey and cvPhysKey:GetString() or "t"
+    local held = LocalPlayer():GetNW2Entity("rhylib_grabEnt")
+    if not IsValid(held) then held = nil end
+    if not pc.spec or pc.key ~= key or pc.held ~= held then
+        pc.key, pc.held = key, held
+        local name = held and ((held.PrintName and held.PrintName ~= "") and held.PrintName or held:GetClass()) or nil
+        pc.spec = {
+            head = "Physgun", titleLabel = "Mode", title = "PHYSGUN MODE", titleCol = BEAM_COL,
+            sub = "Letting go of a permanent thing saves its spot",
+            rows = { { label = "Holding", value = name or "Nothing" } },
+            keys = {
+                { "LMB hold", "grab", "Grab and carry" },
+                { "Wheel", "nearer / further", "Nearer / further" },
+                { "R + mouse", "turn", "Turn it" },
+                { "RMB", "freeze / unfreeze", "Freeze / unfreeze" },
+                { string.upper(key) .. " / hold E", "other modes", "Other modes" },
+                { "Let go", "a permanent thing saves its spot", false },   -- (the panel has it as its sub line)
+            },
+        }
+    end
+    Tool.DrawTag("Physgun", BEAM_COL)
+    Tool.DrawInfo(pc.spec)
 end

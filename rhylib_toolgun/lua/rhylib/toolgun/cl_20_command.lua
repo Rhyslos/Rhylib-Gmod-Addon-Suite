@@ -30,8 +30,10 @@
                       Unaware (stealth) / Alert (droids only: whether
                       they have to notice you first, rhylib_droids
                       stealth).
-    Selected NPCs get an outline (only for you). The HUD lists the
-    controls and the selection. The selection is kept while you switch
+    Selected NPCs get an outline (only for you). The toolgun info
+    (cl_10_tool's Tool.DrawInfo: bottom strip or side panel, setting
+    rhylib_tool_info) shows the selection, squads, route points, area
+    size and the keys; near the crosshair only a "Command · N" tag. The selection is kept while you switch
     weapons; it drops NPCs that die.
 
     Client only. Client convar rhylib_tool_command_key. Adds Tool.command
@@ -47,8 +49,7 @@ Tool.command = Tool.command or false
 local sel = {}          -- [npc] = true
 local selSide = nil     -- 1 clones, 2 droids
 local COL_SEL = Color(255, 220, 90)
-local COL = Color(255, 210, 80)
-local COL_DIM = Color(220, 220, 220)
+local COL = Rhylib.UI.Col("toolgun.hint", 255, 210, 80)   -- (theme token, shared with cl_10_tool)
 
 local OP = { move = 1, attack = 2, aggro = 3, mode = 4, formation = 5, group = 6, split = 7, remove = 8,
     assault = 9, spread = 10, defend = 11, area = 12, route = 13, alertness = 14 }
@@ -396,30 +397,73 @@ Rhylib.Hook.Add("PostDrawTranslucentRenderables", "toolgun.command", function(de
     end
 end)
 
--- HUD (cl_10_tool's DrawHUD calls this in Command mode).
+-- HUD (cl_10_tool's DrawHUD calls this in Command mode): the crosshair
+-- tag and the toolgun info (Tool.DrawInfo: strip or panel), rebuilt only
+-- when what it shows changes; the selection is counted 5 times a second.
+local ROUTE_NUM = {}
+for i = 1, 12 do ROUTE_NUM[i] = tostring(i) end
+local cc = { at = 0, n = 0, ns = 0, loose = 0 }
+local squadSeen = {}
 function Tool.DrawCommandHUD()
-    local list = Tool.Selection()
-    local x, y = ScrW() * 0.5, ScrH() * 0.5 + 40
-    local key = string.upper(cvKey:GetString())
-    draw.SimpleTextOutlined("COMMAND MODE" .. (selSide and (selSide == 1 and "  ·  clones" or "  ·  droids") or ""), Rhylib.UI.Font(16, 700), x, y, COL, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
-    local squads, loose = {}, 0
-    for _, e in ipairs(list) do
-        local id = e:GetNW2Int("rhylib_squad", 0)
-        if id > 0 then squads[id] = true else loose = loose + 1 end
+    if not (Tool.DrawInfo and Tool.DrawTag) then return end
+    local now = RealTime()
+    if now >= cc.at then
+        cc.at = now + 0.2
+        local list = Tool.Selection()
+        for k in pairs(squadSeen) do squadSeen[k] = nil end
+        local ns, loose = 0, 0
+        for _, e in ipairs(list) do
+            local id = e:GetNW2Int("rhylib_squad", 0)
+            if id > 0 then
+                if not squadSeen[id] then squadSeen[id] = true ns = ns + 1 end
+            else
+                loose = loose + 1
+            end
+        end
+        cc.n, cc.ns, cc.loose = #list, ns, loose
     end
-    local ns = table.Count(squads)
-    local line = #list == 0 and "Nothing selected" or string.format("%d selected  ·  %d squad%s%s", #list, ns, ns == 1 and "" or "s", loose > 0 and ("  ·  " .. loose .. " loose") or "")
-    draw.SimpleTextOutlined(line, Rhylib.UI.Font(14, 600), x, y + 22, COL_DIM, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
-    local f = Rhylib.UI.Font(13)
-    draw.SimpleTextOutlined("LMB select (hold: sweep)  ·  Shift+LMB add  ·  RMB move (drag: facing)  ·  RMB enemy: attack", f, x, y + 42, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
-    draw.SimpleTextOutlined("1-5 aggression  ·  6 global  ·  hold R: orders  ·  " .. key .. ": back to placing", f, x, y + 58, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
-    draw.SimpleTextOutlined(string.format("Shift+RMB: route point (%d)  ·  Ctrl+wheel: area %d m", #Tool.route, math.Round(Tool.cmdRadius * 0.019)),
-        f, x, y + 74, COL_DIM, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black)
+    local nr = #Tool.route
+    local area = math.Round(Tool.cmdRadius * 0.019)
+    local key = cvKey:GetString()
+    local side = selSide or 0
+    if not cc.spec or cc.sn ~= cc.n or cc.sns ~= cc.ns or cc.sl ~= cc.loose or cc.nr ~= nr or cc.area ~= area
+        or cc.key ~= key or cc.side ~= side then
+        cc.sn, cc.sns, cc.sl, cc.nr, cc.area, cc.key, cc.side = cc.n, cc.ns, cc.loose, nr, area, key, side
+        local who = side == 1 and "clones" or side == 2 and "droids" or nil
+        local rows = {
+            { label = "Selected", value = cc.n == 0 and "Nothing selected" or (cc.n .. " selected"), extra = who and ("· " .. who) or nil },
+            { label = "Squads", value = cc.ns .. " squad" .. (cc.ns == 1 and "" or "s"), extra = cc.loose > 0 and ("· " .. cc.loose .. " loose") or nil },
+            { label = "Route", hint = "Shift + RMB", value = nr .. " point" .. (nr == 1 and "" or "s") },
+            { label = "Area", hint = "Ctrl + wheel", value = area .. " m" },
+        }
+        local K = string.upper(key)
+        cc.spec = {
+            head = "Command", titleLabel = "Mode", title = "COMMAND MODE", titleCol = COL,
+            sub = cc.n == 0 and "LMB on a droid or clone selects its squad" or ("Orders go to the " .. (who or "selection")),
+            rows = rows,
+            keys = {
+                { "LMB", "select (hold: sweep)", "Select (hold: sweep over the ground)" },
+                { "Shift + LMB", "add", "Add to / take out of the selection" },
+                { "RMB", "move (drag: facing)", "Move there (drag: the way they face)" },
+                { "RMB enemy", "attack", "Attack it" },
+                { "1-5", "aggression", "Aggression of the selected squads" },
+                { "6", "global", "Back to the global aggression" },
+                { "hold R", "orders", "Order wheel" },
+                { "Shift + RMB", nil, "Patrol route point (on the first: clear)" },
+                { "Ctrl + wheel", nil, "Area size (a ring while Ctrl is held)" },
+                { K, "back to placing", "Back to placing" },
+            },
+        }
+        cc.tag = cc.n > 0 and ("Command · " .. cc.n) or "Command"
+    end
+    Tool.DrawTag(cc.tag, COL)
+    Tool.DrawInfo(cc.spec)
     -- (route point numbers)
     local nf = Rhylib.UI.Font(14, 800)
+    local edge = Rhylib.UI.Kit.C.edgeDark
     for i, p in ipairs(Tool.route) do
         local sp = (p + Vector(0, 0, 20)):ToScreen()
-        if sp.visible then draw.SimpleTextOutlined(tostring(i), nf, sp.x, sp.y, COL_ROUTE, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, color_black) end
+        if sp.visible then draw.SimpleTextOutlined(ROUTE_NUM[i] or tostring(i), nf, sp.x, sp.y, COL_ROUTE, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 1, edge) end
     end
 end
 

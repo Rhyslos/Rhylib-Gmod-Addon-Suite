@@ -77,7 +77,7 @@ Rhylib.Hook.Add("PostPlayerDraw", "hud.platehead", function(ply)
 end)
 
 Rhylib.Hook.Add("HUDPaint", "hud.target", function()
-    if HUD.Hidden() then return end
+    if HUD.LayoutHidden() then return end
     local me = LocalPlayer()
     local range = cfg("targetRange")
 

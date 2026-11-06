@@ -172,6 +172,7 @@ local function place(ply, e, count, name, mode)
             for _, ent in ipairs(list) do
                 ent.rhylibToolPlaced = true
                 if ent.CPPISetOwner then ent:CPPISetOwner(ply) end
+                if Tool.MarkPlacedBy then Tool.MarkPlacedBy(ent, ply) end   -- (who placed it: staff view X-ray label)
                 undo.AddEntity(ent)
             end
             undo.SetPlayer(ply)
@@ -198,6 +199,7 @@ local function place(ply, e, count, name, mode)
             for _, ent in ipairs(list) do
                 ent.rhylibToolPlaced = true
                 if ent.CPPISetOwner then ent:CPPISetOwner(ply) end
+                if Tool.MarkPlacedBy then Tool.MarkPlacedBy(ent, ply) end   -- (who placed it: staff view X-ray label)
                 undo.AddEntity(ent)
             end
             undo.SetPlayer(ply)
@@ -258,6 +260,7 @@ local function place(ply, e, count, name, mode)
             if IsValid(ent) then
                 ent.rhylibToolPlaced = true
                 if ent.CPPISetOwner then ent:CPPISetOwner(ply) end
+                if Tool.MarkPlacedBy then Tool.MarkPlacedBy(ent, ply) end   -- (who placed it: staff view X-ray label)
                 undo.Create(e.name)
                 undo.AddEntity(ent)
                 undo.SetPlayer(ply)

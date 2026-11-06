@@ -16,7 +16,7 @@ local HUD = Rhylib.HUD
 local shown = { hp = 100, ar = 0 }  -- smoothed values so bars slide instead of jump
 
 Rhylib.Hook.Add("HUDPaint", "hud.status", function()
-    if HUD.Hidden() then return end
+    if HUD.LayoutHidden() then return end
     if HUD.VisorActive and HUD.VisorActive() then return end
     local ply = LocalPlayer()
     local s = HUD.Scale()

@@ -6,8 +6,14 @@
     Adds: HUD.Colors (the meaning colours are HUD colour tokens, see
     Settings > HUD colours), HUD.Style (house style colours), HUD.Scale,
     HUD.SimHealth, HUD.HeaderH, HUD.Frame (the house-style plate),
-    HUD.Bar, HUD.Panel, HUD.Text, HUD.Margins, HUD.Hidden and HUD.Plate
-    (the third-person corner plates). No hooks.
+    HUD.Bar, HUD.Panel, HUD.Text, HUD.Margins, HUD.Hidden,
+    HUD.Suppressed, HUD.LayoutHidden and HUD.Plate (the third-person
+    corner plates).
+    Hook Rhylib.HUDHide(): return true from it to hide the normal HUD
+    layouts (visor, realistic frame, third-person plates, hotbar, ammo,
+    stamina, look-at name). Chat, notices, the kill feed, damage and the
+    held weapon's own DrawHUD still draw. rhylib_toolgun's staff view
+    uses it.
 ]]
 
 local HUD = Rhylib.HUD
@@ -235,6 +241,23 @@ function HUD.Hidden()
     if not IsValid(ply) or not ply:Alive() then return true end
     local wep = ply:GetActiveWeapon()
     return IsValid(wep) and wep:GetClass() == "gmod_camera"
+end
+
+-- HUD.Suppressed(): true while a Rhylib.HUDHide handler returns true
+-- (asked once a frame). HUD.LayoutHidden(): HUD.Hidden() or that; the
+-- HUD layouts check it, the damage effects only HUD.Hidden().
+local supFrame, supVal = -1, false
+function HUD.Suppressed()
+    local f = FrameNumber()
+    if f ~= supFrame then
+        supFrame = f
+        supVal = hook.Run("Rhylib.HUDHide") == true
+    end
+    return supVal
+end
+
+function HUD.LayoutHidden()
+    return HUD.Hidden() or HUD.Suppressed()
 end
 
 --[[

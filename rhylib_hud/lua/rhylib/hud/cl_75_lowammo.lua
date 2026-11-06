@@ -56,7 +56,7 @@ end
 HUD.LowAmmo = warning
 
 Rhylib.Hook.Add("HUDPaint", "hud.lowammo", function()
-    if not cv:GetBool() or HUD.Hidden() then return end
+    if not cv:GetBool() or HUD.LayoutHidden() then return end
     local ply = LocalPlayer()
     local G = Rhylib.Gear
     if G and G.Looking and G.Looking(ply) then return end   -- (looking through binoculars)

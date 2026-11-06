@@ -872,6 +872,13 @@ Rhylib.Hook.Add("HUDPaint", "radio.hud", function()
     if IsValid(wep) and wep:GetClass() == "gmod_camera" then return end
     local s = ScrH() / 1080
     local HUD = Rhylib.HUD
+    -- (the HUD is hidden, e.g. a staff view: no squares or plate, pings and
+    -- hails still show)
+    if HUD and HUD.Suppressed and HUD.Suppressed() then
+        drawMarkers(s)
+        drawHail(s)
+        return
+    end
     if HUD and HUD.VisorActive and HUD.VisorActive() and HUD.VisorStrip and HUD.VisorCheekY then
         drawVisor(HUD)
     else

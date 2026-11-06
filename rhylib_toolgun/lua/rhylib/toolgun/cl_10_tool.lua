@@ -9,7 +9,8 @@
     aggression of newly placed squads, 0 = global), rhylib_tool_alertness
     (0-2: alertness of placed droids, 0 = the server default, 1 alert,
     2 unaware = stealth), rhylib_tool_physgun_key (default
-    t: physgun mode on / off, cl_30_grab.lua), Settings > Weapons.
+    t: physgun mode on / off, cl_30_grab.lua), Settings > Weapons;
+    rhylib_tool_info (strip / panel: where the toolgun info goes).
     Console: rhylib_toolgun.
     The spawn window and its tab need rhylib_menus; without it R prints a
     note and rhylib_tool_entry <id> picks an entry. The droid mode and
@@ -17,7 +18,7 @@
     R: a tap opens the window (stays open), held 0.3 s+ closes on release,
     a tap while open closes, two taps within 0.35 s open the old Q menu.
     In Command mode (cl_20_command.lua) R held is the order wheel instead.
-    With a droid entry: the HUD shows PLACES AS <mode> big and coloured
+    With a droid entry: the info shows PLACES AS <mode> in its colour
     (GUARD, PATROL, ATTACK, ROAM, ASSAULT: to the side's assault point);
     Shift + wheel changes the mode, Alt + wheel the new squad's aggression,
     Shift + Alt + wheel the alertness (Default / Alert / Unaware); the
@@ -30,10 +31,23 @@
     Rhylib.SpawnTabItems).
     Look: the Rhy's tab's placing controls are one plate under the tiles,
     a row each with a caps caption (New droids: the five modes in their
-    colours; Aggression 1-5; Alertness, Unaware in blue; Droids at once,
-    Beacon name, Re-save). The HUD lines under and over the crosshair sit
-    on small dark plates with a coloured left edge. Colours are theme
-    tokens "toolgun.*" (cl_11_theme.lua).
+    colours; Aggression 1-5; Alertness, Unaware in blue; full access
+    only: X-ray (on, players, NPCs, spawned things, bombs / mines /
+    objectives, range 40 / 80 / 150 m) and Staff view (night vision,
+    names, minimal HUD), bound to cl_30_staffview's convars, read when
+    clicked or painted; Toolgun info (Bottom strip / Side panel); Droids
+    at once, Beacon name, Re-save). With many rows they get shorter.
+    Toolgun info (Tool.DrawInfo, also used by Command mode and physgun
+    mode): "strip" (default) is one sectioned bar near the bottom centre
+    (a caps label and a value per section, the keys last), kept above
+    the Simple HUD's hotbar and the visor cheeks; "panel" is a panel on
+    the right edge, vertically centred (header, name, label / value
+    grid, key caps), kept left of the Realistic HUD's side ladder. Near
+    the crosshair only a small tag (Tool.DrawTag): the short name with a
+    square in the mode colour, and "RMB: remove <name>" in red while
+    aiming at something removable. The info is rebuilt only when what
+    it shows changes. Colours are theme tokens "toolgun.*"
+    (cl_11_theme.lua).
 ]]
 
 local Tool = Rhylib.Tool
@@ -65,6 +79,7 @@ local cvAlert = CreateClientConVar("rhylib_tool_alertness", "0", true, false, "T
 local ALERT_NAMES = { [0] = "Default", "Alert", "Unaware" }
 local cvPhysKey = CreateClientConVar("rhylib_tool_physgun_key", "t", true, false, "Toolgun: key that switches physgun mode on and off")
 local cvCustom = CreateClientConVar("rhylib_tool_custom", "", true, false, "Toolgun: picked spawn-window thing (kind|name|skin|body|weapon|label)")
+local cvInfo = CreateClientConVar("rhylib_tool_info", "strip", true, false, "Toolgun: where its info goes (strip: a bar near the bottom, panel: a panel on the right)")
 -- The droid spawner's settings for the next one placed (right-click its tile: "Change spawner settings").
 local cvSpPreset = CreateClientConVar("rhylib_tool_sp_preset", "droid_small", true, false, "Toolgun: droid spawner preset squad")
 local cvSpMode = CreateClientConVar("rhylib_tool_sp_mode", "patrol", true, false, "Toolgun: droid spawner orders (patrol, roam, attack, guard)")
@@ -142,7 +157,8 @@ end
 
 -- Tool.Chosen(): the entry LMB uses now (only ones this player may use;
 -- never falls back to the Permanent tool).
-function Tool.Chosen()
+local chosenFrame, chosenId, chosenVal = -1, nil, nil
+local function chosen()
     local id = cvEntry:GetString()
     if id == "@custom" and Tool.FullAccess(LocalPlayer()) then
         local c = customEntry()
@@ -160,6 +176,41 @@ function Tool.Chosen()
         if not e.perma then return e end
     end
     return list[1]
+end
+-- (worked out once a frame: the HUD, outlines and aim ring all ask)
+function Tool.Chosen()
+    local f, id = FrameNumber(), cvEntry:GetString()
+    if f ~= chosenFrame or id ~= chosenId then
+        chosenFrame, chosenId, chosenVal = f, id, chosen()
+    end
+    return chosenVal
+end
+
+-- X-ray and Staff view convars: cl_30_staffview.lua makes them and loads
+-- after this file, so they're looked up when a button is clicked or
+-- painted (nil until then).
+local svCv = {}
+local function svVar(name)
+    local c = svCv[name]
+    if not c then
+        c = GetConVar(name)
+        if c then svCv[name] = c end
+    end
+    return c
+end
+local function svSet(name, v)
+    if not svVar(name) then
+        Rhylib.Notify(nil, "Staff view isn't available", "bad", "Toolgun")
+        return
+    end
+    RunConsoleCommand(name, v)
+end
+-- A spawn-window toggle button for one of them.
+local function svToggle(text, name, tip, weight)
+    return { text, function()
+        local c = svVar(name)
+        svSet(name, (c and c:GetBool()) and "0" or "1")
+    end, { selected = function() local c = svVar(name) return c and c:GetBool() or false end, tooltip = tip, weight = weight } }
 end
 
 -- The "Rhy's" tab of the spawn window (rhylib_menus cl_85_spawn.lua):
@@ -185,6 +236,13 @@ local function buildTab(body)
         surface.DrawLine(1, 1, w - 1, 1)
         K.Ticks(0, 0, w, h)
     end
+    local full = Tool.FullAccess(LocalPlayer())
+    -- (rows: droid rows 3, X-ray and Staff view / Toolgun info 2 or
+    -- Toolgun info 1, Droids at once 1; more than 4 get shorter so the
+    -- tiles keep their room on 4:3)
+    local want = (Rhylib.Droids and full and 3 or 0) + (full and 2 or 1) + 1
+    local rowH = want > 4 and S(34) or S(40)
+    local rowPad = want > 4 and S(4) or S(6)
     local rows = 0
     local function ctlRow(caption, sub)
         rows = rows + 1
@@ -192,8 +250,8 @@ local function buildTab(body)
         local cap = string.upper(caption)
         local r = vgui.Create("DPanel", ctl)
         r:Dock(TOP)
-        r:SetTall(S(40))
-        r:DockPadding(S(176), S(6), S(10), S(6))
+        r:SetTall(rowH)
+        r:DockPadding(S(176), rowPad, S(10), rowPad)
         function r:Paint(w, h)
             if not first then
                 K.SetCol(C.edgeDark)
@@ -204,24 +262,31 @@ local function buildTab(body)
         end
         return r
     end
-    -- Buttons sharing a panel's width evenly; list = { { text, fn, opts }, ... }.
+    -- Buttons sharing a panel's width (evenly, or by opts.weight);
+    -- list = { { text, fn, opts }, ... }.
     local function seg(parent, list, dock, wide)
         local p = vgui.Create("DPanel", parent)
         p.Paint = nil
         p:Dock(dock or FILL)
         if wide then p:SetWide(wide) end
+        local total = 0
         for _, b in ipairs(list) do
             local o = b[3] or {}
             o.small = true
-            K.Button(p, b[1], b[2], o)
+            local btn = K.Button(p, b[1], b[2], o)
+            btn.segWeight = o.weight or 1
+            total = total + btn.segWeight
         end
         function p:PerformLayout(w, h)
             local kids = self:GetChildren()
             local gap = S(5)
-            local bw = (w - gap * (#kids - 1)) / math.max(1, #kids)
-            for i, c in ipairs(kids) do
-                c:SetPos(math.floor((i - 1) * (bw + gap)), math.floor((h - c:GetTall()) * 0.5))
+            local unit = (w - gap * (#kids - 1)) / math.max(1, total)
+            local x = 0
+            for _, c in ipairs(kids) do
+                local bw = unit * (c.segWeight or 1)
+                c:SetPos(math.floor(x), math.floor((h - c:GetTall()) * 0.5))
                 c:SetWide(math.floor(bw))
+                x = x + bw + gap
             end
         end
         return p
@@ -283,6 +348,53 @@ local function buildTab(body)
         end
     end
 
+    -- Where the toolgun info goes (everyone with the toolgun).
+    local infoList = {
+        { "Bottom strip", function() RunConsoleCommand("rhylib_tool_info", "strip") end,
+          { selected = function() return Tool.InfoLayout() == "strip" end, tooltip = "One bar near the bottom of the screen; the middle of the screen stays clear" } },
+        { "Side panel", function() RunConsoleCommand("rhylib_tool_info", "panel") end,
+          { selected = function() return Tool.InfoLayout() == "panel" end, tooltip = "A panel on the right edge; the middle of the screen stays clear" } },
+    }
+    if full then
+        -- X-ray and Staff view (cl_30_staffview.lua's convars).
+        local xr = ctlRow("X-ray", "Through walls, toolgun out")
+        local ranges = {}
+        for i, m in ipairs({ 40, 80, 150 }) do
+            ranges[i] = { m .. " m", function() svSet("rhylib_tool_xray_range", tostring(m)) end,
+                { selected = function() local c = svVar("rhylib_tool_xray_range") return c and c:GetInt() == m or false end,
+                  tooltip = "How far X-ray reaches (" .. m .. " m)" } }
+        end
+        seg(xr, ranges, RIGHT, S(220))
+        local tg = seg(xr, {
+            svToggle("On", "rhylib_tool_xray", "X-ray on / off (also !xray)", 0.8),
+            svToggle("Players", "rhylib_tool_xray_players", "Players through walls", 1.1),
+            svToggle("NPCs", "rhylib_tool_xray_npcs", "Droids and clones through walls", 0.9),
+            svToggle("Spawned things", "rhylib_tool_xray_spawned", "Things placed with the toolgun or the spawn window", 1.6),
+            svToggle("Bombs, mines, objectives", "rhylib_tool_xray_eod", "Bombs, mines and objective markers through walls", 2.4),
+        })
+        tg:DockMargin(0, 0, S(12), 0)
+
+        local sv = ctlRow("Staff view", "Toolgun out")
+        seg(sv, {
+            svToggle("Night vision (F)", "rhylib_tool_nv", "Night vision; F toggles it while you hold the toolgun", 1.5),
+            svToggle("Names", "rhylib_tool_names", "Names (staff view, toolgun out)", 1),
+            svToggle("Minimal HUD", "rhylib_tool_minhud", "A minimal HUD while you hold the toolgun", 1.3),
+        }, LEFT, S(440))
+        capLabel(sv, "Toolgun info", S(150))
+        seg(sv, infoList)
+    else
+        local ti = ctlRow("Toolgun info", "Where the placing info goes")
+        seg(ti, infoList, LEFT, S(330))
+        local tn = vgui.Create("DPanel", ti)
+        tn:Dock(FILL)
+        tn:DockMargin(S(12), 0, 0, 0)
+        local TNOTE = "The middle of the screen stays clear either way."
+        function tn:Paint(w, h)
+            local f = K.Font(12, 500)
+            draw.SimpleText(K.Fit(TNOTE, f, w), f, 0, h * 0.5, C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        end
+    end
+
     -- Count, beacon name, re-save.
     local bottom = ctlRow("Droids at once", "Entries with a count")
     local counts = {}
@@ -303,8 +415,8 @@ local function buildTab(body)
     end, { small = true, tooltip = "Placing doesn't save anything: use the Permanent tool (Staff tools). This saves every permanent thing again where it stands now." })
     save:Dock(RIGHT)
     save:SetWide(S(230))
-    if not Tool.FullAccess(LocalPlayer()) then save:SetVisible(false) end
-    ctl:SetTall(rows * S(40) + S(4))
+    if not full then save:SetVisible(false) end
+    ctl:SetTall(rows * rowH + S(4))
 
     local inner = vgui.Create("DPanel", body)
     inner:Dock(FILL)
@@ -495,74 +607,401 @@ function Tool.Click(wep, which)
     net.SendToServer()
 end
 
--- A HUD line on a small plate (the kit's dark plate, a coloured left
--- edge): centred on cx, its top at y (its bottom when up). Returns its height.
-local function hudLine(text, font, cx, y, col, edge, up)
-    local K = UI.Kit
-    local C = K.C
+--------------------------------------------------------------------------
+-- Toolgun info (placing, Permanent tool, Command mode, physgun mode)
+--------------------------------------------------------------------------
+
+-- Tool.InfoLayout(): "strip" (default) or "panel" (rhylib_tool_info).
+function Tool.InfoLayout() return cvInfo:GetString() == "panel" and "panel" or "strip" end
+
+local COL_RULE = UI.Col("toolgun.infoRule", 42, 45, 41)
+local COL_KEYCAP = UI.Col("toolgun.keyCap", 38, 41, 42)
+local COL_KEYEDGE = UI.Col("toolgun.keyCapEdge", 58, 62, 56)
+
+-- The crosshair tag's right end on this frame (the panel keeps clear of it).
+local tagRight, tagFrame = 0, -1
+
+local function textSize(font, s)
     surface.SetFont(font)
-    local tw, th = surface.GetTextSize(text)
-    local w, h = tw + K.S(22), th + K.S(6)
-    local x = math.floor(cx - w * 0.5)
-    if up then y = y - h end
-    K.SetCol(C.bg, 215)
-    surface.DrawRect(x, y, w, h)
-    K.SetCol(C.edgeDark)
-    surface.DrawOutlinedRect(x, y, w, h)
-    K.SetCol(C.edgeLight)
-    surface.DrawLine(x + 1, y + 1, x + w - 1, y + 1)
-    if edge then
-        K.SetCol(edge)
-        surface.DrawRect(x + 1, y + 1, K.S(3), h - 2)
-    end
-    draw.SimpleText(text, font, x + w * 0.5 + (edge and K.S(1) or 0), y + h * 0.5, col, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-    return h
+    return surface.GetTextSize(s)
 end
 
--- Tool.DrawHUD(wep): the text under the crosshair (SWEP:DrawHUD calls it).
-local MODE_NAMES = { "GUARD", "PATROL", "ATTACK", "ROAM", "ASSAULT" }
-local KEYS_PLACING = "Shift + wheel: mode  ·  Alt + wheel: aggression  ·  Shift + Alt + wheel: alertness"
+-- The dark plate both layouts sit on.
+local function plate(x, y, w, h)
+    local C = UI.Kit.C
+    UI.Kit.SetCol(C.bg, 230)
+    surface.DrawRect(x, y, w, h)
+    UI.Kit.SetCol(C.edgeDark)
+    surface.DrawOutlinedRect(x, y, w, h)
+    UI.Kit.SetCol(C.edgeLight)
+    surface.DrawLine(x + 1, y + 1, x + w - 1, y + 1)
+end
 
+-- Tool.DrawTag(text, col, red): the small tag to the lower right of the
+-- crosshair (a square in col, then text), and under it red text (RMB:
+-- remove ...) when given.
+function Tool.DrawTag(text, col, red)
+    local K = UI.Kit
+    local S, C = K.S, K.C
+    local x, y = math.floor(ScrW() * 0.5) + S(22), math.floor(ScrH() * 0.5) + S(14)
+    local f = K.Font(14, 700)
+    local tw, th = textSize(f, text)
+    local sq = S(8)
+    local sy = y + math.floor((th - sq) * 0.5)
+    K.SetCol(C.edgeDark)
+    surface.DrawRect(x - 1, sy - 1, sq + 2, sq + 2)
+    K.SetCol(col)
+    surface.DrawRect(x, sy, sq, sq)
+    local tx = x + sq + S(6)
+    draw.SimpleText(text, f, tx + 1, y + 1, C.edgeDark)
+    draw.SimpleText(text, f, tx, y, C.text)
+    local right = tx + tw
+    if red then
+        local ry = y + th + S(2)
+        draw.SimpleText(red, f, x + 1, ry + 1, C.edgeDark)
+        local rw = draw.SimpleText(red, f, x, ry, C.bad)
+        right = math.max(right, x + rw)
+    end
+    tagRight, tagFrame = right, FrameNumber()
+end
+
+--[[
+    A spec (built by the caller only when what it shows changes):
+      head        caps word for the panel header ("TOOLGUN · PLACING")
+      titleLabel  the strip's first label (default head)
+      title, titleCol, sub (panel only)
+      rows  { { label, hint, value, col, chip, extra, only = "strip" | "panel" } }
+            hint: the key, added to the strip label ("PLACES AS · SHIFT + WHEEL")
+            chip: the panel shows the value on a tinted chip
+      keys  { { key, stripText, panelText } }  (stripText nil: panel only;
+            panelText false: strip only, nil: the strip text)
+    The measured layout is kept in spec.L until the layout, screen or
+    theme changes.
+]]
+
+local function prepStrip(spec, L)
+    local K = UI.Kit
+    local S = K.S
+    L.fl, L.fv, L.fb, L.fx = K.Font(12, 700), K.Font(17, 700), K.Font(17, 800), K.Font(15, 500)
+    L.fk, L.ft = K.Font(14, 700), K.Font(14, 500)
+    L.padX, L.padY = S(16), S(8)
+    local _, lh = textSize(L.fl, "A")
+    local _, vh = textSize(L.fv, "A")
+    local _, kh = textSize(L.fk, "A")
+    L.lh, L.vh, L.kh = lh, vh, kh
+    local secs, sum = {}, 0
+    local function add(lab, val, col, bold, extra)
+        local s = { lab = string.upper(lab), val = val, col = col, bold = bold, extra = extra }
+        local lw = textSize(L.fl, s.lab)
+        s.vw = textSize(bold and L.fb or L.fv, val)
+        local ew = extra and (S(6) + textSize(L.fx, extra)) or 0
+        s.w = math.max(lw, s.vw + ew) + L.padX * 2
+        sum = sum + s.w
+        secs[#secs + 1] = s
+    end
+    add(spec.titleLabel or spec.head, spec.title, spec.titleCol, true)
+    for _, r in ipairs(spec.rows or {}) do
+        if r.only ~= "panel" then
+            add(r.hint and (r.label .. " · " .. r.hint) or r.label, r.value, r.col, r.chip, r.extra)
+        end
+    end
+    -- The keys flow into as many lines as the screen width needs.
+    local keys = {}
+    local gap, inner = S(12), S(5)
+    local avail = math.max(S(260), ScrW() - S(32) - sum - L.padX * 2)
+    local lines, lw, widest = 1, 0, 0
+    for _, k in ipairs(spec.keys or {}) do
+        if k[2] then
+            local kw = textSize(L.fk, k[1])
+            local w = kw + inner + textSize(L.ft, k[2])
+            local g = lw > 0 and gap or 0
+            if lw > 0 and lw + g + w > avail then lines, lw, g = lines + 1, 0, 0 end
+            keys[#keys + 1] = { k = k[1], t = k[2], kw = kw, line = lines, x = lw + g }
+            lw = lw + g + w
+            widest = math.max(widest, lw)
+        end
+    end
+    L.secs, L.keys, L.inner = secs, keys, inner
+    L.keysH = #keys > 0 and (lines * (kh + S(3)) - S(3)) or 0
+    L.keysW = #keys > 0 and (widest + L.padX * 2) or 0
+    L.secH = lh + S(2) + vh
+    L.h = math.max(L.secH, L.keysH) + L.padY * 2
+    L.w = sum + L.keysW
+end
+
+-- The strip's bottom: about 150 px above the screen bottom, above the
+-- Simple HUD's hotbar and stamina bar, and above the visor cheeks.
+local function stripBottom(x0, w, h)
+    local S = UI.Kit.S
+    local H = ScrH()
+    local b = H - S(150)
+    local hud = Rhylib.HUD
+    if hud then
+        local r = hud.HotbarRect
+        if r and r.w > 0 and r.frame >= FrameNumber() - 2 then b = math.min(b, r.y - S(36)) end
+        if hud.RealisticActive and hud.RealisticActive() and hud.RealCheekY then
+            b = math.min(b, hud.RealCheekY(x0, -1) - S(10), hud.RealCheekY(x0 + w, 1) - S(10))
+        elseif hud.VisorActive and hud.VisorActive() and hud.VisorCheekY then
+            b = math.min(b, hud.VisorCheekY(x0, -1) - S(10), hud.VisorCheekY(x0 + w, 1) - S(10))
+        end
+    end
+    -- (never up into the crosshair tag)
+    return math.floor(math.max(b, H * 0.5 + S(60) + h))
+end
+
+local function drawStrip(L)
+    local K = UI.Kit
+    local S, C = K.S, K.C
+    local x0 = math.floor((ScrW() - L.w) * 0.5)
+    local y0 = stripBottom(x0, L.w, L.h) - L.h
+    plate(x0, y0, L.w, L.h)
+    local x = x0
+    local ly = y0 + math.floor((L.h - L.secH) * 0.5)
+    local vy = ly + L.lh + S(2)
+    local n = #L.secs
+    for i, s in ipairs(L.secs) do
+        draw.SimpleText(s.lab, L.fl, x + L.padX, ly, C.label)
+        draw.SimpleText(s.val, s.bold and L.fb or L.fv, x + L.padX, vy, s.col or C.text)
+        if s.extra then
+            draw.SimpleText(s.extra, L.fx, x + L.padX + s.vw + S(6), vy + L.vh, C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_BOTTOM)
+        end
+        x = x + s.w
+        if i < n or #L.keys > 0 then
+            K.SetCol(COL_RULE)
+            surface.DrawRect(x - 1, y0 + 2, 1, L.h - 3)
+        end
+    end
+    local ky0 = y0 + math.floor((L.h - L.keysH) * 0.5)
+    for _, k in ipairs(L.keys) do
+        local kx = x + L.padX + k.x
+        local ky = ky0 + (k.line - 1) * (L.kh + S(3))
+        draw.SimpleText(k.k, L.fk, kx, ky, C.text)
+        draw.SimpleText(k.t, L.ft, kx + k.kw + L.inner, ky, C.textDim)
+    end
+end
+
+local function prepPanel(spec, L)
+    local K = UI.Kit
+    local S = K.S
+    local pw, padX = S(360), S(16)
+    local inW = pw - padX * 2
+    L.w, L.padX = pw, padX
+    L.fh, L.ftitle, L.fsub = K.Font(13, 700), K.Font(21, 700), K.Font(14, 500)
+    L.fl, L.fv, L.fb, L.fx = K.Font(13, 700), K.Font(15, 500), K.Font(15, 800), K.Font(15, 500)
+    L.fk, L.ft = K.Font(13, 700), K.Font(14, 500)
+    L.headH, L.rowH, L.keyH, L.labW = S(36), S(26), S(23), S(124)
+    L.head = "TOOLGUN · " .. string.upper(spec.head or "")
+    L.title, L.titleCol = K.Fit(spec.title or "", L.ftitle, inW), spec.titleCol
+    local _, th = textSize(L.ftitle, "A")
+    L.titleH = th
+    L.sub = spec.sub and K.Fit(spec.sub, L.fsub, inW) or nil
+    local _, sh = textSize(L.fsub, "A")
+    L.subH = L.sub and (sh + S(2)) or 0
+    local valW = inW - L.labW
+    local rows = {}
+    for _, r in ipairs(spec.rows or {}) do
+        if r.only ~= "strip" then
+            local font = r.chip and L.fb or L.fv
+            local room = valW - (r.chip and S(18) or 0)
+            local v = K.Fit(r.value, font, room)
+            local vw = textSize(font, v)
+            local ex = r.extra and K.Fit(r.extra, L.fx, room - vw - S(6)) or nil
+            rows[#rows + 1] = { lab = string.upper(r.label), val = v, vw = vw, col = r.col, chip = r.chip, extra = ex }
+        end
+    end
+    local keys, kcol = {}, 0
+    for _, k in ipairs(spec.keys or {}) do
+        local t = k[3]
+        if t == nil then t = k[2] end
+        if t then
+            local kw = textSize(L.fk, k[1])
+            keys[#keys + 1] = { k = k[1], t = t, kw = kw }
+            kcol = math.max(kcol, kw + S(10))
+        end
+    end
+    for _, k in ipairs(keys) do k.t = K.Fit(k.t, L.ft, inW - kcol - S(10)) end
+    L.rows, L.keys, L.kcol = rows, keys, kcol
+    local h = L.headH + S(12) + L.titleH + L.subH + S(10) + #rows * L.rowH
+    if #keys > 0 then h = h + S(8) + 1 + S(8) + #keys * L.keyH end
+    L.h = h + S(10)
+end
+
+local function drawPanel(L)
+    local K = UI.Kit
+    local S, C = K.S, K.C
+    local W, H = ScrW(), ScrH()
+    local hud = Rhylib.HUD
+    local real = hud and hud.RealisticActive and hud.RealisticActive() and hud.RealGeo and true or false
+    -- (Realistic HUD: inside the visor, left of the health ladder)
+    local right = W - S(24)
+    if real then right = math.min(right, W - math.floor(272 * hud.RealGeo().s)) end
+    local x = right - L.w
+    local y = math.floor((H - L.h) * 0.5)
+    if tagFrame == FrameNumber() and x < tagRight + S(12) then
+        -- (too narrow to sit beside the crosshair tag: above the crosshair)
+        y = math.floor(H * 0.5 - S(22) - L.h)
+        local top = S(16)
+        if real and hud.RealBrowY then top = math.max(hud.RealBrowY(x), hud.RealBrowY(right)) + S(8) end
+        y = math.max(y, math.floor(top))
+    end
+    plate(x, y, L.w, L.h)
+    local px = x + L.padX
+    draw.SimpleText(L.head, L.fh, px, y + L.headH * 0.5, C.label, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    K.SetCol(COL_RULE)
+    surface.DrawRect(x + 1, y + L.headH, L.w - 2, 1)
+    local cy = y + L.headH + S(12)
+    draw.SimpleText(L.title, L.ftitle, px, cy, L.titleCol or C.text)
+    cy = cy + L.titleH
+    if L.sub then
+        draw.SimpleText(L.sub, L.fsub, px, cy + S(2), C.textDim)
+        cy = cy + L.subH
+    end
+    cy = cy + S(10)
+    local vx = px + L.labW
+    for _, r in ipairs(L.rows) do
+        local my = cy + L.rowH * 0.5
+        draw.SimpleText(r.lab, L.fl, px, my, C.label, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        local tx = vx
+        if r.chip and r.col then
+            K.SetCol(r.col, 64)
+            surface.DrawRect(vx, cy + S(3), r.vw + S(18), L.rowH - S(6))
+            K.SetCol(r.col)
+            surface.DrawRect(vx, cy + S(3), S(3), L.rowH - S(6))
+            tx = vx + S(10)
+            draw.SimpleText(r.val, L.fb, tx, my, C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            tx = tx + r.vw + S(8)
+        else
+            draw.SimpleText(r.val, r.chip and L.fb or L.fv, tx, my, r.col or C.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            tx = tx + r.vw
+        end
+        if r.extra then draw.SimpleText(r.extra, L.fx, tx + S(6), my, C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER) end
+        cy = cy + L.rowH
+    end
+    if #L.keys > 0 then
+        cy = cy + S(8)
+        K.SetCol(COL_RULE)
+        surface.DrawRect(px, cy, L.w - L.padX * 2, 1)
+        cy = cy + 1 + S(8)
+        local capR = px + L.kcol
+        for _, k in ipairs(L.keys) do
+            local cw = k.kw + S(10)
+            local cx0 = capR - cw
+            K.SetCol(COL_KEYCAP)
+            surface.DrawRect(cx0, cy + S(1), cw, L.keyH - S(4))
+            K.SetCol(COL_KEYEDGE)
+            surface.DrawOutlinedRect(cx0, cy + S(1), cw, L.keyH - S(4))
+            local my = cy + S(1) + (L.keyH - S(4)) * 0.5
+            draw.SimpleText(k.k, L.fk, cx0 + cw * 0.5, my, C.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            draw.SimpleText(k.t, L.ft, capR + S(10), my, C.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            cy = cy + L.keyH
+        end
+    end
+end
+
+-- Tool.DrawInfo(spec): draw the info in the picked layout (see above).
+function Tool.DrawInfo(spec)
+    if not spec then return end
+    local mode = Tool.InfoLayout()
+    local W, H, stamp = ScrW(), ScrH(), UI.themeStamp or 0
+    local L = spec.L
+    if not L or L.mode ~= mode or L.W ~= W or L.H ~= H or L.stamp ~= stamp then
+        L = { mode = mode, W = W, H = H, stamp = stamp }
+        if mode == "panel" then prepPanel(spec, L) else prepStrip(spec, L) end
+        spec.L = L
+    end
+    if mode == "panel" then drawPanel(L) else drawStrip(L) end
+end
+
+-- An entry's short name for the crosshair tag: "B1 battle droid" -> "B1",
+-- "Command post (logistics)" -> "Command post".
+local function shortName(e)
+    if e.short then return e.short end
+    local n = string.match(e.name or "", "^[^%(,:]+") or e.name or ""
+    n = string.Trim(n)
+    local code = string.match(n, "^(%u+%d+%w*)%s")
+    return code or n
+end
+
+local MODE_NAMES = { "GUARD", "PATROL", "ATTACK", "ROAM", "ASSAULT" }
+local function aggroText(D, a)
+    return a .. " " .. ((D and D.AGGRO_NAMES and D.AGGRO_NAMES[a]) or "")
+end
+local function keyName(s) return string.upper(s or "") end
+local cvCmdKey   -- (cl_20_command.lua makes it, after this file)
+
+-- The placing info, rebuilt only when something it shows changes.
+local pc = {}
+local function placingSpec(e)
+    local D = Rhylib.Droids
+    local cnt = e.count and math.Clamp(cvCount:GetInt(), 1, 5) or 0
+    local droid = (e.count or e.preset) and not e.custom and D ~= nil
+    local m = droid and math.Clamp(cvMode:GetInt(), 1, 5) or 0
+    local a = droid and math.Clamp(cvAggro:GetInt(), 0, 5) or 0
+    local al = droid and math.Clamp(cvAlert:GetInt(), 0, 2) or 0
+    local ga = (D and D.AGGRO_NAMES and D.Aggro) and D.Aggro() or 0
+    local nm = e.named and cvName:GetString() or ""
+    local pk = cvPhysKey:GetString()
+    if D and not cvCmdKey then cvCmdKey = GetConVar("rhylib_tool_command_key") end
+    local ck = (D and cvCmdKey) and cvCmdKey:GetString() or ""
+    if pc.spec and pc.e == e and pc.cnt == cnt and pc.m == m and pc.a == a and pc.al == al and pc.ga == ga
+        and pc.nm == nm and pc.pk == pk and pc.ck == ck and pc.D == (D ~= nil) then
+        return pc.spec
+    end
+    pc.e, pc.cnt, pc.m, pc.a, pc.al, pc.ga, pc.nm, pc.pk, pc.ck, pc.D = e, cnt, m, a, al, ga, nm, pk, ck, D ~= nil
+    local times = cnt > 1 and (" ×" .. cnt) or ""
+    local head = e.order and "Order" or (e.custom and "Spawning" or "Placing")
+    local spec = {
+        head = head, title = e.name .. times, titleCol = COL,
+        sub = e.order and "LMB sets the mode of every NPC near where you aim" or e.custom and "LMB spawns it where the ring is" or "LMB places it where the ring is",
+        rows = {}, keys = {},
+        tag = shortName(e) .. times, tagCol = droid and MODE_COLS[m] or COL,
+    }
+    local rows, keys = spec.rows, spec.keys
+    if e.named then rows[#rows + 1] = { label = "Name", value = "\"" .. nm .. "\"" } end
+    if droid then
+        rows[#rows + 1] = { label = "Places as", hint = "Shift + wheel", value = MODE_NAMES[m], col = MODE_COLS[m], chip = true }
+        local sq = a == 0 and "Global" or aggroText(D, a)
+        rows[#rows + 1] = { label = "Aggression", hint = "Alt + wheel", value = sq, only = "strip", extra = ga > 0 and ("· all droids " .. ga) or nil }
+        rows[#rows + 1] = { label = "Aggression", value = sq, only = "panel", extra = "(squad)" }
+        rows[#rows + 1] = { label = "Alertness", hint = "Shift + Alt + wheel", value = ALERT_NAMES[al] .. (al == 2 and " (stealth)" or ""), col = al == 2 and COL_UNAWARE or nil }
+        if ga > 0 then rows[#rows + 1] = { label = "All droids", value = aggroText(D, ga), only = "panel" } end
+        keys[#keys + 1] = { "Shift + wheel", nil, "Places as" }
+        keys[#keys + 1] = { "Alt + wheel", nil, "Squad aggression" }
+        keys[#keys + 1] = { "Shift + Alt + wheel", nil, "Alertness" }
+    elseif ga > 0 then
+        rows[#rows + 1] = { label = "All droids", value = aggroText(D, ga) }
+    end
+    keys[#keys + 1] = { "R", "spawn window · hold: peek · twice: Q menu", "Spawn window (hold: peek, twice: Q menu)" }
+    keys[#keys + 1] = { keyName(pk), "physgun", "Physgun mode" }
+    if D then keys[#keys + 1] = { keyName(ck ~= "" and ck or "x"), "command", "Command mode" } end
+    keys[#keys + 1] = { "hold E", "modes", "Toolgun modes" }
+    pc.spec = spec
+    return spec
+end
+
+-- "RMB: remove <name>" for what you aim at (made once per thing).
+local remEnt, remText = nil, nil
+local function removeText(ent)
+    if not (IsValid(ent) and not ent:IsPlayer()) then return nil end
+    if not (ent.IsRhylibDroid or ent.IsRhylibClone or Tool.ByClass(ent:GetClass()) or ent:GetNW2Bool("rhylib_toolSpawned")) then return nil end
+    if ent ~= remEnt then
+        local n = ent.PrintName
+        remEnt, remText = ent, "RMB: remove " .. ((n and n ~= "") and n or ent:GetClass())
+    end
+    return remText
+end
+
+-- Tool.DrawHUD(wep): the toolgun info and the crosshair tag (SWEP:DrawHUD
+-- calls it).
 function Tool.DrawHUD(wep)
     if Tool.PhysOnLocal and Tool.PhysOnLocal() and Tool.DrawPhysHUD then return Tool.DrawPhysHUD() end
     if Tool.command and Tool.DrawCommandHUD and Rhylib.Droids then return Tool.DrawCommandHUD() end
     local e = Tool.Chosen()
     if not e then return end
-    local ply = LocalPlayer()
-    local tr = ply:GetEyeTrace()
     if e.perma then return Tool.DrawPermaHUD() end
-    local C = UI.Kit.C
-    local S = UI.Kit.S
-    local cx = ScrW() * 0.5
-    local text = e.order and e.name or ((e.custom and "Spawn: " or "Place: ") .. e.name)
-    if e.count and cvCount:GetInt() > 1 then text = text .. " ×" .. cvCount:GetInt() end
-    -- Droids and presets: what they'll do, big and coloured (Shift + wheel
-    -- changes it, Alt + wheel the new squad's aggression).
-    if (e.count or e.preset) and not e.custom and Rhylib.Droids then
-        local m = math.Clamp(cvMode:GetInt(), 1, 5)
-        local a = math.Clamp(cvAggro:GetInt(), 0, 5)
-        local D = Rhylib.Droids
-        local yy = ScrH() * 0.5 - S(66)
-        local al = math.Clamp(cvAlert:GetInt(), 0, 2)
-        local hk = hudLine(KEYS_PLACING, UI.Font(12, 500), cx, yy, C.textDim, nil, true)
-        local hs = hudLine("Squad aggression: " .. (a == 0 and "global" or (a .. " " .. (D.AGGRO_NAMES and D.AGGRO_NAMES[a] or ""))) .. "   ·   Alertness: " .. ALERT_NAMES[al],
-            UI.Font(13, 600), cx, yy - hk - S(2), al == 2 and COL_UNAWARE or C.text, al == 2 and COL_UNAWARE or nil, true)
-        hudLine("PLACES AS: " .. MODE_NAMES[m], UI.Font(22, 800), cx, yy - hk - hs - S(4), MODE_COLS[m], MODE_COLS[m], true)
-    end
-    if e.named then text = text .. "  \"" .. cvName:GetString() .. "\"" end
-    local y = ScrH() * 0.5 + S(40)
-    y = y + hudLine(text, UI.Font(16, 700), cx, y, COL, COL) + S(3)
-    local ent = tr.Entity
-    if IsValid(ent) and not ent:IsPlayer() and (ent.IsRhylibDroid or ent.IsRhylibClone or Tool.ByClass(ent:GetClass()) or ent:GetNW2Bool("rhylib_toolSpawned")) then
-        y = y + hudLine("RMB: remove " .. (ent.PrintName or ent:GetClass()), UI.Font(14, 700), cx, y, C.bad, C.bad) + S(3)
-    end
-    y = y + hudLine("R: spawn window  ·  hold R: peek  ·  R twice: old Q menu  ·  " .. string.upper(cvPhysKey:GetString()) .. ": physgun  ·  hold E: modes"
-        .. (Rhylib.Droids and ("  ·  " .. string.upper(GetConVarString("rhylib_tool_command_key") or "x") .. ": command mode") or ""), UI.Font(13), cx, y, C.textDim) + S(3)
-    local D = Rhylib.Droids
-    if D and D.AGGRO_NAMES then
-        local a = D.Aggro()
-        hudLine("Droid aggression " .. a .. ": " .. D.AGGRO_NAMES[a], UI.Font(13), cx, math.max(y, ScrH() * 0.5 + S(102)), C.text)
-    end
+    local spec = placingSpec(e)
+    Tool.DrawTag(spec.tag, spec.tagCol, removeText(LocalPlayer():GetEyeTrace().Entity))
+    Tool.DrawInfo(spec)
 end
 
 -- Shift + wheel: placing mode, Alt + wheel: new squads' aggression,
@@ -612,24 +1051,41 @@ local function permaAimed(ply)
     return aimEnt
 end
 
+-- The Permanent tool's info (rebuilt when the aimed thing or its state changes).
+local pmc = {}
 function Tool.DrawPermaHUD()
     local ply = LocalPlayer()
-    local C = UI.Kit.C
-    local S = UI.Kit.S
-    local cx = ScrW() * 0.5
-    local y = ScrH() * 0.5 + S(40)
-    y = y + hudLine("Permanent tool", UI.Font(16, 700), cx, y, COL, COL) + S(3)
     local ent = permaAimed(ply)
     local P = Rhylib.Perma
-    if IsValid(ent) then
-        local name = ent.PrintName and ent.PrintName ~= "" and ent.PrintName or ent:GetClass()
-        local kept = P and P.Is(ent)
-        local col = kept and COL_PERMA or COL_AIM
-        y = y + hudLine(name .. (kept and " · permanent" or " · not saved"), UI.Font(14, 700), cx, y, col, col) + S(3)
-        hudLine(kept and "LMB: save where it is now  ·  RMB: stop keeping it" or "LMB: make it permanent", UI.Font(13), cx, y, C.textDim)
-    else
-        hudLine("Aim at something: orange outline = permanent", UI.Font(13), cx, y, C.textDim)
+    if not IsValid(ent) then ent = nil end
+    local kept = (ent and P and P.Is(ent)) and true or false
+    if not pmc.spec or pmc.ent ~= ent or pmc.kept ~= kept then
+        pmc.ent, pmc.kept = ent, kept
+        local spec = { head = "Permanent", titleLabel = "Tool", title = "Permanent tool", titleCol = COL, rows = {}, keys = {} }
+        if ent then
+            local name = ent.PrintName and ent.PrintName ~= "" and ent.PrintName or ent:GetClass()
+            local col = kept and COL_PERMA or COL_AIM
+            spec.sub = kept and "It stays on this map" or "Not saved: gone after a map change"
+            spec.rows[1] = { label = "Aiming at", value = name }
+            spec.rows[2] = { label = "State", value = kept and "permanent" or "not saved", col = col, chip = true }
+            if kept then
+                spec.keys[1] = { "LMB", "save where it is now", "Save where it is now" }
+                spec.keys[2] = { "RMB", "stop keeping it", "Stop keeping it" }
+            else
+                spec.keys[1] = { "LMB", "make it permanent", "Make it permanent" }
+            end
+        else
+            spec.sub = "Aim at something: orange outline = permanent"
+            spec.rows[1] = { label = "Aiming at", value = "Nothing", extra = "· orange outline = permanent", only = "strip" }
+            spec.rows[2] = { label = "Aiming at", value = "Nothing", only = "panel" }
+            spec.keys[1] = { "LMB", "make permanent / save its spot", "Make it permanent / save its spot" }
+            spec.keys[2] = { "RMB", "stop keeping it", "Stop keeping it" }
+        end
+        spec.keys[#spec.keys + 1] = { "R", "spawn window", "Spawn window" }
+        pmc.spec = spec
     end
+    Tool.DrawTag("Permanent", kept and COL_PERMA or COL)
+    Tool.DrawInfo(pmc.spec)
 end
 
 -- Outlines while the Permanent tool is picked: every permanent thing near
