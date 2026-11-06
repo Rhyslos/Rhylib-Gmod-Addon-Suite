@@ -67,6 +67,7 @@ local ALL = {
     { id = "spider", name = "DSD1 dwarf spider droid", cat = "Droid NPCs", class = "rhylib_spider", count = true },
     { id = "crab", name = "LM-432 crab droid", cat = "Droid NPCs", class = "rhylib_crab", count = true },
     { id = "droideka", name = "Droideka", cat = "Droid NPCs", class = "rhylib_droideka", count = true },
+    { id = "aqua", name = "Aqua droid", cat = "Droid NPCs", class = "rhylib_aqua_droid", count = true },
     { id = "b1_commander", name = "B1 commander droid", cat = "Droid NPCs", class = "rhylib_b1_commander", count = true },
     { id = "bx", name = "BX commando droid", cat = "Droid NPCs", class = "rhylib_bx_commando", count = true },
     { id = "bx_captain", name = "BX commando captain", cat = "Droid NPCs", class = "rhylib_bx_captain", count = true },
@@ -97,6 +98,7 @@ local ALL = {
     { id = "ps_droid_crab", name = "Crab squad (5)", cat = "Droid NPCs", preset = "droid_crab" },
     { id = "ps_droid_commando", name = "Commando squad (7)", cat = "Droid NPCs", preset = "droid_commando" },
     { id = "ps_droid_droideka", name = "Droideka pair (2)", cat = "Droid NPCs", preset = "droid_droideka" },
+    { id = "ps_droid_aqua", name = "Aqua droid squad (10)", cat = "Droid NPCs", preset = "droid_aqua" },
     { id = "ps_droid_company", name = "Droid company (33)", cat = "Droid NPCs", preset = "droid_company" },
     { id = "ps_droid_division", name = "Droid division (66)", cat = "Droid NPCs", preset = "droid_division" },
     -- Droid / clone spawner (rhylib_droids): right-click its tile for its settings (sent with tool.place).
@@ -182,7 +184,7 @@ end
 -- Orders have none; presets show their main unit.
 local PRESET_CLASS = { clone_squad = "rhylib_ct_trooper", clone_company = "rhylib_ct_trooper", droid_small = "rhylib_b1",
     droid_medium = "rhylib_b1", droid_large = "rhylib_b1", droid_b2 = "rhylib_b2", droid_mortar = "rhylib_b2_cannon",
-    droid_spider = "rhylib_spider", droid_crab = "rhylib_crab", droid_company = "rhylib_b1", droid_division = "rhylib_spider", droid_commando = "rhylib_bx_captain", droid_droideka = "rhylib_droideka" }
+    droid_spider = "rhylib_spider", droid_crab = "rhylib_crab", droid_company = "rhylib_b1", droid_division = "rhylib_spider", droid_commando = "rhylib_bx_captain", droid_droideka = "rhylib_droideka", droid_aqua = "rhylib_aqua_droid" }
 -- (on a client, util.IsValidModel is false for a model nobody has loaded
 -- yet even when it's installed: check the file instead)
 local function modelExists(m)

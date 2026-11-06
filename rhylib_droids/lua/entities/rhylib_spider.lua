@@ -8,6 +8,9 @@
         to spiderHeight (or spiderScale), hull spiderHeight tall, eyes near
         the top of the body
       - animation: spiderSeqIdle / spiderSeqWalk / spiderSeqRun sequence
+        (else the model's idle / walk / run activity, else the first
+        sequence named like idle / stand, walk / move, run / sprint; the
+        console lists the model's sequence names once)
         names, else the model's ACT_IDLE / ACT_WALK / ACT_RUN; a model with
         no walk or run sequence gets a small body bob while it moves
         (client, NW2Bool rhylib_bob) instead of sliding
@@ -92,6 +95,16 @@ local ACTS = {
     run = { ACT_RUN, ACT_RUN_AIM, ACT_WALK },
 }
 local SEQ_KEY = { idle = "SeqIdle", walk = "SeqWalk", run = "SeqRun" }
+-- (no activity either: the first sequence whose name has one of these)
+local SEQ_WORDS = { idle = { "idle", "stand" }, walk = { "walk", "move", "forward" }, run = { "run", "sprint", "charge" } }
+local function byName(ent, words)
+    for i, n in pairs(ent:GetSequenceList() or {}) do
+        local l = string.lower(n)
+        for _, w in ipairs(words) do
+            if string.find(l, w, 1, true) then return i end
+        end
+    end
+end
 
 local function resolve(ent)
     local D = Rhylib.Droids
@@ -110,6 +123,10 @@ local function resolve(ent)
             for _, act in ipairs(ACTS[k]) do
                 if act and ent:SelectWeightedSequence(act) > 0 then a[k] = { act = act } break end
             end
+            if not a[k] then
+                local s = byName(ent, SEQ_WORDS[k])
+                if s then a[k] = { seq = s } end
+            end
         end
     end
     a.noWalk = not (a.walk or a.run)
@@ -118,7 +135,12 @@ local function resolve(ent)
     a.run = a.run or a.walk
     animsOf[key] = a
     if SERVER then
-        Rhylib.Print("droids", "%s %s: %d sequences; walking animation %s", pre, mdl, ent:GetSequenceCount(), a.noWalk and "none (body bob)" or "found")
+        local names = {}
+        for _, n in pairs(ent:GetSequenceList() or {}) do
+            if #names >= 40 then break end
+            names[#names + 1] = n
+        end
+        Rhylib.Print("droids", "%s %s: %d sequences (%s); walking animation %s", pre, mdl, ent:GetSequenceCount(), table.concat(names, ", "), a.noWalk and "none (body bob)" or "found")
     end
     return a
 end

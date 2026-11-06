@@ -495,6 +495,8 @@ local PRESETS = {
 }
 -- (BX commandos: a captain leading six)
 PRESETS.droid_commando = { rows = { { "bx", "bx", "bx", "bx" }, { "bx", "bx_captain", "bx" } } }
+-- (ten aqua droids)
+PRESETS.droid_aqua = { rows = { { "aqua", "aqua", "aqua", "aqua", "aqua" }, { "aqua", "aqua", "aqua", "aqua", "aqua" } } }
 -- (two droidekas, a spot apart)
 PRESETS.droid_droideka = { rows = { { "droideka", "", "droideka" } } }
 -- (a company: 4 rows of 5 B1s, a commander, 2 rows of 5 B2s with a

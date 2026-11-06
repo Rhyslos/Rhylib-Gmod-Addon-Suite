@@ -119,6 +119,11 @@ Config.Register("droids", "b2Speed", 115, "B2 walk speed")
 Config.Register("droids", "b2Range", 2800, "How far a B2 sees and shoots")
 Config.Register("droids", "b2Reaction", 0.9, "Seconds before a B2 starts firing at a new target")
 Config.Register("droids", "b2Damage", 14, "B2 wrist blaster damage per bolt")
+Config.Register("droids", "aquaModel", "models/wosha/aqua droid/aqua_droid.mdl", "Aqua droid model (a missing one falls back to the B2's)")
+Config.Register("droids", "aquaHealth", 520, "Aqua droid health (twice the B1's default)")
+Config.Register("droids", "aquaDamage", 40, "Aqua droid blaster damage per bolt")
+Config.Register("droids", "aquaRPM", 60, "Aqua droid: shots per minute, fired without stopping (60 = one a second)")
+Config.Register("droids", "aquaSpread", 1.2, "Aqua droid inaccuracy cone (degrees)")
 Config.Register("droids", "b2RPM", 320, "B2 blasters (both arms): shots per minute, fired without stopping (suppression)")
 Config.Register("droids", "b2cRPM", 300, "B2 mortar: blaster shots per minute (only at someone within mortarSelfRange)")
 Config.Register("droids", "b2RocketRate", 0.5, "B2 rocket droid: blaster fire rate as a part of the B2's (b2RPM)")
@@ -182,7 +187,7 @@ Config.Register("droids", "spiderBellyRadius", 0.6, "Spider droid: under it = th
 Config.Register("droids", "spiderBellyHeight", 0.35, "Spider droid: under it = the grenade no higher than this share of its hull height above its feet")
 
 -- LM-432 crab droid (rhylib_crab).
-Config.Register("droids", "crabModel", "models/headcrabclassic.mdl", "LM-432 crab droid model (a placeholder until a crab droid model is picked; a missing one falls back to the headcrab)")
+Config.Register("droids", "crabModel", "models/funky/starwars/crab.mdl", "LM-432 crab droid model (a missing one falls back to the HL2 headcrab)")
 Config.Register("droids", "crabScale", 0, "Crab droid: model size (0 = sized to crabHeight)")
 Config.Register("droids", "crabHeight", 56, "Crab droid: body height (units): its hull, its eyes and, with crabScale 0, the model's size")
 Config.Register("droids", "crabSeqIdle", "", "Crab droid: standing animation (sequence name; empty = found by itself)")
@@ -508,6 +513,9 @@ D.KINDS.b2_cannon = variant("b2", "B2 mortar droid", "models/aussiwozzi/cgi/b1dr
 -- (a level rocket that dives down just before you)
 D.KINDS.b2_rocket = variant("b2", "B2 rocket droid", "models/aussiwozzi/cgi/b1droids/b2_battledroid_cannon.mdl",
     { rpm = "b2RPM", rateKey = "b2RocketRate", burst = { 2, 4 }, dual = false, rockets = true, direct = true, style = "suppress" })
+-- (a B2 with one heavy shot a second and twice a B1's health)
+D.KINDS.aqua = variant("b2", "Aqua droid", D.B2_MODEL,
+    { modelCfg = "aquaModel", fallback = D.B2_MODEL, health = "aquaHealth", damage = "aquaDamage", rpm = "aquaRPM", spread = "aquaSpread", burst = { 1, 1 }, dual = false })
 
 -- DSD1 dwarf spider droid: a B2's toughness (big, b2Health), its own
 -- entity (rhylib_spider: shells, movement, animation). rpm / spread are
@@ -596,6 +604,7 @@ for _, v in ipairs({ "aat", "commander", "geonosis", "heavy", "marine", "securit
     D.CLASSES["b1_" .. v] = "rhylib_b1_" .. v
 end
 D.CLASSES.droideka = "rhylib_droideka"
+D.CLASSES.aqua = "rhylib_aqua_droid"
 D.CLASSES.bx, D.CLASSES.bx_captain, D.CLASSES.bx_training = "rhylib_bx_commando", "rhylib_bx_captain", "rhylib_bx_training"
 
 D.MODES = { "guard", "patrol", "attack", "roam" }   -- (index 1-4 on the wire, toolgun "New droids")
@@ -658,8 +667,8 @@ end)
 
 -- Droid and clone spawners (entities/rhylib_droid_spawner.lua, rhylib_clone_spawner.lua): what a new one starts with
 -- (admins change each one with E on it).
-Config.Register("droids", "spawnerPreset", "droid_small", "Droid spawner: preset squad a new spawner sends (droid_small, droid_medium, droid_large, droid_b2, droid_mortar, droid_spider, droid_crab, droid_commando, droid_droideka, droid_company, droid_division)")
-Config.Meta("droids", "spawnerPreset", { options = { { "droid_small", "Small squad" }, { "droid_medium", "Medium squad" }, { "droid_large", "Large squad" }, { "droid_b2", "B2s" }, { "droid_mortar", "Mortars" }, { "droid_spider", "Spider squad" }, { "droid_crab", "Crab squad" }, { "droid_commando", "Commando squad (7)" }, { "droid_droideka", "Droideka pair" }, { "droid_company", "Droid company (33)" }, { "droid_division", "Droid division (66)" } } })
+Config.Register("droids", "spawnerPreset", "droid_small", "Droid spawner: preset squad a new spawner sends (droid_small, droid_medium, droid_large, droid_b2, droid_mortar, droid_spider, droid_crab, droid_commando, droid_droideka, droid_aqua, droid_company, droid_division)")
+Config.Meta("droids", "spawnerPreset", { options = { { "droid_small", "Small squad" }, { "droid_medium", "Medium squad" }, { "droid_large", "Large squad" }, { "droid_b2", "B2s" }, { "droid_mortar", "Mortars" }, { "droid_spider", "Spider squad" }, { "droid_crab", "Crab squad" }, { "droid_commando", "Commando squad (7)" }, { "droid_droideka", "Droideka pair" }, { "droid_aqua", "Aqua droid squad (10)" }, { "droid_company", "Droid company (33)" }, { "droid_division", "Droid division (66)" } } })
 Config.Register("droids", "cloneSpawnerPreset", "clone_squad", "Clone spawner: preset squad a new clone spawner sends (clone_squad, clone_company)")
 Config.Meta("droids", "cloneSpawnerPreset", { options = { { "clone_squad", "Clone squad (8)" }, { "clone_company", "Clone company (22)" } } })
 

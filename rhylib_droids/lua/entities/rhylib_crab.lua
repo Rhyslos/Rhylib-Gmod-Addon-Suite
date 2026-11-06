@@ -4,7 +4,7 @@
     of Rhylib.Droids.KINDS and two rapid-fire blasters instead of a cannon.
 
     What this file changes from rhylib_spider:
-      - config keys crab* (crabModel, placeholder models/headcrabclassic.mdl,
+      - config keys crab* (crabModel, models/funky/starwars/crab.mdl, missing: models/headcrabclassic.mdl,
         crabHeight, crabScale, crabSeq*, crabTurnRate), a wider hull
       - firing (its own ENT:StyleFire): crabRPM bolts without stopping,
         left and right gun in turn (several in one tick when a tick is
