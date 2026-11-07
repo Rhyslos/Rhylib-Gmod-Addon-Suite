@@ -596,7 +596,7 @@ end
 
 -- What the checklist shows for a job: ticks for what you meet, a cross for
 -- what blocks, "!" notes. The fields are rhylib_roster's job rules
--- (needsTraining, battalion, minRank, qual) and DarkRP's own.
+-- (needsTraining, battalion, minRank, qual, skillSpec / skill) and DarkRP's own.
 local function jobChecks(job, vote, mine)
     local out, bad = {}, 0
     local ply = LocalPlayer()
@@ -624,6 +624,10 @@ local function jobChecks(job, vote, mine)
         if job.qual and R.HasQual and R.QualName then
             local qn = R.QualName(job.qual)
             if R.HasQual(ply, job.qual) then add("good", qn .. " qualification") else add("bad", "Needs the " .. qn .. " qualification") end
+        end
+        if (job.skillSpec or job.skill) and R.SkillPathOk then
+            local ok, what = R.SkillPathOk(ply, job)
+            if ok then add("good", "On the right skill path") else add("bad", "Needs the " .. what) end
         end
     end
     if job.NeedToChangeFrom and not mine then

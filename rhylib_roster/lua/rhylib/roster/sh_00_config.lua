@@ -229,10 +229,44 @@ function R.FullName(ply, j)
     return R.Prefix(ply, j) .. "-" .. c.num .. " " .. c.nick
 end
 
+-- R.SkillPathOk(ply, job) -> ok, path name: the job's skillSpec (a
+-- rhylib_skills specialisation id, or a list of them: any one) is the
+-- path this player's skills follow (a skill of it learned, as Skills
+-- counts it; class mode: the class's), and its skill (a skill id, or a
+-- list: any one) is learned. Without rhylib_skills: always ok.
+function R.SkillPathOk(ply, j)
+    local K = Rhylib.Skills
+    if not (K and K.Set and K.Commitments) then return true end
+    local set = K.Set(ply)
+    if j.skillSpec then
+        local want = istable(j.skillSpec) and j.skillSpec or { j.skillSpec }
+        local _, specs = K.Commitments(set)
+        local ok, names = false, {}
+        for _, id in ipairs(want) do
+            for _, sp in pairs(specs) do if sp == id then ok = true end end
+            local s = K.specById and K.specById[id]
+            names[#names + 1] = s and s.name or id
+        end
+        if not ok then return false, table.concat(names, " or ") .. " skill path" end
+    end
+    if j.skill then
+        local want = istable(j.skill) and j.skill or { j.skill }
+        local ok, names = false, {}
+        for _, id in ipairs(want) do
+            if set[id] then ok = true end
+            local n = K.byId and K.byId[id]
+            names[#names + 1] = n and n.name or id
+        end
+        if not ok then return false, table.concat(names, " or ") .. " skill" end
+    end
+    return true
+end
+
 -- R.JobBlock(ply, job): why a player can't take a DarkRP job right now (a
 -- sentence for the job list), or nil if they can. Reads the job's
--- needsTraining / battalion / minRank / qual fields, and rhylibOff (a job
--- switched off or deleted in Staff > Jobs, sh_40_jobs.lua).
+-- needsTraining / battalion / minRank / qual / skillSpec / skill fields,
+-- and rhylibOff (a job switched off or deleted in Staff > Jobs,
+-- sh_40_jobs.lua).
 -- Example: local why = Rhylib.Roster.JobBlock(ply, RPExtraTeams[ply:Team()])
 function R.JobBlock(ply, j)
     if j.rhylibOff then return "Switched off by staff" end
@@ -245,6 +279,10 @@ function R.JobBlock(ply, j)
         if need and c.rank < need then return "Needs rank " .. R.RankName(need) .. " or higher" end
     end
     if j.qual and not R.HasQual(ply, j.qual) then return "Needs the " .. R.QualName(j.qual) .. " qualification" end
+    if j.skillSpec or j.skill then
+        local ok, what = R.SkillPathOk(ply, j)
+        if not ok then return "Needs the " .. what end
+    end
     return nil
 end
 

@@ -159,7 +159,8 @@ end
 -- After a rank or membership change: if the current job isn't allowed any
 -- more, back to their home job.
 -- Home job: their battalion's job for their rank (the highest minRank they
--- meet, not medic, with a free slot), else CT (trained) or cadet.
+-- meet, not medic, with a free slot; the lowest sortOrder of those), else
+-- TEAM_CT (trained, if jobs.lua has one) or cadet.
 -- Players sitting in cadet/CT who have something better move there too
 -- (on join, after training, when added to a battalion).
 local function slotFree(t, j)
@@ -172,13 +173,15 @@ end
 local function homeJob(ply)
     local c = R.Get(ply)
     if c.bn ~= "" and RPExtraTeams then
-        local best, bestNeed
+        local best, bestNeed, bestOrder
         for t, j in pairs(RPExtraTeams) do
             if j.battalion == c.bn and not j.medic and (t == ply:Team() or slotFree(t, j)) then
                 local ok = true
                 if j.customCheck then ok = j.customCheck(ply) and true or false else ok = R.JobBlock(ply, j) == nil end
                 local need = R.RankIndex(j.minRank) or 0
-                if ok and (not best or need > bestNeed) then best, bestNeed = t, need end
+                local order = j.sortOrder or 100
+                -- (same rank: the job listed first, e.g. Clone Trooper before Airborne)
+                if ok and (not best or need > bestNeed or (need == bestNeed and order < bestOrder)) then best, bestNeed, bestOrder = t, need, order end
             end
         end
         if best then return best end
@@ -204,6 +207,12 @@ end
 -- of reach (or they're a cadet/CT with something better), then reapply
 -- their name. Staff > Jobs calls it after switching a job off.
 R.CheckJob = checkJob
+
+-- (a job locked to a skill path: skills reset or changed -> checked again;
+-- rhylib_skills fires this after every change)
+Rhylib.Hook.Add("Rhylib.SkillsChanged", "roster.skilljob", function(ply)
+    if IsValid(ply) and ply:IsPlayer() then checkJob(ply) end
+end)
 
 local function needCharacter(ply)
     Rhylib.Net.Start("roster.need")
