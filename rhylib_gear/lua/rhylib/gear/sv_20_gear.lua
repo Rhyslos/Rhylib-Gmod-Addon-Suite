@@ -37,7 +37,7 @@ function G.Apply(ply)
     local optics = ply:GetNW2Int("rhylib_optics", 0)
     -- Helmet on or off (the inventory's helmet toggle).
     local helmetOn = G.HelmetOn(ply)
-    local helm = info.groups.helmet
+    local helm = G.HelmetGroup(info)
     if helm then
         local want
         for name, i in pairs(helm.opts) do
@@ -47,7 +47,8 @@ function G.Apply(ply)
         setGroup(ply, helm, want)
     end
     -- Each group goes to the first worn item (G.ORDER) the model shows
-    -- there; groups nothing claims are emptied.
+    -- there; groups nothing claims are emptied. Item lists include the
+    -- names rhylib_gear_scan learned (G.SetLearned).
     local want = {}
     for _, id in ipairs(G.ORDER) do
         local sh = G.SHOWS[id]
@@ -64,9 +65,10 @@ function G.Apply(ply)
             end
         end
     end
+    -- (off: "empty", or the model's own "nothing" option, G.ModelInfo)
     for gn in pairs(G.ALL_GROUPS) do
         local g = info.groups[gn]
-        if g then setGroup(ply, g, want[gn] or g.opts.empty) end
+        if g then setGroup(ply, g, want[gn] or g.off or g.opts.empty) end
     end
     -- Hair and facial hair (rhylib_roster looks): only with the helmet off,
     -- they poke through it otherwise.
@@ -225,7 +227,7 @@ end)
 --------------------------------------------------------------------------
 
 Rhylib.Net.Receive("gear.helmet", function(ply)
-    if not ply:Alive() or not G.ModelInfo(ply).groups.helmet then return end
+    if not ply:Alive() or not G.HelmetGroup(G.ModelInfo(ply)) then return end
     local Med = Rhylib.Medical
     if Med and Med.IsDown and Med.IsDown(ply) then return end
     ply:SetNW2Bool("rhylib_helmetOff", not ply:GetNW2Bool("rhylib_helmetOff", false))

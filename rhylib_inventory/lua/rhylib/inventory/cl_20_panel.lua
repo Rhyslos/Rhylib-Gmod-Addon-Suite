@@ -522,7 +522,7 @@ function PANEL:LayoutOnce()
     local sides = { {}, {} }
     self.helmetRect = nil
     local G = Rhylib.Gear
-    if hasGear and G and G.ModelInfo and G.ModelInfo(LocalPlayer()).groups.helmet then
+    if hasGear and G and G.ModelInfo and (G.HelmetGroup and G.HelmetGroup(G.ModelInfo(LocalPlayer())) or G.ModelInfo(LocalPlayer()).groups.helmet) then
         self.helmetRect = { helmet = true, pw = tileW, ph = tileH }
         sides[2][1] = self.helmetRect
     end

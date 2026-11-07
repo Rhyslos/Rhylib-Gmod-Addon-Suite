@@ -393,7 +393,7 @@ local function shootPart(ent, spec, tx, ty, tw, th)
     local sh = GG.SHOWS[spec.part]
     -- base: helmet on, every gear group empty, no hair
     local base = {}
-    local helm = info.groups.helmet
+    local helm = GG.HelmetGroup and GG.HelmetGroup(info) or info.groups.helmet
     if helm then
         local want
         for name, i in pairs(helm.opts) do
@@ -403,11 +403,11 @@ local function shootPart(ent, spec, tx, ty, tw, th)
     end
     for gn in pairs(GG.ALL_GROUPS) do
         local g = info.groups[gn]
-        if g and g.opts.empty then base[g.id] = g.opts.empty end
+        if g then local off = g.off or g.opts.empty if off then base[g.id] = off end end   -- (the group's "nothing" option, rhylib_gear)
     end
     for _, gn in ipairs({ "hair", "fhair" }) do
         local g = info.groups[gn]
-        if g and g.opts.empty then base[g.id] = g.opts.empty end
+        if g then local off = g.off or g.opts.empty if off then base[g.id] = off end end   -- (the group's "nothing" option, rhylib_gear)
     end
     local with = table.Copy(base)
     local any = false
@@ -419,7 +419,7 @@ local function shootPart(ent, spec, tx, ty, tw, th)
             any = true
             -- (the body pass must not have the part: some other option)
             if base[g.id] == nil or base[g.id] == idx then
-                base[g.id] = g.opts.empty or g.opts.blank or g.opts.none or (idx == 0 and 1 or 0)
+                base[g.id] = g.off or g.opts.empty or g.opts.blank or g.opts.none or (idx == 0 and 1 or 0)
             end
         end
     end

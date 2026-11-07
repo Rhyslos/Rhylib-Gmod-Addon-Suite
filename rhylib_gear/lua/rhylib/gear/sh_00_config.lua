@@ -42,7 +42,14 @@
     binoculars, rangefinder, sun visor, helmet lights; def.wornRank) and
     the rest move into the inventory or onto the ground (rhylib_inventory).
 
-    rhylib_gear_scan (sv_10_scan.lua) lists every job model's bodygroups.
+    rhylib_gear_scan (sv_10_scan.lua) lists every job model's bodygroups,
+    then runs each item's keyword rules (it.match, G.MATCH below) over
+    them and learns the group / option names of models whose names differ
+    from the built-in ones. Learned names are merged into the items'
+    groups / on / down lists on both realms (G.SetLearned; the built-in
+    names stay, G.BUILTIN). Server -> client net rhylib.gear.learned
+    (UInt32 length + compressed JSON), sent on join (client asks with
+    rhylib.gear.learnreq) and after each scan or reset.
 
     Also: the helmet on / off toggle (inventory button; hair shows only
     with the helmet off, and a head hit then downs you) and the sun visor
@@ -50,8 +57,9 @@
 
     Shared file: Rhylib.Gear (G) with the item list (G.ITEMS, G.SHOWS,
     G.ORDER), the config module "gear", and the lookups both realms use:
-    G.ModelInfo, G.ItemShown, G.ModelHas, G.Worn, G.Active, G.KitFor,
-    G.Unlocked. Answers rhylib_inventory's hook Rhylib.CanWear.
+    G.ModelInfo, G.InfoShows, G.ItemShown, G.ModelHas, G.Worn, G.Active,
+    G.KitFor, G.Unlocked, G.IsOffName, G.SetLearned. Answers
+    rhylib_inventory's hook Rhylib.CanWear.
 ]]
 
 Rhylib.Gear = Rhylib.Gear or {}
@@ -137,6 +145,51 @@ G.SHOWS = {
 }
 for id, it in pairs(G.ITEMS) do G.SHOWS[id] = it end
 
+-- Keyword rules for rhylib_gear_scan (sv_10_scan.lua), set as each
+-- entry's .match. Lower case, plain substrings; an entry that is a table
+-- needs all its words (e.g. { "shoulder", "antenna" }).
+--   words:    hit in the option name (best), or in "group option" when no
+--             item's words hit the option name itself (not with
+--             groupFallback = false: parts that share one back group)
+--   need:     one of these must also be in the name that hit
+--   notWords: none of these may be in the option name
+--   notGroups: none of these may be in the group name
+-- Options that mean "nothing" (G.IsOffName) never count. The best score
+-- wins an option (an option-name hit, plus a bonus when the group name
+-- also has one of the item's words); a tie between items is reported and
+-- left unlearned.
+G.MATCH = {
+    rhylib_kama = { words = { "kama" }, notWords = { "arc" } },
+    rhylib_kama_arc = { words = { "kama" }, need = { "arc" } },
+    rhylib_pauldron = { words = { "pauldron", "shoulderpad", "shoulder_pad", "spaulder" }, notWords = { "arc", "antenna", "s_ant" } },
+    rhylib_pauldron_arc = { words = { "pauldron", "shoulderpad", "shoulder_pad", "spaulder" }, need = { "arc" }, notWords = { "antenna", "s_ant" } },
+    rhylib_macrobinoculars = { words = { "bino", "macro" }, notWords = { "visor", "range" } },
+    rhylib_rangefinder = { words = { "range", "antenna" }, notWords = { "s_ant", "shoulder", "arm_", "comm", "pack", "orange" }, notGroups = { "shoulder", "arm" } },
+    rhylib_helmet_light = { words = { "light", "flash", "lamp", "torch" }, notWords = { "saber", "highlight", "lightweight" } },
+    rhylib_sunvisor = { words = { "visor" }, notWords = { "bandit" } },
+    rhylib_holster = { words = { "holster" } },
+    rhylib_forearm_arc = { words = { "forearm", "gauntlet", "bracer", "vambrace" } },
+    rhylib_shoulder_antenna = { words = { "s_ant", "shoulderant", { "shoulder", "antenna" }, "arm_antenna", { "arm", "antenna" } } },
+    rhylib_belt_pouches = { words = { "pouch", "belt" }, notWords = { "gun", "bandolier", "holster", "kama", "strap" } },
+    rhylib_arc_backpack = { words = { { "arc", "pack" } }, groupFallback = false },
+    rhylib_comms_backpack = { words = { "comms", { "comm", "pack" }, { "radio", "pack" } }, notWords = { "antenna", "s_ant", "arc", "commander" }, groupFallback = false },
+    rhylib_gunbelt = { words = { "gunbelt", "gun_belt", "bandolier" }, notWords = { "rifle" }, groupFallback = false },
+    rhylib_gunbelt_rifle = { words = { { "gunbelt", "rifle" }, { "gun_belt", "rifle" }, { "bandolier", "rifle" } }, groupFallback = false },
+    rhylib_strap = { words = { "strap" }, notWords = { "kama", "pauldron", "holster", "pack", "belt", "arc" }, groupFallback = false },
+    backpack = { words = { "backpack", "rucksack" }, notWords = { "arc", "comm", "radio", "jet" }, groupFallback = false },
+    jetpack = { words = { "jetpack", "jet_pack" }, groupFallback = false },
+}
+for id, m in pairs(G.MATCH) do
+    if G.SHOWS[id] then G.SHOWS[id].match = m end
+end
+
+-- The built-in groups / on / down of every entry (copies), so learned
+-- names can be merged in and taken out again (G.SetLearned).
+G.BUILTIN = {}
+for id, s in pairs(G.SHOWS) do
+    G.BUILTIN[id] = { groups = table.Copy(s.groups), on = table.Copy(s.on or {}), down = s.down and table.Copy(s.down) or nil }
+end
+
 -- Who gets a shared group first (binoculars before the sun visor). The
 -- first four are also the helmet slot's order for old saves that had
 -- several helmet parts worn: the first one listed stays worn (def.wornRank).
@@ -165,6 +218,22 @@ G.HELMET_PARTS = { binos = true, rangefinder = true, light = true, visor = true 
 
 -- G.HelmetOn(ply): false while the helmet is off (NW2Bool rhylib_helmetOff). Shared.
 function G.HelmetOn(ply) return not ply:GetNW2Bool("rhylib_helmetOff", false) end
+
+-- G.HelmetGroup(info) -> the model's helmet group (from G.ModelInfo):
+-- "helmet", else one whose name ends in "helmet" ("parahelmet") with an
+-- option that isn't a helmet (the bare head). Its "helmet" options are
+-- helmet on, the others helmet off.
+function G.HelmetGroup(info)
+    local g = info and info.groups and info.groups.helmet
+    if g then return g end
+    for gn, gr in pairs(info and info.groups or {}) do
+        if string.sub(gn, -6) == "helmet" then
+            for name in pairs(gr.opts or {}) do
+                if not string.find(name, "helmet", 1, true) then return gr end
+            end
+        end
+    end
+end
 
 -- (No kit by default: players keep what they take from the gear cabinet,
 -- since the inventory is saved.)
@@ -228,9 +297,23 @@ local function norm(s)
 end
 G.Norm = norm
 
--- G.ModelInfo(ent) -> { groups = { [group] = { id, opts = { [option] = index } } } }:
+-- G.IsOffName(option) -> true for an option that means "nothing shown":
+-- "empty", "" or a name with a word none / empty / off / blank / nothing /
+-- no (split at _ - . space), e.g. "kama_none". Shared.
+local OFF_WORDS = { none = true, empty = true, off = true, blank = true, nothing = true, no = true }
+function G.IsOffName(name)
+    name = norm(name)
+    if name == "" then return true end
+    for w in string.gmatch(name, "[^_%-%.%s]+") do
+        if OFF_WORDS[w] then return true end
+    end
+    return false
+end
+
+-- G.ModelInfo(ent) -> { groups = { [group] = { id, opts = { [option] = index }, off } } }:
 -- a model's bodygroups by lower-case name (option names without .smd),
--- cached per model (cache cleared past 64 models). Shared.
+-- off = the "nothing" option's index ("empty", else the first G.IsOffName
+-- option, else nil), cached per model (cache cleared past 64 models). Shared.
 G.modelCache = G.modelCache or {}
 function G.ModelInfo(ent)
     local mdl = ent:GetModel() or ""
@@ -238,12 +321,16 @@ function G.ModelInfo(ent)
     if info then return info end
     info = { groups = {} }
     for _, g in ipairs(ent:GetBodyGroups() or {}) do
-        local opts = {}
+        local opts, off = {}, nil
         for i = 0, (g.num or 1) - 1 do
             local sub = g.submodels and g.submodels[i]
-            if sub then opts[norm(sub)] = i end
+            if sub then
+                local n = norm(sub)
+                if opts[n] == nil then opts[n] = i end
+                if off == nil and G.IsOffName(n) then off = i end
+            end
         end
-        info.groups[norm(g.name)] = { id = g.id, opts = opts }
+        info.groups[norm(g.name)] = { id = g.id, opts = opts, off = opts.empty or off }
     end
     if table.Count(G.modelCache) > 64 then G.modelCache = {} end
     G.modelCache[mdl] = info
@@ -263,9 +350,15 @@ end
 -- for this item? (true for items rhylib_gear doesn't know). Shared.
 -- Example: if Rhylib.Gear.ItemShown(ply, "rhylib_kama") then ... end
 function G.ItemShown(ply, id)
+    if not G.SHOWS[id] then return true end
+    return G.InfoShows(G.ModelInfo(ply), id)
+end
+
+-- G.InfoShows(info, id): the same for a G.ModelInfo table (false for
+-- unknown ids). Shared.
+function G.InfoShows(info, id)
     local s = G.SHOWS[id]
-    if not s then return true end
-    local info = G.ModelInfo(ply)
+    if not s then return false end
     for _, gn in ipairs(s.groups) do
         if G.Option(info.groups[gn], s.on) then return true end
     end
@@ -427,3 +520,66 @@ local function registerItems()
     return true
 end
 Rhylib.After("inventory", registerItems)
+
+--------------------------------------------------------------------------
+-- Learned bodygroup names (rhylib_gear_scan, sv_10_scan.lua)
+--------------------------------------------------------------------------
+
+-- G.learned = { [item id] = { groups = { names }, on = { names }, down = { names } } }:
+-- names the scan found on models whose names differ from the built-in ones.
+G.learned = G.learned or {}
+
+local function addUnique(list, names, seen)
+    for _, n in ipairs(names or {}) do
+        if isstring(n) and n ~= "" and not seen[n] then
+            seen[n] = true
+            list[#list + 1] = n
+        end
+    end
+end
+
+-- G.SetLearned(t): puts every entry's groups / on / down back to the
+-- built-in names and appends the learned ones from t (bad entries are
+-- skipped), then rebuilds G.ALL_GROUPS in place. The tables are changed
+-- in place, so G.ITEMS and G.SHOWS keep sharing them. Shared.
+function G.SetLearned(t)
+    G.learned = istable(t) and t or {}
+    for id, s in pairs(G.SHOWS) do
+        local b = G.BUILTIN[id]
+        if b then
+            local l = istable(G.learned[id]) and G.learned[id] or {}
+            for _, key in ipairs({ "groups", "on", "down" }) do
+                if b[key] or (key == "down" and s.optics and istable(l.down) and #l.down > 0) then
+                    local list, seen = {}, {}
+                    addUnique(list, b[key], seen)
+                    if istable(l[key]) then addUnique(list, l[key], seen) end
+                    s[key] = list
+                end
+            end
+        end
+    end
+    for k in pairs(G.ALL_GROUPS) do G.ALL_GROUPS[k] = nil end
+    for _, s in pairs(G.SHOWS) do
+        for _, gn in ipairs(s.groups) do G.ALL_GROUPS[gn] = true end
+    end
+end
+-- (a refresh of this file rebuilds G.ITEMS: merge again)
+if next(G.learned) then G.SetLearned(G.learned) end
+
+if CLIENT then
+    -- Learned names from the server (on join and after each scan / reset):
+    -- merged, then the inventory's gear pictures are made again.
+    Rhylib.Net.Receive("gear.learned", function()
+        local n = net.ReadUInt(32)
+        if n <= 0 or n > 65000 then G.SetLearned({}) return end
+        local raw = net.ReadData(n)
+        local t = raw and util.JSONToTable(util.Decompress(raw) or "") or {}
+        G.SetLearned(t)
+        local Icons = Rhylib.Inventory and Rhylib.Inventory.Icons
+        if Icons and Icons.RedrawGear then Icons.RedrawGear() end
+    end)
+    Rhylib.Hook.Add("InitPostEntity", "gear.learned", function()
+        Rhylib.Net.Start("gear.learnreq")
+        net.SendToServer()
+    end)
+end
