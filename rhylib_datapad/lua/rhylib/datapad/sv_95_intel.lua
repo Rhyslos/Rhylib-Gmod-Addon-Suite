@@ -7,26 +7,38 @@
       encrypted, field technician       -> cracking starts (view 1)
       encrypted, anyone else            -> "only field technicians" (view 0)
 
-    Cracking: three rounds. The client plays each round and reports it
-    locked (op 1, the round number); the server takes it only from the
-    player it started for, in order, close by, and no sooner than that
-    round's hold time after the last one (or the start). After round 3
-    the pad is cracked (NW2 rhylib_intelCracked) and the intel goes to
-    that player. Closing the window or walking off starts over.
+    Cracking: three rounds. For each the server picks a seed (sent with
+    view 1) and starts the round's clock (D.INTEL_NEXT_WAIT after a
+    locked round, intelFailWait after a miss). The client plays it and
+    on Space reports the lock (op 1: round, its time into the round,
+    both knobs). The server takes it only from the player it started
+    for, for the round it is on, close by, with a time that fits its own
+    clock (no later than it, at most INTEL_LAG s earlier), at least
+    intelMinLock into the round (earlier: ignored, the client never sends
+    one), with knobs that could have turned that far since the start
+    (D.IntelReachable), and works out the wave itself (D.IntelInBand with the same seed): inside the band
+    the next round starts, outside it the crack goes back to round 1
+    after intelFailWait. After round 3 the pad is cracked (NW2
+    rhylib_intelCracked) and the intel goes to that player. Closing the
+    window or walking off starts over.
 
     Nets:
       dp.intel     server -> client: Entity pad, UInt 2 view, then for
-                   views 2 and 3: String title, String text, String
+                   view 1: UInt 2 round, UInt 32 seed, UInt 2 why (0
+                   start, 1 the last round locked, 2 missed: back to
+                   round 1), UInt 7 tenths of a second until it starts;
+                   for views 2 and 3: String title, String text, String
                    cracked by ("" = not yet), Bool only whoever cracked it
                    may read it, (view 3) Bool cracked.
-      dp.intelact  client -> server: Entity pad, UInt 3 op: 1 round locked
-                   (UInt 2 round), 2 save the intel (game master: String
-                   title, String text, Bool onlyCracker), 3 lock it again
-                   (game master), 4 closed the window.
+      dp.intelact  client -> server: Entity pad, UInt 3 op: 1 lock (UInt 2
+                   round, Float seconds into the round, Float frequency
+                   knob, Float amplitude knob), 2 save the intel (game
+                   master: String title, String text, Bool onlyCracker),
+                   3 lock it again (game master), 4 closed the window.
 
     Saved with the pad when it's permanent (core placements, Data
     "dp_intel"/map rows: title, text, only); it comes back encrypted.
-    A report that can't count (too far, dead, too soon, someone else
+    A report that can't count (too far, dead, wrong round, someone else
     cracked it first) closes the client's window with a note.
 ]]
 
@@ -34,8 +46,9 @@ local D = Rhylib.Datapad
 
 Rhylib.Net.Register("dp.intel")
 
-D.intelCrack = D.intelCrack or {}   -- [ply] = { pad, round, since }
+D.intelCrack = D.intelCrack or {}   -- [ply] = { pad, round, seed, since (the round's clock starts) }
 local crack = D.intelCrack
+local INTEL_LAG = 1.5   -- (a lock may be this much older than the server's clock: ping)
 
 D.IntelPlaces = Rhylib.Perma.Placements("datapad_intel", {
     classes = { "rhylib_intel_pad" },
@@ -61,12 +74,18 @@ local function near(ply, pad)
     return IsValid(ply) and IsValid(pad) and ply:Alive() and ply:GetPos():DistToSqr(pad:GetPos()) <= D.Cfg("intelRange") ^ 2
 end
 
-local function send(ply, pad, view)
+-- send(ply, pad, view, c, why, wait): c = the crack (view 1).
+local function send(ply, pad, view, c, why, wait)
     local i = pad.intel or {}
     Rhylib.Net.Start("dp.intel")
     net.WriteEntity(pad)
     net.WriteUInt(view, 2)
-    if view >= 2 then
+    if view == 1 then
+        net.WriteUInt(c.round, 2)
+        net.WriteUInt(c.seed, 32)
+        net.WriteUInt(why or 0, 2)
+        net.WriteUInt(math.Clamp(math.floor((wait or 0) * 10 + 0.5), 0, 127), 7)
+    elseif view >= 2 then
         net.WriteString(i.title or "")
         net.WriteString(i.text or "")
         net.WriteString(i.cracked and (i.by or "someone") or "")
@@ -74,6 +93,14 @@ local function send(ply, pad, view)
         if view == 3 then net.WriteBool(i.cracked and true or false) end
     end
     net.Send(ply)
+end
+
+-- startRound(ply, pad, r, wait, why): round r with a new seed, its clock
+-- starting in wait seconds; tells the client.
+local function startRound(ply, pad, r, wait, why)
+    local c = { pad = pad, round = r, seed = math.random(1, 2147483645), since = CurTime() + wait }
+    crack[ply] = c
+    send(ply, pad, 1, c, why, wait)
 end
 
 local function isGMTool(ply)
@@ -96,8 +123,7 @@ function D.IntelUse(ply, pad)
             if canRead(ply, pad) then send(ply, pad, 2)
             else Rhylib.Notify(ply, "Only whoever cracked this datapad can read it", "info", "Datapad") end
         elseif D.IsFieldTech(ply) then
-            crack[ply] = { pad = pad, round = 1, since = CurTime() }
-            send(ply, pad, 1)
+            startRound(ply, pad, 1, 0, 0)
         else
             send(ply, pad, 0)
         end
@@ -119,6 +145,7 @@ Rhylib.Net.Receive("dp.intelact", function(ply)
 
     if op == 1 then
         local r = net.ReadUInt(2)
+        local t, kf, ka = net.ReadFloat(), net.ReadFloat(), net.ReadFloat()
         local c = crack[ply]
         local i = pad.intel or {}
         -- (a report that can't count: tell the client, so it never hangs)
@@ -131,12 +158,23 @@ Rhylib.Net.Receive("dp.intelact", function(ply)
         if i.cracked then return refuse("Someone else cracked it first") end
         if not (near(ply, pad) and D.IsFieldTech(ply)) then return refuse("The signal was lost: stay close to the datapad") end
         if not (c and c.pad == pad and c.round == r) then return refuse("The signal was lost: start again") end
-        -- (no sooner than the round's hold time, less a little for lag: the client only reports)
-        if CurTime() - c.since < D.IntelRound(r).hold * 0.75 then return refuse("The signal was lost: start again") end
+        -- (the lock's time must fit the server's clock; then the server
+        -- works out the wave itself from the round's seed)
+        local e = CurTime() - c.since
+        if not (t == t and kf == kf and ka == ka) then return end
+        -- (too early into the round: doesn't count, nothing changes)
+        if t < D.IntelMinLock() then return end
+        local ok = t <= e + 0.25 and t >= e - INTEL_LAG
+        if ok then
+            local sg = D.IntelSignal(c.seed, r)
+            kf, ka = math.Clamp(kf, 0, 5), math.Clamp(ka, 0, 1.4)
+            ok = D.IntelReachable(sg, t, kf, ka) and D.IntelInBand(sg, t, kf, ka)
+        end
+        if not ok then
+            return startRound(ply, pad, 1, math.Clamp(D.Cfg("intelFailWait"), 0, 10), 2)
+        end
         if r < 3 then
-            c.round = r + 1
-            c.since = CurTime()
-            return
+            return startRound(ply, pad, r + 1, D.INTEL_NEXT_WAIT, 1)
         end
         crack[ply] = nil
         i.cracked, i.by, i.bySid = true, ply:Nick(), ply:SteamID64()

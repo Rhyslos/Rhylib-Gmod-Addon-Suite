@@ -26,6 +26,9 @@
     burst. Each goes off where it hits, or after clusterFuse:
     W.Explode with clusterDamage / clusterRadius, kind "cluster",
     strength 1 (hook Rhylib.Explosion: small comms jammers, mines).
+    Droids (rhylib_droids, not clones) take a bomblet's damage times
+    clusterDroidMult (EntityTakeDamage "weapons.clusterdroids", while a
+    bomblet's blast is dealt); players and clones take it as it is.
     A rocket that hits something on the way explodes there like a normal
     rocket. Bomblets are not entities: the server moves them in a Tick
     hook (one trace each a tick, only while some fall) and sends each
@@ -54,7 +57,8 @@ Config.Register("weapons", "clusterBurstHeight", 525, "RPS-6 cluster: how high a
 Config.Register("weapons", "clusterCount", 10, "RPS-6 cluster: bomblets in one burst (up to 32)")
 Config.Register("weapons", "clusterSpread", 315, "RPS-6 cluster: radius the bomblets land in, round the spot under the burst (units; 315 = 6 m)")
 Config.Register("weapons", "clusterDamage", 50, "RPS-6 cluster: blast damage of one bomblet at its centre")
-Config.Register("weapons", "clusterRadius", 140, "RPS-6 cluster: blast radius of one bomblet (units)")
+Config.Register("weapons", "clusterRadius", 200, "RPS-6 cluster: blast radius of one bomblet (units)")
+Config.Register("weapons", "clusterDroidMult", 5, "RPS-6 cluster: droids take a bomblet's damage times this (players and clones: as it is)")
 Config.Register("weapons", "clusterFuse", 4, "RPS-6 cluster: seconds after the burst a bomblet that hit nothing goes off anyway")
 Config.Register("weapons", "clusterMax", 64, "RPS-6 cluster: most bomblets falling at once on the server (a burst past it drops fewer)")
 Config.Register("weapons", "clusterMaxPlayer", 20, "RPS-6 cluster: most bomblets falling at once from one player")
@@ -106,16 +110,31 @@ if SERVER then
         return math.Clamp(math.floor(g and g:GetFloat() or 600), 50, 4095)   -- (whole units: sent in 12 bits)
     end
 
+    -- True while a bomblet's blast damage is dealt (droids take more).
+    local inBomblet = false
+
     local function boom(b, pos)
         local r = Config.Get("weapons", "clusterRadius")
-        Rhylib.Weapons.Explode({
-            pos = pos, radius = r, damage = Config.Get("weapons", "clusterDamage"),
-            attacker = b.owner, inflictor = b.inflictor,
-            tier = 1, reach = r * 0.5, kind = "cluster",
-            effectData = { magnitude = 1, scale = 0.5 },
-            shake = { 3, 120, 0.4, r * 2.5 },
-        })
+        inBomblet = true
+        -- (never left set, even if a damage hook errors)
+        ProtectedCall(function()
+            Rhylib.Weapons.Explode({
+                pos = pos, radius = r, damage = Config.Get("weapons", "clusterDamage"),
+                attacker = b.owner, inflictor = b.inflictor,
+                tier = 1, reach = r * 0.5, kind = "cluster",
+                effectData = { magnitude = 1, scale = 0.5 },
+                shake = { 3, 120, 0.4, r * 2.5 },
+            })
+        end)
+        inBomblet = false
     end
+
+    -- Droids (not clones) take a bomblet's damage times clusterDroidMult.
+    Rhylib.Hook.Add("EntityTakeDamage", "weapons.clusterdroids", function(ent, dmg)
+        if inBomblet and ent.IsRhylibDroid == true then
+            dmg:ScaleDamage(math.max(0, Config.Get("weapons", "clusterDroidMult")))
+        end
+    end)
 
     local function tick()
         local now = CurTime()

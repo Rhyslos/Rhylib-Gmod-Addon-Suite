@@ -2,15 +2,16 @@
     Intel datapads (client): the window net dp.intel opens (sv_95_intel.lua).
 
       view 0  encrypted, not a field technician: a short note.
-      view 1  cracking: three rounds (EASY, MODERATE, HARD). The scope
+      view 1  cracking: three rounds (EASY, MODERATE, HARD), each from
+              the seed the server sends (D.IntelSignal). The scope
               shows the target pattern (amber band) and your signal
               (blue). Two knobs, frequency (A / D, or drag / wheel) and
               amplitude (W / S), move your signal; it drifts on its own
-              (D.IntelRound: drift, band, hold; round 3 also jumps).
-              Inside the band the lock bar fills, outside it drains.
-              Full: the round is locked (op 1 to the server), "Next
-              signal" starts the next one; after the third the server
-              sends the intel.
+              (D.IntelDrift; round 3 also jumps). The match bar shows
+              how close it is. Space locks: op 1 to the server (round,
+              time into the round, both knobs), which checks it and
+              answers with the next round, round 1 again after a miss
+              (view 1 again, "why" 1 / 2), or the intel after the third.
       view 2  cracked: the title and text the game master wrote.
       view 3  game master setup: title, text, who reads it once
               cracked, Save, Lock it again.
@@ -36,8 +37,7 @@ local LOCKED_BAND, PIP_DONE, PIP_NOW = Col("datapad.intelLockedBand", 151, 196, 
 local CARET, RX_TEXT = Col("datapad.intelCaret", 70, 100, 140), Col("datapad.intelRxText", 95, 138, 112)
 
 local F_MIN, F_MAX, A_MIN, A_MAX = 1, 4, 0.25, 1
-local F_LO, F_HI, A_LO, A_HI = 0, 5, 0, 1.4   -- (how far the knobs turn: past the targets, so drift can always be caught)
-local SAMPLES = 96
+local F_LO, F_HI, A_LO, A_HI = 0, 5, 0, 1.4   -- (how far the knobs turn: past the targets, so drift can always be caught; the server clamps the same)
 
 local function close(tell)
     if not D.intelWin then return end
@@ -68,57 +68,29 @@ local function act(op, write)
     net.SendToServer()
 end
 
--- A new round: a target pattern, the knobs somewhere else, fresh drift.
-local function newRound(g, r)
+-- A round from the server: the signal from its seed, the knobs where it
+-- says; it starts in wait seconds (why: 0 start, 1 the last round locked,
+-- 2 missed: back to round 1).
+local function newRound(g, r, seed, wait, why)
+    local sg = D.IntelSignal(seed, r)
     g.round = r
-    g.cfg = D.IntelRound(r)
-    g.tf = math.Rand(F_MIN + 0.4, F_MAX - 0.4)
-    g.ta = math.Rand(0.5, 0.8)
-    g.kf = math.Clamp(g.tf + (math.random(2) == 1 and -1 or 1) * math.Rand(0.8, 1.4), F_MIN, F_MAX)
-    g.ka = math.Clamp(g.ta + (math.random(2) == 1 and -1 or 1) * math.Rand(0.2, 0.35), A_MIN, A_MAX)
-    g.p = { math.Rand(0, 6.28), math.Rand(0, 6.28), math.Rand(0, 6.28), math.Rand(0, 6.28) }
-    g.walkF, g.walkA = 0, 0
-    g.jumpF, g.jumpA, g.nextJump = 0, 0, CurTime() + math.Rand(3, 6)
-    g.lock = 0
-    g.locked = false
+    g.sg = sg
+    g.cfg = sg
+    g.tf, g.ta = sg.tf, sg.ta
+    g.kf, g.ka = sg.kf, sg.ka
+    g.lf, g.la = nil, nil
+    g.t0 = CurTime() + wait
+    g.why = why
+    g.pending = false
+    g.waitUntil = nil
+    g.spaceDown = input.IsKeyDown(KEY_SPACE)   -- (a Space already held doesn't count as a press)
     g.inBand = false
+    g.ready = false
     g.err = 1
-    g.t0 = CurTime()
-end
-
--- Drift of frequency and amplitude at time t (added to the knobs).
-local function drift(g, t, dt)
-    local d = g.cfg.drift
-    -- (a random walk scaled by the square root of the frame time: the same at any frame rate)
-    local sq = math.sqrt(dt)
-    g.walkF = math.Clamp(g.walkF + (math.random() - 0.5) * d * sq * 0.4, -d, d)
-    g.walkA = math.Clamp(g.walkA + (math.random() - 0.5) * d * sq * 0.12, -d * 0.3, d * 0.3)
-    if g.cfg.jumps and t >= g.nextJump then
-        g.jumpF = g.jumpF + (math.random(2) == 1 and -1 or 1) * math.Rand(0.25, 0.45)
-        g.jumpA = g.jumpA + (math.random(2) == 1 and -1 or 1) * math.Rand(0.05, 0.12)
-        g.nextJump = t + math.Rand(3, 6)
-    end
-    -- (jumps fade out slowly, so the player has to catch them)
-    g.jumpF = math.Clamp(g.jumpF * math.max(0, 1 - dt * 0.5), -0.45, 0.45)
-    g.jumpA = math.Clamp(g.jumpA * math.max(0, 1 - dt * 0.5), -0.12, 0.12)
-    local df = d * (0.6 * math.sin(t * 0.7 + g.p[1]) + 0.4 * math.sin(t * 1.9 + g.p[2])) + g.walkF + g.jumpF
-    local da = d * 0.3 * (0.6 * math.sin(t * 0.9 + g.p[3]) + 0.4 * math.sin(t * 2.3 + g.p[4])) + g.walkA + g.jumpA
-    return math.Clamp(df, -1, 1), math.Clamp(da, -0.25, 0.25)
 end
 
 local function liveOf(g)
-    return math.Clamp(g.kf + (g.df or 0), 0.5, 5), math.Clamp(g.ka + (g.da or 0), 0.05, 1.3)
-end
-
--- Mean gap between the two waves (0 = on top of each other).
-local function errorOf(g)
-    local lf, la = liveOf(g)
-    local sum = 0
-    for i = 0, SAMPLES - 1 do
-        local x = i / (SAMPLES - 1)
-        sum = sum + math.abs(la * math.sin(6.2832 * lf * x) - g.ta * math.sin(6.2832 * g.tf * x))
-    end
-    return sum / SAMPLES
+    return g.lf or g.kf, g.la or g.ka
 end
 
 -- The game tick (from the frame's Think).
@@ -126,8 +98,11 @@ local function tick(g)
     local now = CurTime()
     local dt = math.min(0.1, now - (g.last or now))
     g.last = now
-    if g.locked then return end
-    g.df, g.da = drift(g, now - g.t0, dt)
+    local space = input.IsKeyDown(KEY_SPACE)
+    local pressed = space and not g.spaceDown
+    g.spaceDown = space
+    if g.pending or now < g.t0 then return end
+    local t = now - g.t0
     -- keys: A / D frequency, W / S amplitude
     local fr, ar = 1.1 * dt, 0.35 * dt
     if input.IsKeyDown(KEY_A) or input.IsKeyDown(KEY_LEFT) then g.kf = g.kf - fr end
@@ -136,17 +111,23 @@ local function tick(g)
     if input.IsKeyDown(KEY_S) or input.IsKeyDown(KEY_DOWN) then g.ka = g.ka - ar end
     g.kf = math.Clamp(g.kf, F_LO, F_HI)
     g.ka = math.Clamp(g.ka, A_LO, A_HI)
-    g.err = errorOf(g)
-    g.inBand = g.err < g.cfg.band
-    if g.inBand then g.lock = g.lock + dt / g.cfg.hold
-    else g.lock = g.lock - dt / (g.cfg.hold * 2) end
-    g.lock = math.Clamp(g.lock, 0, 1)
-    if g.lock >= 1 then
-        g.locked = true
-        surface.PlaySound("buttons/button14.wav")
-        local r = g.round
-        if r == 3 then g.waitUntil = CurTime() + 4 end
-        act(1, function() net.WriteUInt(r, 2) end)
+    g.lf, g.la = D.IntelLive(g.sg, t, g.kf, g.ka)
+    g.err = D.IntelError(g.sg, g.lf, g.la)
+    g.inBand = g.err < g.sg.band
+    local ready = t >= D.IntelMinLock()
+    g.ready = ready
+    if pressed and ready then
+        -- (Space: lock here; the server works it out and answers)
+        g.pending = true
+        g.waitUntil = now + 4
+        surface.PlaySound(g.inBand and "buttons/button14.wav" or "buttons/button10.wav")
+        local r, kf, ka = g.round, g.kf, g.ka
+        act(1, function()
+            net.WriteUInt(r, 2)
+            net.WriteFloat(t)
+            net.WriteFloat(kf)
+            net.WriteFloat(ka)
+        end)
     end
 end
 
@@ -169,13 +150,13 @@ local function drawScope(g, x, y, w, h, s)
         local ly = mid - la * math.sin(6.2832 * lf * fx) * amp
         local px = x + fx * w
         if i < cols then
-            surface.SetDrawColor(g.locked and LOCKED_BAND or BAND)
+            surface.SetDrawColor(BAND)
             surface.DrawRect(px, ty - band, math.ceil(cw), band * 2)
         end
         if ptx then
-            surface.SetDrawColor(g.locked and LOCKED_COL or BAND_EDGE)
+            surface.SetDrawColor(BAND_EDGE)
             surface.DrawLine(ptx, pty, px, ty)
-            local lc = g.locked and LOCKED_COL or LIVE
+            local lc = LIVE
             surface.SetDrawColor(LIVE_GLOW)
             surface.DrawLine(plx, ply - 2, px, ly - 2)
             surface.DrawLine(plx, ply + 2, px, ly + 2)
@@ -242,15 +223,15 @@ local function frame(k, w, h, title, sub)
 end
 
 -- view 1: cracking
-local function openCrack(pad, k)
+local function openCrack(pad, k, r, seed, wait, why)
     local s = k.S
     local g = {}
-    newRound(g, 1)
+    newRound(g, r, seed, wait, why)
     local f = frame(k, 980, 720, function() return "Intel datapad · cracking" end,
         function() return "SIGNAL " .. g.round .. " OF 3 · " .. D.INTEL_ROUND_NAMES[g.round] end)
     D.intelWin = { frame = f, pad = pad, view = 1, g = g }
 
-    local tip = k.Label(f, "Turn the two knobs so your signal (blue) sits inside the target band (amber). It drifts on its own: keep correcting until the lock bar is full. Three signals: easy, moderate, hard.", 14, 400, TEXT_DIM)
+    local tip = k.Label(f, "Match the signal, then Space to lock. Turn the two knobs so your signal (blue) sits inside the target band (amber); it drifts on its own. Lock inside the band and the next signal comes; lock outside it and you start again at signal 1. Three signals: easy, moderate, hard.", 14, 400, TEXT_DIM)
     tip:Dock(TOP)
     tip:DockMargin(0, 0, 0, s(10))
 
@@ -258,53 +239,60 @@ local function openCrack(pad, k)
     scope:Dock(TOP)
     scope:SetTall(math.floor(f:GetTall() * 0.46))
     scope:DockMargin(0, 0, 0, s(12))
-
-    local nextBtn = k.Button(scope, function() return g.round < 3 and "Next signal" or "Reading the intel…" end, function()
-        if g.locked and g.round < 3 then newRound(g, g.round + 1) end
-    end, { accent = true })
-    nextBtn:SetSize(s(220), s(44))
-    -- (the locked box sits above the button, drawn with the scope so the button stays on top)
-    function scope:PerformLayout(w, h) nextBtn:SetPos((w - nextBtn:GetWide()) / 2, h / 2 + s(20)) end
-    local lockedText = { "SIGNAL 1 OF 3 LOCKED", "SIGNAL 2 OF 3 LOCKED", "SIGNAL 3 OF 3 LOCKED" }
     function scope:Paint(w, h)
         drawScope(g, 0, 0, w, h, s)
-        if not g.locked then return end
-        local bw, bh = s(420), s(70)
-        local bx, by = (w - bw) / 2, h / 2 - bh - s(6)
+        local now = CurTime()
+        local head, sub, col
+        if g.pending then
+            head, sub, col = "LOCKING…", "Checking the signal", TEXT
+        elseif now < g.t0 and g.why == 1 then
+            head, sub, col = "SIGNAL " .. (g.round - 1) .. " OF 3 LOCKED", "The next one is harder", LOCKED_COL
+        elseif now < g.t0 and g.why == 2 then
+            head, sub, col = "SIGNAL LOST", "Locked outside the band: back to signal 1", AMBER
+        end
+        if not head then return end
+        local bw, bh = s(460), s(70)
+        local bx, by = (w - bw) / 2, (h - bh) / 2
         draw.RoundedBox(4, bx, by, bw, bh, OVERLAY)
-        surface.SetDrawColor(LOCKED_COL)
+        surface.SetDrawColor(col)
         surface.DrawOutlinedRect(bx, by, bw, bh, 1)
-        draw.SimpleText(lockedText[g.round], k.Font(24, 800), w / 2, by + s(24), LOCKED_COL, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-        draw.SimpleText(g.round < 3 and "The next one is harder" or "Reading the intel…", k.Font(13), w / 2, by + s(50), TEXT_DIM, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText(head, k.Font(24, 800), w / 2, by + s(24), col, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText(sub, k.Font(13), w / 2, by + s(50), TEXT_DIM, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
-    function scope:Think() nextBtn:SetVisible(g.locked and g.round < 3) end
 
+    local function busy() return g.pending or CurTime() < g.t0 end
     local knobs = vgui.Create("DPanel", f)
     knobs:Dock(TOP)
     knobs:SetTall(s(120))
     knobs:DockMargin(0, 0, 0, s(12))
     knobs.Paint = nil
-    local k1 = knob(knobs, k, g, "FREQUENCY", "drag, wheel, or A / D", function() return g.kf end, function(v) if not g.locked then g.kf = math.Clamp(v, F_LO, F_HI) end end, F_MIN, F_MAX)
-    local k2 = knob(knobs, k, g, "AMPLITUDE", "drag, wheel, or W / S", function() return g.ka end, function(v) if not g.locked then g.ka = math.Clamp(v, A_LO, A_HI) end end, A_MIN, A_MAX)
+    local k1 = knob(knobs, k, g, "FREQUENCY", "drag, wheel, or A / D", function() return g.kf end, function(v) if not busy() then g.kf = math.Clamp(v, F_LO, F_HI) end end, F_MIN, F_MAX)
+    local k2 = knob(knobs, k, g, "AMPLITUDE", "drag, wheel, or W / S", function() return g.ka end, function(v) if not busy() then g.ka = math.Clamp(v, A_LO, A_HI) end end, A_MIN, A_MAX)
     function knobs:PerformLayout(w, h)
         local half = (w - s(12)) / 2
         k1:SetPos(0, 0) k1:SetSize(half, h)
         k2:SetPos(half + s(12), 0) k2:SetSize(half, h)
     end
 
+    -- Match bar: full at a perfect match; the mark is the band's edge.
     local bar = vgui.Create("DPanel", f)
     bar:Dock(TOP)
     bar:SetTall(s(44))
     function bar:Paint(w, h)
         k.SetCol(k.C.row)
         surface.DrawRect(0, 0, w, h)
-        draw.SimpleText("LOCK", k.Font(12, 700), s(14), h / 2, TEXT_DIM, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-        local bx, bw = s(70), w - s(70) - s(80)
+        draw.SimpleText("MATCH", k.Font(12, 700), s(14), h / 2, TEXT_DIM, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        local bx, bw = s(70), w - s(70) - s(190)
+        local fill = math.Clamp(1 - g.err / (g.sg.band * 3), 0, 1)
         surface.SetDrawColor(LOCK_BG)
         surface.DrawRect(bx, h / 2 - s(7), bw, s(14))
-        surface.SetDrawColor(LOCKED_COL)
-        surface.DrawRect(bx, h / 2 - s(7), bw * g.lock, s(14))
-        draw.SimpleText(math.floor(g.lock * 100) .. "%", k.Font(14, 700), w - s(14), h / 2, LOCKED_COL, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+        surface.SetDrawColor(g.inBand and LOCKED_COL or LIVE)
+        surface.DrawRect(bx, h / 2 - s(7), bw * fill, s(14))
+        surface.SetDrawColor(AMBER)
+        surface.DrawRect(bx + math.floor(bw * 2 / 3), h / 2 - s(11), s(2), s(22))
+        local hint = not g.ready and "TUNING…" or (g.inBand and "IN BAND · SPACE TO LOCK" or "SPACE TO LOCK")
+        draw.SimpleText(hint, k.Font(13, 700), w - s(14), h / 2,
+            g.inBand and LOCKED_COL or TEXT_DIM, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
     end
 
     local pips = vgui.Create("DPanel", f)
@@ -314,8 +302,8 @@ local function openCrack(pad, k)
     function pips:Paint(w, h)
         local pw = (w - s(16)) / 3
         for r = 1, 3 do
-            local done = r < g.round or (r == g.round and g.locked)
-            local cur = r == g.round and not g.locked
+            local done = r < g.round
+            local cur = r == g.round
             local px = (r - 1) * (pw + s(8))
             surface.SetDrawColor(done and PIP_DONE or (cur and PIP_NOW or k.C.row))
             surface.DrawRect(px, 0, pw, h)
@@ -453,7 +441,10 @@ Rhylib.Net.Receive("dp.intel", function()
     local pad = net.ReadEntity()
     local view = net.ReadUInt(2)
     local title, text, by, only, cracked = "", "", "", false, false
-    if view >= 2 then
+    local round, seed, why, wait = 1, 1, 0, 0
+    if view == 1 then
+        round, seed, why, wait = net.ReadUInt(2), net.ReadUInt(32), net.ReadUInt(2), net.ReadUInt(7) / 10
+    elseif view >= 2 then
         title, text, by, only = net.ReadString(), net.ReadString(), net.ReadString(), net.ReadBool()
         if view == 3 then cracked = net.ReadBool() end
     end
@@ -469,8 +460,13 @@ Rhylib.Net.Receive("dp.intel", function()
         cur.by = by
         return
     end
+    -- (the next round, or round 1 again after a miss: same window)
+    if view == 1 and cur and cur.view == 1 and cur.pad == pad and cur.g and IsValid(cur.frame) then
+        newRound(cur.g, math.Clamp(round, 1, 3), seed, wait, why)
+        return
+    end
     -- (the crack finished: the cracking window turns into the intel)
-    if view == 1 then openCrack(pad, k)
+    if view == 1 then openCrack(pad, k, math.Clamp(round, 1, 3), seed, wait, why)
     elseif view == 3 then openSetup(pad, k, title, text, by, only, cracked)
     else openRead(pad, k, view, title, text, by) end
 end)

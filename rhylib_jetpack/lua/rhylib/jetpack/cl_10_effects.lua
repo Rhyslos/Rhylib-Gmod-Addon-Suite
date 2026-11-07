@@ -2,34 +2,32 @@
     Jetpack visuals and sound (client only). Nothing is sent over the
     network: everything is read from the players' predicted network vars.
 
-      - the jetpack model on the back of anyone wearing one
       - thrust flames and a jet sound while thrusting
       - a small fuel bar under your crosshair
 
-    One shared ClientsideModel draws every wearer's jetpack (moved and
-    drawn per player in PostPlayerDraw). J.BackOffset / CrouchDrop /
-    BackAngle / Nozzles can be changed from another client file to fit a
-    different model. Sounds checked by a 0.1 s timer.
+    No prop is drawn on the back: the worn jetpack shows as the player
+    model's jetpack bodygroup (rhylib_gear G.Apply, G.SHOWS.jetpack plus
+    learned names); a model without one shows only the flames.
+    J.BackOffset / CrouchDrop / BackAngle / Nozzles place the flames and
+    can be changed from another client file. Sounds checked by a 0.1 s
+    timer.
 ]]
 
 local J = Rhylib.Jetpack
 local UI = Rhylib.UI
 
--- Placeholder placement on the back; tune once a real jetpack model is chosen.
+-- Where the flames come from on the back.
 J.BackOffset = Vector(-9, 0, 50)      -- back, sideways, up from the player's feet (standing)
 J.CrouchDrop = 18                     -- lower by this while crouching
 J.BackAngle = Angle(0, 0, 0)
 J.Nozzles = { Vector(-2, -5, -12), Vector(-2, 5, -12) }  -- flame points relative to the jetpack
 
-local MODEL = "models/thrusters/jetpack.mdl"
 local SOUND = "thrusters/jet02.wav"
 
 local matGlow = Material("sprites/light_glow02_add")
 local matBeam = Material("trails/plasma")
 local COL_FLAME = Color(255, 170, 80)
 local COL_CORE = Color(255, 240, 200)
-
-local backModel
 
 local function placement(ply)
     local yaw = ply:GetRenderAngles().y
@@ -41,27 +39,10 @@ local function placement(ply)
     return pos, a
 end
 
+-- Flames while thrusting (the jetpack itself is the model's bodygroup).
 Rhylib.Hook.Add("PostPlayerDraw", "jetpack.draw", function(ply)
-    if not ply:GetDTBool(J.DT_HAS) or not ply:Alive() then return end
-
-    -- (the jetpack item's model: Server settings > Models can swap it)
-    local def = Rhylib.Items and Rhylib.Items.Get and Rhylib.Items.Get("jetpack")
-    local want = def and def.model or MODEL
-    if IsValid(backModel) and backModel.rhylibWant ~= want then backModel:Remove() end
-    if not IsValid(backModel) then
-        backModel = ClientsideModel(want, RENDERGROUP_OPAQUE)
-        if IsValid(backModel) then backModel.rhylibWant = want end
-        if not IsValid(backModel) then return end
-        backModel:SetNoDraw(true)
-    end
-
+    if not ply:GetDTBool(J.DT_HAS) or not ply:GetDTBool(J.DT_THRUST) or not ply:Alive() then return end
     local pos, ang = placement(ply)
-    backModel:SetPos(pos)
-    backModel:SetAngles(ang)
-    backModel:SetupBones()
-    backModel:DrawModel()
-
-    if not ply:GetDTBool(J.DT_THRUST) then return end
     local flicker = 0.8 + math.sin(CurTime() * 40 + ply:EntIndex()) * 0.2
     for _, n in ipairs(J.Nozzles) do
         local p = pos + ang:Forward() * n.x + ang:Right() * n.y + ang:Up() * n.z

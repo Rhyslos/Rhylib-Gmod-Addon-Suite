@@ -16,7 +16,8 @@
           redundantWith / redundantWhy = refused while you have that skill,
           reinforce = marks a Reinforcements capstone,
           layoutCol = "shared": the menu draws it across the whole width
-          (not in its branch's column or frame),
+          (not in its branch's column or frame); "spec": in its
+          specialisation's column (not its branch's column or frame),
           menuHide = { ids }: needs the menu draws no line from (still
           needed; for a long line a shorter chain already shows) }
     A node's position in K.NODES is its index (n.index): skills.learn and
@@ -261,7 +262,7 @@ K.NODES = {
 
     -- Pistol: 1-3-4-2, then the Command / ARC trooper split.
     { id = "dual_dc17", cat = "officer", spec = "pistol", tier = 2, cost = 2, name = "Dual DC-17",
-      desc = "Draw a second DC-17 (V): two magazines loaded, shots alternate between hands.",
+      desc = "Draw a second DC-17 (V): two magazines loaded, shots alternate between hands. Pistols do 15% more damage, with one or two.",
       needsGroups = { { "mark_target" }, { "arc_training" } }, needsLabel = "Needs Tactical visor or ARC training" },
     { id = "pistol_prof", cat = "officer", spec = "pistol", tier = 3, cost = 2, name = "Pistol proficiency",
       desc = "DC-17: 20% less spread.", needs = { "dual_dc17" } },
@@ -296,8 +297,8 @@ K.NODES = {
     { id = "arc_fieldcraft", cat = "officer", spec = "pistol", branch = "arc", menuHide = { "arc_training" }, tier = 6, cost = 1, name = "ARC fieldcraft", icon = "bolt",
       desc = "Every gun: 5% faster reloads, 5% less spread and 5% faster draw. Stamina refills 5% faster.",
       needs = { "arc_training" }, needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
-    { id = "cmd_wind", cat = "officer", spec = "pistol", branch = "command", tier = 6, cost = 2, name = "Second wind", exclusive = "command", rankCfg = "commandRank", order = "cmd_wind",
-      desc = "No stamina drain while sprinting, and stamina refills fast. You and everyone near you, 6 s; 6 min cooldown.",
+    { id = "cmd_wind", cat = "officer", spec = "pistol", branch = "command", tier = 6, cost = 2, name = "Combat rush", exclusive = "command", rankCfg = "commandRank", order = "cmd_wind",
+      desc = "No stamina drain while sprinting, stamina refills fast, you can fire (and aim) while sprinting, and guns kick 60% less. You and everyone near you, 6 s; 6 min cooldown.",
       needsGroups = { { "light_rounds" }, { "crits" } }, needsLabel = "Needs Light rounds or Critical hits" },
     { id = "cmd_triage", cat = "officer", spec = "pistol", branch = "command", tier = 6, cost = 2, name = "Field triage", exclusive = "command", rankCfg = "commandRank", order = "cmd_triage",
       desc = "Downed players nearby get up (at 25% health), everyone heals 8 health a second, and all afflictions are muted (bleeding, limps or fractures, hurt limbs, illness). You and everyone near you, 6 s; 6 min cooldown.",
@@ -318,8 +319,8 @@ K.NODES = {
     -- Commander (LT and up from the first skill, rankCfg on all):
     -- 1-6-3-4-2. The orders alone at tier 3 (two sides next to them looked
     -- messy), then Rifle drill / Command presence / Field logistics.
-    { id = "cmd_wind_c", cat = "officer", spec = "commander", tier = 2, cost = 2, name = "Second wind", exclusive = "command", rankCfg = "commandRank", order = "cmd_wind",
-      desc = "No stamina drain while sprinting, and stamina refills fast. You and everyone near you, 6 s; 6 min cooldown.",
+    { id = "cmd_wind_c", cat = "officer", spec = "commander", tier = 2, cost = 2, name = "Combat rush", exclusive = "command", rankCfg = "commandRank", order = "cmd_wind",
+      desc = "No stamina drain while sprinting, stamina refills fast, you can fire (and aim) while sprinting, and guns kick 60% less. You and everyone near you, 6 s; 6 min cooldown.",
       needs = { "mark_target" } },
     { id = "cmd_triage_c", cat = "officer", spec = "commander", tier = 2, cost = 2, name = "Field triage", exclusive = "command", rankCfg = "commandRank", order = "cmd_triage",
       desc = "Downed players nearby get up (at 25% health), everyone heals 8 health a second, and all afflictions are muted (bleeding, limps or fractures, hurt limbs, illness). You and everyone near you, 6 s; 6 min cooldown.",
@@ -406,51 +407,54 @@ K.NODES = {
       desc = "The first hit you take gives you 25% more damage for 5 s. Once a minute.",
       needs = { "grenadier" } },
     { id = "death_from_above", cat = "airborne", spec = "airborne", tier = 6, cost = 4, name = "Death from above",
-      desc = "Landing hard (a long drop or a jetpack dive) slams droids around you.",
+      desc = "Landing hard (a long drop or a jetpack dive) slams droids around you and knocks out droideka shields. When it hits: no fall damage, and no damage at all for 3 s after.",
       needsGroups = { { "dp23_prof", "blast_hardened" }, { "dp23_prof", "battle_rush" }, { "blast_hardened", "battle_rush" } },
       needsLabel = "Needs two of DP-23 proficiency, Blast hardened and Battle rush" },
 
     -- Field technician (EOD, rhylib_eod; no
     -- skill makes defusing easier, they're too niche: the defusal is the
-    -- same for everyone). A combat engineer: shared trunk (12), then the
-    -- Demolitions skills, and one end branch: Grenadier (the grenade
-    -- launcher, 4) or Anti-tank (Top attack and Cluster rockets, 2 + 2).
-    -- Each full path is 24. (A field technician's
+    -- same for everyone). A combat engineer: Bomb manual and Armour repair,
+    -- then the end branch at tier 3, side by side: Grenadier (the grenade
+    -- launcher, 4) or Anti-tank (Cluster rockets 2, later Top attack 2),
+    -- then the shared Blast hardened / Explosives pack / E-tool drills and
+    -- the Demolitions skills. Each full path is 24. (A field technician's
     -- wideband device jams droids without a skill: rhylib_eod.)
     { id = "eod_manual", cat = "airborne", spec = "eod", tier = 1, cost = 1, name = "Bomb manual", icon = "search",
       desc = "An EOD manual tab on your datapad (every rule, reading, safeguard and module), and the datapad's Call the bomb squad reaches you." },
     { id = "eod_armor", cat = "airborne", spec = "eod", tier = 2, cost = 3, name = "Armour repair", icon = "shield",
       desc = "Carry an armour repair kit (ammo cabinet): left click a clone in front of you, right click yourself, or use the E wheel. It patches armour back up to their spawn armour; the kit's charge runs down.",
       needs = { "eod_manual" } },
-    { id = "eod_blast", cat = "airborne", spec = "eod", tier = 3, cost = 3, name = "Blast hardened", icon = "burst",
-      desc = "30% less damage from every explosion (bombs, mines, grenades, rockets, mortars), and explosions never knock you down.",
-      needs = { "eod_armor" } },
     { id = "eod_launcher", cat = "airborne", spec = "eod", branch = "grenadier", tier = 3, cost = 4, name = "Grenade launcher", icon = "grenade",
       desc = "Carry the T-19 grenade launcher. It fires your thermal detonators on impact in a high arc out to 60 m; the range for your aim shows by the ammo counter.",
       needs = { "eod_armor" } },
+    { id = "eod_cluster", cat = "airborne", spec = "eod", branch = "antitank", tier = 3, cost = 2, name = "Cluster rockets", icon = "burst",
+      desc = "RPS-6 cluster mode (V): fire at a spot. The rocket climbs, bursts 10 m above where you aimed and drops a spread of bomblets that go off where they land.",
+      needs = { "eod_armor" } },
+    { id = "eod_blast", cat = "airborne", spec = "eod", tier = 4, cost = 3, name = "Blast hardened", icon = "burst",
+      desc = "30% less damage from every explosion (bombs, mines, grenades, rockets, mortars), and explosions never knock you down.",
+      needsGroups = { { "eod_launcher" }, { "eod_cluster" } }, needsLabel = "Needs Grenade launcher or Cluster rockets" },
     { id = "eod_pack", cat = "airborne", spec = "eod", tier = 4, cost = 2, name = "Explosives pack", icon = "weight",
       desc = "Grenades, high explosive charges, mines and rockets weigh half for you, and you stack one more grenade, charge or mine.",
-      needsGroups = { { "eod_blast" }, { "eod_launcher" } }, needsLabel = "Needs Blast hardened or Grenade launcher" },
+      needsGroups = { { "eod_launcher" }, { "eod_cluster" } }, needsLabel = "Needs Grenade launcher or Cluster rockets" },
     -- (the effect is in rhylib_logistics: K.Has(ply, "eod_etool"))
     { id = "eod_etool", cat = "airborne", spec = "eod", tier = 4, cost = 2, name = "E-tool drills", icon = "wall",
       desc = "With an E-tool or field kit, you build structures faster, and placing one uses 20% fewer building supplies.",
-      needsGroups = { { "eod_blast" }, { "eod_launcher" } }, needsLabel = "Needs Blast hardened or Grenade launcher" },
+      needsGroups = { { "eod_launcher" }, { "eod_cluster" } }, needsLabel = "Needs Grenade launcher or Cluster rockets" },
     -- Demolitions
     { id = "eod_demo", cat = "airborne", spec = "eod", tier = 5, cost = 3, name = "Demolitions", icon = "charge",
       desc = "Your thermal detonators (thrown or launched) and high explosive charges do 25% more damage over a 15% wider blast.",
       needs = { "eod_pack" } },
-    { id = "eod_lockon", cat = "airborne", spec = "eod", branch = "antitank", tier = 6, cost = 2, name = "Top attack", icon = "target",
+    -- (drawn in the spec's column, so the Anti-tank frame stays round
+    -- Cluster rockets beside the Grenade launcher)
+    { id = "eod_lockon", cat = "airborne", spec = "eod", branch = "antitank", layoutCol = "spec", menuHide = { "eod_cluster" }, tier = 6, cost = 2, name = "Top attack", icon = "target",
       desc = "RPS-6 lock-on mode (V): hold aim on a jammer or a droid until it locks, then fire. The rocket climbs first and dives onto the target from above.",
-      needs = { "eod_demo" } },
+      needs = { "eod_demo", "eod_cluster" } },
     { id = "eod_antiarmor", cat = "airborne", spec = "eod", tier = 6, cost = 3, name = "Anti-armour", icon = "bolt",
       desc = "Your explosives do 25% more to B2s, heavy and commander droids.",
       needs = { "eod_demo" } },
     { id = "eod_render", cat = "airborne", spec = "eod", tier = 7, cost = 3, name = "Render safe", icon = "box",
       desc = "Recover the charge from a bomb you made safe: a high explosive charge (two from a large bomb).",
       needsGroups = { { "eod_lockon" }, { "eod_antiarmor" } }, needsLabel = "Needs Top attack or Anti-armour" },
-    { id = "eod_cluster", cat = "airborne", spec = "eod", branch = "antitank", tier = 7, cost = 2, name = "Cluster rockets", icon = "burst",
-      desc = "RPS-6 cluster mode (V): fire at a spot. The rocket climbs, bursts 10 m above where you aimed and drops a spread of bomblets that go off where they land.",
-      needs = { "eod_lockon" } },
 
     -- Medic (medic jobs only). Tier 1 also has the weapon choice (exclusive
     -- group "medic_gun": one or the other).
@@ -961,9 +965,9 @@ local PAGE_SECTIONS = {
     { "Trooper", { "^quickHands", "^runGun", "^pointBlank", "^lightKit", "^momentum", "^extMag", "^effCells", "^loadBearer", "^gunRunner", "^steadySpread$", "^steadyRecoil$", "^rapidFire", "^overcharge", "^sustain", "^burst" } },
     { "Marksman", { "^stanceSpread$", "^steadyAimSpread$", "^headhunter", "^boltDrills", "^longGun", "^carbine", "^calledShot", "^priority", "^rhythm", "^firstShot" } },
     { "Heavy", { "^reinforcedHealth$", "^planted", "^ammoBelt$", "^shotgun", "^juggernaut", "^suppress", "^hunker" } },
-    { "Officer: pistol", { "^pistolSpread$", "^steadyGrip", "^dualRate$", "^crit", "^lightRounds", "^quickDraw", "^speedLoader", "^sidearm", "^lightMagBonus$" } },
+    { "Officer: pistol", { "^pistolSpread$", "^steadyGrip", "^dualRate$", "^dualPistolDamage$", "^crit", "^lightRounds", "^quickDraw", "^speedLoader", "^sidearm", "^lightMagBonus$" } },
     { "Officer: marks & commander", { "^mark", "^visorSpot", "^squadSkillRange$", "^logiReload$", "^line", "^rifleDrill", "^vet" } },
-    { "Command orders", { "^command", "^windRegen$", "^triage", "^focus", "^pressSprint$", "^presenceMult$", "^seasoned", "^standingTime$", "^holdFast" } },
+    { "Command orders", { "^command", "^windRegen$", "^windRecoil$", "^triage", "^focus", "^pressSprint$", "^presenceMult$", "^seasoned", "^standingTime$", "^holdFast" } },
     { "Reinforcements & squad wheel", { "^reinf", "^squadSignal" } },
     { "Airborne", { "^rush", "^grenade", "^airborne", "^fallMult$", "^tankMult$", "^springJump$", "^hover", "^afterburner", "^combatDrop", "^blastMult$", "^airMult$", "^slam" } },
     { "Medic", { "^underFire", "^medGun" } },

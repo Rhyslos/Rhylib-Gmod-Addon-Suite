@@ -67,6 +67,7 @@ reg("rapidFireDamage", 1.21, "Rapid fire: DC-15S damage multiplier")
 reg("pistolSpread", 0.8, "Pistol proficiency: DC-17 spread multiplier")
 reg("steadyGripRecoil", 0.5, "Steady grip: pistol view kick multiplier (DC-17, and the DC-15S in Sidearm mode)")
 reg("dualRate", 1, "Dual DC-17: fire rate multiplier (the gain is the second magazine)")
+reg("dualPistolDamage", 1.15, "Dual DC-17: pistol damage multiplier (one pistol or two)")
 reg("critChance", 0.1, "Critical hits: chance per hit")
 reg("critMult", 1.5, "Critical hits: damage multiplier")
 reg("lightRoundsChance", 0.15, "Light rounds: crit chance with a small magazine loaded (doesn't stack with Critical hits)")
@@ -119,7 +120,10 @@ reg("blastMult", 0.7, "Blast hardened: explosion damage multiplier")
 reg("airMult", 0.8, "Aerial stability: damage multiplier while off the ground")
 reg("slamSpeed", 500, "Death from above: landing speed needed (units/s)")
 reg("slamRadius", 220, "Death from above: radius (units)")
-reg("slamDamage", 60, "Death from above: damage at the centre (more for faster landings)")
+reg("slamDamage", 100, "Death from above: damage at the centre (more for faster landings)")
+reg("slamImmune", 3, "Death from above: seconds of no damage after a slam that hits something")
+reg("slamImmuneCooldown", 8, "Death from above: seconds from the start of the no-damage time before it can be given again")
+reg("slamFallCap", 1500, "Death from above: a slam that hits something cancels fall damage up to this landing speed (units/s)")
 reg("underFireMult", 0.8, "Under fire: damage multiplier while reviving or treating")
 reg("stanceSpread", 0.8, "Steady stance: spread multiplier while crouched")
 reg("steadyAimSpread", 0.75, "Steady aim: spread multiplier while aiming")
@@ -218,6 +222,12 @@ function K.ItemGun(id)
 end
 K.PISTOLS = { rhylib_dc17 = true }
 
+-- K.IsPistol(wep): a pistol (K.PISTOLS or InvGroup "pistol"; training
+-- copies count). Not the DC-15S in Sidearm mode.
+function K.IsPistol(wep)
+    return IsValid(wep) and (wep.InvGroup == "pistol" or K.PISTOLS[K.GunClass(wep)] == true)
+end
+
 -- Gun type from the weapon's InvGroup (rifle: DC-15A, Westar-M5; carbine:
 -- DC-15S, DP-23; training copies inherit it).
 function K.IsRifle(wep) return IsValid(wep) and wep.InvGroup == "rifle" end
@@ -246,9 +256,9 @@ function K.ScopeAllowed(ply, wep)
 end
 
 -- K.RunAndGun(ply, wep): true if ply may fire and aim while sprinting
--- (Run and gun; Shock Assault).
+-- (Run and gun; Shock Assault; the Combat rush order).
 function K.RunAndGun(ply, wep)
-    return isPly(ply) and (K.Has(ply, "run_gun") or K.Has(ply, "shock_assault"))
+    return isPly(ply) and (K.Has(ply, "run_gun") or K.Has(ply, "shock_assault") or K.OrderIs(ply, "wind"))
 end
 
 local function sprinting(ply, wep)
@@ -267,7 +277,8 @@ function K.SpreadMult(ply, wep)
     local class = K.GunClass(wep)
     local steady = class == K.Z6 and set.steady_barrels and sprinting(ply, wep)
     if steady then m = m * cfg("steadySpread") end
-    if set.run_gun and not steady and sprinting(ply, wep) then m = m * cfg("runGunSpread") end
+    -- (no penalty during the Combat rush order)
+    if set.run_gun and not steady and sprinting(ply, wep) and not K.OrderIs(ply, "wind") then m = m * cfg("runGunSpread") end
     if set.pistol_prof and K.PISTOLS[class] then m = m * cfg("pistolSpread") end
     local crouched = ply:Crouching()
     if set.steady_stance and crouched then m = m * cfg("stanceSpread") end
@@ -285,7 +296,7 @@ function K.SpreadMult(ply, wep)
     return m
 end
 
--- K.RecoilMult(ply, wep): view kick multiplier (Steady grip, Focus fire,
+-- K.RecoilMult(ply, wep): view kick multiplier (Steady grip, Focus fire, Combat rush,
 -- Carbine discipline, Hover, Combat veteran, Steady the line, Overcharge,
 -- Sustained fire, Steady barrels, Planted).
 function K.RecoilMult(ply, wep)
@@ -297,6 +308,7 @@ function K.RecoilMult(ply, wep)
         m = m * cfg("steadyGripRecoil")
     end
     if K.OrderIs(ply, "focus") then m = m * cfg("focusRecoil") end   -- (command order)
+    if K.OrderIs(ply, "wind") then m = m * cfg("windRecoil") end   -- (Combat rush order)
     if K.GunClass(wep) == K.DC15S and K.Has(ply, "carbine_disc") then m = m * cfg("carbineRecoil") end
     if K.Has(ply, "hover") and K.Hovering(ply) then m = m * cfg("hoverRecoil") end
     if K.Has(ply, "combat_veteran") and K.IsRifle(wep) then m = m * cfg("vetRifle") end
@@ -406,6 +418,12 @@ end
 -- = when it ends). Shared.
 function K.LastStand(ply)
     return isPly(ply) and ply:GetNW2Float("rhylib_lastStand", 0) > CurTime()
+end
+
+-- K.SlamImmune(ply): in the no-damage time after a Death from above slam
+-- (NW2Float rhylib_slamImmune = until). Shared.
+function K.SlamImmune(ply)
+    return isPly(ply) and ply:GetNW2Float("rhylib_slamImmune", 0) > CurTime()
 end
 
 -- Heavy feed: SWEP.MagSkills = { [magId] = skill }.
@@ -617,13 +635,13 @@ function K.Hovering(ply)
 end
 
 -- K.FreeSprint(ply): sprinting costs no stamina right now (Momentum after
--- a kill: NW2Float rhylib_momentum; or the Second wind order).
+-- a kill: NW2Float rhylib_momentum; or the Combat rush order).
 function K.FreeSprint(ply)
     if not isPly(ply) then return false end
     return ply:GetNW2Float("rhylib_momentum", 0) > CurTime() or K.OrderIs(ply, "wind")
 end
 
--- K.RegenMult(ply): stamina refill multiplier (Second wind order, Steady
+-- K.RegenMult(ply): stamina refill multiplier (Combat rush order, Steady
 -- the line, ARC fieldcraft).
 function K.RegenMult(ply)
     local m = 1
@@ -742,5 +760,22 @@ if CLIENT then
             surface.DrawRect(o, 0, 6 * s, h)
             surface.DrawRect(w - o - 6 * s, 0, 6 * s, h)
         end
+    end)
+end
+
+-- Death from above: a small line under the crosshair while the no-damage
+-- time after a slam runs (the server side is in sv_10_skills.lua).
+if CLIENT then
+    local COL_SLAM = Color(120, 200, 255)
+    Rhylib.Hook.Add("HUDPaint", "skills.slam", function()
+        local me = LocalPlayer()
+        if not K.SlamImmune(me) then return end
+        local left = me:GetNW2Float("rhylib_slamImmune", 0) - CurTime()
+        local s = ScrH() / 1080
+        local UI = Rhylib.UI
+        local font = UI and UI.Font and UI.Font(math.floor(16 * s), 700) or "DermaDefault"
+        COL_SLAM.a = 160 + 95 * math.abs(math.sin(CurTime() * 5))
+        draw.SimpleText(string.format("DEATH FROM ABOVE  ·  no damage %.1f s", math.max(0, left)), font,
+            ScrW() * 0.5, ScrH() * 0.5 + 120 * s, COL_SLAM, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end)
 end

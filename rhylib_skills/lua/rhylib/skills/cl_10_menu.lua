@@ -4,7 +4,8 @@
     straight connector lines that only turn at right angles (down from a
     skill, across, down into the next). Shared skills sit in the middle,
     each specialisation has its own column, end branches sit in framed
-    boxes inside it.
+    boxes inside it. A row is centred in its column (a lone skill in the
+    middle) unless lining it up under its parents keeps more lines straight.
 
     Click a skill to select it; the side panel's "Learn (n points)" button
     learns it (skills.learn). The first skill that would commit you to a
@@ -968,7 +969,10 @@ local function build(page)
             for _, n in ipairs(nodes) do
                 -- (layoutCol = "shared": drawn across the whole width, e.g. a
                 -- start skill that sits next to a shared one)
+                -- (layoutCol = "spec": in its specialisation's column, not its
+                -- branch's, e.g. a branch skill far below the branch frame)
                 local col = n.layoutCol == "shared" and cols.shared
+                    or (n.layoutCol == "spec" and n.spec and cols.spec[n.spec])
                     or (n.branch and cols.branch[n.branch]) or (n.spec and cols.spec[n.spec]) or cols.shared
                 local key = n.tier .. "|" .. col[1] .. "|" .. col[2]
                 if not groups[key] then
@@ -1062,6 +1066,16 @@ local function build(page)
                     itemOf[n.id] = { n = n, bw = bw, boxed = true, csq = csq }
                 end
             end
+            -- Each column's shared spacing for centred rows: its fullest
+            -- one-line row decides it.
+            local latCell = {}
+            for _, g in ipairs(groups) do
+                if g.lines == 1 and not g.compact then
+                    local key = g.col[1] .. "|" .. g.col[2]
+                    local c = math.min(inner * (g.col[2] - g.col[1]) / #g.list, S(150))
+                    latCell[key] = math.min(latCell[key] or math.huge, c)
+                end
+            end
             for _, g in ipairs(groups) do
               local gx0, gx1 = x0 + inner * g.col[1], x0 + inner * g.col[2]
               if g.lines > 1 or g.compact then
@@ -1075,13 +1089,22 @@ local function build(page)
                 local bw = math.floor(math.min(cellW - S(10), S(120)))
                 local minSep = bw + S(4)
                 -- Where each wants to be: over its parents, else its even spot.
-                local items = {}
+                local items, rowKids = {}, {}
                 for i, n in ipairs(g.list) do
-                    local sum, k = 0, 0
+                    local sum, k, par = 0, 0, nil
                     for _, r in ipairs(linkReqs(n)) do
-                        if L.pos[r] and colOf[r] == g.col then sum, k = sum + L.outX(r), k + 1 end
+                        if L.pos[r] and colOf[r] == g.col then
+                            sum, k, par = sum + L.outX(r), k + 1, r
+                            rowKids[r] = (rowKids[r] or 0) + 1
+                        end
                     end
-                    items[i] = { n = n, i = i, want = k > 0 and sum / k or (sx + cellW * (i - 0.5)), anchored = k > 0, single = k == 1 }
+                    items[i] = { n = n, i = i, want = k > 0 and sum / k or (sx + cellW * (i - 0.5)), anchored = k > 0, single = k == 1, par = par }
+                end
+                -- (a one-parent skill only counts as a straight chain when
+                -- its parent has no other child in this row: siblings stay
+                -- spread round their parent instead of one sitting under it)
+                for _, it in ipairs(items) do
+                    if it.single and rowKids[it.par] > 1 then it.single = false end
                 end
                 table.sort(items, function(a, b)
                     if a.want ~= b.want then return a.want < b.want end
@@ -1144,6 +1167,25 @@ local function build(page)
                         local left = j > 1 and order[j - 1].pos or -math.huge
                         local right = j < #order and order[j + 1].pos or math.huge
                         if x.want - left >= minSep and right - x.want >= minSep then x.pos = x.want end
+                    end
+                end
+                -- Centred row: the skills a cell apart round the column's
+                -- middle, on the column's shared spacing (so a lone skill sits
+                -- in the middle and a pair either side of it, row after row).
+                -- Used unless the row above keeps more straight chains.
+                local lat = latCell[g.col[1] .. "|" .. g.col[2]] or cellW
+                local mid = (gx0 + gx1) * 0.5
+                local nA, nB = 0, 0
+                for j, x in ipairs(order) do
+                    x.lat = mid + (j - (#order + 1) * 0.5) * lat
+                    if x.single and math.abs(x.pos - x.want) < 1 then nA = nA + 1 end
+                    if x.single and math.abs(x.lat - x.want) < 1 then nB = nB + 1 end
+                end
+                if nB >= nA then
+                    for _, x in ipairs(order) do x.pos = x.lat end
+                    if lat < cellW then
+                        bw = math.floor(math.min(lat - S(10), S(120)))
+                        minSep = bw + S(4)
                     end
                 end
                 for _, x in ipairs(order) do

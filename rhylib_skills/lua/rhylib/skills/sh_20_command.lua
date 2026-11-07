@@ -32,7 +32,8 @@ local function reg(key, val, desc) Config.Register("skills", key, val, desc) end
 reg("commandRadius", 380, "Command orders: radius (units, like a droid popper)")
 reg("commandTime", 6, "Command orders: seconds they last")
 reg("commandCooldown", 360, "Command orders: seconds before an officer can give the next one")
-reg("windRegen", 4, "Second wind: stamina refill speed multiplier")
+reg("windRegen", 4, "Combat rush: stamina refill speed multiplier")
+reg("windRecoil", 0.4, "Combat rush: view kick multiplier")
 reg("triageHeal", 8, "Field triage: health per second")
 reg("triageRevive", 0.25, "Field triage: downed players in reach get up with this share of their max health")
 reg("focusDamage", 1.2, "Focus fire: damage multiplier")
@@ -74,12 +75,13 @@ function K.IsSignalText(text)
     return false
 end
 
--- The six orders. key: what effects check (K.OrderIs(ply, "focus")),
+-- The six orders. key: what effects check (K.OrderIs(ply, "focus");
+-- Combat rush keeps the key "wind" and the skill ids cmd_wind / cmd_wind_c),
 -- skill: the Pistol spec's node id (the Commander's copy is skill .. "_c"),
 -- col: HUD tint, text: the effect line on the HUD bar. The index (position)
 -- is sent in 3 bits and stored in NW2Int rhylib_order.
 K.ORDERS = {
-    { key = "wind", skill = "cmd_wind", name = "Second wind", col = Color(242, 209, 75), text = "No stamina drain, fast refill" },
+    { key = "wind", skill = "cmd_wind", name = "Combat rush", col = Color(242, 209, 75), text = "Free sprint, fire on the run, low kick" },
     { key = "triage", skill = "cmd_triage", name = "Field triage", col = Color(91, 201, 122), text = "Downed get up, healing, afflictions muted" },
     { key = "hold", skill = "cmd_hold", name = "Hold fast", col = Color(79, 143, 232), text = "Armour refilled, 60% less damage, hold position" },
     { key = "focus", skill = "cmd_focus", name = "Focus fire", col = Color(232, 97, 60), text = "+20% damage, half the kick" },

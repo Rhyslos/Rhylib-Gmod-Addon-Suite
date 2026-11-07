@@ -90,8 +90,9 @@ function J.Flying(ply)
 end
 
 -- The item, once rhylib_inventory has loaded (Rhylib.After: now, or right
--- after it). Its model is a setting on the Models page (item.jetpack)
--- and is also the model drawn on players' backs.
+-- after it). Its model is a setting on the Models page (item.jetpack):
+-- the dropped item. Worn, it shows as the player model's jetpack
+-- bodygroup (rhylib_gear), never as a prop.
 Rhylib.After("inventory", function()
     if not Rhylib.Items then return end
     Rhylib.Items.Register("jetpack", {

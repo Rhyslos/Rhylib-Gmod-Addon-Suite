@@ -24,7 +24,7 @@
     chat + console line to every superadmin who joins.
     K.SetSkills(ply, set) applies a set (NW2String, save, inventory grids).
     K.DamageMult(ply, bolt, ent, tr, group) for rhylib_weapons (Focus fire,
-    Carbine sidearm, Point blank, Room clearer, Headhunter, Shotgun drills,
+    Dual DC-17 pistol damage, Carbine sidearm, Point blank, Room clearer, Headhunter, Shotgun drills,
     crits / Light rounds);
     returns mult, crit.
     K.ExtraGrids(ply) for rhylib_inventory: { [cid] = { w, h } } the
@@ -36,7 +36,10 @@
     Damage taken (EntityTakeDamage 95, before armour): Hard landings,
     Blast hardened, Aerial stability, Combat drop, Juggernaut, Under fire,
     Hold the line, and the Hold fast / Press forward orders.
-    Death from above: OnPlayerHitGround.
+    Death from above: OnPlayerHitGround (slam, droideka shields drop via
+    ENT:ShieldDrop; when it hits something, slamImmune s of no damage:
+    NW2Float rhylib_slamImmune, slamImmuneCooldown), GetFallDamage (none
+    from a landing that hits something, up to slamFallCap).
 ]]
 
 local K = Rhylib.Skills
@@ -54,12 +57,13 @@ local RENAMED = { burst_fire = "rapid_fire", thruster_dodge = "combat_drop" }
 -- REWORKED[v] = the trees reworked in version v: a category id (the whole
 -- tab) or a specialisation id (only that spec's skills, e.g. eod for the
 -- Field technician, which shares the Specialist tab with Airborne).
-K.TREE_VERSION = 5
+K.TREE_VERSION = 6
 local REWORKED = {
     [2] = { trooper = true, support = true, officer = true, shocktrooper = true },
     [3] = { support = true, shocktrooper = true },
     [4] = { shocktrooper = true, eod = true, marksman = true },
     [5] = { eod = true },   -- (Grenadier / Anti-tank branches)
+    [6] = { eod = true },   -- (Cluster rockets beside the Grenade launcher at tier 3)
 }
 local TREE_NAMES = { trooper = "Trooper", support = "Support", officer = "Officer", shocktrooper = "Shock Trooper", eod = "Field technician", marksman = "Marksman" }
 
@@ -505,6 +509,7 @@ function K.DamageMult(ply, bolt, ent, tr, group)
     local wep = bolt.weapon
     if set.combat_veteran and K.IsCarbine(wep) then m = m * K.Cfg("vetCarbineDamage") end   -- (Combat veteran)
     if set.arc_training and IsValid(wep) and K.GunClass(wep) == K.WESTAR then m = m * K.Cfg("arcWestarDamage") end   -- (ARC training)
+    if set.dual_dc17 and K.IsPistol(wep) then m = m * K.Cfg("dualPistolDamage") end   -- (Dual DC-17, single or dual mode)
     if set.carbine_sidearm and IsValid(wep) and wep.GetFireModeName and wep:GetFireModeName() == "sidearm" then
         m = m * K.Cfg("sidearmDamage")
     end
@@ -780,15 +785,67 @@ Rhylib.Hook.Add("OnPlayerHitGround", "skills.combatdrop", function(ply, inWater)
     K.Note(ply, "Combat drop: " .. math.Round((1 - K.Cfg("combatDropMult")) * 100) .. "% less damage for " .. t .. " s")
 end)
 
--- Death from above: a hard landing slams droids (NPCs and NextBots) nearby.
+-- Death from above: a hard landing slams droids (NPCs and NextBots) nearby
+-- and knocks out droideka shields in reach (as a droid popper's EMP does,
+-- rhylib_droids ENT:ShieldDrop). Only when it hits something: the landing
+-- does no fall damage (up to slamFallCap units/s) and the trooper takes
+-- no damage for slamImmune s (not refreshed while it runs, then
+-- slamImmuneCooldown s from its start before it can be given again).
+local function slams(ply, speed)
+    return (speed or 0) >= K.Cfg("slamSpeed") and ply:WaterLevel() < 2 and K.Has(ply, "death_from_above")
+end
+
+-- slamTargets(ply) -> droids to hit, droideka shields to drop (both lists
+-- of entities in the slam radius with no wall between).
+local function slamTargets(ply)
+    local pos = ply:GetPos()
+    local hits, shields = {}, {}
+    for _, e in ipairs(ents.FindInSphere(pos, K.Cfg("slamRadius"))) do
+        if IsValid(e) and e ~= ply
+            and not util.TraceLine({ start = pos + Vector(0, 0, 16), endpos = e:WorldSpaceCenter(), mask = MASK_SOLID_BRUSHONLY }).Hit then
+            if isfunction(e.ShieldDrop) and isfunction(e.ShieldUp) and e:ShieldUp() then shields[#shields + 1] = e end
+            if (e:IsNPC() or e:IsNextBot()) and not e.IsRhylibClone and e:Health() > 0 then hits[#hits + 1] = e end
+        end
+    end
+    return hits, shields
+end
+
+Rhylib.Hook.Add("GetFallDamage", "skills.slam", function(ply, speed)
+    if not slams(ply, speed) or speed > K.Cfg("slamFallCap") then return end
+    -- (this tick's slam already hit something, or there is something to hit)
+    if ply.rhylibSlamHit == CurTime() then return 0 end
+    local hits, shields = slamTargets(ply)
+    if #hits > 0 or #shields > 0 then return 0 end
+end, -10)
+
+Rhylib.Hook.Add("EntityTakeDamage", "skills.slam", function(ent, dmg)
+    if ent:IsPlayer() and K.SlamImmune(ent) then return true end
+end, -1200)
+Rhylib.Hook.Add("PlayerSpawn", "skills.slam", function(ply)
+    ply:SetNW2Float("rhylib_slamImmune", 0)
+end)
+
 Rhylib.Hook.Add("OnPlayerHitGround", "skills.slam", function(ply, inWater, _, speed)
-    if inWater or speed < K.Cfg("slamSpeed") or not K.Has(ply, "death_from_above") then return end
+    if inWater or not slams(ply, speed) then return end
     local pos = ply:GetPos()
     local r = K.Cfg("slamRadius")
     local base = K.Cfg("slamDamage") * math.min(2, speed / K.Cfg("slamSpeed"))
-    for _, e in ipairs(ents.FindInSphere(pos, r)) do
-        if IsValid(e) and e ~= ply and (e:IsNPC() or e:IsNextBot()) and not e.IsRhylibClone and e:Health() > 0
-            and not util.TraceLine({ start = pos + Vector(0, 0, 16), endpos = e:WorldSpaceCenter(), mask = MASK_SOLID_BRUSHONLY }).Hit then
+    local hits, shields = slamTargets(ply)
+    if #hits > 0 or #shields > 0 then
+        ply.rhylibSlamHit = CurTime()
+        local immune = K.Cfg("slamImmune")
+        if immune > 0 and not K.SlamImmune(ply) and (ply.rhylibSlamReady or 0) <= CurTime() then
+            ply.rhylibSlamReady = CurTime() + math.max(K.Cfg("slamImmuneCooldown"), immune)
+            ply:SetNW2Float("rhylib_slamImmune", CurTime() + immune)
+            ply:EmitSound("items/suitchargeok1.wav", 60, 130)
+        end
+    end
+    -- (shields first, so the slam's own hit gets through)
+    for _, e in ipairs(shields) do
+        if IsValid(e) then e:ShieldDrop() end
+    end
+    for _, e in ipairs(hits) do
+        if IsValid(e) and e:Health() > 0 then
             local to = e:WorldSpaceCenter() - pos
             local f = 1 - math.Clamp(to:Length() / r, 0, 1) * 0.6
             local d = DamageInfo()
