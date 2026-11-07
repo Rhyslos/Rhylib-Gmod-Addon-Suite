@@ -5,7 +5,8 @@
                  training with rhylib_roster; a search box; "Only jobs I
                  can take"). Left: jobs by DarkRP category, each a colour
                  band (diamond, name, N online) over rows in two columns
-                 (icon, name, a sub line: your job / short description /
+                 (the job's helmet portrait (its first model, rhylib_core
+                 UI.DrawPortrait; dimmed while locked), name, a sub line: your job / short description /
                  why it's locked, slots). Right: the model preview (< >
                  for several models; wears your skin, picked on Trooper >
                  Appearance), battalion, name, description, weapons as
@@ -757,7 +758,14 @@ local function buildJobs(body, frame)
                             self.sub = self.mine and "Your job" or why or desc
                         end
                         local x, iy = paintRow(w, h, selJob == job, self.mine, self:IsHovered(), col, pickedBg)
-                        K.Icon("trooper", s(19), iy + s(9), s(22), self.locked and T.lockIcon or col)
+                        -- (the job's helmet portrait, rhylib_core; else the trooper glyph)
+                        local mdl = firstModel(job)
+                        if isstring(mdl) and mdl ~= "" and Rhylib.UI.DrawPortrait then
+                            local sq = s(40)
+                            Rhylib.UI.DrawPortrait(mdl, s(10) + 1, iy + 1, sq - 2, self.locked and 110 or 255)
+                        else
+                            K.Icon("trooper", s(19), iy + s(9), s(22), self.locked and T.lockIcon or col)
+                        end
                         local f12 = K.Font(12, 700)
                         surface.SetFont(f12)
                         local sw = surface.GetTextSize(self.slots)

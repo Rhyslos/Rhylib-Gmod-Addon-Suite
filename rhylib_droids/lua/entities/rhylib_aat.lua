@@ -33,7 +33,9 @@
     Two variants (kind field aatRole): the tank ("aat") fires its cannon
     direct, side lasers and rocket barrages, never the mortar; the mortar
     tank ("aat_mortar", entities/rhylib_aat_mortar.lua) hangs back
-    (aatMortarStandoff) and its cannon only lobs mortar shells, at its
+    (aatMortarStandoff) and its cannon only lobs mortar shots (the B2
+    mortar's purple rocket, rhylib_b2_rocket with r.damage / r.radius =
+    aatCannonDamage / aatCannonRadius and r.life for long flights), at its
     target in sight too, with its side lasers for defence (ENT:AatIsMortar).
 
     Weapons (server, every NextBot body update, ENT:BodyUpdate):
@@ -936,15 +938,30 @@ if SERVER then
             miss.z = miss.z * 0.3
             vel = (aim + miss - muzzle):GetNormalized() * speed
         end
-        local s = ents.Create("rhylib_aat_shell")
-        if IsValid(s) then
-            s:SetPos(muzzle)
-            s.vel = vel
-            s.grav = grav
-            s.owner = self
-            s.size = D.Cfg("aatShellSize")
-            s:SetOwner(self)
-            s:Spawn()
+        if grav and self:AatIsMortar() then
+            -- (the mortar tank: the B2 mortar's purple rocket, its own blast)
+            local r = ents.Create("rhylib_b2_rocket")
+            if IsValid(r) then
+                r:SetPos(muzzle)
+                r.vel = vel
+                r.owner = self
+                r.damage = D.Cfg("aatCannonDamage")
+                r.radius = D.Cfg("aatCannonRadius")
+                r.life = (shot.t or 8) + 4
+                r:SetOwner(self)
+                r:Spawn()
+            end
+        else
+            local s = ents.Create("rhylib_aat_shell")
+            if IsValid(s) then
+                s:SetPos(muzzle)
+                s.vel = vel
+                s.grav = grav
+                s.owner = self
+                s.size = D.Cfg("aatShellSize")
+                s:SetOwner(self)
+                s:Spawn()
+            end
         end
         if grav then
             self:EmitSound("weapons/explosives_cannons_superlazers/wpn_mortar_cannon_r1_shoot_0" .. math.random(1, 3) .. ".ogg", 130, 70)

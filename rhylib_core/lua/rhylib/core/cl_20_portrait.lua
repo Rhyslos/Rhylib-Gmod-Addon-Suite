@@ -1,6 +1,6 @@
 --[[
     Portraits: a head-and-shoulders picture of a player model, used in
-    place of Steam avatars (chat, voice).
+    place of Steam avatars (chat, voice) and for jobs (the F4 job list).
 
         Rhylib.UI.DrawPortrait(plyOrModel, x, y, size, alpha)
 
@@ -103,7 +103,8 @@ Rhylib.Hook.Add("HUDPaint", "core.portraits", function()
     local model = table.remove(queue, 1)
     if not model then return end
     queued[model] = nil
-    if cache[model] or not util.IsValidModel(model) then return end
+    -- (util.IsValidModel is false on a client for a model nobody has loaded yet)
+    if cache[model] or not (util.IsValidModel(model) or file.Exists(model, "GAME")) then return end
     render1(model)
 end, -100)
 

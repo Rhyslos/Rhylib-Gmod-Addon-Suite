@@ -12,8 +12,9 @@
     rhylib_b1.lua. Fields set before Spawn: r.vel (start velocity),
     r.owner (the droid, credited for the blast), r.training, and for the
     rocket droid r.direct + r.diveAt (aim point); r.damage / r.radius
-    replace b2RocketDamage / b2RocketRadius (the AAT tank's barrage). Training is also a DT
-    Bool so clients pick the glow colour. Gone after 8 s or in the sky.
+    replace b2RocketDamage / b2RocketRadius (the AAT tank's barrage and
+    the AAT mortar tank's shots); r.life = seconds before it's gone (default 8). Training is also a DT
+    Bool so clients pick the glow colour. Gone after r.life (8) s or in the sky.
     The blast effect needs rhylib_republic (rhylib_emp).
 ]]
 
@@ -44,7 +45,7 @@ if SERVER then
         self.rhylibDroidShot = true   -- (counts as a droid's when its droid is gone: no droid damage, no mines)
         self:SetTraining(self.training and true or false)
         self.vel = self.vel or Vector(0, 0, 0)
-        self.dieAt = CurTime() + 8
+        self.dieAt = CurTime() + math.max(tonumber(self.life) or 8, 1)
         -- (droids don't set their friends' rockets off)
         local me = self
         self.filterFn = function(e) return e ~= me and not e.IsRhylibDroid end
