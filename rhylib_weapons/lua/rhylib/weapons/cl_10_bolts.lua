@@ -19,8 +19,7 @@
     BoltColor styles (SWEP.BoltColor or opts.color): 1 blue, 2 red,
     3 green, 4 rocket, 5 grapple hook, 6 stun ring, 7 training yellow,
     8 training droids, 9 training rocket, 10 overcharged, 11 droids (thick red),
-    12 heavy droid cannons (the AAT side lasers: bigger red), 13 the AAT
-    heavy side blasters (biggest, orange-red).
+    12 heavy droid cannons (the AAT side lasers: bigger red).
 ]]
 
 local W = Rhylib.Weapons
@@ -44,7 +43,6 @@ local STYLES = {
     [10] = { color = Color(150, 205, 255), length = 115, width = 9, glow = 26, life = 1.2, core = true },  -- overcharged (charged shots, DC-15A Overcharge)
     [11] = { color = Color(255, 30, 25), length = 100, width = 10, glow = 26, life = 1.2, core = true },   -- droids (rhylib_droids): thicker red, easy to see
     [12] = { color = Color(255, 40, 30), length = 170, width = 17, glow = 40, life = 1.2, core = true },   -- heavy droid cannons (the AAT's side lasers): bigger red
-    [13] = { color = Color(255, 90, 40), length = 220, width = 26, glow = 60, life = 1.6, core = true },   -- AAT heavy side blasters: biggest, orange-red
 }
 -- BoltColor numbers for other addons.
 Bolts.COLOR_TRAINING, Bolts.COLOR_TRAINING_ENEMY, Bolts.COLOR_TRAINING_ROCKET = 7, 8, 9

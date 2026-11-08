@@ -63,10 +63,12 @@
                       rapid pair (within aatLaserRange, both sides
                       together on one clock, aatLaserRPM volleys a minute)
                       and a heavy blaster above it (aatHeavyUp; within
-                      aatHeavyRange, aatHeavyRPM, a big bolt, style 13,
-                      that bursts: aatHeavyDamage in aatHeavyRadius). By
+                      aatHeavyRange, aatHeavyRPM, the same bolt as the
+                      rapid pairs, aatHeavyDamage). By
                       range: far = main cannon; nearer = + heavy blasters;
-                      closer = + rapid pairs. The rapid pairs fire big
+                      closer = + rapid pairs. Each gun's aim error walks
+                      from shot to shot (the next bolt lands near the last,
+                      within the spread cone). The rapid pairs fire big
                       bolts (style 12, aatLaserSpeedMult; aatLaserDamage,
                       aatLaserSpread)
       rocket barrage  aatRocketCount B2 rockets (rhylib_b2_rocket with
@@ -1039,6 +1041,23 @@ if SERVER then
     end
 
     -- Side lasers: one bolt from gun g toward aim.
+    -- (a gun's aim error walks from shot to shot instead of jumping: each
+    -- bolt lands near the last one and the stream drifts round the target,
+    -- within the same cone; a new target starts a new walk)
+    local function walkErr(g, key, t)
+        local e = g[key]
+        if not e or e.t ~= t then
+            local a, r = math.Rand(0, math.pi * 2), math.sqrt(math.Rand(0, 1))
+            e = { t = t, x = math.cos(a) * r, y = math.sin(a) * r }
+            g[key] = e
+        end
+        e.x = e.x * 0.8 + math.Rand(-0.3, 0.3)
+        e.y = e.y * 0.8 + math.Rand(-0.3, 0.3)
+        local l = math.sqrt(e.x * e.x + e.y * e.y)
+        if l > 1 then e.x, e.y = e.x / l, e.y / l end
+        return e.x, e.y
+    end
+
     function ENT:AatLaser(g, origin, aim, t)
         local D = D_()
         local Bolts = Rhylib.Weapons and Rhylib.Weapons.Bolts
@@ -1047,10 +1066,10 @@ if SERVER then
         local dir = aim - origin
         dir:Normalize()
         local cone = math.rad((D.Cfg(k.spread) + velOf(t):Length2D() * D.Cfg("moveSpread")) * aimSpreadMult(self))
-        local a = math.Rand(0, math.pi * 2)
-        local r = math.tan(cone * math.sqrt(math.Rand(0, 1)))
+        local r = math.tan(cone)
+        local ex, ey = walkErr(g, "err", t)
         local ang = dir:Angle()
-        local shotDir = dir + ang:Right() * math.cos(a) * r + ang:Up() * math.sin(a) * r
+        local shotDir = dir + ang:Right() * ex * r + ang:Up() * ey * r
         shotDir:Normalize()
         local gun = D.Gun(self.DroidKind)
         -- (heavy bolts: BoltColor 12, aatLaserSpeedMult x the droid bolt speed)
@@ -1173,7 +1192,7 @@ if SERVER then
         if now >= (self.aatHeavyNext or 0) then
             local r2, any = D.Cfg("aatHeavyRange") ^ 2, false
             for _, r in ipairs(ready) do
-                if r[5] <= r2 then self:AatHeavy(r[2], r[3], r[4]) any = true end
+                if r[5] <= r2 then self:AatHeavy(r[1], r[2], r[3], r[4]) any = true end
             end
             -- (one shot sound per volley, not one per gun)
             if any then
@@ -1185,10 +1204,9 @@ if SERVER then
         end
     end
 
-    -- The heavy blaster above a side gun's pair (aatHeavyUp higher): a
-    -- big slow bolt (style 13) that bursts where it hits (aatHeavyDamage
-    -- in aatHeavyRadius).
-    function ENT:AatHeavy(o, aim, t)
+    -- The heavy blaster above a side gun's pair (aatHeavyUp higher): the
+    -- rapid lasers' bolt (style 12, hits like any bolt), aatHeavyDamage.
+    function ENT:AatHeavy(g, o, aim, t)
         local D = D_()
         local W = Rhylib.Weapons
         local Bolts = W and W.Bolts
@@ -1197,27 +1215,15 @@ if SERVER then
         local dir = aim - from
         dir:Normalize()
         local cone = math.rad((D.Cfg("aatHeavySpread") + velOf(t):Length2D() * D.Cfg("moveSpread")) * aimSpreadMult(self))
-        local a = math.Rand(0, math.pi * 2)
-        local r = math.tan(cone * math.sqrt(math.Rand(0, 1)))
+        local r = math.tan(cone)
+        local ex, ey = walkErr(g, "herr", t)
         local ang = dir:Angle()
-        local shotDir = dir + ang:Right() * math.cos(a) * r + ang:Up() * math.sin(a) * r
+        local shotDir = dir + ang:Right() * ex * r + ang:Up() * ey * r
         shotDir:Normalize()
         local gun = D.Gun(self.DroidKind)
-        local me = self
         Bolts.Fire(self, gun, from + dir * D.Cfg("aatLaserLength"), shotDir, D.Cfg("aatHeavyDamage"), {
-            color = 13,
+            color = 12,
             speed = Bolts.Speed(gun) * math.max(tonumber(D.Cfg("aatHeavySpeedMult")) or 1, 0.1),
-            onHit = function(bolt, tr)
-                if not (W.Explode and tr and tr.HitPos) then return end
-                W.Explode({
-                    pos = tr.HitPos + (tr.HitNormal or vector_origin) * 4,
-                    radius = D.Cfg("aatHeavyRadius"), damage = D.Cfg("aatHeavyDamage"),
-                    attacker = IsValid(me) and me or game.GetWorld(), inflictor = IsValid(me) and me or nil,
-                    effect = "cball_explode",
-                    sound = { "weapons/physcannon/energy_sing_explosion2.wav", 80, 120 },
-                    shake = { 2, 80, 0.3, D.Cfg("aatHeavyRadius") * 2 },
-                })
-            end,
         })
     end
 
