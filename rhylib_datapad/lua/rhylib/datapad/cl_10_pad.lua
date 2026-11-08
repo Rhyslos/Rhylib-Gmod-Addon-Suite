@@ -1486,7 +1486,17 @@ local BADGES = {
     end,
 }
 
+-- (the EOD manual lives on the Learn page: that button opens it there and
+-- the open tab stays as it was, so the pad doesn't reopen onto it)
+local function learnTab(id)
+    return id == "eod" and Rhylib.Menus and Rhylib.Menus.OpenLearn and true or false
+end
+
 local function openTab(id)
+    if learnTab(id) then
+        Rhylib.Menus.OpenLearn("bomb")
+        return
+    end
     tab = id
     view = {}
     if id == "board" then D.boardNew = 0 end
@@ -1763,7 +1773,7 @@ local function openWindow()
     content:Dock(FILL)
     content:DockPadding(s(22), s(18), s(22), s(16))
     content.Paint = nil
-    tab = tabOk("board") and "board" or (tabOk(tab) and tab or "comms")
+    tab = tabOk("board") and "board" or (tabOk(tab) and not learnTab(tab) and tab or "comms")
     buildNav()
     view = {}
     buildTab()
