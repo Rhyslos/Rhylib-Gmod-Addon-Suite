@@ -47,6 +47,8 @@ J.DT_PH = DT.Claim("Int", "grapple.phook", 31)     -- (and the personal grapplin
 
 local Config = Rhylib.Config
 Config.Describe("jetpack", { name = "Jetpack", category = "Soldiers", sections = { "Fuel", "Flight" } })
+Config.Register("jetpack", "sound", "weapons/rpg/rocket1.wav", "Looping thrust sound (a mono file: a stereo one can sound louder in one ear)", { section = "Sound" })
+Config.Register("jetpack", "soundPitch", 80, "Pitch of the thrust sound (100 = as recorded)", { section = "Sound" })
 Config.Register("jetpack", "fuelTime", 10, "Seconds of thrust from a full tank (rhylib_skills Airborne: skills airborneFuel)", { section = "Fuel" })
 Config.Register("jetpack", "rechargeTime", 6, "Seconds to refill an empty tank while on the ground", { section = "Fuel" })
 Config.Register("jetpack", "rechargeDelay", 0.5, "Seconds on the ground before refilling starts", { section = "Fuel" })

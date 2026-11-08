@@ -22,7 +22,11 @@ J.CrouchDrop = 18                     -- lower by this while crouching
 J.BackAngle = Angle(0, 0, 0)
 J.Nozzles = { Vector(-2, -5, -12), Vector(-2, 5, -12) }  -- flame points relative to the jetpack
 
-local SOUND = "thrusters/jet02.wav"
+-- (the thrust loop: jetpack config sound / soundPitch)
+local function soundFile()
+    local s = Rhylib.Config.Get("jetpack", "sound")
+    return isstring(s) and s ~= "" and s or "weapons/rpg/rocket1.wav"
+end
 
 local matGlow = Material("sprites/light_glow02_add")
 local matBeam = Material("trails/plasma")
@@ -55,7 +59,8 @@ Rhylib.Hook.Add("PostPlayerDraw", "jetpack.draw", function(ply)
     end
 end)
 
--- One looping sound per thrusting player, started and stopped on change.
+-- One looping sound per thrusting player, started and stopped on change
+-- (your own jetpack's is unplaced: centred, a little quieter).
 -- Checked 10 times a second instead of every frame; nobody hears 0.1 s.
 local sounds = {}
 Rhylib.Hook.Remove("Think", "jetpack.sound")  -- older versions ran per frame
@@ -64,8 +69,15 @@ timer.Create("Rhylib.Jetpack.Sound", 0.1, 0, function()
         local on = ply:GetDTBool(J.DT_THRUST) and ply:Alive()
         local snd = sounds[ply]
         if on and not snd then
-            snd = CreateSound(ply, SOUND)
-            snd:PlayEx(0.55, 100)
+            snd = CreateSound(ply, soundFile())
+            local pitch = math.Clamp(math.floor(tonumber(Rhylib.Config.Get("jetpack", "soundPitch")) or 100), 30, 200)
+            if ply == LocalPlayer() then
+                -- (your own: not placed in the world, so it plays centred)
+                snd:SetSoundLevel(0)
+                snd:PlayEx(0.4, pitch)
+            else
+                snd:PlayEx(0.55, pitch)
+            end
             sounds[ply] = snd
         elseif not on and snd then
             snd:FadeOut(0.2)
